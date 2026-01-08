@@ -1,0 +1,34 @@
+-- Add missing columns to purchase_orders table
+
+ALTER TABLE public.purchase_orders
+ADD COLUMN IF NOT EXISTS total_amount_ugx DECIMAL(12, 2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS amount_paid_ugx DECIMAL(12, 2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS po_number VARCHAR(50),
+ADD COLUMN IF NOT EXISTS supplier_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS ordered_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending',
+ADD COLUMN IF NOT EXISTS order_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+ADD COLUMN IF NOT EXISTS expected_delivery_date TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS delivered_date TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS delivery_address TEXT,
+ADD COLUMN IF NOT EXISTS delivery_instructions TEXT,
+ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'normal',
+ADD COLUMN IF NOT EXISTS notes TEXT,
+ADD COLUMN IF NOT EXISTS items JSONB,
+ADD COLUMN IF NOT EXISTS subtotal_ugx DECIMAL(12, 2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS tax_rate DECIMAL(5, 2) DEFAULT 18,
+ADD COLUMN IF NOT EXISTS tax_ugx DECIMAL(12, 2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'unpaid',
+ADD COLUMN IF NOT EXISTS balance_due_ugx DECIMAL(12, 2),
+ADD COLUMN IF NOT EXISTS last_payment_date TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS next_payment_date TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50),
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON public.purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_supplier ON public.purchase_orders(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_created ON public.purchase_orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_payment_status ON public.purchase_orders(payment_status);

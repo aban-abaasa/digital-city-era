@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Auth Test - FAREDEAL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .test-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .test-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            transition: transform 0.2s;
+        }
+        
+        .test-item:hover {
+            transform: translateX(5px);
+        }
+        
+        .test-item .icon {
+            margin-right: 12px;
+            font-size: 20px;
+        }
+        
+        .test-item .label {
+            flex: 1;
+            color: #333;
+        }
+        
+        .test-item .status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            border: none;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .button.secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .credentials {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .credentials strong {
+            color: #1976D2;
+        }
+        
+        .credentials code {
+            background: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #d32f2f;
+        }
+        
+        .note {
+            background: #fff9c4;
+            border-left: 4px solid #fbc02d;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            color: #666;
+        }
+        
+        .console-output {
+            background: #263238;
+            color: #aed581;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .console-output .command {
+            color: #64b5f6;
+        }
+        
+        .console-output .output {
+            color: #aed581;
+        }
+        
+        .console-output .error {
+            color: #ef5350;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Admin Authentication Test</h1>
+        <p class="subtitle">FAREDEAL Supermarket Admin Portal</p>
+        
+        <div class="test-section">
+            <h2>📋 System Status</h2>
+            <div class="test-item">
+                <span class="icon">✅</span>
+                <span class="label">AdminAuth.jsx Component</span>
+                <span class="status success">Created</span>
+            </div>
+            <div class="test-item">
+                <span class="icon">✅</span>
+                <span class="label">AdminProtectedRoute.jsx Component</span>
+                <span class="status success">Created</span>
+            </div>
+            <div class="test-item">
+                <span class="icon">✅</span>
+                <span class="label">Routing Configuration</span>
+                <span class="status success">Updated</span>
+            </div>
+            <div class="test-item">
+                <span class="icon">✅</span>
+                <span class="label">Supabase Integration</span>
+                <span class="status success">Active</span>
+            </div>
+            <div class="test-item">
+                <span class="icon">✅</span>
+                <span class="label">Notification Service</span>
+                <span class="status success">Ready</span>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🚀 Quick Access</h2>
+            <a href="http://localhost:5173/#admin" class="button" target="_blank">
+                Open Admin Portal
+            </a>
+            <a href="http://localhost:5173/admin-login" class="button secondary" target="_blank">
+                Direct to Login
+            </a>
+        </div>
+        
+        <div class="credentials">
+            <strong>🔑 Test Credentials:</strong><br><br>
+            <strong>Email:</strong> <code>heradmin@faredeal.ug</code><br>
+            <strong>Password:</strong> <code>Administrator</code>
+        </div>
+        
+        <div class="test-section">
+            <h2>🧪 Testing Steps</h2>
+            <ol style="margin-left: 20px; color: #333; line-height: 1.8;">
+                <li>Click "Open Admin Portal" above</li>
+                <li>You should be redirected to <code>/admin-login</code></li>
+                <li>See the beautiful gradient login page</li>
+                <li>Enter the credentials above</li>
+                <li>Click "Login to Portal"</li>
+                <li>Success message should appear</li>
+                <li>You'll be redirected to <code>/admin-portal</code></li>
+                <li>Admin dashboard should load</li>
+            </ol>
+        </div>
+        
+        <div class="note">
+            <strong>💡 Note:</strong> If you see any errors, press F12 to open the browser console and check for error messages. You can also clear your browser cache and try again.
+        </div>
+        
+        <div class="console-output">
+            <div class="command">$ cd C:\Users\Aban\Desktop\FD\frontend</div>
+            <div class="command">$ npm run dev</div>
+            <div class="output"><br>VITE v7.1.9  ready in 466 ms<br><br>➜  Local:   http://localhost:5173/<br>➜  press h + enter to show help</div>
+            <br>
+            <div class="command"># Navigate to: http://localhost:5173/#admin</div>
+            <div class="output">✅ Redirecting to /admin-login...</div>
+            <div class="output">✅ Login page loaded</div>
+            <div class="output">✅ Ready for authentication</div>
+        </div>
+        
+        <div class="test-section" style="margin-top: 30px;">
+            <h2>📞 Troubleshooting</h2>
+            <p style="color: #666; line-height: 1.6; margin-bottom: 15px;">
+                If something doesn't work, try these quick fixes:
+            </p>
+            <button class="button" onclick="clearStorage()">Clear Browser Storage</button>
+            <button class="button secondary" onclick="testSupabase()">Test Supabase</button>
+            <button class="button" onclick="showDocs()">View Docs</button>
+        </div>
+    </div>
+    
+    <script>
+        function clearStorage() {
+            localStorage.clear();
+            sessionStorage.clear();
+            alert('✅ Storage cleared! Now refresh the page and try again.');
+        }
+        
+        function testSupabase() {
+            const newWindow = window.open('http://localhost:5173/admin-login', '_blank');
+            setTimeout(() => {
+                alert('📊 Check the browser console (F12) in the new window to see Supabase connection status.');
+            }, 1000);
+        }
+        
+        function showDocs() {
+            alert('📚 Documentation files:\n\n' +
+                  '• ADMIN_AUTH_GUIDE.md - Complete guide\n' +
+                  '• TESTING_AUTH.md - Troubleshooting\n' +
+                  '• QUICK_START.md - Quick reference\n' +
+                  '• FINAL_CHECKLIST.md - Testing checklist\n\n' +
+                  'Check your project folder: C:\\Users\\Aban\\Desktop\\FD\\');
+        }
+        
+        // Auto-check if running
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                fetch('http://localhost:5173/')
+                    .then(() => {
+                        console.log('✅ Frontend server is running');
+                    })
+                    .catch(() => {
+                        console.warn('⚠️  Frontend server may not be running. Start it with: npm run dev');
+                    });
+            }, 500);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "name": "faredeal-backend",
+  "version": "1.0.0",
+  "description": "FAREDEAL POS System Backend - Database and API services",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node start-server.js",
+    "start:direct": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "dev:check": "node start-server.js",
+    "setup": "node src/setup-application-database.js",
+    "seed": "node src/setup-application-database.js seed",
+    "execute": "node src/execute-database.js",
+    "setup-old": "node src/setup-database.js setup",
+    "init-db": "node src/database-initializer.js",
+    "health": "curl http://localhost:3001/api/health",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "pos",
+    "point-of-sale",
+    "inventory",
+    "retail",
+    "business-management",
+    "supabase"
+  ],
+  "author": "FAREDEAL Team",
+  "license": "MIT",
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.0",
+    "@supabase/supabase-js": "^2.89.0",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
