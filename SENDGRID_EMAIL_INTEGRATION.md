@@ -246,8 +246,8 @@ Current setup in `.env`:
 ```env
 # Email Configuration (SendGrid)
 SENDGRID_API_KEY=your_sendgrid_api_key_here
-SENDGRID_FROM_EMAIL=noreply@faredeal.ug
-SENDGRID_FROM_NAME=FAREDEAL Uganda
+SENDGRID_FROM_EMAIL=noreply@digitalcityera.ug
+SENDGRID_FROM_NAME=DIGITAL CITY ERA
 
 # Frontend URL (for email links)
 FRONTEND_URL=http://localhost:5173

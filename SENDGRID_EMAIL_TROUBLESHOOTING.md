@@ -157,8 +157,8 @@ If it shows **"Unverified"** or **"Pending"**:
 Your current .env:
 ```env
 SENDGRID_API_KEY=your_sendgrid_api_key_here
-SENDGRID_FROM_EMAIL=noreply@faredeal.ug           ← ⚠️ Needs verification
-SENDGRID_FROM_NAME=FAREDEAL Uganda
+SENDGRID_FROM_EMAIL=noreply@digitalcityera.ug           ← ⚠️ Needs verification
+SENDGRID_FROM_NAME=DIGITAL CITY ERA
 FRONTEND_URL=http://localhost:5173                 ← Update for production
 ```
 
