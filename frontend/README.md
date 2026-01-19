@@ -1,4 +1,4 @@
-# FAREDEAL - Point of Sale System
+# DIGITAL CITY ERA - Point of Sale System
 
 A modern, full-featured Point of Sale (POS) system built with React, Vite, and Tailwind CSS.
 
@@ -36,7 +36,7 @@ A modern, full-featured Point of Sale (POS) system built with React, Vite, and T
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd FAREDEAL/faredeal
+   cd DIGITAL CITY ERA/frontend
    ```
 
 2. **Install dependencies**

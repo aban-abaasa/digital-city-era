@@ -67,7 +67,7 @@ const CustomerLanding = () => {
     {
       name: 'Sarah Johnson',
       role: 'Tech Enthusiast',
-      content: 'FAREDEAL has the best selection of electronics. Fast delivery and amazing customer service!',
+      content: 'DIGITAL CITY ERA has the best selection of electronics. Fast delivery and amazing customer service!',
       rating: 5,
       avatar: '👩‍💻'
     },

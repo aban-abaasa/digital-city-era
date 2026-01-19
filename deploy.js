@@ -24,7 +24,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   process.exit(1);
 }
 
-console.log('📦 FAREDEAL Database Deployment');
+console.log('📦 DIGITAL CITY ERA Database Deployment');
 console.log('================================');
 console.log(`🔌 Supabase URL: ${SUPABASE_URL}`);
 console.log('');

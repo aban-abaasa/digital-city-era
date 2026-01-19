@@ -109,7 +109,7 @@ Advanced admin interface with:
 ```javascript
 // Available configuration fields:
 {
-  systemName: "FAREDEAL",
+  systemName: "DIGITAL CITY ERA",
   companyName: "FareDeal Uganda", 
   appTitle: "FareDeal Management System",
   adminPortal: "Admin Control Center",

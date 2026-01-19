@@ -111,7 +111,7 @@ const PortalLanding = () => {
                 <FiTarget className="text-white h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white">FareDeal</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white">Digital City Era</h1>
                 <p className="text-xs sm:text-sm text-gray-400">Professional Portals</p>
               </div>
             </div>
@@ -172,7 +172,7 @@ const PortalLanding = () => {
         {/* Quick Features */}
         <div className="bg-gradient-to-r from-gray-700 to-gray-800 rounded-xl sm:rounded-2xl p-6 sm:p-8 mb-8 border border-gray-600 animate-fadeInUp">
           <h3 className="text-xl sm:text-2xl font-bold text-white text-center mb-6 sm:mb-8">
-            Why FareDeal?
+            Why Digital City Era?
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {[

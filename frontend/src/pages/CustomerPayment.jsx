@@ -255,7 +255,7 @@ const CustomerPayment = () => {
             cardLastFour: paymentData.cardLastFour || '****',
             processedAt: new Date(),
             processingTime: '2.3 seconds',
-            merchantId: 'FAREDEAL_001',
+            merchantId: 'DIGITAL_CITY_ERA_001',
             acquirer: 'First Data',
             responseCode: '00',
             responseMessage: 'Approved'
@@ -418,7 +418,7 @@ const CustomerPayment = () => {
           taxableAmount: orderData.subtotal || 0
         },
         store: {
-          name: 'FAREDEAL Supermarket',
+          name: 'DIGITAL CITY ERA Supermarket',
           address: '123 Main Street, City, State 12345',
           phone: '(555) 123-4567',
           email: 'support@faredeal.com',

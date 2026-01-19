@@ -1,8 +1,8 @@
-# 🚀 FAREDEAL Main Landing Site - Complete Implementation
+# 🚀 DIGITAL CITY ERA Main Landing Site - Complete Implementation
 
 ## 📋 Overview
 
-The FAREDEAL Main Landing Site is a comprehensive, creative, and modern landing page that serves as the central hub for all user types in the FAREDEAL ecosystem. It provides seamless access to four distinct portals while showcasing the platform's capabilities through engaging design and interactive features.
+The DIGITAL CITY ERA Main Landing Site is a comprehensive, creative, and modern landing page that serves as the central hub for all user types in the DIGITAL CITY ERA ecosystem. It provides seamless access to four distinct portals while showcasing the platform's capabilities through engaging design and interactive features.
 
 ## 🎯 Key Features Implemented
 
