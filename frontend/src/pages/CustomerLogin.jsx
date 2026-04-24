@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { 
@@ -12,14 +12,45 @@ import {
   FiStar,
   FiTruck,
   FiShield,
-  FiHeart
+  FiHeart,
+  FiMoon,
+  FiSun
 } from 'react-icons/fi';
+import { SiGoogle } from 'react-icons/si';
 import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
+import { supabase } from '../services/supabase';
+import { useTheme } from '../contexts/ThemeContext';
+
+const themeStyles = {
+  dark: {
+    shell: 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800',
+    leftPanel: 'bg-gradient-to-br from-sky-700 via-violet-700 to-fuchsia-700',
+    rightCard: 'bg-white/85 border-white/20 text-slate-900',
+    muted: 'text-slate-600',
+    helper: 'text-slate-700',
+    input: 'border-gray-300 bg-white text-slate-900',
+    button: 'bg-gradient-to-r from-blue-600 to-purple-600 text-white',
+    themeButton: 'border-white/20 bg-white/10 text-white hover:bg-white/20',
+    themeBorder: 'border-white/10'
+  },
+  light: {
+    shell: 'bg-[linear-gradient(135deg,#f8fafc_0%,#eef2ff_55%,#fff7ed_100%)]',
+    leftPanel: 'bg-gradient-to-br from-slate-950 via-slate-800 to-cyan-900',
+    rightCard: 'bg-white/90 border-slate-200 text-slate-900',
+    muted: 'text-slate-600',
+    helper: 'text-slate-700',
+    input: 'border-slate-200 bg-slate-50 text-slate-900',
+    button: 'bg-gradient-to-r from-sky-600 to-violet-600 text-white',
+    themeButton: 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50',
+    themeBorder: 'border-slate-200'
+  }
+};
 
 const CustomerLogin = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const palette = themeStyles[theme];
   const [loginData, setLoginData] = useState({
     email: '',
     phone: '',
@@ -29,6 +60,81 @@ const CustomerLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
 
+  const getSignedInRoute = (signedInUser) => {
+    const role = signedInUser?.role?.toLowerCase?.() || signedInUser?.role || 'guest';
+
+    if (role === 'admin') return '/admin-portal';
+    if (role === 'manager') return '/manager-portal';
+    if (role === 'supplier') return '/supplier-portal';
+    if (role === 'employee' || role === 'cashier') return '/employee-portal';
+
+    return '/customer-dashboard';
+  };
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate(getSignedInRoute(user), { replace: true });
+    }
+  }, [authLoading, navigate, user]);
+
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      const hasOAuthCallback = window.location.hash.includes('access_token=');
+
+      if (!hasOAuthCallback) {
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          throw error;
+        }
+
+        let session = data?.session;
+
+        if (!session) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+
+          if (accessToken && refreshToken) {
+            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            });
+
+            if (sessionError) {
+              throw sessionError;
+            }
+
+            session = sessionData?.session;
+          }
+        }
+
+        if (session?.user) {
+          window.history.replaceState(null, '', window.location.pathname);
+          const displayName = session.user.user_metadata?.full_name || session.user.email || 'guest';
+          const signedInUser = await login(session.user.email || 'guest');
+          toast.success(`Welcome, ${displayName}.`);
+          navigate(getSignedInRoute(signedInUser), { replace: true });
+          return;
+        }
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Google callback error:', error);
+        toast.error('Google sign-in could not be completed.');
+        setIsLoading(false);
+      }
+    };
+
+    handleOAuthCallback();
+  }, [login, navigate]);
+
   const handleInputChange = (e) => {
     setLoginData({
       ...loginData,
@@ -36,17 +142,42 @@ const CustomerLogin = () => {
     });
   };
 
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsLoading(true);
+      const redirectTo = `${window.location.origin}/auth/callback`;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          queryParams: {
+            prompt: 'select_account'
+          }
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      toast.error('Unable to connect with Google right now.');
+      setIsLoading(false);
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      // Simplified demo login - just use the email/phone as the login identifier
+      // Simplified login - just use the email/phone as the login identifier
       const loginIdentifier = loginMethod === 'email' ? loginData.email : loginData.phone;
       
       // Demo mode - just need any input
       if (!loginIdentifier) {
-        toast.info('Hint: Try "customer" for customer access', {
+        toast.info('Enter your email or phone number to sign in.', {
           position: "top-right",
           autoClose: 5000
         });
@@ -55,18 +186,18 @@ const CustomerLogin = () => {
       }
 
       // Use the simplified login function
-      await login(loginIdentifier);
+      const signedInUser = await login(loginIdentifier);
       
-      toast.success('🎉 Welcome to the demo!', {
+      toast.success('🎉 Welcome back!', {
         position: "top-right",
         autoClose: 2000
       });
       
-      navigate('/customer-dashboard');
+      navigate(getSignedInRoute(signedInUser), { replace: true });
       
     } catch (error) {
-      console.info('Demo login hint:', error);
-      toast.info('Try these demo logins:\n• customer\n• manager\n• staff\n• supplier', {
+      console.info('Login hint:', error);
+      toast.info('Use your account email or phone number to sign in.', {
         position: "top-center",
         autoClose: 5000
       });
@@ -78,28 +209,28 @@ const CustomerLogin = () => {
   const features = [
     {
       icon: FiShoppingBag,
-      title: 'Shop Online',
-      description: 'Browse and purchase from our wide selection of products'
+      title: 'Fast access',
+      description: 'Jump straight into the space that fits your role'
     },
     {
       icon: FiStar,
-      title: 'Loyalty Rewards',
-      description: 'Earn points and unlock exclusive member benefits'
+      title: 'Smart updates',
+      description: 'See useful actions and notifications right away'
     },
     {
       icon: FiTruck,
-      title: 'Fast Delivery',
-      description: 'Get your orders delivered quickly and safely'
+      title: 'Connected flow',
+      description: 'Keep shopping, stock, and operations in sync'
     },
     {
       icon: FiShield,
-      title: 'Secure Payments',
-      description: 'Your payment information is always protected'
+      title: 'Secure access',
+      description: 'Your sign-in stays safe and simple'
     }
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex">
+    <div className={`min-h-screen flex ${palette.shell}`}>
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -216,7 +347,7 @@ const CustomerLogin = () => {
         `
       }} />
       {/* Left Side - Features */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 p-12 flex-col justify-center relative overflow-hidden">
+      <div className={`hidden lg:flex lg:w-1/2 p-12 flex-col justify-center relative overflow-hidden ${palette.leftPanel}`}>
         {/* Background decoration */}
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="absolute top-10 left-10 w-32 h-32 bg-white/10 rounded-full blur-xl animate-float"></div>
@@ -230,12 +361,12 @@ const CustomerLogin = () => {
             <h1 className="text-5xl font-bold text-white mb-4 transform hover:scale-105 transition-all duration-300">
               Welcome to{' '}
               <span className="bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent animate-pulse-custom">
-                FareDeal
+                Supermartkera
               </span>
             </h1>
             <p className="text-xl text-blue-100 leading-relaxed animate-fadeInUp" style={{animationDelay: '0.3s'}}>
-              Your premium shopping experience awaits. Login to access exclusive deals, 
-              track your orders, and manage your loyalty rewards.
+              Your Supermartkera workspace awaits. Sign in to access the right tools,
+              move faster, and keep your day beautifully organized.
             </p>
           </div>
 
@@ -265,22 +396,52 @@ const CustomerLogin = () => {
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8 animate-fadeInUp">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-pulse-custom">
-              FareDeal
+              Supermartkera
             </h1>
-            <p className="text-gray-600 mt-2">Customer Portal</p>
+            <p className={`mt-2 ${palette.muted}`}>Secure sign in</p>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20 transform hover:scale-105 transition-all duration-500 animate-fadeInUp">
+          <div className={`backdrop-blur-sm rounded-2xl shadow-xl p-8 border transform hover:scale-105 transition-all duration-500 animate-fadeInUp ${palette.rightCard} ${palette.themeBorder}`}>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] transition ${palette.themeButton}`}
+              >
+                {theme === 'dark' ? <FiSun className="h-3.5 w-3.5" /> : <FiMoon className="h-3.5 w-3.5" />}
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </button>
+            </div>
+
             <div className="text-center mb-8">
               <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce-custom">
                 <FiUser className="h-8 w-8 text-white animate-pulse" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 transform hover:scale-105 transition-all duration-300">Welcome Back!</h2>
-              <p className="text-gray-600 mt-2 animate-fadeInUp" style={{animationDelay: '0.2s'}}>Sign in to your customer account</p>
+              <h2 className={`text-2xl font-bold transform hover:scale-105 transition-all duration-300 ${theme === 'dark' ? 'text-slate-900' : 'text-slate-900'}`}>Welcome Back!</h2>
+              <p className={`mt-2 animate-fadeInUp ${palette.muted}`} style={{animationDelay: '0.2s'}}>Sign in to continue to your workspace</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className={`mb-6 flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 font-medium shadow-sm transition-all duration-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70 ${theme === 'dark' ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}
+            >
+              <SiGoogle className="h-5 w-5 text-red-500" />
+              {isLoading ? 'Connecting to Google...' : 'Continue with Google'}
+            </button>
+
+            <div className="relative mb-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className={`w-full border-t ${palette.themeBorder}`} />
+              </div>
+              <div className={`relative flex justify-center text-xs uppercase tracking-[0.35em] ${palette.muted}`}>
+                <span className={theme === 'dark' ? 'bg-white px-3' : 'bg-slate-50 px-3'}>or use email</span>
+              </div>
             </div>
 
             {/* Login Method Toggle */}
-            <div className="flex bg-gray-100 rounded-lg p-1 mb-6 animate-fadeInUp" style={{animationDelay: '0.3s'}}>
+            <div className={`flex rounded-lg p-1 mb-6 animate-fadeInUp ${theme === 'dark' ? 'bg-slate-100' : 'bg-slate-100'}`} style={{animationDelay: '0.3s'}}>
               <button
                 type="button"
                 onClick={() => setLoginMethod('email')}
@@ -326,7 +487,7 @@ const CustomerLogin = () => {
                     value={loginData[loginMethod]}
                     onChange={handleInputChange}
                     required
-                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 transform hover:scale-105 focus:scale-105"
+                    className={`block w-full pl-10 pr-3 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 transform hover:scale-105 focus:scale-105 ${palette.input}`}
                     placeholder={loginMethod === 'email' ? 'Enter your email' : 'Enter your phone number'}
                   />
                 </div>
@@ -346,7 +507,7 @@ const CustomerLogin = () => {
                     value={loginData.password}
                     onChange={handleInputChange}
                     required
-                    className="block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 transform hover:scale-105 focus:scale-105"
+                    className={`block w-full pl-10 pr-12 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 transform hover:scale-105 focus:scale-105 ${palette.input}`}
                     placeholder="Enter your password"
                   />
                   <button
@@ -369,7 +530,7 @@ const CustomerLogin = () => {
                     type="checkbox"
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transform hover:scale-110 transition-all duration-300"
                   />
-                  <span className="ml-2 text-sm text-gray-600">Remember me</span>
+                  <span className={`ml-2 text-sm ${palette.muted}`}>Remember me</span>
                 </label>
                 <button
                   type="button"
@@ -382,7 +543,7 @@ const CustomerLogin = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed animate-fadeInUp animate-shimmer"
+                className={`w-full py-3 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed animate-fadeInUp animate-shimmer ${palette.button}`}
                 style={{animationDelay: '0.7s'}}
               >
                 {isLoading ? (
@@ -393,14 +554,14 @@ const CustomerLogin = () => {
                 ) : (
                   <span className="flex items-center justify-center">
                     <span className="animate-bounce-custom">🚀</span>
-                    <span className="ml-2">Sign In to Customer Portal</span>
+                    <span className="ml-2">Sign in to continue</span>
                   </span>
                 )}
               </button>
             </form>
 
             <div className="mt-6 text-center animate-fadeInUp" style={{animationDelay: '0.8s'}}>
-              <p className="text-sm text-gray-600">
+              <p className={`text-sm ${palette.muted}`}>
                 Don't have an account?{' '}
                 <button className="text-blue-600 hover:text-blue-500 font-medium transform hover:scale-105 transition-all duration-300 animate-wiggle">
                   Contact us to register
@@ -408,21 +569,21 @@ const CustomerLogin = () => {
               </p>
             </div>
 
-            <div className="mt-6 pt-6 border-t border-gray-200 animate-fadeInUp" style={{animationDelay: '0.9s'}}>
+            <div className={`mt-6 pt-6 border-t animate-fadeInUp ${palette.themeBorder}`} style={{animationDelay: '0.9s'}}>
               <div className="flex items-center justify-center space-x-4">
-                <button
-                  onClick={() => navigate('/')}
-                  className="text-sm text-gray-600 hover:text-gray-900 flex items-center transform hover:scale-105 transition-all duration-300"
+              <button
+                  onClick={() => navigate('/customer-dashboard')}
+                  className={`text-sm flex items-center transform hover:scale-105 transition-all duration-300 ${palette.muted}`}
                 >
                   <FiHeart className="h-4 w-4 mr-1 animate-pulse" />
-                  Back to Store
+                  Back to home
                 </button>
-                <span className="text-gray-300 animate-pulse">|</span>
+                <span className={theme === 'dark' ? 'text-gray-300 animate-pulse' : 'text-gray-400 animate-pulse'}>|</span>
                 <button
-                  onClick={() => navigate('/admin')}
-                  className="text-sm text-gray-600 hover:text-gray-900 transform hover:scale-105 transition-all duration-300"
+                  onClick={() => navigate('/admin-login')}
+                  className={`text-sm transform hover:scale-105 transition-all duration-300 ${palette.muted}`}
                 >
-                  Manager Login
+                  Business setup
                 </button>
               </div>
             </div>

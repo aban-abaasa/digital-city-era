@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AppProvider } from '@/contexts/AppContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import AdminProtectedRoute from '@/components/AdminProtectedRoute';
 import ClockSkewNotification from '@/components/ClockSkewNotification';
@@ -10,16 +11,17 @@ import ClockSkewNotification from '@/components/ClockSkewNotification';
 // Pages and Components
 import AdminPortal from '@/pages/AdminPortal';
 import AdminProfile from '@/pages/AdminProfile';
-import AdminAuth from '@/pages/AdminAuth';
-import ManagerAuth from '@/pages/ManagerAuth';
-import CashierAuth from '@/pages/CashierAuth';
+import CustomerLogin from '@/pages/CustomerLogin';
 import EmployeeAuth from '@/pages/EmployeeAuth';
-import SupplierAuth from '@/pages/SupplierAuth';
+import UnifiedAuth from '@/pages/UnifiedAuth';
 import ManagerPortal from '@/pages/ManagerPortal';
 import CashierPortal from '@/pages/CushierPortal';
 import EmployeePortal from '@/pages/cashier portal';
 import SupplierPortal from '@/pages/SupplierPortal';
-import PortalLanding from '@/pages/PortalLanding';
+import SupplierAuth from '@/pages/SupplierAuth';
+import SupermartkeraLanding from '@/pages/SupermartkeraLanding';
+import AdminAuth from '@/pages/AdminAuth';
+import AuthCallback from '@/pages/AuthCallback';
 import PaymentDashboard from '@/components/PaymentDashboard';
 import Products from '@/pages/Products';
 import Sales from '@/pages/Sales';
@@ -42,7 +44,7 @@ import 'react-toastify/dist/ReactToastify.css';
 // ============================================================
 (() => {
   // This runs BEFORE anything else in the app
-  localStorage.setItem('current_app', 'digital-city-era');
+  localStorage.setItem('current_app', 'supermartkera');
   localStorage.setItem('app_load_time', Date.now().toString());
   
   // Clear any Farm Agent session data that might cause redirect
@@ -50,15 +52,14 @@ import 'react-toastify/dist/ReactToastify.css';
   localStorage.removeItem('farm_agent_user');
   sessionStorage.removeItem('farm_agent_session');
   
-  console.log('✅ [APP] Digital City Era context set. Farm Agent redirect prevention enabled.');
+  console.log('✅ [APP] Supermartkera context set. Farm Agent redirect prevention enabled.');
   
   // ============================================================
   // CRITICAL: Handle OAuth callback BEFORE React Router loses the hash
   // ============================================================
   if (window.location.hash.includes('access_token=')) {
     console.log('🔑 [APP] OAuth token detected in URL hash!');
-    const currentPortal = localStorage.getItem('current_portal') || 'cashier';
-    const targetPath = `/${currentPortal}-auth`;
+    const targetPath = '/auth/callback';
     
     // If we're at root path, redirect to auth page while PRESERVING the hash
     if (window.location.pathname === '/' || window.location.pathname === '') {
@@ -82,7 +83,7 @@ function App() {
     return hash === '#admin' || hash === '#/admin' || pathname.includes('/admin');
   };
 
-  // CRITICAL: Monitor for any redirect attempts away from Digital City Era
+  // CRITICAL: Monitor for any redirect attempts away from Supermartkera
   useEffect(() => {
     const monitorRedirects = () => {
       const currentUrl = window.location.href.toLowerCase();
@@ -90,12 +91,11 @@ function App() {
       // If we somehow ended up on Farm Agent specifically, redirect back
       if (currentUrl.includes('farm-agent.vercel.app')) {
         console.warn('🚨 ALERT: Detected redirect to Farm Agent!', currentUrl);
-        console.log('🔄 Redirecting back to Digital City Era...');
-        
-        const portal = localStorage.getItem('current_portal') || 'manager';
+        console.log('🔄 Redirecting back to Supermartkera...');
+
         const protocol = window.location.protocol;
         const host = window.location.host;
-        window.location.href = `${protocol}//${host}/${portal}-auth`;
+        window.location.href = `${protocol}//${host}/login`;
       }
     };
     
@@ -143,50 +143,50 @@ function App() {
 
   // Check for OAuth callback tokens in URL hash
   const hasOAuthToken = window.location.hash.includes('access_token=');
-  const currentPortal = localStorage.getItem('current_portal');
 
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <AppProvider>
-          <ClockSkewNotification />
-          <div className={`app-container ${isAdmin ? 'admin-mode' : 'standard-mode'}`}>
-            <Routes>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppProvider>
+            <ClockSkewNotification />
+            <div className={`app-container ${isAdmin ? 'admin-mode' : 'standard-mode'}`}>
+              <Routes>
               {/* Main landing with portal selection - but check for OAuth callback first */}
               <Route 
                 path="/" 
                 element={
                   // If OAuth token in hash, redirect to the appropriate auth page
-                  hasOAuthToken && currentPortal
-                    ? <Navigate to={`/${currentPortal}-auth`} replace />
+                    hasOAuthToken
+                    ? <Navigate to="/auth/callback" replace />
                     : window.location.hash === '#admin' || window.location.hash === '#/admin' 
                       ? <Navigate to="/admin-login" replace /> 
-                      : <Navigate to="/portal-selection" replace />
+                      : <SupermartkeraLanding />
                 } 
               />
+
+              <Route path="/login" element={<CustomerLogin />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/customer-login" element={<Navigate to="/login" replace />} />
+              <Route path="/dashboard" element={<Navigate to="/customer-dashboard" replace />} />
               
               {/* Admin authentication routes - always accessible */}
-              <Route path="/admin-login" element={<AdminAuth />} />
+              <Route path="/admin-login" element={<UnifiedAuth />} />
               <Route path="/admin-auth" element={<AdminAuth />} />
-              <Route path="/admin-signup" element={<AdminAuth />} />
+              <Route path="/admin-setup" element={<AdminAuth />} />
+              <Route path="/admin-signup" element={<UnifiedAuth />} />
               <Route path="/admin" element={<Navigate to="/admin-login" replace />} />
               
-              {/* Manager authentication routes */}
-              <Route path="/manager-login" element={<ManagerAuth />} />
-              <Route path="/manager-auth" element={<ManagerAuth />} />
-              <Route path="/manager-signup" element={<ManagerAuth />} />
-              
-              {/* Cashier authentication routes */}
-              <Route path="/cashier-login" element={<CashierAuth />} />
-              <Route path="/cashier-auth" element={<CashierAuth />} />
-              <Route path="/cashier-signup" element={<CashierAuth />} />
-              
-              {/* Employee authentication routes */}
+              {/* Shared authentication routes */}
+              <Route path="/manager-login" element={<UnifiedAuth />} />
+              <Route path="/manager-auth" element={<UnifiedAuth />} />
+              <Route path="/manager-signup" element={<UnifiedAuth />} />
+              <Route path="/cashier-login" element={<UnifiedAuth />} />
+              <Route path="/cashier-auth" element={<UnifiedAuth />} />
+              <Route path="/cashier-signup" element={<UnifiedAuth />} />
               <Route path="/employee-login" element={<EmployeeAuth />} />
               <Route path="/employee-auth" element={<EmployeeAuth />} />
               <Route path="/employee-signup" element={<EmployeeAuth />} />
-              
-              {/* Supplier authentication routes */}
               <Route path="/supplier-login" element={<SupplierAuth />} />
               <Route path="/supplier-auth" element={<SupplierAuth />} />
               <Route path="/supplier-signup" element={<SupplierAuth />} />
@@ -225,10 +225,7 @@ function App() {
                 } 
               />
               
-              {/* Direct access to all portals */}
-              <Route path="/portal-selection" element={<PortalLanding />} />
-              
-              {/* Main portals - directly accessible */}
+              {/* Main role pages - directly accessible */}
               <Route path="/manager-portal" element={<ManagerPortal />} />
               <Route path="/manager" element={<ManagerPortal />} />
               
@@ -242,6 +239,7 @@ function App() {
               <Route path="/supplier" element={<SupplierPortal />} />
               
               <Route path="/customer-portal" element={<CustomerDashboard />} />
+              <Route path="/customer" element={<CustomerDashboard />} />
               <Route path="/customer-dashboard" element={<CustomerDashboard />} />
               
               {/* Operational features - accessible to all */}
@@ -264,25 +262,26 @@ function App() {
                 element={
                   isAdmin 
                     ? <Navigate to="/admin-portal" replace />
-                    : <Navigate to="/portal-selection" replace />
+                    : <Navigate to="/" replace />
                 } 
               />
-            </Routes>
-            
-            <ToastContainer
-              position="top-right"
-              autoClose={3000}
-              hideProgressBar={false}
-              newestOnTop={false}
-              closeOnClick
-              rtl={false}
-              pauseOnFocusLoss
-              draggable
-              pauseOnHover
-            />
-          </div>
-        </AppProvider>
-      </AuthProvider>
+              </Routes>
+              
+              <ToastContainer
+                position="top-right"
+                autoClose={3000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+              />
+            </div>
+          </AppProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

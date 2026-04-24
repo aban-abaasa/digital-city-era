@@ -1,4 +1,56 @@
 // Mock Supabase client for frontend-only operation
+const createMockQuery = (kind, payload = null) => {
+  const buildResult = () => {
+    switch (kind) {
+      case 'select':
+        return { data: [], error: null, count: 0 };
+      case 'insert':
+        return {
+          data: Array.isArray(payload) ? payload : payload ? [payload] : [],
+          error: null
+        };
+      case 'update':
+        return {
+          data: Array.isArray(payload) ? payload : payload ? [payload] : [],
+          error: null
+        };
+      case 'delete':
+        return { data: [], error: null };
+      default:
+        return { data: null, error: null };
+    }
+  };
+
+  const builder = {
+    select: () => builder,
+    eq: () => builder,
+    neq: () => builder,
+    gt: () => builder,
+    lt: () => builder,
+    gte: () => builder,
+    lte: () => builder,
+    like: () => builder,
+    ilike: () => builder,
+    in: () => builder,
+    order: () => builder,
+    limit: () => builder,
+    range: () => builder,
+    single: async () => {
+      const result = buildResult();
+      const singleData = Array.isArray(result.data) ? result.data[0] || null : result.data;
+      return { data: singleData, error: null };
+    },
+    maybeSingle: async () => {
+      const result = buildResult();
+      const singleData = Array.isArray(result.data) ? result.data[0] || null : result.data;
+      return { data: singleData, error: null };
+    },
+    then: (resolve, reject) => Promise.resolve(buildResult()).then(resolve, reject)
+  };
+
+  return builder;
+};
+
 export const supabase = {
   auth: {
     getUser: () => Promise.resolve({ data: { user: { id: 1, email: 'demo@example.com' } } }),
@@ -17,38 +69,10 @@ export const supabase = {
     })
   },
   from: (table) => ({
-    select: (columns = '*') => ({
-      eq: () => Promise.resolve({ data: [], error: null }),
-      neq: () => Promise.resolve({ data: [], error: null }),
-      gt: () => Promise.resolve({ data: [], error: null }),
-      lt: () => Promise.resolve({ data: [], error: null }),
-      gte: () => Promise.resolve({ data: [], error: null }),
-      lte: () => Promise.resolve({ data: [], error: null }),
-      like: () => Promise.resolve({ data: [], error: null }),
-      ilike: () => Promise.resolve({ data: [], error: null }),
-      in: () => Promise.resolve({ data: [], error: null }),
-      order: () => Promise.resolve({ data: [], error: null }),
-      limit: () => Promise.resolve({ data: [], error: null }),
-      range: () => Promise.resolve({ data: [], error: null }),
-      single: () => Promise.resolve({ data: null, error: null }),
-      then: () => Promise.resolve({ data: [], error: null })
-    }),
-    insert: (data) => ({
-      select: () => Promise.resolve({ data: [data], error: null }),
-      single: () => Promise.resolve({ data, error: null })
-    }),
-    update: (data) => ({
-      eq: () => ({
-        select: () => Promise.resolve({ data: [data], error: null }),
-        single: () => Promise.resolve({ data, error: null })
-      })
-    }),
-    delete: () => ({
-      eq: () => ({
-        select: () => Promise.resolve({ data: [], error: null }),
-        single: () => Promise.resolve({ data: null, error: null })
-      })
-    })
+    select: () => createMockQuery('select'),
+    insert: (data) => createMockQuery('insert', data),
+    update: (data) => createMockQuery('update', data),
+    delete: () => createMockQuery('delete')
   }),
   removeChannel: () => {},
   channel: () => ({

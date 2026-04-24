@@ -1,10 +1,10 @@
-# Digital City Era
+# Supermartkera
 
-A comprehensive digital supermarket platform designed to streamline retail operations with multi-role access and real-time management.
+A creative digital supermarket platform designed to streamline retail operations with multi-role access, fast Google sign-in, and real-time management.
 
 ## What It Does
 
-Digital City Era is a full-stack supermarket management system that connects all key stakeholders:
+Supermartkera is a full-stack supermarket management system that connects all key stakeholders:
 
 - **Admins** - Manage users, system configuration, and generate reports
 - **Managers** - Oversee branch operations, sales, and inventory
@@ -28,7 +28,7 @@ React frontend | Node.js backend | PostgreSQL database | Google OAuth
 
 ## Getting Started
 
-1. Clone: `git clone https://github.com/aban-abaasa/digital-city-era..git`
+1. Clone the repository and install dependencies locally.
 2. Install: `npm install`
 3. Configure `.env` with database and OAuth credentials
 4. Run migrations: `npm run db:migrate`

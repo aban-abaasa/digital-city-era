@@ -74,7 +74,7 @@ const SupplierAuth = () => {
   // =============================================
   useEffect(() => {
     // CRITICAL: Set app context IMMEDIATELY to prevent Farm Agent redirect
-    localStorage.setItem('current_app', 'digital-city-era');
+    localStorage.setItem('current_app', 'supermartkera');
     localStorage.setItem('current_portal', 'supplier');
     
     // Clear any Farm Agent data that might cause redirect
@@ -417,7 +417,7 @@ const SupplierAuth = () => {
         <div className="auth-box">
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
             <div style={{ fontSize: '48px', marginBottom: '10px' }}>👋</div>
-            <h1 className="auth-title">Welcome to FareDeal!</h1>
+            <h1 className="auth-title">Welcome to Supermartkera!</h1>
             <p className="auth-subtitle">Let's set up your supplier profile</p>
             <p style={{ color: '#999', fontSize: '14px', marginTop: '10px' }}>
               Complete your profile to start managing orders and payments

@@ -56,41 +56,7 @@ export const orderService = {
   getOrder: async (id) => {
     try {
       const order = await apiService.getById('orders', id, {
-        select: `
-          *,
-          customers (
-            id,
-            full_name,
-            phone,
-            email
-          ),
-          order_items (
-            id,
-            product_id,
-            quantity,
-            unit_price,
-            total_price,
-            products (
-              id,
-              name,
-              sku
-            )
-          ),
-          order_payments (
-            id,
-            payment_method,
-            amount,
-            status,
-            transaction_id,
-            payment_date
-          ),
-          order_status_history (
-            id,
-            status,
-            changed_at,
-            notes
-          )
-        `
+        select: '*,customers(id,full_name,phone,email),order_items(id,product_id,quantity,unit_price,total_price,products(id,name,sku)),order_payments(id,payment_method,amount,status,transaction_id,payment_date),order_status_history(id,status,changed_at,notes)'
       });
 
       return order;
@@ -148,32 +114,15 @@ export const orderService = {
   // Get customer orders
   getCustomerOrders: async (customerId) => {
     try {
+      // Use simpler select to avoid query builder issues
       const orders = await apiService.get('orders', {
         filters: { customer_id: customerId },
-        select: `
-          *,
-          order_items (
-            id,
-            product_id,
-            quantity,
-            unit_price,
-            total_price,
-            products (
-              id,
-              name,
-              sku,
-              product_images (
-                image_url,
-                is_primary
-              )
-            )
-          )
-        `,
         orderBy: { column: 'created_at', ascending: false }
       });
 
       return orders.data || [];
     } catch (error) {
+      console.error('getCustomerOrders error:', error);
       throw error;
     }
   },
@@ -224,14 +173,7 @@ export const orderService = {
     try {
       const order = await apiService.get('orders', {
         filters: { tracking_number: trackingNumber },
-        select: `
-          *,
-          order_status_history (
-            status,
-            changed_at,
-            notes
-          )
-        `,
+        select: '*,order_status_history(status,changed_at,notes)',
         limit: 1
       });
 

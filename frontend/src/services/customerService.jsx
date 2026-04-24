@@ -126,22 +126,7 @@ export const customerService = {
       // Get customer loyalty membership with program details
       const membership = await apiService.get('customer_loyalty_memberships', {
         filters: { customer_id: customerId },
-        select: `
-          *,
-          loyalty_programs (
-            id,
-            name,
-            points_per_ugx,
-            welcome_bonus_points
-          ),
-          loyalty_tiers (
-            id,
-            name,
-            min_points,
-            benefits,
-            multiplier
-          )
-        `,
+        select: '*,loyalty_programs(id,name,points_per_ugx,welcome_bonus_points),loyalty_tiers(id,name,min_points,benefits,multiplier)',
         limit: 1
       });
 
@@ -198,20 +183,7 @@ export const customerService = {
     try {
       const orders = await apiService.get('orders', {
         filters: { customer_id: customerId },
-        select: `
-          *,
-          order_items (
-            id,
-            product_id,
-            quantity,
-            unit_price,
-            products (
-              id,
-              name,
-              sku
-            )
-          )
-        `,
+        select: '*,order_items(id,product_id,quantity,unit_price,products(id,name,sku))',
         orderBy: { column: 'created_at', ascending: false }
       });
 

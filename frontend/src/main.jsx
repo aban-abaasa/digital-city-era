@@ -11,7 +11,7 @@ import { initClockDiagnostic } from './utils/clockDiagnostic.js'
 // CRITICAL: Clear browser cache and prevent Farm Agent redirect
 // ============================================================
 (() => {
-  console.log('🔧 [MAIN] Initializing Digital City Era anti-redirect protection...');
+  console.log('🔧 [MAIN] Initializing Supermartkera anti-redirect protection...');
   
   // AGGRESSIVE: Delete Farm Agent specific localStorage keys only
   console.log('🧹 Clearing Farm Agent related storage...');
@@ -50,18 +50,17 @@ import { initClockDiagnostic } from './utils/clockDiagnostic.js'
     console.error('🚨 CRITICAL: You are on the WRONG DOMAIN!', currentUrl);
     console.error('🔄 Forcing redirect to:', correctBase);
     
-    const portal = localStorage.getItem('current_portal') || 'manager';
-    window.location.href = `${correctBase}/${portal}-auth`;
+    window.location.href = `${correctBase}/customer-login`;
     throw new Error('Preventing redirect to wrong domain');
   }
   
-  // Set Digital City Era context
-  localStorage.setItem('current_app', 'digital-city-era');
+  // Set Supermartkera context
+  localStorage.setItem('current_app', 'supermartkera');
   localStorage.setItem('correct_base_url', correctBase);
   localStorage.setItem('app_initialized', Date.now().toString());
   
   // Verify we're on the right app
-  console.log('✅ [MAIN] Digital City Era initialization complete');
+  console.log('✅ [MAIN] Supermartkera initialization complete');
   console.log('✅ [MAIN] Domain verified:', correctBase);
 })();
 

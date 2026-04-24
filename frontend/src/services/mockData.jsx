@@ -172,10 +172,11 @@ export const mockService = {
   // Auth
   login: (email) => {
     // Super simple demo login - just match the role name
+    const fallbackUser = mockData.users.find(u => u.role === 'customer') || mockData.users[0];
     const user = mockData.users.find(u => 
       u.email.toLowerCase() === email.toLowerCase() || 
       u.role.toLowerCase() === email.toLowerCase()
-    ) || mockData.users[0]; // Default to manager if no match
+    ) || fallbackUser;
 
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     return Promise.resolve({ success: true, user });

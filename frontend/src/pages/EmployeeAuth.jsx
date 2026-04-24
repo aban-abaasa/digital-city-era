@@ -81,7 +81,7 @@ const EmployeeAuth = () => {
   useEffect(() => {
     const initAuth = async () => {
       // CRITICAL: Set app context IMMEDIATELY to prevent Farm Agent redirect
-      localStorage.setItem('current_app', 'digital-city-era');
+      localStorage.setItem('current_app', 'supermartkera');
       localStorage.setItem('current_portal', 'employee');
       
       // Clear any Farm Agent data that might cause redirect
@@ -1258,7 +1258,7 @@ const EmployeeAuth = () => {
                 <FiUsers className="w-10 h-10" />
               </div>
               <div>
-                <h1 className="text-4xl font-bold">FAREDEAL</h1>
+                <h1 className="text-4xl font-bold">Supermartkera</h1>
                 <p className="text-indigo-100">Employee Portal</p>
               </div>
             </div>
@@ -1301,7 +1301,7 @@ const EmployeeAuth = () => {
               <FiUsers className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">FAREDEAL</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Supermartkera</h2>
               <p className="text-sm text-gray-600">Employee Portal</p>
             </div>
           </div>
@@ -1356,7 +1356,7 @@ const EmployeeAuth = () => {
             <p className="text-gray-600">
               {isLogin
                 ? 'Access your employee dashboard'
-                : 'Apply to become a FAREDEAL employee'}
+                : 'Apply to become a Supermartkera employee'}
             </p>
           </div>
 
@@ -1487,7 +1487,7 @@ const EmployeeAuth = () => {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  placeholder="employee@faredeal.ug"
+                  placeholder="employee@supermartkera.ug"
                   className={`w-full pl-12 pr-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 transition-all ${
                     errors.email
                       ? 'border-red-300 focus:border-red-500 focus:ring-red-200'

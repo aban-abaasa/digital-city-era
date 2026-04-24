@@ -28,37 +28,7 @@ export const productService = {
 
       const options = {
         filters: queryFilters,
-        select: `
-          id,
-          name,
-          description,
-          sku,
-          selling_price,
-          cost_price,
-          category_id,
-          brand,
-          weight,
-          dimensions,
-          is_active,
-          created_at,
-          categories (
-            id,
-            name,
-            description
-          ),
-          product_images (
-            id,
-            image_url,
-            alt_text,
-            is_primary,
-            sort_order
-          ),
-          inventory (
-            current_stock,
-            reserved_stock,
-            available_stock
-          )
-        `,
+        select: 'id,name,description,sku,selling_price,cost_price,category_id,brand,weight,dimensions,is_active,created_at,categories(id,name,description),product_images(id,image_url,alt_text,is_primary,sort_order),inventory(current_stock,reserved_stock,available_stock)',
         page: filters.page || 1,
         limit: filters.limit || 20,
         orderBy: { column: 'created_at', ascending: false }
@@ -84,37 +54,7 @@ export const productService = {
   getProduct: async (id) => {
     try {
       const product = await apiService.getById('products', id, {
-        select: `
-          *,
-          categories (
-            id,
-            name,
-            description,
-            parent_id
-          ),
-          product_images (
-            id,
-            image_url,
-            alt_text,
-            is_primary,
-            sort_order
-          ),
-          product_variants (
-            id,
-            variant_name,
-            variant_value,
-            price_adjustment,
-            stock_quantity,
-            is_active
-          ),
-          inventory (
-            current_stock,
-            reserved_stock,
-            available_stock,
-            reorder_level,
-            max_stock_level
-          )
-        `
+        select: '*,categories(id,name,description,parent_id),product_images(id,image_url,alt_text,is_primary,sort_order),product_variants(id,variant_name,variant_value,price_adjustment,stock_quantity,is_active),inventory(current_stock,reserved_stock,available_stock,reorder_level,max_stock_level)'
       });
 
       if (!product) {
@@ -150,29 +90,7 @@ export const productService = {
           name_like: query,
           is_active: true
         },
-        select: `
-          id,
-          name,
-          description,
-          sku,
-          selling_price,
-          category_id,
-          brand,
-          categories (
-            id,
-            name
-          ),
-          product_images (
-            id,
-            image_url,
-            alt_text,
-            is_primary
-          ),
-          inventory (
-            current_stock,
-            available_stock
-          )
-        `,
+        select: 'id,name,description,sku,selling_price,category_id,brand,categories(id,name),product_images(id,image_url,alt_text,is_primary),inventory(current_stock,available_stock)',
         limit: 50,
         orderBy: { column: 'name', ascending: true }
       });
@@ -191,31 +109,7 @@ export const productService = {
           is_active: true,
           is_featured: true
         },
-        select: `
-          id,
-          name,
-          description,
-          sku,
-          selling_price,
-          cost_price,
-          category_id,
-          brand,
-          is_featured,
-          categories (
-            id,
-            name
-          ),
-          product_images (
-            id,
-            image_url,
-            alt_text,
-            is_primary
-          ),
-          inventory (
-            current_stock,
-            available_stock
-          )
-        `,
+        select: 'id,name,description,sku,selling_price,cost_price,category_id,brand,is_featured,categories(id,name),product_images(id,image_url,alt_text,is_primary),inventory(current_stock,available_stock)',
         limit: limit,
         orderBy: { column: 'created_at', ascending: false }
       });
@@ -234,29 +128,7 @@ export const productService = {
           category_id: categoryId,
           is_active: true
         },
-        select: `
-          id,
-          name,
-          description,
-          sku,
-          selling_price,
-          category_id,
-          brand,
-          categories (
-            id,
-            name
-          ),
-          product_images (
-            id,
-            image_url,
-            alt_text,
-            is_primary
-          ),
-          inventory (
-            current_stock,
-            available_stock
-          )
-        `,
+        select: 'id,name,description,sku,selling_price,category_id,brand,categories(id,name),product_images(id,image_url,alt_text,is_primary),inventory(current_stock,available_stock)',
         limit: limit,
         orderBy: { column: 'name', ascending: true }
       });

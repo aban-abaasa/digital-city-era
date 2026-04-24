@@ -7,6 +7,10 @@ export const apiService = {
     try {
       let query = supabase.from(table).select(options.select || '*');
       
+      if (!query) {
+        throw new Error(`Failed to initialize query for table: ${table}`);
+      }
+      
       // Apply filters
       if (options.filters) {
         Object.entries(options.filters).forEach(([key, value]) => {
@@ -36,18 +40,24 @@ export const apiService = {
         });
       }
 
-      // Apply ordering
+      // Apply ordering - validate query object before calling order
       if (options.orderBy) {
         const { column, ascending = true } = options.orderBy;
-        query = query.order(column, { ascending });
+        if (query && typeof query.order === 'function') {
+          query = query.order(column, { ascending });
+        } else {
+          console.warn(`Query object is not ready for .order() - query type: ${typeof query}`, { table, options });
+        }
       }
 
       // Apply pagination
       if (options.page && options.limit) {
         const from = (options.page - 1) * options.limit;
         const to = from + options.limit - 1;
-        query = query.range(from, to);
-      } else if (options.limit) {
+        if (query && typeof query.range === 'function') {
+          query = query.range(from, to);
+        }
+      } else if (options.limit && query && typeof query.limit === 'function') {
         query = query.limit(options.limit);
       }
 

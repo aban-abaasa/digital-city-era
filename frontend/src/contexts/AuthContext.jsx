@@ -7,7 +7,20 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const normalizeUser = (currentUser) => {
+    if (!currentUser) return null;
+
+    return {
+      ...currentUser,
+      name: currentUser.name || currentUser.full_name || 'Customer',
+      full_name: currentUser.full_name || currentUser.name || 'Customer',
+      phone: currentUser.phone || '',
+      role: currentUser.role || 'customer'
+    };
+  };
 
   useEffect(() => {
     // Check for existing user session on mount
@@ -22,7 +35,9 @@ export const AuthProvider = ({ children }) => {
           mockService.getCurrentUser(),
           timeoutPromise
         ]);
-        setUser(currentUser);
+        const normalizedUser = normalizeUser(currentUser);
+        setUser(normalizedUser);
+        setCustomer(normalizedUser);
       } catch (error) {
         console.log('No active session:', error?.message || error);
       } finally {
@@ -37,8 +52,10 @@ export const AuthProvider = ({ children }) => {
     try {
       const result = await mockService.login(identifier);
       if (result.success) {
-        setUser(result.user);
-        return result.user;
+        const normalizedUser = normalizeUser(result.user);
+        setUser(normalizedUser);
+        setCustomer(normalizedUser);
+        return normalizedUser;
       }
     } catch (error) {
       console.log('Login error:', error);
@@ -50,6 +67,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await mockService.logout();
       setUser(null);
+      setCustomer(null);
     } catch (error) {
       console.log('Logout error:', error);
     }
@@ -61,6 +79,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    customer,
     login,
     logout,
     loading,

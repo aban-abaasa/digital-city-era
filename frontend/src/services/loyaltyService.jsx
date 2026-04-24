@@ -7,31 +7,13 @@ export const loyaltyService = {
     try {
       const membership = await apiService.get('customer_loyalty_memberships', {
         filters: { customer_id: customerId },
-        select: `
-          *,
-          loyalty_programs (
-            id,
-            name,
-            points_per_ugx,
-            welcome_bonus_points,
-            status
-          ),
-          loyalty_tiers (
-            id,
-            name,
-            min_points,
-            max_points,
-            benefits,
-            multiplier,
-            tier_level
-          )
-        `,
+        select: '*,loyalty_programs(id,name,points_per_ugx,welcome_bonus_points,status),loyalty_tiers(id,name,min_points,max_points,benefits,multiplier,tier_level)',
         limit: 1
       });
 
       if (!membership.data || membership.data.length === 0) {
         // Create default membership if none exists
-        return await this.createDefaultMembership(customerId);
+        return await loyaltyService.createDefaultMembership(customerId);
       }
 
       return membership.data[0];
@@ -49,11 +31,13 @@ export const loyaltyService = {
         limit: 1
       });
 
-      if (!programs.data || programs.data.length === 0) {
-        throw new Error('No active loyalty program found');
-      }
-
-      const program = programs.data[0];
+      const program = programs.data?.[0] || {
+        id: 'default-program',
+        name: 'Standard Loyalty',
+        points_per_ugx: 0.01,
+        welcome_bonus_points: 100,
+        status: 'active'
+      };
 
       // Get bronze/basic tier (lowest tier)
       const tiers = await apiService.get('loyalty_tiers', {
@@ -62,7 +46,15 @@ export const loyaltyService = {
         limit: 1
       });
 
-      const tier = tiers.data?.[0];
+      const tier = tiers.data?.[0] || {
+        id: 'default-tier',
+        name: 'Bronze',
+        min_points: 0,
+        max_points: null,
+        benefits: ['Welcome rewards'],
+        multiplier: 1,
+        tier_level: 1
+      };
 
       // Create membership
       const membership = await apiService.post('customer_loyalty_memberships', {
@@ -115,7 +107,7 @@ export const loyaltyService = {
   addPointsForPurchase: async (customerId, orderAmount) => {
     try {
       // Get customer loyalty info
-      const loyalty = await this.getCustomerLoyalty(customerId);
+      const loyalty = await loyaltyService.getCustomerLoyalty(customerId);
       if (!loyalty || !loyalty.loyalty_programs) {
         throw new Error('Customer loyalty program not found');
       }
@@ -147,7 +139,7 @@ export const loyaltyService = {
         });
 
         // Check for tier upgrade
-        await this.checkTierUpgrade(customerId, newLifetimePoints);
+        await loyaltyService.checkTierUpgrade(customerId, newLifetimePoints);
 
         return {
           points_earned: totalPoints,
@@ -166,7 +158,7 @@ export const loyaltyService = {
   // Check and upgrade customer tier if eligible
   checkTierUpgrade: async (customerId, lifetimePoints) => {
     try {
-      const loyalty = await this.getCustomerLoyalty(customerId);
+      const loyalty = await loyaltyService.getCustomerLoyalty(customerId);
       if (!loyalty) return;
 
       // Get all tiers for the program
@@ -208,7 +200,7 @@ export const loyaltyService = {
   // Redeem loyalty points
   redeemPoints: async (customerId, points, description = 'Points redemption') => {
     try {
-      const loyalty = await this.getCustomerLoyalty(customerId);
+      const loyalty = await loyaltyService.getCustomerLoyalty(customerId);
       if (!loyalty) {
         throw new Error('Customer loyalty membership not found');
       }
@@ -245,7 +237,7 @@ export const loyaltyService = {
   // Get available rewards based on customer's points
   getAvailableRewards: async (customerId) => {
     try {
-      const loyalty = await this.getCustomerLoyalty(customerId);
+      const loyalty = await loyaltyService.getCustomerLoyalty(customerId);
       if (!loyalty) return [];
 
       // Define available rewards based on points balance
@@ -311,11 +303,11 @@ export const loyaltyService = {
   // Get loyalty program statistics
   getLoyaltyStats: async (customerId) => {
     try {
-      const loyalty = await this.getCustomerLoyalty(customerId);
+      const loyalty = await loyaltyService.getCustomerLoyalty(customerId);
       if (!loyalty) return null;
 
       // Get transaction stats
-      const transactions = await this.getPointTransactions(customerId, 100);
+      const transactions = await loyaltyService.getPointTransactions(customerId, 100);
       
       const earnedTransactions = transactions.filter(t => t.transaction_type === 'earned');
       const redeemedTransactions = transactions.filter(t => t.transaction_type === 'redemption');

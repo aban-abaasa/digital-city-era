@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: dark;
+  --app-bg: #07111f;
+  --app-fg: #f8fafc;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --app-bg: #f8fafc;
+  --app-fg: #0f172a;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--app-bg);
+  color: var(--app-fg);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
 /* Notification animations */
 @keyframes slideIn {
   from {

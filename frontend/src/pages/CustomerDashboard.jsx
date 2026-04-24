@@ -6,6 +6,8 @@ import {
   FiShoppingBag,
   FiPackage,
   FiTruck,
+  FiBriefcase,
+  FiUserPlus,
   FiStar,
   FiHeart,
   FiSettings,
@@ -26,7 +28,6 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import AnimatedCounter from '../components/AnimatedCounter';
-import DemoNavigation from '../components/DemoNavigation';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
@@ -175,6 +176,14 @@ const CustomerDashboard = () => {
     fetchData();
   }, [customer, isAuthenticated]);
 
+  // Live time updates - MUST be before early returns to maintain hook order
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Authentication check for non-demo mode
   // For demo, we'll use fallback data
   
@@ -209,19 +218,11 @@ const CustomerDashboard = () => {
     );
   }
 
-  // Live time updates
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const handleLogout = async () => {
     try {
       await logout();
       toast.success('Logged out successfully');
-      navigate('/customer');
+      navigate('/customer-login');
     } catch (error) {
       console.error('Logout error:', error);
       toast.error('Error logging out');
@@ -243,6 +244,16 @@ const CustomerDashboard = () => {
 
   const handleReferFriends = () => {
     setShowReferModal(true);
+  };
+
+  const handleCreateSupermarket = () => {
+    toast.info('Opening the admin setup flow.');
+    navigate('/admin-setup');
+  };
+
+  const handleBecomeSupplier = () => {
+    toast.info('Opening the supplier application flow.');
+    navigate('/supplier-auth');
   };
 
   const handleTrackOrder = async () => {
@@ -363,7 +374,6 @@ const CustomerDashboard = () => {
           .animate-wiggle:hover { animation: wiggle 0.5s ease-in-out; }
         `
       }} />
-      <DemoNavigation />
       {/* Header */}
       <div className="bg-white/90 backdrop-blur-sm shadow-lg border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
@@ -408,13 +418,13 @@ const CustomerDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <div className={`bg-gradient-to-r ${getMembershipColor(user.membershipLevel)} rounded-3xl p-8 text-white relative overflow-hidden`}>
+          <div className={`bg-gradient-to-r ${getMembershipColor(currentUser.membershipLevel)} rounded-3xl p-8 text-white relative overflow-hidden`}>
             <div className="absolute inset-0 bg-black/10"></div>
             <div className="relative z-10">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-3xl font-bold mb-2">
-                    Your {user.membershipLevel.charAt(0).toUpperCase() + user.membershipLevel.slice(1)} Membership
+                    Your {currentUser.membershipLevel.charAt(0).toUpperCase() + currentUser.membershipLevel.slice(1)} Membership
                   </h1>
                   <p className="text-white/90 text-lg">
                     Enjoy exclusive benefits and rewards
@@ -495,6 +505,62 @@ const CustomerDashboard = () => {
               </div>
               <FiTrendingUp className="h-8 w-8 text-purple-500" />
             </div>
+          </div>
+        </div>
+
+        {/* Primary Hub Actions */}
+        <div className="mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button
+              onClick={handleStartShopping}
+              className="group text-left bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
+                <FiShoppingBag className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Shop the Store</h3>
+              <p className="text-blue-100 text-sm mb-4">
+                Browse products, track orders, and start shopping right away.
+              </p>
+              <span className="inline-flex items-center text-sm font-semibold">
+                Start Now
+                <FiShare2 className="ml-2 h-4 w-4" />
+              </span>
+            </button>
+
+            <button
+              onClick={handleCreateSupermarket}
+              className="group text-left bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
+                <FiBriefcase className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Create Your Supermarket</h3>
+              <p className="text-emerald-100 text-sm mb-4">
+                Open the admin setup flow to create a supermarket and assign managers or cashiers.
+              </p>
+              <span className="inline-flex items-center text-sm font-semibold">
+                Admin Setup
+                <FiShare2 className="ml-2 h-4 w-4" />
+              </span>
+            </button>
+
+            <button
+              onClick={handleBecomeSupplier}
+              className="group text-left bg-gradient-to-br from-purple-600 to-fuchsia-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
+                <FiUserPlus className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Become a Supplier</h3>
+              <p className="text-fuchsia-100 text-sm mb-4">
+                Apply to available supermarkets from the supplier onboarding page.
+              </p>
+              <span className="inline-flex items-center text-sm font-semibold">
+                Open Supplier Flow
+                <FiShare2 className="ml-2 h-4 w-4" />
+              </span>
+            </button>
           </div>
         </div>
 

@@ -312,7 +312,7 @@ const Register = () => {
         });
         
         toast.success('Account created successfully! Welcome!');
-        navigate('/customer-dashboard');
+        navigate('/customer');
         
       } else if (userType === 'employee') {
         // Employee registration requires manager approval
