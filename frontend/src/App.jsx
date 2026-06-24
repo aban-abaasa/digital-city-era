@@ -34,6 +34,7 @@ import POS from '@/pages/POS';
 import CustomerDashboard from '@/pages/CustomerDashboard';
 import CustomerPayment from '@/pages/CustomerPayment';
 import CustomerDelivery from '@/pages/CustomerDelivery';
+import ICANWalletPage from '@/pages/ICANWalletPage';
 
 // Styles
 import 'react-toastify/dist/ReactToastify.css';
@@ -255,6 +256,7 @@ function App() {
               <Route path="/customer-payment" element={<CustomerPayment />} />
               <Route path="/customer-delivery" element={<CustomerDelivery />} />
               <Route path="/payment-dashboard" element={<PaymentDashboard />} />
+              <Route path="/ican-wallet" element={<ICANWalletPage />} />
               
               {/* Fallback route */}
               <Route 

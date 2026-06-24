@@ -18,6 +18,8 @@ import DigitalReceipt from '../components/DigitalReceipt';
 import orderService from '../services/orderService';
 import customerService from '../services/customerService';
 import paymentService from '../services/paymentService';
+import { supabase } from '../services/supabase';
+import { creditCashback, formatICAN, ICAN_TO_UGX } from '../services/icanWalletService';
 
 const CustomerPayment = () => {
   // Order data from cashier
@@ -432,7 +434,25 @@ const CustomerPayment = () => {
       
       setReceiptData(receipt);
       setCurrentStep('complete');
-      
+
+      // ── ICAN Cashback: credit 1% of purchase as ICAN coins ──
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const result = await creditCashback({
+            userId: authUser.id,
+            ugxPurchaseAmount: paymentData.amount,
+            orderId: transactionId,
+          });
+          toast.info(
+            `₡ Earned ${formatICAN(result.net_credited)} ICAN cashback (≈ UGX ${Math.round(result.net_credited * ICAN_TO_UGX).toLocaleString()})`,
+            { autoClose: 5000 }
+          );
+        }
+      } catch (_e) {
+        // Non-critical: cashback failure should not block the main payment flow
+      }
+
       // Enhanced success feedback
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance('Payment successful! Thank you for shopping with FAREDEAL!');
