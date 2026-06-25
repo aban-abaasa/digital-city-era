@@ -27,7 +27,8 @@ const AdminProtectedRoute = ({ children }) => {
       'http://10.70.0.31:7779',
       'http://10.70.0.31:3000',
       'https://faredeal-main.vercel.app',
-      'http://10.0.2.139'  // Android emulator
+      'https://supermartkera.vercel.app',
+      'http://10.0.2.139'
     ];
     
     // Check if current URL is from allowed domains (more flexible)
@@ -78,7 +79,8 @@ const AdminProtectedRoute = ({ children }) => {
           <p className="text-gray-700 mb-6">Admin access is only allowed from:</p>
           <div className="bg-gray-100 p-4 rounded-lg text-left mb-6">
             <p className="font-mono text-sm mb-2">• http://localhost:7779/#admin</p>
-            <p className="font-mono text-sm">• https://faredeal-main.vercel.app/#admin</p>
+            <p className="font-mono text-sm mb-2">• https://faredeal-main.vercel.app/#admin</p>
+            <p className="font-mono text-sm">• https://supermartkera.vercel.app/#admin</p>
           </div>
           <button
             onClick={() => window.location.href = '/'}
