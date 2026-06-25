@@ -92,7 +92,17 @@ const AdminPortal = () => {
   // All Registered Users State
   const [allUsers, setAllUsers] = useState([]);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('pending'); // 'pending' or 'all'
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'applications' | 'staff'
+
+  // Applications (supplier / mybodaguy)
+  const [applications, setApplications] = useState([]);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+
+  // Staff assignment
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [staffSearchResults, setStaffSearchResults] = useState([]);
+  const [staffSearchLoading, setStaffSearchLoading] = useState(false);
+  const [currentStaff, setCurrentStaff] = useState([]);
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -157,72 +167,58 @@ const AdminPortal = () => {
       }
 
       try {
-        console.log('🔍 Querying users table for auth_id:', user.id);
-        const { data: userData, error } = await supabase
+        // Try auth_id first; fall back to id (some deployments lack auth_id column)
+        let userData = null;
+        const { data: ud1, error: e1 } = await supabase
           .from('users')
-          .select('role, supermarket_id')
+          .select('id, role, supermarket_id, full_name, email, phone')
           .eq('auth_id', user.id)
           .maybeSingle();
 
-        console.log('📊 Query result:', { userData, error });
-
-        if (error) {
-          console.warn('⚠️ Error fetching user role:', error);
-          // If RLS error, try to create the user anyway
-          if (error.code === '42501' || error.message?.includes('policy')) {
-            console.log('🔓 RLS blocking read, attempting to create admin user...');
-          } else {
-            setAuthLoading(false);
-            return;
-          }
-        }
-
-        // If no user record exists, create one as admin (first-time Google OAuth)
-        if (!userData) {
-          console.log('👤 No user record found, creating admin user...');
-          const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Admin User';
-          
-          console.log('📝 Inserting new admin user:', { auth_id: user.id, email: user.email, fullName });
-          
-          const { data: newUser, error: insertError } = await supabase
+        if (!e1) {
+          userData = ud1;
+        } else {
+          console.warn('⚠️ auth_id query failed, trying id:', e1.message);
+          const { data: ud2, error: e2 } = await supabase
             .from('users')
-            .insert([{
-              auth_id: user.id,
-              email: user.email,
-              full_name: fullName,
-              phone: user.user_metadata?.phone || null,
-              role: 'admin',
-              is_active: true,
-              email_verified: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }])
-            .select()
-            .single();
-
-          console.log('📊 Insert result:', { newUser, insertError });
-
-          if (insertError) {
-            console.error('❌ Failed to create admin user:', insertError);
-            // Even if insert fails, allow access for debugging
-            console.log('🔓 Allowing admin access despite insert error for debugging');
-            setIsAdmin(true);
-            setNeedsSupermarketProfile(true);
-            setAuthLoading(false);
-            return;
-          }
-
-          console.log('✅ Admin user created:', newUser);
-          setIsAdmin(true);
-          setNeedsSupermarketProfile(true);
-          setAuthLoading(false);
-          return;
+            .select('id, role, supermarket_id, full_name, email, phone')
+            .eq('id', user.id)
+            .maybeSingle();
+          if (!e2) userData = ud2;
+          else console.warn('⚠️ id fallback also failed:', e2.message);
         }
 
-        const userIsAdmin = userData?.role === 'admin';
-        console.log('👤 User role check:', { role: userData?.role, isAdmin: userIsAdmin });
+        console.log('📊 Query result:', { userData });
+
+        // Determine admin status — three tiers:
+        // 1. users.role column exists and equals 'admin'
+        // 2. auth metadata says admin
+        // 3. user owns a supermarket (role column may be missing or stale)
+        const metaRole = user.user_metadata?.role || user.app_metadata?.role;
+        let userIsAdmin = (userData?.role === 'admin') || metaRole === 'admin';
+
+        // Always query supermarkets table — it is the source of truth for ownership
+        const { data: ownedSm } = await supabase
+          .from('supermarkets')
+          .select('id, name')
+          .eq('owner_user_id', user.id)
+          .maybeSingle();
+
+        if (ownedSm) {
+          userIsAdmin = true;
+          console.log('✅ Admin confirmed, owns supermarket:', ownedSm.id);
+          // Repair users row silently so future logins are faster
+          supabase.from('users').update({
+            role: 'admin',
+            supermarket_id: ownedSm.id,
+            updated_at: new Date().toISOString()
+          }).eq('id', user.id).then(() => {});
+          supabase.auth.updateUser({ data: { role: 'admin' } }).catch(() => {});
+        }
+
+        console.log('👤 User role check:', { role: userData?.role, isAdmin: userIsAdmin, ownedSm });
         setIsAdmin(userIsAdmin);
-        
+
         // Set current admin data
         setCurrentAdmin({
           id: userData?.id,
@@ -230,15 +226,16 @@ const AdminPortal = () => {
           full_name: userData?.full_name,
           role: userData?.role,
           phone: userData?.phone,
-          supermarket_id: userData?.supermarket_id
+          supermarket_id: userData?.supermarket_id || ownedSm?.id
         });
-        
-        // Check if admin needs supermarket profile
-        if (userIsAdmin && !userData?.supermarket_id) {
-          console.log('👤 Admin needs to complete supermarket profile');
+
+        // Only show the supermarket profile form if they have NO supermarket at all
+        const hasSupermarket = !!ownedSm || !!userData?.supermarket_id;
+        if (userIsAdmin && !hasSupermarket) {
+          console.log('👤 Admin has no supermarket yet — showing profile form');
           setNeedsSupermarketProfile(true);
         }
-        
+
         if (!userIsAdmin) {
           console.warn('⚠️ Non-admin user attempting to access AdminPortal:', userData?.role);
         }
@@ -342,7 +339,7 @@ const AdminPortal = () => {
       
       // Try using RPC helper function that bypasses RLS
       try {
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_users_admin');
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_auth_users_for_admin');
         
         if (!rpcError && rpcData) {
           // Transform to include verification status - approved = verified
@@ -398,17 +395,262 @@ const AdminPortal = () => {
       setAllUsers(usersWithStatus);
       notificationService.show(`Loaded ${usersWithStatus.length} registered users`, 'success');
       console.log(`✅ Loaded ${usersWithStatus.length} users from direct query`);
-      
+
     } catch (error) {
       console.error('Error loading all users:', error);
-      notificationService.show(
-        'Failed to load registered users. Check console for details.',
-        'error'
-      );
+      notificationService.show('Failed to load registered users. Check console for details.', 'error');
     } finally {
       setAllUsersLoading(false);
     }
   }, []);
+
+  // Load applications — merges user_applications + supplier_applications + mybodaguy applications
+  const loadApplications = useCallback(async () => {
+    try {
+      setApplicationsLoading(true);
+
+      // 1. Legacy user_applications table
+      const { data: legacyApps } = await supabase
+        .from('user_applications')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      // 2. Supplier partner applications (no join — all contact info is in the row itself)
+      const { data: supplierApps } = await supabase
+        .from('supplier_applications')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      // Normalize to the same shape the UI expects
+      const normalizedSupplier = (supplierApps || []).map(a => ({
+        id:               a.id,
+        _source:          'supplier_applications',
+        application_type: 'supplier',
+        applicant_name:   a.contact_name || a.business_name || 'Supplier',
+        applicant_email:  a.contact_email || '',
+        applicant_phone:  a.contact_phone || '',
+        business_name:    a.business_name,
+        business_address: null,
+        notes:            a.message || null,
+        supermarket_id:   a.supermarket_id,
+        supermarket_name: '',
+        supplier_user_id: a.supplier_user_id,
+        user_id:          a.supplier_user_id,
+        status:           a.status,
+        created_at:       a.created_at,
+      }));
+
+      const merged = [...(legacyApps || []), ...normalizedSupplier]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      setApplications(merged);
+    } catch (e) {
+      console.warn('loadApplications failed:', e);
+    } finally {
+      setApplicationsLoading(false);
+    }
+  }, []);
+
+  // Approve an application
+  const approveApplication = async (app) => {
+    try {
+      if (app._source === 'supplier_applications') {
+        // Supplier partner application — just mark approved in supplier_applications
+        // Suppliers are independent: no supermarket_staff entry needed
+        await supabase.from('supplier_applications').update({
+          status: 'approved'
+        }).eq('id', app.id);
+        // Also ensure their users row is active as supplier
+        if (app.supplier_user_id) {
+          await supabase.from('users').update({ role: 'supplier', is_active: true })
+            .eq('id', app.supplier_user_id);
+        }
+      } else {
+        // Legacy user_applications flow (manager, cashier, mybodaguy)
+        const smId = app.supermarket_id || currentAdmin?.supermarket_id;
+        if (app.user_id) {
+          await supabase.from('users').update({ role: app.application_type, is_active: true }).eq('id', app.user_id);
+          if (['manager', 'cashier', 'staff'].includes(app.application_type)) {
+            await supabase.from('supermarket_staff').upsert({
+              supermarket_id: smId, user_id: app.user_id,
+              role: app.application_type, status: 'active', assigned_by: currentAdmin.id
+            }, { onConflict: 'supermarket_id,user_id' });
+          }
+        }
+        await supabase.from('user_applications').update({
+          status: 'approved', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString()
+        }).eq('id', app.id);
+      }
+
+      setApplications(prev => prev.filter(a => a.id !== app.id));
+      notificationService.show(`✅ ${app.applicant_name} approved as ${app.application_type}`, 'success');
+    } catch (e) {
+      console.error('approveApplication error:', e);
+      notificationService.show('Failed to approve application', 'error');
+    }
+  };
+
+  const rejectApplication = async (appId) => {
+    const app = applications.find(a => a.id === appId);
+    if (app?._source === 'supplier_applications') {
+      await supabase.from('supplier_applications').update({ status: 'rejected' }).eq('id', appId);
+    } else {
+      await supabase.from('user_applications').update({
+        status: 'rejected', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString()
+      }).eq('id', appId);
+    }
+    setApplications(prev => prev.filter(a => a.id !== appId));
+    notificationService.show('Application rejected', 'info');
+  };
+
+  // Load all signed-up users directly from auth.users via SECURITY DEFINER RPC
+  const loadAllUsersForStaff = useCallback(async () => {
+    setStaffSearchLoading(true);
+    try {
+      // Primary: RPC that reads auth.users (all registered accounts)
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_auth_users_for_admin');
+
+      if (!rpcError && rpcData) {
+        console.log(`✅ Auth users loaded via RPC: ${rpcData.length}`);
+        setStaffSearchResults(rpcData);
+        return;
+      }
+      console.warn('RPC get_auth_users_for_admin failed, falling back:', rpcError?.message);
+
+      // Fallback: public.users table
+      const { data, error } = await supabase
+        .from('users').select('*')
+        .order('created_at', { ascending: false }).limit(500);
+      if (!error) {
+        setStaffSearchResults(data || []);
+      } else {
+        notificationService.show('Could not load users: ' + error.message, 'error');
+      }
+    } catch (e) {
+      console.error('loadAllUsersForStaff exception:', e);
+    } finally {
+      setStaffSearchLoading(false);
+    }
+  }, []);
+
+  // Filter locally — no network call needed after initial load
+  const searchUsersForStaff = (query) => {
+    setStaffSearchQuery(query);
+  };
+
+  // Assign role — blockchain-verified via assign_staff_with_blockchain RPC
+  const assignStaffRole = async (user, role) => {
+    const smId = currentAdmin.supermarket_id;
+    const adminId = currentAdmin.id;
+    const targetId = user.id; // auth.users.id from RPC result
+
+    try {
+      // Call the blockchain RPC — atomically updates role + appends immutable block
+      const { data: blockHash, error } = await supabase.rpc('assign_staff_with_blockchain', {
+        p_supermarket_id: smId  || null,
+        p_admin_id:       adminId,
+        p_target_auth_id: targetId,
+        p_role:           role
+      });
+
+      if (error) throw error;
+
+      // Optimistically update search results
+      setStaffSearchResults(prev => prev.map(u => u.id === targetId ? { ...u, role } : u));
+      loadCurrentStaff();
+      loadSystemData();
+      loadAllUsers();
+
+      const icons = { manager: '👔', cashier: '💰', supplier: '🏭', customer: '👤' };
+      notificationService.show(
+        `${icons[role] || '✅'} ${user.full_name || user.email} → ${role}  🔗 ${blockHash?.slice(0, 12)}…`,
+        'success',
+        4000
+      );
+    } catch (e) {
+      console.error('assignStaffRole error:', e);
+      // Fallback: direct update if RPC not yet deployed
+      try {
+        await supabase.from('users').update({ role, is_active: true }).eq('id', targetId);
+        await supabase.from('users').update({ role, is_active: true }).eq('auth_id', targetId);
+        setStaffSearchResults(prev => prev.map(u => u.id === targetId ? { ...u, role } : u));
+        loadCurrentStaff();
+        loadSystemData();
+        loadAllUsers();
+        notificationService.show(`✅ ${user.full_name || user.email} → ${role} (run SQL migration for blockchain)`, 'success');
+      } catch (e2) {
+        notificationService.show('Failed to assign role: ' + e2.message, 'error');
+      }
+    }
+  };
+
+  const removeStaffRole = async (userId) => {
+    if (!window.confirm('Remove this person\'s role? They will become a regular customer.')) return;
+    try {
+      const smId    = currentAdmin.supermarket_id;
+      const adminId = currentAdmin.id;
+
+      const { data: blockHash, error } = await supabase.rpc('revoke_staff_with_blockchain', {
+        p_supermarket_id: smId   || null,
+        p_admin_id:       adminId,
+        p_target_auth_id: userId
+      });
+
+      if (error) throw error;
+
+      loadCurrentStaff();
+      // Also refresh search results so role badge updates
+      setStaffSearchResults(prev => prev.map(u => u.id === userId ? { ...u, role: 'customer' } : u));
+      notificationService.show(
+        `🔒 Role revoked  🔗 ${blockHash?.slice(0, 12)}…`,
+        'info', 4000
+      );
+    } catch (e) {
+      console.error('removeStaffRole error:', e);
+      // Fallback: direct delete if RPC not yet deployed
+      try {
+        const smId = currentAdmin.supermarket_id;
+        await supabase.from('supermarket_staff').delete().eq('supermarket_id', smId).eq('user_id', userId);
+        await supabase.from('users').update({ role: 'customer' }).eq('id', userId);
+        await supabase.from('users').update({ role: 'customer' }).eq('auth_id', userId);
+        loadCurrentStaff();
+        setStaffSearchResults(prev => prev.map(u => u.id === userId ? { ...u, role: 'customer' } : u));
+        notificationService.show('Role removed (run SQL migration for blockchain)', 'info');
+      } catch (e2) {
+        notificationService.show('Failed to remove role', 'error');
+      }
+    }
+  };
+
+  const loadCurrentStaff = useCallback(async () => {
+    const smId = currentAdmin.supermarket_id;
+    if (!smId) return;
+    try {
+      // Try supermarket_staff table (exists after SQL migration)
+      const { data, error } = await supabase
+        .from('supermarket_staff')
+        .select('*')
+        .eq('supermarket_id', smId);
+
+      if (error) {
+        // Table not yet created — fall back to public.users filtered by role
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, full_name, email, phone, role, is_active')
+          .in('role', ['manager', 'cashier', 'staff'])
+          .eq('is_active', true);
+        setCurrentStaff(users || []);
+        return;
+      }
+      setCurrentStaff(data || []);
+    } catch (e) {
+      console.warn('loadCurrentStaff:', e.message);
+      setCurrentStaff([]);
+    }
+  }, [currentAdmin.supermarket_id]);
 
   // Load order statistics from Supabase
   const loadOrderStats = useCallback(async () => {
@@ -588,13 +830,17 @@ const AdminPortal = () => {
   useEffect(() => {
     // Only load when explicitly changing to these sections
     if (activeSection === 'users') {
-      if (viewMode === 'pending') {
-        loadPendingUsers();
+      if (viewMode === 'applications') {
+        loadApplications();
+      } else if (viewMode === 'staff') {
+        loadCurrentStaff();
+        loadAllUsersForStaff();
       } else {
+        // Default: load all users — no pending concept
         loadAllUsers();
       }
     } else if (activeSection === 'approvals') {
-      loadPendingUsers();
+      loadAllUsers();
     } else if (activeSection === 'orders') {
       // Load orders data
       const loadOrders = async () => {
@@ -621,7 +867,7 @@ const AdminPortal = () => {
       
       return () => clearInterval(refreshInterval);
     }
-  }, [activeSection, viewMode, loadPendingUsers, loadAllUsers, loadOrderStats, loadDetailedOrders]);
+  }, [activeSection, viewMode, loadPendingUsers, loadAllUsers, loadApplications, loadCurrentStaff, loadAllUsersForStaff, loadOrderStats, loadDetailedOrders]);
 
   // Real-time subscription for new user registrations
   useEffect(() => {
@@ -695,6 +941,24 @@ const AdminPortal = () => {
     return () => {
       subscription.unsubscribe();
     };
+  }, []);
+
+  // Realtime subscription for new user_applications
+  useEffect(() => {
+    const appSub = supabase
+      .channel('user-applications-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_applications' }, (payload) => {
+        const app = payload.new;
+        setApplications(prev => [app, ...prev]);
+        const icons = { supplier: '🏭', mybodaguy: '🛵', manager: '👔', cashier: '💰' };
+        notificationService.show(
+          `${icons[app.application_type] || '📋'} New ${app.application_type} application from ${app.applicant_name}!`,
+          'info', 5000
+        );
+        setRealTimeData(prev => ({ ...prev, pendingApprovals: prev.pendingApprovals + 1 }));
+      })
+      .subscribe();
+    return () => appSub.unsubscribe();
   }, []);
 
   // Portal Configuration Management - Real Data Integration
@@ -3616,9 +3880,9 @@ const AdminPortal = () => {
       return gradients[role?.toLowerCase()] || 'from-gray-500 to-gray-600';
     };
 
-    // Get the current user list based on view mode
-    const currentUserList = viewMode === 'pending' ? pendingUsers : allUsers;
-    const currentLoading = viewMode === 'pending' ? approvalsLoading : allUsersLoading;
+    // Always use allUsers — no pending concept
+    const currentUserList = allUsers;
+    const currentLoading = allUsersLoading;
 
     // Filter users
     const filteredUsers = currentUserList.filter(user => {
@@ -3652,7 +3916,7 @@ const AdminPortal = () => {
               <div className="flex-1 min-w-0">
                 <h2 className="text-base md:text-2xl lg:text-3xl font-bold text-white mb-1 md:mb-2 flex items-center gap-2 truncate">
                   <FiUsers className="flex-shrink-0" />
-                  <span className="truncate">{viewMode === 'pending' ? 'User Verification' : 'All Users'}</span>
+                  <span className="truncate">{viewMode === 'staff' ? 'Assign Roles' : viewMode === 'applications' ? 'Applications' : 'All Users'}</span>
                   {/* Real-time indicator */}
                   <span className="flex-shrink-0 flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 md:px-3 py-1 rounded-full text-xs md:text-sm whitespace-nowrap">
                     <span className="relative flex h-2 w-2 md:h-3 md:w-3">
@@ -3663,48 +3927,35 @@ const AdminPortal = () => {
                   </span>
                 </h2>
                 <p className="text-purple-100 text-xs md:text-sm lg:text-base truncate md:truncate">
-                  {viewMode === 'pending' 
-                    ? 'Review & approve pending • Auto-updates'
-                    : 'View all registered users'}
+                  {viewMode === 'staff' ? 'Assign manager / cashier / supplier roles'
+                    : viewMode === 'applications' ? 'Review supplier & driver applications • Auto-updates'
+                    : 'All registered users • Assign roles directly'}
                 </p>
               </div>
               <div className="flex items-center gap-1 md:gap-3 flex-shrink-0">
                 {/* View Mode Toggle */}
                 <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl p-1 flex gap-0.5 md:gap-1">
-                  <button
-                    onClick={() => setViewMode('pending')}
-                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1 ${
-                      viewMode === 'pending'
-                        ? 'bg-white text-purple-600 shadow-lg'
-                        : 'text-white hover:bg-white/10'
-                    }`}
-                  >
-                    <FiUserCheck className="h-3 w-3 md:h-4 md:w-4 flex-shrink-0" />
-                    <span className="hidden sm:inline">Pending</span>
-                    {pendingUsers.length > 0 && (
-                      <span className="bg-yellow-400 text-yellow-900 px-1.5 md:px-2 py-0.5 rounded-full text-xs font-bold">
-                        {pendingUsers.length}
-                      </span>
-                    )}
+                  <button onClick={() => setViewMode('all')}
+                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'all' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
+                    <FiUsers className="h-3 w-3 md:h-4 md:w-4" />
+                    <span className="hidden sm:inline">Users</span>
+                    <span className="bg-blue-400 text-blue-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{allUsers.length}</span>
                   </button>
-                  <button
-                    onClick={() => setViewMode('all')}
-                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1 ${
-                      viewMode === 'all'
-                        ? 'bg-white text-purple-600 shadow-lg'
-                        : 'text-white hover:bg-white/10'
-                    }`}
-                  >
-                    <FiUsers className="h-3 w-3 md:h-4 md:w-4 flex-shrink-0" />
-                    <span className="hidden sm:inline">All</span>
-                    <span className="bg-blue-400 text-blue-900 px-1.5 md:px-2 py-0.5 rounded-full text-xs font-bold">
-                      {allUsers.length}
-                    </span>
+                  <button onClick={() => setViewMode('staff')}
+                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'staff' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
+                    <FiUserPlus className="h-3 w-3 md:h-4 md:w-4" />
+                    <span className="hidden sm:inline">Assign Role</span>
+                  </button>
+                  <button onClick={() => setViewMode('applications')}
+                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'applications' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
+                    <FiBriefcase className="h-3 w-3 md:h-4 md:w-4" />
+                    <span className="hidden sm:inline">Applications</span>
+                    {applications.length > 0 && <span className="bg-orange-400 text-orange-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{applications.length}</span>}
                   </button>
                 </div>
 
                 <button
-                  onClick={viewMode === 'pending' ? loadPendingUsers : loadAllUsers}
+                  onClick={loadAllUsers}
                   disabled={currentLoading}
                   className="px-2 md:px-6 py-1.5 md:py-3 bg-white text-purple-600 rounded-lg md:rounded-xl hover:bg-gray-50 transition-all duration-300 font-semibold flex items-center gap-1 md:gap-2 shadow-lg hover:shadow-xl transform hover:scale-105 text-xs md:text-sm flex-shrink-0"
                 >
@@ -3813,26 +4064,243 @@ const AdminPortal = () => {
           )}
         </div>
 
-        {/* Users Grid - Mobile Optimized */}
-        {currentLoading ? (
+        {/* ===== APPLICATIONS PANEL ===== */}
+        {viewMode === 'applications' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <FiBriefcase className="text-orange-500" /> Pending Applications
+                {applications.length > 0 && <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full text-sm font-bold">{applications.length}</span>}
+              </h3>
+              <button onClick={loadApplications} disabled={applicationsLoading}
+                className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 font-medium">
+                <FiRefreshCw className={applicationsLoading ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
+            {applicationsLoading ? (
+              <div className="text-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500 mx-auto"></div></div>
+            ) : applications.length === 0 ? (
+              <div className="bg-white rounded-xl p-12 text-center shadow">
+                <div className="text-5xl mb-3">📭</div>
+                <p className="text-gray-500 text-lg font-medium">No pending applications</p>
+                <p className="text-gray-400 text-sm mt-1">Share your apply link so suppliers and drivers can apply</p>
+                <div className="mt-4 bg-gray-50 rounded-lg p-3 text-xs text-gray-600 font-mono break-all">
+                  {window.location.origin}/apply/{currentAdmin.supermarket_id || 'your-supermarket-id'}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {applications.map(app => {
+                  const typeColors = { supplier: 'bg-blue-50 border-blue-200', mybodaguy: 'bg-green-50 border-green-200', manager: 'bg-purple-50 border-purple-200', cashier: 'bg-yellow-50 border-yellow-200' };
+                  const typeIcons = { supplier: '🏭', mybodaguy: '🛵', manager: '👔', cashier: '💰' };
+                  return (
+                    <div key={app.id} className={`border-2 rounded-xl p-4 shadow-sm ${typeColors[app.application_type] || 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <span className="text-2xl">{typeIcons[app.application_type] || '📋'}</span>
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-white/80 text-gray-700 capitalize border">{app.application_type}</span>
+                        </div>
+                        <span className="text-xs text-gray-400">{new Date(app.created_at).toLocaleDateString()}</span>
+                      </div>
+                      <h4 className="font-bold text-gray-900 text-base">{app.applicant_name}</h4>
+                      <p className="text-sm text-gray-600 flex items-center gap-1 mt-0.5"><FiMail className="h-3 w-3" />{app.applicant_email}</p>
+                      {app.applicant_phone && <p className="text-sm text-gray-600 flex items-center gap-1"><FiPhone className="h-3 w-3" />{app.applicant_phone}</p>}
+                      {app.business_name && <p className="text-sm text-gray-700 font-medium mt-1">🏢 {app.business_name}</p>}
+                      {app.supermarket_name && <p className="text-xs text-blue-600 font-medium mt-0.5">🏪 Applying to: {app.supermarket_name}</p>}
+                      {app.business_address && <p className="text-xs text-gray-500 mt-0.5">📍 {app.business_address}</p>}
+                      {app.vehicle_type && <p className="text-sm text-gray-700 mt-1">🚗 {app.vehicle_type} · {app.license_number}</p>}
+                      {app.notes && <p className="text-xs text-gray-500 italic mt-2 bg-white/60 rounded p-2">"{app.notes}"</p>}
+                      <div className="flex gap-2 mt-4">
+                        <button onClick={() => approveApplication(app)}
+                          className="flex-1 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg text-sm font-bold hover:from-green-600 hover:to-emerald-700 transition-all flex items-center justify-center gap-1 shadow">
+                          <FiCheckCircle className="h-4 w-4" /> Approve
+                        </button>
+                        <button onClick={() => rejectApplication(app.id)}
+                          className="flex-1 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-lg text-sm font-bold hover:from-red-600 hover:to-rose-700 transition-all flex items-center justify-center gap-1 shadow">
+                          <FiXCircle className="h-4 w-4" /> Reject
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== ASSIGN STAFF PANEL ===== */}
+        {viewMode === 'staff' && (
+          <div className="space-y-6">
+            {/* Search & Assign */}
+            <div className="bg-white rounded-xl shadow-lg p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <FiUserPlus className="text-purple-500" /> Assign Manager or Cashier
+                </h3>
+                <button onClick={loadAllUsersForStaff} disabled={staffSearchLoading}
+                  className="text-xs text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1">
+                  <FiRefreshCw className={`h-3 w-3 ${staffSearchLoading ? 'animate-spin' : ''}`} /> Refresh
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">All signed-up users are shown below. Search to filter, then assign a role.</p>
+
+              {/* Filter bar */}
+              <div className="relative mb-3">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <input
+                  type="text"
+                  placeholder="Filter by name or email…"
+                  value={staffSearchQuery}
+                  onChange={(e) => searchUsersForStaff(e.target.value)}
+                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 transition-all text-sm"
+                />
+                {staffSearchQuery && (
+                  <button onClick={() => setStaffSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <FiX className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {staffSearchLoading ? (
+                <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto"></div><p className="text-xs text-gray-400 mt-2">Loading users…</p></div>
+              ) : (() => {
+                const q = staffSearchQuery.toLowerCase().trim();
+                const filtered = staffSearchResults.filter(u =>
+                  !q ||
+                  (u.full_name  || '').toLowerCase().includes(q) ||
+                  (u.email      || '').toLowerCase().includes(q) ||
+                  (u.phone      || '').toLowerCase().includes(q) ||
+                  (u.id         || '').toLowerCase().includes(q)
+                );
+                return filtered.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <FiUsers className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">{staffSearchResults.length === 0 ? 'No users found. Users must sign up first.' : 'No users match your search.'}</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
+                    {filtered.map(user => {
+                      const roleColor = user.role === 'manager' ? 'bg-purple-100 text-purple-700' :
+                                        user.role === 'cashier'  ? 'bg-yellow-100 text-yellow-700' :
+                                        user.role === 'admin'    ? 'bg-red-100 text-red-700' :
+                                        user.role === 'supplier' ? 'bg-blue-100 text-blue-700' :
+                                                                   'bg-gray-100 text-gray-500';
+                      return (
+                        <div key={user.id} className="flex items-center justify-between p-3 hover:bg-purple-50 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-indigo-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                              {(user.full_name || user.email || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-gray-900 text-sm truncate">{user.full_name || '(no name)'}</p>
+                              <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold mt-0.5 ${roleColor}`}>
+                                {user.role || 'customer'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-1.5 flex-shrink-0 ml-2">
+                            <button onClick={() => assignStaffRole(user, 'manager')}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${user.role === 'manager' ? 'bg-purple-200 text-purple-800 cursor-default' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+                              disabled={user.role === 'manager'}>
+                              👔 Mgr
+                            </button>
+                            <button onClick={() => assignStaffRole(user, 'cashier')}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${user.role === 'cashier' ? 'bg-yellow-200 text-yellow-800 cursor-default' : 'bg-yellow-500 text-white hover:bg-yellow-600'}`}
+                              disabled={user.role === 'cashier'}>
+                              💰 Csh
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Current Staff List */}
+            <div className="bg-white rounded-xl shadow-lg p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <FiUsers className="text-indigo-500" /> Current Staff
+                </h3>
+                <button onClick={loadCurrentStaff} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+                  <FiRefreshCw className="h-4 w-4" /> Refresh
+                </button>
+              </div>
+              {currentStaff.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <FiUsers className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No staff assigned yet. Search above to assign.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {currentStaff.map(staff => {
+                    const u = staff.users || {};
+                    return (
+                      <div key={staff.id} className="flex items-center justify-between py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ${staff.role === 'manager' ? 'bg-purple-500' : 'bg-yellow-500'}`}>
+                            {(u.full_name || u.email || '?')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900 text-sm">{u.full_name || u.email}</p>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${staff.role === 'manager' ? 'bg-purple-100 text-purple-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {staff.role === 'manager' ? '👔' : '💰'} {staff.role}
+                            </span>
+                          </div>
+                        </div>
+                        <button onClick={() => removeStaffRole(u.id)}
+                          className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remove role">
+                          <FiTrash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Apply Link for Suppliers / MyBodaGuy */}
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-5">
+              <h3 className="text-base font-bold text-indigo-900 mb-1 flex items-center gap-2">📤 Share Application Links</h3>
+              <p className="text-sm text-indigo-700 mb-3">Send these links to suppliers and MyBodaGuy drivers to apply.</p>
+              {['supplier','mybodaguy'].map(type => (
+                <div key={type} className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium text-gray-700 capitalize w-24">{type === 'mybodaguy' ? '🛵 MyBodaGuy' : '🏭 Supplier'}</span>
+                  <div className="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs text-gray-600 font-mono truncate">
+                    {window.location.origin}/apply/{currentAdmin.supermarket_id}?type={type}
+                  </div>
+                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/apply/${currentAdmin.supermarket_id}?type=${type}`); notificationService.show('Link copied!', 'success'); }}
+                    className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors whitespace-nowrap">
+                    Copy
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Users Grid — only shown in 'all' mode */}
+        {viewMode === 'all' && currentLoading ? (
           <div className="bg-white rounded-lg md:rounded-2xl p-8 md:p-12 text-center">
             <div className="animate-spin rounded-full h-12 md:h-16 w-12 md:w-16 border-b-4 border-purple-500 mx-auto"></div>
-            <p className="text-gray-600 mt-3 md:mt-4 text-sm md:text-lg">
-              {viewMode === 'pending' ? 'Loading pending...' : 'Loading users...'}
-            </p>
+            <p className="text-gray-600 mt-3 md:mt-4 text-sm md:text-lg">Loading users…</p>
           </div>
-        ) : filteredUsers.length === 0 ? (
+        ) : viewMode === 'all' && filteredUsers.length === 0 ? (
           <div className="bg-white rounded-lg md:rounded-2xl p-6 md:p-12 text-center">
             <div className="w-16 md:w-24 h-16 md:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4">
               <FiUsers className="h-8 md:h-12 w-8 md:w-12 text-gray-400" />
             </div>
             <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-1 md:mb-2">
-              {searchQuery ? 'No Results' : 'No Pending'}
+              {searchQuery ? 'No users match' : 'No users yet'}
             </h3>
             <p className="text-sm md:text-base text-gray-600">
-              {searchQuery 
-                ? 'Adjust your search' 
-                : 'All applications processed'}
+              {searchQuery
+                ? 'Try a different name or email'
+                : 'Users who sign up will appear here'}
             </p>
           </div>
         ) : (
@@ -4018,64 +4486,69 @@ const AdminPortal = () => {
                       </div>
                     )}
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center space-x-3 pt-4 border-t-2 border-gray-100">
-                      {viewMode === 'pending' ? (
-                        <>
-                          <button
-                            onClick={() => approveUser(user.id, user.full_name, user.email, user.role)}
-                            className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all duration-300 font-bold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-105"
-                          >
-                            <FiCheckCircle className="h-5 w-5" />
-                            <span>Approve</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Are you sure you want to reject ${user.full_name}'s application?\n\nRole: ${user.role}\nEmail: ${user.email}\n\nThis action cannot be undone.`)) {
-                                rejectUser(user.id, user.auth_id, user.full_name);
-                              }
-                            }}
-                            className="flex-1 px-4 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl hover:from-red-600 hover:to-rose-700 transition-all duration-300 font-bold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
-                          >
-                            <FiXCircle className="h-5 w-5" />
-                            <span>Reject</span>
-                          </button>
-                        </>
-                      ) : (
-                        <>
+                    {/* Action Buttons — role assignment + status */}
+                    <div className="pt-3 border-t border-gray-100 space-y-2">
+                      {/* Role assignment row */}
+                      {user.role !== 'admin' && (
+                        <div className="flex gap-1.5 flex-wrap">
+                          {[
+                            { role: 'manager',  label: '👔 Manager',  cls: 'bg-purple-600 hover:bg-purple-700' },
+                            { role: 'cashier',  label: '💰 Cashier',  cls: 'bg-yellow-500 hover:bg-yellow-600' },
+                            { role: 'supplier', label: '🏭 Supplier', cls: 'bg-blue-600 hover:bg-blue-700' },
+                            { role: 'customer', label: '👤 Customer', cls: 'bg-gray-500 hover:bg-gray-600' },
+                          ].map(({ role, label, cls }) => (
+                            <button key={role}
+                              onClick={() => assignStaffRole({ id: user.id || user.auth_id, full_name: user.full_name, email: user.email }, role)}
+                              disabled={user.role === role}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold text-white transition-colors ${
+                                user.role === role ? 'opacity-40 cursor-default bg-gray-400' : cls
+                              }`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
                           {/* View Details Button */}
                           <button
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setShowUserDetailsModal(true);
-                            }}
-                            className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 font-bold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
+                            onClick={() => { setSelectedUser(user); setShowUserDetailsModal(true); }}
+                            className="flex-1 px-3 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all font-bold flex items-center justify-center gap-2 text-sm shadow"
                           >
-                            <FiEye className="h-5 w-5" />
-                            <span>View Details</span>
+                            <FiEye className="h-4 w-4" />
+                            <span>Details</span>
                           </button>
-                          
+
+                          {/* Remove role (blockchain-verified revoke) */}
+                          {user.role !== 'admin' && user.role !== 'customer' && (
+                            <button
+                              onClick={() => removeStaffRole(user.id)}
+                              className="px-3 py-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl transition-all font-bold flex items-center justify-center gap-1 text-sm shadow"
+                              title="Remove role → customer"
+                            >
+                              <FiTrash2 className="h-4 w-4" />
+                              <span>Revoke</span>
+                            </button>
+                          )}
+
                           {/* Toggle Active Status */}
                           {user.role !== 'admin' && (
                             <button
-                              onClick={() => {
-                                const action = user.is_active ? 'deactivate' : 'activate';
-                                if (window.confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${user.full_name}?`)) {
-                                  notificationService.show(`User ${action}d successfully`, 'success');
-                                }
+                              onClick={async () => {
+                                await supabase.from('users').update({ is_active: !user.is_active }).eq('id', user.id);
+                                loadAllUsers();
+                                notificationService.show(`User ${user.is_active ? 'deactivated' : 'activated'}`, 'success');
                               }}
-                              className={`flex-1 px-4 py-3 bg-gradient-to-r ${
+                              className={`flex-1 px-3 py-2 bg-gradient-to-r ${
                                 user.is_active
                                   ? 'from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700'
                                   : 'from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'
-                              } text-white rounded-xl transition-all duration-300 font-bold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl`}
+                              } text-white rounded-xl transition-all font-bold flex items-center justify-center gap-2 text-sm shadow`}
                             >
-                              <FiPower className="h-5 w-5" />
+                              <FiPower className="h-4 w-4" />
                               <span>{user.is_active ? 'Deactivate' : 'Activate'}</span>
                             </button>
                           )}
-                        </>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4093,15 +4566,15 @@ const AdminPortal = () => {
                   <FiUsers className="h-6 w-6 text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Showing Applications</p>
+                  <p className="text-sm text-gray-600">Showing</p>
                   <p className="text-xl font-bold text-gray-900">
-                    {filteredUsers.length} {filterRole !== 'all' ? filterRole : 'user'}{filteredUsers.length !== 1 ? 's' : ''} pending
+                    {filteredUsers.length} {filterRole !== 'all' ? filterRole : 'user'}{filteredUsers.length !== 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                {['manager', 'cashier', 'employee', 'supplier'].map(role => {
-                  const count = pendingUsers.filter(u => u.role?.toLowerCase() === role).length;
+                {['admin', 'manager', 'cashier', 'supplier', 'customer'].map(role => {
+                  const count = allUsers.filter(u => u.role?.toLowerCase() === role).length;
                   if (count === 0) return null;
                   return (
                     <div key={role} className="text-center">
@@ -6909,92 +7382,6 @@ const AdminPortal = () => {
                 className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-all duration-300"
               >
                 Return to Home
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : needsSupermarketProfile ? (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-          <div className="max-w-md w-full mx-auto p-8 bg-white rounded-xl shadow-lg border-2 border-blue-300">
-            <div className="text-center mb-6">
-              <div className="text-6xl mb-4">🏪</div>
-              <h1 className="text-2xl font-bold text-blue-600 mb-2">Complete Your Supermarket Profile</h1>
-              <p className="text-gray-700">
-                Welcome! Please set up your supermarket details to continue.
-              </p>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supermarket Name *
-                </label>
-                <input
-                  type="text"
-                  value={supermarketForm.name}
-                  onChange={(e) => setSupermarketForm({...supermarketForm, name: e.target.value})}
-                  placeholder="e.g., Kampala Fresh Market"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location *
-                </label>
-                <input
-                  type="text"
-                  value={supermarketForm.location}
-                  onChange={(e) => setSupermarketForm({...supermarketForm, location: e.target.value})}
-                  placeholder="e.g., Kampala, Uganda"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={supermarketForm.phone}
-                  onChange={(e) => setSupermarketForm({...supermarketForm, phone: e.target.value})}
-                  placeholder="e.g., +256 700 000000"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Address
-                </label>
-                <textarea
-                  value={supermarketForm.address}
-                  onChange={(e) => setSupermarketForm({...supermarketForm, address: e.target.value})}
-                  placeholder="e.g., Plot 123, Main Street, Kampala"
-                  rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              
-              <button
-                onClick={completeSupermarketProfile}
-                disabled={loading || !supermarketForm.name || !supermarketForm.location}
-                className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center"
-              >
-                {loading ? (
-                  <>
-                    <FiRefreshCw className="animate-spin mr-2" />
-                    Creating Supermarket...
-                  </>
-                ) : (
-                  <>
-                    <FiCheckCircle className="mr-2" />
-                    Complete Profile
-                  </>
-                )}
               </button>
             </div>
           </div>

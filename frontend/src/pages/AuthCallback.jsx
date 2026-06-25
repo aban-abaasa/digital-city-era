@@ -24,43 +24,11 @@ const AuthCallback = () => {
   useEffect(() => {
     let mounted = true;
 
-    const finishAuth = async () => {
+    const handleSession = async (session) => {
       try {
-        setStatus('Checking your Google session...');
+        if (!session?.user) throw new Error('No session returned');
 
-        const { data, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        let session = data?.session;
-
-        if (!session) {
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
-          const accessToken = hashParams.get('access_token');
-          const refreshToken = hashParams.get('refresh_token');
-
-          if (accessToken && refreshToken) {
-            setStatus('Completing Google sign-in...');
-
-            const { data: sessionData, error: setError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken
-            });
-
-            if (setError) {
-              throw setError;
-            }
-
-            session = sessionData?.session;
-          }
-        }
-
-        if (!session?.user) {
-          throw new Error('Google session was not returned.');
-        }
-
+        setStatus('Completing sign-in...');
         const displayName = session.user.user_metadata?.full_name || session.user.email || 'guest';
         const signedInUser = await login(session.user.email || 'guest');
 
@@ -71,22 +39,33 @@ const AuthCallback = () => {
         navigate(getSignedInRoute(signedInUser), { replace: true });
       } catch (authError) {
         console.error('Google callback error:', authError);
-
         if (!mounted) return;
-
         setError('Google sign-in could not be completed.');
         setStatus('Redirecting you back to sign in...');
         toast.error('Google sign-in could not be completed.');
-        setTimeout(() => {
-          navigate('/login', { replace: true });
-        }, 1600);
+        setTimeout(() => navigate('/login', { replace: true }), 1600);
       }
     };
 
-    finishAuth();
+    setStatus('Checking your Google session...');
+
+    // Primary: listen for Supabase to finish processing the hash
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_IN' && session) {
+        handleSession(session);
+      }
+    });
+
+    // Fallback: session might already be set if page was refreshed
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      if (data?.session) handleSession(data.session);
+    });
 
     return () => {
       mounted = false;
+      subscription?.unsubscribe();
     };
   }, [login, navigate]);
 

@@ -207,12 +207,12 @@ const ProductInventoryInterface = () => {
         .insert({
           po_number: poNumber,
           supplier_id: supplierId,
-          ordered_by: managerData.id, // Use ordered_by instead of manager_id
-          order_date: new Date().toISOString(),
+          manager_id: managerData.id, // Use manager_id instead of manager_id
+          ordered_at: new Date().toISOString(),
           expected_delivery_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
           status: 'pending_approval',
           priority: selectedProduct.stock === 0 ? 'urgent' : 'normal',
-          total_amount_ugx: totalAmount,
+          total_amount: totalAmount,
           amount_paid_ugx: 0,
           balance_due_ugx: totalAmount,
           payment_status: 'unpaid',

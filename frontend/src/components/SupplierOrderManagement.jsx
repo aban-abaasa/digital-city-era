@@ -304,21 +304,21 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
       // Step 3: Record cash payment with tracking if cash was paid now
       let cashPaymentResult = null;
       if (approvalData.cashPaidNow && parseFloat(approvalData.cashPaidNow) > 0) {
-        const { data: cashData, error: cashError } = await supabase.rpc('record_payment_with_tracking', {
-          p_order_id: approvalOrderId,
-          p_amount_paid: parseFloat(approvalData.cashPaidNow),
-          p_payment_method: 'cash',
-          p_payment_reference: `CASH-APPROVAL-${approvalOrderId.substring(0, 8)}`,
-          p_notes: `Cash payment made during order approval. ${approvalData.notes || ''}`,
-          p_paid_by: managerId
+        const cashResult = await supplierOrdersService.recordPayment({
+          orderId:          approvalOrderId,
+          amountPaid:       parseFloat(approvalData.cashPaidNow),
+          paymentMethod:    'cash',
+          paymentReference: `CASH-APPROVAL-${approvalOrderId.substring(0, 8)}`,
+          notes:            `Cash payment made during order approval. ${approvalData.notes || ''}`,
+          paidBy:           managerId
         });
 
-        if (cashError) {
-          console.error('⚠️ Warning: Cash payment recorded but tracking failed:', cashError);
-          alert(`⚠️ Order approved but cash tracking issue: ${cashError.message}`);
+        if (!cashResult.success) {
+          console.error('⚠️ Cash payment tracking failed:', cashResult.error);
+          alert(`⚠️ Order approved but cash tracking issue: ${cashResult.error}`);
         } else {
-          cashPaymentResult = cashData;
-          console.log('💵 Cash payment recorded with tracking:', cashData);
+          cashPaymentResult = cashResult.payment;
+          console.log('💵 Cash payment recorded:', cashPaymentResult);
         }
       }
 
@@ -432,7 +432,6 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         .from('purchase_orders')
         .update({ 
           status: 'received',
-          actual_delivery_date: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq('id', orderId);
@@ -672,10 +671,10 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
       if (successCount > 0) {
         try {
           await supabase
-            .from('supplier_orders')
-            .update({ added_to_pos: true })
+            .from('purchase_orders')
+            .update({ status: 'received' })
             .eq('id', order.id);
-          console.log('✅ Order marked as added_to_pos');
+          console.log('✅ Order marked as received');
         } catch (err) {
           console.warn('Could not update order added_to_pos flag:', err);
         }
@@ -1783,23 +1782,21 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
         // If cash was paid during order creation, record it with tracking
         if (cashPaidNow && parseFloat(cashPaidNow) > 0 && response.order?.id) {
           try {
-            const { data: paymentData, error: paymentError } = await supabase.rpc('record_payment_with_tracking', {
-              p_order_id: response.order.id,
-              p_amount_paid: parseFloat(cashPaidNow),
-              p_payment_method: paymentMethod,
-              p_payment_reference: paymentReference || `ORDER-CREATE-${response.order.id.substring(0, 8)}`,
-              p_notes: `Payment made at order creation. ${paymentNotes}`,
-              p_paid_by: managerId
+            const payResult = await supplierOrdersService.recordPayment({
+              orderId:          response.order.id,
+              amountPaid:       parseFloat(cashPaidNow),
+              paymentMethod:    paymentMethod,
+              paymentReference: paymentReference || `ORDER-CREATE-${response.order.id.substring(0, 8)}`,
+              notes:            `Payment made at order creation. ${paymentNotes}`,
+              paidBy:           managerId
             });
 
-            if (paymentError) {
-              console.error('⚠️ Payment recording error:', paymentError);
-              successMsg += `\n\n⚠️ Warning: Order created but payment tracking failed: ${paymentError.message}`;
-            } else if (paymentData) {
+            if (!payResult.success) {
+              console.error('⚠️ Payment recording error:', payResult.error);
+              successMsg += `\n\n⚠️ Warning: Order created but payment tracking failed: ${payResult.error || 'table may not exist yet — run CREATE_PAYMENT_TRANSACTIONS_TABLE.sql'}`;
+            } else {
               successMsg += `\n\n💵 CASH PAID: ${formatUGX(cashPaidNow)}`;
-              successMsg += `\n🔖 Transaction #: ${paymentData.transaction_number}`;
               successMsg += `\n⏳ Awaiting supplier confirmation`;
-              successMsg += `\n📊 Balance: ${formatUGX(paymentData.balance_due)}`;
             }
           } catch (paymentErr) {
             console.error('⚠️ Payment recording error:', paymentErr);
@@ -2128,30 +2125,20 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
       const parsedUser = JSON.parse(storedUser);
       const managerId = parsedUser.id;
       
-      // Record payment with tracking
-      const { data, error } = await supabase.rpc('record_payment_with_tracking', {
-        p_order_id: order.id,
-        p_amount_paid: amount,
-        p_payment_method: paymentMethod,
-        p_payment_reference: paymentReference || null,
-        p_payment_date: new Date().toISOString(),
-        p_notes: paymentNotes || null,
-        p_paid_by: managerId
+      // Record payment directly into payment_transactions
+      const payResult = await supplierOrdersService.recordPayment({
+        orderId:          order.id,
+        amountPaid:       amount,
+        paymentMethod:    paymentMethod,
+        paymentReference: paymentReference || null,
+        notes:            paymentNotes || null,
+        paidBy:           managerId
       });
 
-      if (error) throw error;
+      if (!payResult.success) throw new Error(payResult.error);
 
-      if (data && data.success) {
-        alert(`✅ Payment recorded successfully!\n\n` +
-              `Transaction: ${data.transaction_number}\n` +
-              `Amount Paid: ${formatUGX(amount)}\n` +
-              `New Balance: ${formatUGX(data.balance_due)}\n` +
-              `Payment: ${data.payment_percentage.toFixed(1)}% complete\n\n` +
-              `⏳ Awaiting supplier confirmation...`);
-        onSuccess();
-      } else {
-        alert(`❌ Error: ${data?.error || 'Failed to record payment'}`);
-      }
+      alert(`✅ Payment recorded successfully!\n\nAmount Paid: ${formatUGX(amount)}\n⏳ Awaiting supplier confirmation...`);
+      onSuccess();
     } catch (err) {
       console.error('Error recording payment:', err);
       alert(`Failed to record payment: ${err.message}`);

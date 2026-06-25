@@ -21,6 +21,7 @@ import SupplierPortal from '@/pages/SupplierPortal';
 import SupplierAuth from '@/pages/SupplierAuth';
 import SupermartkeraLanding from '@/pages/SupermartkeraLanding';
 import AdminAuth from '@/pages/AdminAuth';
+import ApplyPage from '@/pages/ApplyPage';
 import AuthCallback from '@/pages/AuthCallback';
 import PaymentDashboard from '@/components/PaymentDashboard';
 import Products from '@/pages/Products';
@@ -191,6 +192,9 @@ function App() {
               <Route path="/supplier-login" element={<SupplierAuth />} />
               <Route path="/supplier-auth" element={<SupplierAuth />} />
               <Route path="/supplier-signup" element={<SupplierAuth />} />
+              {/* Public application form for suppliers, mybodaguy, manager, cashier */}
+              <Route path="/apply/:supermarketId" element={<ApplyPage />} />
+              <Route path="/apply" element={<ApplyPage />} />
               
               {/* Admin routes - protected, require authentication */}
               <Route 

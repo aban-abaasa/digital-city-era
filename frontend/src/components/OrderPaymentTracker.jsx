@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiDollarSign, FiPlus, FiCheck, FiClock, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
+import supplierOrdersService from '../services/supplierOrdersService';
 
 const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -117,23 +118,20 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
         internalUserId = userData?.id;
       }
       
-      // Call the record_payment_with_tracking function
       const orderId = order?.orderId || order?.order_uuid || order?.id;
-      const { data, error } = await supabase.rpc('record_payment_with_tracking', {
-        p_order_id: orderId,
-        p_amount_paid: amount,
-        p_payment_method: paymentData.method,
-        p_payment_reference: paymentData.reference || null,
-        p_payment_date: new Date().toISOString(),
-        p_notes: paymentData.notes || null,
-        p_paid_by: internalUserId
+      const payResult = await supplierOrdersService.recordPayment({
+        orderId:          orderId,
+        amountPaid:       amount,
+        paymentMethod:    paymentData.method,
+        paymentReference: paymentData.reference || null,
+        notes:            paymentData.notes || null,
+        paidBy:           internalUserId
       });
 
-      if (error) throw error;
+      if (!payResult.success) throw new Error(payResult.error);
 
       alert(
         `✅ Payment Submitted for Supplier Confirmation!\n\n` +
-        `Transaction Number: ${data}\n` +
         `Amount: ${formatUGX(amount)}\n` +
         `Method: ${paymentData.method.toUpperCase()}\n\n` +
         `⏳ This payment is PENDING supplier confirmation.\n` +

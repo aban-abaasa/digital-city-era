@@ -24,9 +24,12 @@ import {
   FiEdit,
   FiRefreshCw,
   FiDownload,
-  FiShare2
+  FiShare2,
+  FiArrowRight,
+  FiZap
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
@@ -54,6 +57,31 @@ const CustomerDashboard = () => {
   const [loyaltyData, setLoyaltyData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Real role from Supabase (overrides mock AuthContext)
+  const [staffRole, setStaffRole] = useState(null); // 'manager' | 'cashier' | null
+
+  useEffect(() => {
+    const fetchRealRole = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+
+        const { data } = await supabase
+          .from('users')
+          .select('role')
+          .or(`auth_id.eq.${authUser.id},id.eq.${authUser.id}`)
+          .single();
+
+        if (data?.role && ['admin', 'manager', 'cashier'].includes(data.role)) {
+          setStaffRole(data.role);
+        }
+      } catch (_) {
+        // Not logged in via Supabase — demo mode, no staff role
+      }
+    };
+    fetchRealRole();
+  }, []);
   
   // Mock customer data (fallback for demo)
   const fallbackUser = {
@@ -414,6 +442,33 @@ const CustomerDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Role Banner — admin / manager / cashier */}
+      {staffRole && (() => {
+        const config = {
+          admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin',   gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1d4ed8 100%)' },
+          manager: { path: '/manager-portal', icon: '👔', label: 'Manager', gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)' },
+          cashier: { path: '/cashier-portal', icon: '💰', label: 'Cashier', gradient: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)' },
+        }[staffRole];
+        return (
+          <div onClick={() => navigate(config.path)} className="cursor-pointer" style={{ background: config.gradient }}>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{config.icon}</span>
+                <div>
+                  <p className="text-white font-semibold text-sm">You have {config.label} access</p>
+                  <p className="text-white/80 text-xs">Tap to open your {config.label} Portal</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-white/20 hover:bg-white/30 transition-colors rounded-lg px-4 py-2">
+                <FiZap className="text-white h-4 w-4" />
+                <span className="text-white font-bold text-sm">Open {config.label} Portal</span>
+                <FiArrowRight className="text-white h-4 w-4" />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}

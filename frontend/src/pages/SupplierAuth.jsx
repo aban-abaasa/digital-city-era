@@ -24,11 +24,6 @@ const SupplierAuth = () => {
   const [showProfileCompletion, setShowProfileCompletion] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   
-  // Supermarket selection state
-  const [supermarkets, setSupermarkets] = useState([]);
-  const [selectedSupermarket, setSelectedSupermarket] = useState('');
-  const [loadingSupermarkets, setLoadingSupermarkets] = useState(true);
-  
   // Profile Form Fields
   const [profileData, setProfileData] = useState({
     fullName: '',
@@ -38,36 +33,6 @@ const SupplierAuth = () => {
     businessLicense: '',
     category: ''
   });
-
-  // Fetch supermarkets from database
-  const fetchSupermarkets = async () => {
-    try {
-      console.log('🏪 Fetching supermarkets...');
-      const { data, error } = await supabase
-        .from('supermarkets')
-        .select('id, name, location')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
-
-      if (error) {
-        console.error('❌ Error fetching supermarkets:', error);
-        notificationService.show('Failed to load supermarkets', 'error');
-        return;
-      }
-
-      console.log('✅ Loaded supermarkets:', data);
-      setSupermarkets(data || []);
-      
-      // Auto-select first supermarket
-      if (data && data.length > 0) {
-        setSelectedSupermarket(data[0].id);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setLoadingSupermarkets(false);
-    }
-  };
 
   // =============================================
   // Check authentication status ONLY after OAuth redirect
@@ -85,9 +50,6 @@ const SupplierAuth = () => {
       sessionStorage.removeItem('farm_agent_session');
     }
     
-    // Fetch supermarkets
-    fetchSupermarkets();
-
     // Check if we're returning from OAuth (token in hash)
     const hasOAuthCallback = window.location.hash.includes('access_token=');
     
@@ -159,123 +121,47 @@ const SupplierAuth = () => {
 
   const checkAuthStatus = async () => {
     try {
-      console.log('🔍 Checking supplier authentication...');
       const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        console.log('✅ User authenticated:', user.email);
-        console.log('📌 Auth user ID:', user.id);
-        setCurrentUser(user);
-        
-        // Check if this is a Google OAuth user
-        const isGoogleUser = user.identities?.some(id => id.provider === 'google');
-        
-        // Check if user exists in database
-        let { data: userData, error: fetchError } = await supabase
-          .from('users')
-          .select('id, auth_id, email, full_name, role, is_active, phone, supermarket_id')
-          .eq('auth_id', user.id)
+
+      if (!user) {
+        // No session — show sign-in options
+        setChecking(false);
+        return;
+      }
+
+      setCurrentUser(user);
+
+      // Fetch existing public.users row (may be customer, supplier, or new)
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, full_name, role, is_active, phone')
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+
+      // Already a supplier with a complete profile → go straight to portal
+      if (userData?.role === 'supplier') {
+        const { data: supplierData } = await supabase
+          .from('suppliers')
+          .select('company_name')
+          .eq('user_id', userData.id)
           .maybeSingle();
 
-        if (fetchError) {
-          console.error('❌ Error fetching user data:', fetchError);
-        }
-
-        // If user exists, also fetch supplier profile details
-        let supplierData = null;
-        if (userData && userData.role === 'supplier') {
-          console.log('🔍 Looking for supplier record with user_id:', userData.id);
-          const { data: supplier, error: supplierError } = await supabase
-            .from('suppliers')
-            .select('id, user_id, company_name, contact_person, phone, address, is_approved')
-            .eq('user_id', userData.id)
-            .maybeSingle();
-
-          if (supplierError) {
-            console.error('❌ Error fetching supplier profile:', supplierError);
-          } else {
-            supplierData = supplier;
-            console.log('📋 Supplier profile data found:', supplierData);
-            if (supplierData) {
-              console.log('   - Company:', supplierData.company_name);
-              console.log('   - Is Approved:', supplierData.is_approved);
-              console.log('   - ID:', supplierData.id);
-            } else {
-              console.warn('⚠️ No supplier record found for this user');
-            }
-          }
-        } else {
-          console.warn('⚠️ User is not a supplier or userData is missing');
-        }
-
-        console.log('👤 Raw user data from database:', userData);
-        console.log('📊 User data details - Auth ID:', user.id, 'Query returned:', userData ? 'yes' : 'no');
-        console.log('📊 User fields - full_name:', userData?.full_name, 'phone:', userData?.phone, 'supermarket_id:', userData?.supermarket_id);
-        console.log('📊 User status - role:', userData?.role, 'is_active:', userData?.is_active);
-
-        // Check if user is a supplier
-        if (userData && userData.role !== 'supplier') {
-          console.warn('⚠️ User exists but is not a supplier, role:', userData.role);
-          userData = null;
-        }
-
-        // If user doesn't exist, it's a new Google OAuth sign-in
-        if (!userData) {
-          console.log('📝 New Google OAuth user - Showing profile form');
-          
-          // Show profile completion form
-          if (isGoogleUser) {
-            console.log('📋 Showing supplier profile form for Google OAuth user');
-            setShowProfileForm(true);
-            setProfileData(prev => ({
-              ...prev,
-              fullName: user.user_metadata?.full_name || '',
-              phone: user.user_metadata?.phone || '',
-              email: user.email
-            }));
-            notificationService.show('Welcome! Please complete your supplier profile.', 'info', 4000);
-            return;
-          }
-        }
-
-        // Check if profile is complete
-        const hasRequiredData = userData?.full_name && userData?.phone && supplierData?.company_name && userData?.supermarket_id;
-        console.log('🔀 Supplier status - Profile Complete:', hasRequiredData, 'Approved:', supplierData?.is_approved, 'Active:', userData?.is_active);
-        
-        if (!hasRequiredData) {
-          // Incomplete profile → Show profile form
-          console.log('📋 Incomplete profile - Showing profile form');
-          setShowProfileForm(true);
-          setProfileData(prev => ({
-            ...prev,
-            fullName: userData?.full_name || user.user_metadata?.full_name || '',
-            phone: userData?.phone || '',
-            companyName: supplierData?.company_name || '',
-            address: supplierData?.address || '',
-            businessLicense: '',
-            category: '',
-            email: user.email
-          }));
-        } else if (userData?.is_active || supplierData?.is_approved) {
-          // Profile complete AND approved (check both is_active in users and is_approved in suppliers) → Go to supplier portal
-          console.log('✅ Supplier approved and profile complete - Redirecting to Supplier Portal');
+        if (supplierData?.company_name) {
           notificationService.show('✅ Welcome back!', 'success');
           navigate('/supplier-portal');
-        } else {
-          // Profile complete but not approved yet
-          console.log('⏳ Application submitted - Waiting for admin approval');
-          notificationService.show(
-            '📝 Your supplier application has been submitted! An admin will review your request.',
-            'info',
-            6000
-          );
-          setTimeout(() => {
-            supabase.auth.signOut();
-            setShowProfileForm(false);
-          }, 3000);
+          return;
         }
-      } else {
-        console.log('❌ No authenticated user found');
+      }
+
+      // Customer upgrading to supplier, or new user → show profile form
+      setProfileData(prev => ({
+        ...prev,
+        fullName: userData?.full_name || user.user_metadata?.full_name || '',
+        phone:    userData?.phone    || user.user_metadata?.phone    || '',
+      }));
+      setShowProfileForm(true);
+      if (userData?.role !== 'supplier') {
+        notificationService.show('Complete your business profile to become a supplier.', 'info', 4000);
       }
     } catch (error) {
       console.error('❌ Auth check error:', error);
@@ -345,65 +231,70 @@ const SupplierAuth = () => {
         return;
       }
 
-      console.log('📝 Submitting supplier application...');
-
-      // For new Google OAuth users, INSERT with upsert
-      // For existing users, UPDATE their record
-      const { error } = await supabase
-        .from('users')
-        .upsert({
-          auth_id: user.id,
-          email: user.email,
-          full_name: profileData.fullName,
-          phone: profileData.phone,
-          role: 'supplier',
-          is_active: false, // Pending admin approval
-          email_verified: user.email_verified || false,
-          supermarket_id: selectedSupermarket // Store selected supermarket
-        }, { 
-          onConflict: 'auth_id' 
-        });
-      
-      if (error) {
-        console.error('❌ Profile submission error:', error);
-        notificationService.show('Failed to submit application. Please try again.', 'error');
-        setLoading(false);
-        return;
-      }
-
-      // Also create supplier record with company details
-      const { data: userData } = await supabase
+      // Find existing public.users row (customer upgrading or new user)
+      const { data: existingUser } = await supabase
         .from('users')
         .select('id')
-        .eq('auth_id', user.id)
-        .single();
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
 
-      if (userData) {
-        await supabase.from('suppliers').upsert({
-          user_id: userData.id,
-          company_name: profileData.companyName,
-          contact_person: profileData.fullName,
-          phone: profileData.phone,
-          address: profileData.address,
-          business_license: profileData.businessLicense,
-          category: profileData.category,
-          is_approved: false
-        }, {
-          onConflict: 'user_id'
-        });
+      let publicUserId;
+
+      if (existingUser) {
+        // Update existing row (customer → supplier)
+        const { error: updateErr } = await supabase
+          .from('users')
+          .update({
+            full_name: profileData.fullName,
+            phone:     profileData.phone,
+            role:      'supplier',
+            is_active: true,
+            email:     user.email,
+            auth_id:   user.id
+          })
+          .eq('id', existingUser.id);
+
+        if (updateErr) throw updateErr;
+        publicUserId = existingUser.id;
+      } else {
+        // Brand new user (Google sign-up)
+        const { data: inserted, error: insertErr } = await supabase
+          .from('users')
+          .insert({
+            auth_id:   user.id,
+            email:     user.email,
+            full_name: profileData.fullName,
+            phone:     profileData.phone,
+            role:      'supplier',
+            is_active: true
+          })
+          .select('id')
+          .single();
+
+        if (insertErr) throw insertErr;
+        publicUserId = inserted.id;
       }
 
-      console.log('✅ Application submitted successfully');
-      notificationService.show('🎉 Your application has been submitted! An admin will review it soon.', 'success');
-      
-      // Sign out and show pending message
-      await supabase.auth.signOut();
-      setShowProfileForm(false);
-      notificationService.show('⏳ Your supplier application is pending admin approval.', 'warning', 5000);
+      // Create / update the suppliers business profile (use actual table columns)
+      const { error: supplierErr } = await supabase
+        .from('suppliers')
+        .upsert({
+          user_id:       publicUserId,
+          company_name:  profileData.companyName,
+          contact_email: user.email,
+          contact_phone: profileData.phone,
+          address:       profileData.address,
+          is_active:     true
+        }, { onConflict: 'user_id' });
+
+      if (supplierErr) console.warn('Supplier profile save warning:', supplierErr.message);
+
+      notificationService.show('🎉 Supplier account ready! Apply to supermarkets inside your portal to receive orders.', 'success', 5000);
+      navigate('/supplier-portal');
 
     } catch (error) {
-      console.error('Error completing profile:', error);
-      notificationService.error('An error occurred');
+      console.error('❌ Account creation error:', error);
+      notificationService.show('Failed to create account: ' + (error.message || 'Unknown error'), 'error');
       setLoading(false);
     }
   };
@@ -416,11 +307,11 @@ const SupplierAuth = () => {
       <div className="auth-container">
         <div className="auth-box">
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>👋</div>
-            <h1 className="auth-title">Welcome to Supermartkera!</h1>
-            <p className="auth-subtitle">Let's set up your supplier profile</p>
+            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏭</div>
+            <h1 className="auth-title">Create Your Supplier Account</h1>
+            <p className="auth-subtitle">No supermarket needed to get started</p>
             <p style={{ color: '#999', fontSize: '14px', marginTop: '10px' }}>
-              Complete your profile to start managing orders and payments
+              Your account is created instantly. Apply to supermarkets inside your portal to start receiving orders via blockchain-verified transactions.
             </p>
           </div>
 
@@ -492,32 +383,12 @@ const SupplierAuth = () => {
               </select>
             </div>
 
-            <div className="form-group">
-              <label>Select Supermarket *</label>
-              {loadingSupermarkets ? (
-                <div style={{ color: '#666' }}>Loading supermarkets...</div>
-              ) : (
-                <select
-                  value={selectedSupermarket}
-                  onChange={(e) => setSelectedSupermarket(e.target.value)}
-                  required
-                >
-                  <option value="">Select a Supermarket</option>
-                  {supermarkets.map(sm => (
-                    <option key={sm.id} value={sm.id}>
-                      {sm.name} - {sm.location}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
             <button 
               type="submit" 
               className="auth-button"
               disabled={loading}
             >
-              {loading ? 'Submitting...' : 'Complete Profile'}
+              {loading ? 'Creating account...' : 'Create Supplier Account'}
             </button>
           </form>
         </div>
@@ -540,16 +411,25 @@ const SupplierAuth = () => {
   }
 
   // =============================================
-  // RENDER: Google Sign-In Button
+  // RENDER: No session — sign-in options
   // =============================================
   return (
     <div className="auth-container">
       <div className="auth-box">
-        <h1 className="auth-title">Supplier Portal</h1>
-        <p className="auth-subtitle">Sign in with your Google account</p>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏭</div>
+          <h1 className="auth-title">Become a Supplier</h1>
+          <p className="auth-subtitle">No supermarket needed — create your account and apply to supermarkets inside your portal to receive orders.</p>
+        </div>
 
-        <button 
-          onClick={handleGoogleSignIn} 
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px', marginBottom: '20px', fontSize: '14px', color: '#166534' }}>
+          <strong>Already a customer?</strong> Go to your <button onClick={() => navigate('/customer-dashboard')} style={{ background: 'none', border: 'none', color: '#15803d', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}>Customer Dashboard</button> and click <em>"Become a Supplier"</em> to upgrade your existing account.
+        </div>
+
+        <div style={{ textAlign: 'center', color: '#9ca3af', marginBottom: '16px', fontSize: '13px' }}>— or sign up fresh with Google —</div>
+
+        <button
+          onClick={handleGoogleSignIn}
           className="google-signin-button"
           disabled={loading}
         >
@@ -559,11 +439,11 @@ const SupplierAuth = () => {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
           </svg>
-          {loading ? 'Signing in...' : 'Sign in with Google'}
+          {loading ? 'Signing in...' : 'Continue with Google'}
         </button>
 
         <div className="auth-footer">
-          <p>After signing in, you'll complete your business profile and wait for admin approval.</p>
+          <p>Your account is created instantly. Apply to supermarkets inside your portal to receive blockchain-verified orders.</p>
         </div>
       </div>
     </div>

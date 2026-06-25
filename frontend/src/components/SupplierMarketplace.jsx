@@ -242,7 +242,7 @@ export function SupplierApplicationsTab({ userId }) {
   const loadAll = async () => {
     setLoading(true);
     const [{ data: sm }, { data: apps }] = await Promise.all([
-      supabase.from('supermarkets').select('id, name, city, country, status').eq('status', 'active'),
+      supabase.from('supermarkets').select('id, name, city, country, is_active').eq('is_active', true),
       supabase.from('supplier_applications').select('*').eq('supplier_user_id', userId),
     ]);
     setStores(sm || []);

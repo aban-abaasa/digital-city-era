@@ -3845,7 +3845,7 @@ _Automated Business Report System_`)}`;
       // Fetch top products by sales
       const { data: topProductsData, error: error4 } = await supabase
         .from('transaction_items')
-        .select('product_id, quantity, price, products(name, category)')
+        .select('product_id, quantity, price, products(name)')
         .limit(10);
 
       // Fetch customer data
@@ -3866,7 +3866,7 @@ _Automated Business Report System_`)}`;
       topProductsData?.forEach(item => {
         const productName = item.products?.name || `Product ${item.product_id}`;
         if (!productSales[productName]) {
-          productSales[productName] = { units: 0, sales: 0, category: item.products?.category || 'Other' };
+          productSales[productName] = { units: 0, sales: 0, category: 'Other' };
         }
         productSales[productName].units += item.quantity || 0;
         productSales[productName].sales += (item.quantity || 0) * (item.price || 0);
@@ -3894,7 +3894,7 @@ _Automated Business Report System_`)}`;
       // Fetch regional sales (if location is stored in transactions or users)
       const { data: allTransactions, error: error6 } = await supabase
         .from('transactions')
-        .select('amount, created_at, users(location)')
+        .select('amount, created_at')
         .gte('created_at', startOfMonth);
 
       const regionalSales = {
@@ -3965,7 +3965,7 @@ _Automated Business Report System_`)}`;
       // Fetch ALL products (active or inactive) to ensure we get all POS products
       const { data: products, error: error1 } = await supabase
         .from('products')
-        .select('id, name, sku, quantity, is_active, category, selling_price, price');
+        .select('id, name, sku, is_active, selling_price, inventory(current_stock)');
 
       console.log(`📦 Products fetched: ${products?.length || 0} total`, products);
 
@@ -3976,7 +3976,7 @@ _Automated Business Report System_`)}`;
       try {
         const { data, error } = await supabase
           .from('transaction_items')
-          .select('product_id, quantity, price, products(name, category, quantity)')
+          .select('product_id, quantity, price, products(name)')
           .gte('created_at', startOfMonth)
           .order('created_at', { ascending: false });
         if (!error) posTransactionItems = data || [];
@@ -3991,7 +3991,7 @@ _Automated Business Report System_`)}`;
       try {
         const { data, error } = await supabase
           .from('transaction_items')
-          .select('product_id, quantity, price, products(name, quantity)')
+          .select('product_id, quantity, price, products(name)')
           .gte('created_at', today)
           .lte('created_at', today + 'T23:59:59');
         if (!error) todayTransactionItems = data || [];
@@ -4004,7 +4004,7 @@ _Automated Business Report System_`)}`;
       // Fetch suppliers for reliability metrics
       const { data: suppliers, error: error4 } = await supabase
         .from('suppliers')
-        .select('id, company_name, status');
+        .select('id, company_name, is_active');
 
       console.log(`🤝 Suppliers fetched: ${suppliers?.length || 0}`);
 
@@ -4021,8 +4021,8 @@ _Automated Business Report System_`)}`;
       products?.forEach(product => {
         if (product && product.id) {
           totalProducts++;
-          const quantity = product.quantity || 0;
-          const price = product.selling_price || product.price || 0;
+          const quantity = product.inventory?.[0]?.current_stock || 0;
+          const price = product.selling_price || 0;
           
           console.log(`📦 Product: ${product.name} | Stock: ${quantity} | Price: ${price}`);
           
@@ -4094,7 +4094,7 @@ _Automated Business Report System_`)}`;
         : (12.5).toFixed(1);
 
       // Calculate supplier metrics
-      const activeSuppliers = suppliers?.filter(s => s.status === 'active').length || 0;
+      const activeSuppliers = suppliers?.filter(s => s.is_active).length || 0;
       const reliableSuppliers = Math.round(activeSuppliers * 0.9);
 
       // Get regional stock status if location data is available
@@ -4184,10 +4184,10 @@ _Automated Business Report System_`)}`;
       let supplierOrders = [];
       try {
         const { data, error } = await supabase
-          .from('supplier_orders')
-          .select('total_cost, created_at')
-          .gte('created_at', startOfMonth);
-        if (!error) supplierOrders = data || [];
+          .from('purchase_orders')
+          .select('total_amount, ordered_at')
+          .gte('ordered_at', startOfMonth);
+        if (!error) supplierOrders = (data || []).map(o => ({ total_cost: o.total_amount, created_at: o.ordered_at }));
       } catch (e) {
         console.warn('⚠️ Supplier orders table not available');
       }
@@ -4409,14 +4409,20 @@ _Automated Business Report System_`)}`;
       }
 
       const parsedUser = JSON.parse(storedUser);
-      const userId = parsedUser.id;
 
-      // Get manager data from users table
+      // Use Supabase auth UUID, not the legacy integer id stored in localStorage
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        console.error('No authenticated Supabase user');
+        return;
+      }
+      const authId = authUser.id;
+
       const { data: managerData, error } = await supabase
         .from('users')
         .select('*')
-        .eq('id', userId)
-        .single();
+        .or(`auth_id.eq.${authId},id.eq.${authId}`)
+        .maybeSingle();
 
       if (error) {
         console.error('Error loading manager profile:', error);
@@ -4429,7 +4435,7 @@ _Automated Business Report System_`)}`;
       const { data: managerProfileData } = await supabase
         .from('manager_profiles')
         .select('*')
-        .eq('manager_id', userId)
+        .or(`manager_id.eq.${authId},manager_id.eq.${parsedUser.id}`)
         .maybeSingle();
 
       if (managerProfileData) {
@@ -4438,7 +4444,7 @@ _Automated Business Report System_`)}`;
 
       if (managerData) {
         // Get profile picture from database first, fallback to localStorage
-        const storageKey = `manager_profile_pic_${userId}`;
+        const storageKey = `manager_profile_pic_${authId}`;
         const localProfilePic = localStorage.getItem(storageKey);
         const profilePicture = managerData.avatar_url || profileData?.avatar_url || localProfilePic || null;
         
@@ -4502,15 +4508,7 @@ _Automated Business Report System_`)}`;
         return;
       }
 
-      // Get user ID from localStorage
-      const storedUser = localStorage.getItem('supermarket_user');
-      const userSession = storedUser ? JSON.parse(storedUser) : null;
-      const userId = userSession?.id;
-
-      if (!userId) {
-        toast.error('User session not found. Please log in again.');
-        return;
-      }
+      const userId = user.id; // Supabase auth UUID
 
       // Prepare update data for users table
       const usersUpdateData = {
@@ -4524,7 +4522,7 @@ _Automated Business Report System_`)}`;
       const { error: usersError } = await supabase
         .from('users')
         .update(usersUpdateData)
-        .eq('id', userId)
+        .or(`auth_id.eq.${userId},id.eq.${userId}`)
         .eq('role', 'manager');
 
       if (usersError) {
@@ -4667,11 +4665,11 @@ _Automated Business Report System_`)}`;
           // Save to database - update avatar_url in users table
           const { error } = await supabase
             .from('users')
-            .update({ 
+            .update({
               avatar_url: base64String,
               updated_at: new Date().toISOString()
             })
-            .eq('id', userId);
+            .or(`auth_id.eq.${userId},id.eq.${userId}`);
 
           if (error) {
             console.error('Error saving to database:', error);
@@ -5180,7 +5178,7 @@ _Automated Business Report System_`)}`;
       // Get all employees
       const { data: employees, error: employeeError } = await supabase
         .from('users')
-        .select('id, username, email, role, created_at')
+        .select('id, full_name, email, role, created_at')
         .eq('role', 'employee');
 
       if (employeeError) {
@@ -5210,7 +5208,7 @@ _Automated Business Report System_`)}`;
 
         return {
           id: employee.id,
-          name: employee.username || employee.email?.split('@')[0] || 'Employee',
+          name: employee.full_name || employee.email?.split('@')[0] || 'Employee',
           role: employee.role === 'employee' ? 'Cashier' : 'Employee',
           sales: totalSales,
           efficiency: efficiency || 85, // Default 85% if no data
@@ -5498,7 +5496,7 @@ _Automated Business Report System_`)}`;
       // Get all employees who might need report access
       const { data: employees, error } = await supabase
         .from('users')
-        .select('id, username, email, role, created_at')
+        .select('id, full_name, email, role, created_at')
         .eq('role', 'employee');
 
       if (error) {
@@ -5515,7 +5513,7 @@ _Automated Business Report System_`)}`;
       // In a real app, you'd have a separate table for access requests
       const accessRequests = employees.slice(0, 3).map((employee, index) => ({
         id: employee.id,
-        user: employee.username || employee.email?.split('@')[0] || 'Employee',
+        user: employee.full_name || employee.email?.split('@')[0] || 'Employee',
         role: employee.role === 'employee' ? 'Cashier' : 'Employee',
         currentAccess: index === 0 ? ['Sales Reports', 'Customer Reports'] : 
                        index === 1 ? ['Inventory Reports', 'Stock Reports'] :
@@ -6098,24 +6096,11 @@ _Automated Business Report System_`)}`;
       // Optimized single query - only needed fields
       const { data: orders, error } = await supabase
         .from('purchase_orders')
-        .select(`
-          id,
-          po_number,
-          supplier_id,
-          status,
-          total_amount_ugx,
-          amount_paid_ugx,
-          balance_due_ugx,
-          order_date,
-          expected_delivery_date,
-          actual_delivery_date,
-          notes,
-          payment_status
-        `)
+        .select('*')
         .not('status', 'eq', 'completed')
         .not('status', 'eq', 'received')
-        .order('created_at', { ascending: false })
-        .limit(100); // Limit to prevent huge queries
+        .order('ordered_at', { ascending: false })
+        .limit(100);
 
       if (error) {
         console.warn('⚠️ Error loading from purchase_orders:', error);
@@ -6130,14 +6115,14 @@ _Automated Business Report System_`)}`;
           orderNumber: order.po_number || `PO-${order.id}`,
           supplierName: 'Supplier', // Will be shown as generic
           supplierId: order.supplier_id,
-          orderDate: order.order_date ? new Date(order.order_date).toLocaleDateString('en-UG') : 'N/A',
+          orderDate: order.ordered_at ? new Date(order.ordered_at).toLocaleDateString('en-UG') : 'N/A',
           expectedDelivery: order.expected_delivery_date ? new Date(order.expected_delivery_date).toLocaleDateString('en-UG') : 'N/A',
-          actualDelivery: order.actual_delivery_date ? new Date(order.actual_delivery_date).toLocaleDateString('en-UG') : null,
-          totalValue: order.total_amount_ugx || 0,
-          amountPaid: order.amount_paid_ugx || 0,
-          balanceDue: order.balance_due_ugx || order.total_amount_ugx || 0,
+          actualDelivery: (order.delivered_date || order.updated_at) ? new Date(order.delivered_date || order.updated_at).toLocaleDateString('en-UG') : null,
+          totalValue: order.total_amount || 0,
+          amountPaid: 0,
+          balanceDue: order.total_amount || 0,
           status: order.status || 'pending_approval',
-          paymentStatus: order.payment_status || 'unpaid',
+          paymentStatus: 'unpaid',
           priority: 'medium',
           items: [],
           documents: [],

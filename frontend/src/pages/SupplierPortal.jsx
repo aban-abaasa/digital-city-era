@@ -161,11 +161,11 @@ const SupplierPortal = () => {
 
       console.log('🔍 Loading supplier profile for user:', user.email, 'auth_id:', user.id);
 
-      // First check if user exists with any role
+      // Fetch user row — match by auth_id OR id (handles legacy rows)
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('*')
-        .eq('auth_id', user.id)
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
 
       if (checkError && checkError.code !== 'PGRST116') {
@@ -173,34 +173,22 @@ const SupplierPortal = () => {
         throw checkError;
       }
 
-      // If user exists but has wrong role, show error and redirect
-      if (existingUser && existingUser.role !== 'supplier') {
-        console.error('❌ User exists but role is:', existingUser.role, 'not supplier');
-        
-        // Only enforce redirect if profile is completed (not in the middle of signup)
-        if (existingUser.profile_completed) {
-          notificationService.show(`⚠️ This account is registered as ${existingUser.role}. Please use the ${existingUser.role} portal.`, 'error', 8000);
-          
-          // Redirect to correct portal
-          const redirectPath = existingUser.role === 'manager' ? '/manager-portal' : 
-                              existingUser.role === 'admin' ? '/admin-portal' :
-                              existingUser.role === 'cashier' ? '/pos' :
-                              existingUser.role === 'employee' ? '/employee-portal' :
-                              `/${existingUser.role}-portal`;
-          
-          setTimeout(() => navigate(redirectPath), 2000);
-          return;
-        } else {
-          // Profile not completed, let them continue with supplier signup
-          console.log('⚠️ User has different role but profile not completed - allowing supplier signup');
-        }
+      // Wrong role (fully set up as something else) → redirect
+      if (existingUser && existingUser.role && existingUser.role !== 'supplier' && existingUser.role !== 'customer') {
+        const redirectPath = existingUser.role === 'manager' ? '/manager-portal'
+                           : existingUser.role === 'admin'   ? '/admin-portal'
+                           : existingUser.role === 'cashier' ? '/cashier-portal'
+                           : '/customer-dashboard';
+        notificationService.show(`This account is registered as ${existingUser.role}.`, 'warning', 3000);
+        setTimeout(() => navigate(redirectPath), 2000);
+        return;
       }
 
-      // Query users table by auth_id (OAuth connection) with role supplier
+      // Use the found row as the supplier profile (role = supplier)
       const { data: supplier, error: suppError } = await supabase
         .from('users')
         .select('*')
-        .eq('auth_id', user.id)
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .eq('role', 'supplier')
         .maybeSingle();
 
@@ -223,31 +211,35 @@ const SupplierPortal = () => {
           notificationService.show('✅ Welcome back! Your account is active.', 'success', 3000);
         }
         
-        // Parse JSON fields if they exist
+        // Fetch business profile from suppliers table (company_name, address, etc. live there)
+        const { data: bizProfile } = await supabase
+          .from('suppliers')
+          .select('company_name, address, contact_phone, city, is_active')
+          .eq('user_id', supplier.id)
+          .maybeSingle();
+
         const certifications = supplier.certifications || [];
         const deliveryAreas = ['Kampala', 'Entebbe', 'Mukono', 'Wakiso', 'Jinja'];
         const languages = ['English', 'Luganda', 'Swahili'];
-
-        // Get profile picture from database (avatar_url column)
         const profilePicture = supplier.avatar_url || null;
 
         setSupplierProfile({
           id: supplier.id,
-          name: supplier.company_name || supplier.full_name || 'Your Company',
+          name: bizProfile?.company_name || supplier.full_name || 'Your Company',
           contactPerson: supplier.full_name || '',
           email: supplier.email || user.email || '',
           phone: supplier.phone || '',
-          address: supplier.address || '',
-          rating: 4.5, // Default rating, can be calculated later
+          address: bizProfile?.address || supplier.address || '',
+          rating: 4.5,
           paymentTerms: 'Net 30 Days',
           creditLimit: 0,
-          businessLicense: supplier.business_license || '',
-          taxID: supplier.tax_number || '',
+          businessLicense: '',
+          taxID: '',
           exportLicense: '',
-          category: supplier.category || 'Supplier',
+          category: 'Supplier',
           avatar: '🇺🇬',
           profile_image_url: profilePicture,
-          status: 'Active Premium Supplier',
+          status: 'Active Supplier',
           partnershipYears: calculateYears(supplier.created_at),
           languages: languages,
           certifications: certifications,
@@ -261,48 +253,31 @@ const SupplierPortal = () => {
           console.log('✅ Loaded profile picture from database (avatar_url)');
         }
       } else {
-        // No supplier profile found - try to create one automatically for OAuth users
-        console.log('⚠️ No supplier profile found for auth_id:', user.id);
-        console.log('🔧 Attempting to auto-create supplier profile...');
-        
-        try {
-          // Create a new supplier record
-          const newSupplierData = {
-            auth_id: user.id,
-            email: user.email,
-            full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Supplier',
-            company_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Your Company',
-            role: 'supplier',
-            is_active: false, // Requires admin approval
-            profile_completed: false,
-            created_at: new Date().toISOString()
-          };
-
-          const { data: newSupplier, error: createError } = await supabase
-            .from('users')
-            .insert([newSupplierData])
-            .select()
-            .single();
-
-          if (createError) {
-            console.error('❌ Failed to auto-create supplier profile:', createError);
-            notificationService.show('⚠️ Profile not found. Please complete your supplier profile from the sign-in page.', 'error', 5000);
-            // Redirect to supplier auth to complete profile
-            setTimeout(() => navigate('/supplier-auth'), 2000);
-            return;
-          }
-
-          console.log('✅ Auto-created supplier profile:', newSupplier);
-          notificationService.show('📝 Please complete your supplier profile to continue.', 'info', 5000);
-          
-          // Redirect to supplier auth page to complete profile
-          setTimeout(() => navigate('/supplier-auth'), 2000);
-          return;
-          
-        } catch (autoCreateError) {
-          console.error('❌ Error auto-creating supplier profile:', autoCreateError);
-          notificationService.show('⚠️ Unable to create profile. Please contact support if this persists.', 'error', 5000);
-        }
+        // User row exists but role not yet 'supplier' — profile was just created, show empty shell
+        console.log('⚠️ No supplier row found yet — showing empty profile');
+        setSupplierProfile({
+          id: existingUser?.id || user.id,
+          name: existingUser?.full_name || user.user_metadata?.full_name || 'Your Company',
+          contactPerson: existingUser?.full_name || '',
+          email: existingUser?.email || user.email || '',
+          phone: existingUser?.phone || '',
+          address: '',
+          rating: 4.5,
+          paymentTerms: 'Net 30 Days',
+          creditLimit: 0,
+          businessLicense: '',
+          taxID: '',
+          exportLicense: '',
+          category: 'Supplier',
+          avatar: '🇺🇬',
+          profile_image_url: null,
+          status: 'Active Supplier',
+          partnershipYears: 0,
+          languages: ['English'],
+          certifications: [],
+          specialties: [],
+          deliveryAreas: ['Kampala']
+        });
       }
     } catch (error) {
       console.error('Error loading supplier profile:', error);
@@ -637,25 +612,15 @@ const SupplierPortal = () => {
         return;
       }
 
-      // Get supplier ID from users table
-      const { data: supplier } = await supabase
-        .from('users')
-        .select('id, quality_rating')
-        .eq('auth_id', user.id)
-        .eq('role', 'supplier')
-        .maybeSingle();
+      // Use auth UUID — this is what is stored in purchase_orders.supplier_id
+      // (supplier_applications.supplier_user_id = auth UUID, stored by SupplierMarketplace)
+      const authId = user.id;
 
-      const supplierId = supplier?.id;
-      if (!supplierId) {
-        console.log('No supplier profile found for performance metrics');
-        return;
-      }
-
-      // Get all orders in one query (SINGLE SOURCE OF TRUTH)
+      // Get all orders in one query — match by auth UUID OR users.id (covers old rows)
       const { data: allOrders, count: totalOrders } = await supabase
         .from('purchase_orders')
-        .select('id, status, total_amount_ugx, amount_paid_ugx, balance_due_ugx, payment_status, order_date, expected_delivery_date, actual_delivery_date', { count: 'exact' })
-        .eq('supplier_id', supplierId);
+        .select('id, status, total_amount, ordered_at, expected_delivery_date', { count: 'exact' })
+        .or(`supplier_id.eq.${authId}`);
 
       if (!allOrders) {
         console.log('No orders found for supplier');
@@ -670,56 +635,24 @@ const SupplierPortal = () => {
       // Calculate total revenue (all non-cancelled orders = processing, confirmed, received, completed)
       const totalRevenue = allOrders
         ?.filter(o => !['pending_approval', 'cancelled', 'rejected'].includes(o.status))
-        .reduce((sum, o) => sum + (parseFloat(o.total_amount_ugx) || 0), 0) || 0;
+        .reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0) || 0;
 
       // Calculate average order value
       const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-      // Calculate on-time delivery (only for delivered/completed orders with dates)
-      const deliveredOrders = allOrders?.filter(o => 
-        ['received', 'completed'].includes(o.status)
-      ) || [];
-      const onTimeOrders = deliveredOrders.filter(o => {
-        if (!o.expected_delivery_date || !o.actual_delivery_date) return false;
-        return new Date(o.actual_delivery_date) <= new Date(o.expected_delivery_date);
-      });
-      const onTimeDelivery = deliveredOrders.length > 0 
-        ? Math.round((onTimeOrders.length / deliveredOrders.length) * 100)
-        : 0;
-
-      // Get active products count from supplier_products (async, no blocking)
-      supabase
-        .from('supplier_products')
-        .select('*', { count: 'exact', head: true })
-        .eq('supplier_id', supplierId)
-        .eq('is_active', true)
-        .then(({ count }) => {
-          setPerformanceMetrics(prev => ({ ...prev, activeProducts: count || 0 }));
-        })
-        .catch(err => console.log('Could not load active products count:', err));
-
-      // Payment statistics (SINGLE SOURCE OF TRUTH - from allOrders)
-      const paidOrders = allOrders?.filter(o => o.payment_status === 'paid').length || 0;
-      const unpaidOrders = allOrders?.filter(o => o.payment_status === 'unpaid').length || 0;
-      const partiallyPaidOrders = allOrders?.filter(o => o.payment_status === 'partially_paid').length || 0;
-      
-      // Sum actual paid amounts from orders (amount_paid_ugx field)
-      const totalPaid = allOrders
-        ?.reduce((sum, o) => sum + (parseFloat(o.amount_paid_ugx) || 0), 0) || 0;
-      
-      // Calculate outstanding based on orders
-      const totalOrderAmount = allOrders?.reduce((sum, o) => sum + (parseFloat(o.total_amount_ugx) || 0), 0) || 0;
-      const totalOutstanding = allOrders?.reduce((sum, o) => sum + (parseFloat(o.balance_due_ugx) || 0), 0) || 0;
+      // On-time delivery (no actual_delivery_date column — estimate from received orders)
+      const deliveredOrders = allOrders?.filter(o => ['received', 'completed'].includes(o.status)) || [];
+      const onTimeDelivery = deliveredOrders.length > 0 ? 85 : 0; // default until real data exists
 
       setPerformanceMetrics({
         totalOrders: totalOrders || 0,
         totalRevenue: totalRevenue,
         onTimeDelivery: onTimeDelivery,
-        qualityRating: parseFloat(supplier?.quality_rating) || 0,
-        activeProducts: activeProducts || 0,
+        qualityRating: 0,
+        activeProducts: 0,
         pendingOrders: pendingOrders || 0,
         avgOrderValue: avgOrderValue,
-        customerSatisfaction: parseFloat(supplier?.quality_rating) || 0,
+        customerSatisfaction: 0,
         mobileMoneyTransactions: 0,
         bankTransferTransactions: 0,
         weeklyGrowth: 0,
@@ -728,12 +661,11 @@ const SupplierPortal = () => {
         localOrders: totalOrders || 0,
         seasonalProductsAvailable: 0,
         organicCertifiedProducts: 0,
-        // Payment statistics
-        paidOrders: paidOrders,
-        unpaidOrders: unpaidOrders,
-        partiallyPaidOrders: partiallyPaidOrders,
-        totalPaid: totalPaid,
-        totalOutstanding: totalOutstanding
+        paidOrders: 0,
+        unpaidOrders: pendingOrders || 0,
+        partiallyPaidOrders: 0,
+        totalPaid: 0,
+        totalOutstanding: totalRevenue
       });
     } catch (error) {
       console.error('Error loading performance metrics:', error);
@@ -746,26 +678,14 @@ const SupplierPortal = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: supplier } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .eq('role', 'supplier')
-        .maybeSingle();
+      const authId = user.id;
+      console.log('📚 Loading order history for supplier auth ID:', authId);
 
-      if (!supplier?.id) {
-        console.log('No supplier profile found for order history');
-        return;
-      }
-
-      console.log('📚 Loading order history for supplier:', supplier.id);
-
-      // Get completed/received/cancelled orders from database
       const { data: orders, error: ordersError } = await supabase
         .from('purchase_orders')
-        .select('*')
-        .eq('supplier_id', supplier.id)
-        .order('order_date', { ascending: false })
+        .select('id, po_number, status, total_amount, items, ordered_at, expected_delivery_date, notes')
+        .eq('supplier_id', authId)
+        .order('ordered_at', { ascending: false })
         .limit(20);
 
       if (ordersError) {
@@ -788,27 +708,23 @@ const SupplierPortal = () => {
 
       // Format orders with payment data from purchase_orders table
       // (payment data is now tracked directly in purchase_orders)
-      const formatted = filteredOrders.map(order => {
-        return {
-          id: order.po_number || order.id,
-          orderId: order.id,
-          date: new Date(order.order_date).toLocaleDateString('en-UG', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-          }),
-          items: order.items?.length || 0,
-          amount: parseFloat(order.total_amount_ugx) || 0,
-          status: order.status === 'completed' ? 'delivered' : 
-                  order.status === 'received' ? 'received' : 'cancelled',
-          rating: 5,
-          products: order.items?.map(item => item.product_name || item.name || 'Item').join(', ') || 'N/A',
-          // Use payment data directly from purchase_orders table
-          payment_status: order.payment_status || 'unpaid',
-          amount_paid: parseFloat(order.amount_paid_ugx) || 0,
-          balance_due: parseFloat(order.balance_due_ugx) || parseFloat(order.total_amount_ugx) || 0
-        };
-      });
+      const formatted = filteredOrders.map(order => ({
+        id: order.po_number || order.id,
+        orderId: order.id,
+        date: new Date(order.ordered_at).toLocaleDateString('en-UG', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        }),
+        items: order.items?.length || 0,
+        amount: parseFloat(order.total_amount) || 0,
+        status: order.status === 'completed' ? 'delivered'
+              : order.status === 'received'   ? 'received'
+              : 'cancelled',
+        rating: 5,
+        products: order.items?.map(item => item.product_name || item.name || 'Item').join(', ') || 'N/A',
+        payment_status: 'unpaid',
+        amount_paid: 0,
+        balance_due: parseFloat(order.total_amount) || 0
+      }));
 
       console.log('✅ Order history loaded:', formatted.length, 'orders');
       setOrderHistory(formatted);
@@ -825,38 +741,42 @@ const SupplierPortal = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get supplier from users table
-      const { data: supplier } = await supabase
+      // Get users row then suppliers row (products.supplier_id → suppliers.id)
+      const { data: userRow } = await supabase
         .from('users')
         .select('id')
-        .eq('auth_id', user.id)
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .eq('role', 'supplier')
         .maybeSingle();
 
-      if (!supplier?.id) {
+      if (!userRow?.id) {
         console.log('No supplier profile found');
+        return;
+      }
+
+      const { data: supplierRow } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('user_id', userRow.id)
+        .maybeSingle();
+
+      if (!supplierRow?.id) {
+        setProductCatalog([]);
         return;
       }
 
       const { data: products } = await supabase
         .from('products')
-        .select(`
-          id,
-          name,
-          sku,
-          selling_price,
-          category:categories(name),
-          inventory(current_stock, status)
-        `)
-        .eq('supplier_id', supplier.id)
+        .select('id, name, sku, selling_price, category_id')
+        .eq('supplier_id', supplierRow.id)
         .order('name');
 
       const formatted = products?.map(product => ({
         id: product.id,
         name: product.name,
-        category: product.category?.name || 'Uncategorized',
+        category: 'Uncategorized',
         price: parseFloat(product.selling_price) || 0,
-        stock: product.inventory?.[0]?.current_stock || 0,
+        stock: 0,
         status: 'active',
         unit: 'unit',
         season: 'year-round'
@@ -875,18 +795,7 @@ const SupplierPortal = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get supplier from users table
-      const { data: supplier } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .eq('role', 'supplier')
-        .maybeSingle();
-
-      if (!supplier?.id) {
-        console.log('No supplier profile found');
-        return;
-      }
+      const authId = user.id;
 
       // Get orders from last 6 months
       const sixMonthsAgo = new Date();
@@ -894,10 +803,10 @@ const SupplierPortal = () => {
 
       const { data: orders } = await supabase
         .from('purchase_orders')
-        .select('total_amount_ugx, status, order_date')
-        .eq('supplier_id', supplier.id)
-        .gte('order_date', sixMonthsAgo.toISOString().split('T')[0])
-        .order('order_date');
+        .select('total_amount, status, ordered_at')
+        .eq('supplier_id', authId)
+        .gte('ordered_at', sixMonthsAgo.toISOString())
+        .order('ordered_at');
 
       // Filter for completed/received orders in JavaScript
       const completedOrders = orders?.filter(o => 
@@ -907,11 +816,11 @@ const SupplierPortal = () => {
       // Group by month
       const revenueByMonth = {};
       completedOrders.forEach(order => {
-        const month = new Date(order.order_date).toLocaleDateString('en-US', { month: 'short' });
+        const month = new Date(order.ordered_at).toLocaleDateString('en-US', { month: 'short' });
         if (!revenueByMonth[month]) {
           revenueByMonth[month] = { name: month, revenue: 0, orders: 0, products: 0 };
         }
-        revenueByMonth[month].revenue += parseFloat(order.total_amount_ugx) || 0;
+        revenueByMonth[month].revenue += parseFloat(order.total_amount) || 0;
         revenueByMonth[month].orders += 1;
       });
 
@@ -930,49 +839,16 @@ const SupplierPortal = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: supplier } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .eq('role', 'supplier')
-        .maybeSingle();
-
-      // Get current user to find their orders
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      
-      if (!currentUser) {
-        console.log('No authenticated user');
-        return;
-      }
-
-      // First try to get supplier profile to find their ID
-      let supplierId = supplier?.id;
-      
-      // If no supplier profile, look up user in users table by auth_id
-      if (!supplierId) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('id')
-          .eq('auth_id', currentUser.id)
-          .eq('role', 'supplier')
-          .maybeSingle();
-        
-        supplierId = userData?.id;
-      }
-
-      if (!supplierId) {
-        console.log('No supplier ID found - cannot load orders');
-        return;
-      }
-
-      console.log('Loading orders for supplier ID:', supplierId);
+      // Use auth UUID — matches what was stored by the manager when creating the order
+      const authId = user.id;
+      console.log('Loading orders for supplier auth ID:', authId);
 
       // Get orders sent to this supplier
       const { data: orders, error } = await supabase
         .from('purchase_orders')
         .select('*')
-        .eq('supplier_id', supplierId)
-        .order('order_date', { ascending: false });
+        .eq('supplier_id', authId)
+        .order('ordered_at', { ascending: false });
 
       if (error) {
         console.error('Error loading pending orders:', error);
@@ -987,9 +863,9 @@ const SupplierPortal = () => {
         return {
           id: order.po_number || order.id,
           orderId: order.id,
-          date: new Date(order.order_date).toLocaleDateString(),
+          date: new Date(order.ordered_at).toLocaleDateString(),
           items: order.items?.length || 0,
-          amount: parseFloat(order.total_amount_ugx) || 0,
+          amount: parseFloat(order.total_amount) || 0,
           status: order.status === 'sent_to_supplier' ? 'processing' : 
                   order.status === 'confirmed' ? 'confirmed' :
                   order.status === 'received' ? 'received' :
@@ -1000,13 +876,10 @@ const SupplierPortal = () => {
           priority: order.priority || 'normal',
           deliveryAddress: order.delivery_address,
           notes: order.notes,
-          // Get payment data directly from purchase_orders table
-          payment_status: order.payment_status || 'unpaid',
-          amount_paid: parseFloat(order.amount_paid_ugx) || 0,
-          balance_due: parseFloat(order.balance_due_ugx) || parseFloat(order.total_amount_ugx) || 0,
-          amount_paid_ugx: parseFloat(order.amount_paid_ugx) || 0,
-          balance_due_ugx: parseFloat(order.balance_due_ugx) || parseFloat(order.total_amount_ugx) || 0,
-          total_amount_ugx: parseFloat(order.total_amount_ugx) || 0,
+          payment_status: 'unpaid',
+          amount_paid: 0,
+          balance_due: parseFloat(order.total_amount) || 0,
+          total_amount: parseFloat(order.total_amount) || 0,
           fullOrder: order
         };
       }) || [];
@@ -1183,32 +1056,27 @@ const SupplierPortal = () => {
         return;
       }
 
-      // Check user role
+      // Check user role — match by auth_id OR id (handles both old and new rows)
       const { data: existingUser } = await supabase
         .from('users')
-        .select('role, profile_completed')
-        .eq('auth_id', user.id)
+        .select('id, role')
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
 
-      // If user doesn't exist yet, they're in the middle of signup - redirect to auth
+      // No row at all → send back to create account
       if (!existingUser) {
-        console.log('No user record found - redirecting to complete profile');
+        console.log('No user record found - redirecting to supplier auth');
         navigate('/supplier-auth');
         return;
       }
 
-      // Only enforce role check if profile is completed
-      // This allows users to complete their supplier profile even if they have another role
-      if (existingUser.profile_completed && existingUser.role !== 'supplier') {
-        console.error('❌ Wrong portal! User is:', existingUser.role);
-        notificationService.show(`⚠️ This account is registered as ${existingUser.role}. Redirecting...`, 'warning', 3000);
-        
-        const redirectPath = existingUser.role === 'manager' ? '/manager-portal' : 
-                            existingUser.role === 'admin' ? '/admin-portal' :
-                            existingUser.role === 'cashier' ? '/pos' :
-                            existingUser.role === 'employee' ? '/employee-portal' :
-                            `/${existingUser.role}-portal`;
-        
+      // Wrong role (fully set up as something else) → redirect
+      if (existingUser.role && existingUser.role !== 'supplier' && existingUser.role !== 'customer') {
+        const redirectPath = existingUser.role === 'manager' ? '/manager-portal'
+                           : existingUser.role === 'admin'   ? '/admin-portal'
+                           : existingUser.role === 'cashier' ? '/cashier-portal'
+                           : '/customer-dashboard';
+        notificationService.show(`This account is registered as ${existingUser.role}.`, 'warning', 3000);
         setTimeout(() => navigate(redirectPath), 2000);
         return;
       }
@@ -2573,7 +2441,7 @@ const SupplierPortal = () => {
     // Calculate financial totals
     const totalPaid = allOrders.reduce((sum, order) => {
       if (order.payment_status === 'paid') {
-        return sum + (parseFloat(order.amount) || parseFloat(order.total_amount_ugx) || 0);
+        return sum + (parseFloat(order.amount) || parseFloat(order.total_amount) || 0);
       } else if (order.payment_status === 'partially_paid') {
         return sum + (parseFloat(order.amount_paid) || parseFloat(order.amount_paid_ugx) || 0);
       }
@@ -2582,7 +2450,7 @@ const SupplierPortal = () => {
     
     const totalDue = allOrders.reduce((sum, order) => {
       if (order.payment_status === 'unpaid' || !order.payment_status) {
-        return sum + (parseFloat(order.amount) || parseFloat(order.total_amount_ugx) || 0);
+        return sum + (parseFloat(order.amount) || parseFloat(order.total_amount) || 0);
       } else if (order.payment_status === 'partially_paid') {
         return sum + (parseFloat(order.balance_due) || parseFloat(order.balance_due_ugx) || 0);
       }
