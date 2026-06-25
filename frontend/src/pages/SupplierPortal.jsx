@@ -25,6 +25,7 @@ import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
+import { SupplierCatalogTab, SupplierApplicationsTab } from '../components/SupplierMarketplace';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
@@ -2777,7 +2778,9 @@ const SupplierPortal = () => {
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
-    { id: 'notifications', label: 'Notifications', icon: FiBell }
+    { id: 'notifications', label: 'Notifications', icon: FiBell },
+    { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
+    { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend }
   ];
 
   return (
@@ -3140,6 +3143,12 @@ const SupplierPortal = () => {
             {activeTab === 'confirmations' && <SupplierPaymentConfirmations />}
             {activeTab === 'performance' && renderPerformance()}
             {activeTab === 'notifications' && renderNotifications()}
+            {activeTab === 'my-catalog' && (
+              <SupplierCatalogTab userId={supplierProfile.auth_id || supplierProfile.id} />
+            )}
+            {activeTab === 'apply-stores' && (
+              <SupplierApplicationsTab userId={supplierProfile.auth_id || supplierProfile.id} />
+            )}
           </>
         )}
       </div>

@@ -7152,11 +7152,8 @@ const AdminPortal = () => {
               // { id: 'payments', label: 'Payment Control', icon: FiDollarSign },
               // { id: 'suppliers', label: 'Supplier Network', icon: FiTrendingUp },
               { id: 'users', label: 'User Management', icon: FiUsers },
+              { id: 'supermarkets', label: '🏪 Supermarkets', icon: FiGlobe },
               { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
-              // { id: 'operations', label: 'System Operations', icon: FiCpu },
-              // { id: 'settings', label: 'Configuration', icon: FiSettings },
-              // { id: 'security', label: 'Security Center', icon: FiLock },
-              // { id: 'monitoring', label: 'Live Monitoring', icon: FiActivity }
             ].map((item) => (
               <button
                 key={item.id}
@@ -7405,6 +7402,7 @@ const AdminPortal = () => {
             {activeSection === 'payments' && renderPaymentControl()}
             {activeSection === 'suppliers' && renderSupplierNetwork()}
             {activeSection === 'users' && renderUserManagement()}
+            {activeSection === 'supermarkets' && <SupermarketsSection />}
             {activeSection === 'analytics' && renderBusinessAnalytics()}
             {activeSection === 'operations' && renderSystemOperations()}
             {activeSection === 'settings' && renderSystemSettings()}
@@ -7520,5 +7518,170 @@ const AdminPortal = () => {
     </div>
   );
 };
+
+// ─── SUPERMARKETS MANAGEMENT SECTION ────────────────────────────────────────
+function SupermarketsSection() {
+  const [stores, setStores]       = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [selected, setSelected]   = useState(null);
+  const [assignEmail, setEmail]   = useState('');
+  const [assignRole, setRole]     = useState('cashier');
+  const [assigning, setAssigning] = useState(false);
+  const [staff, setStaff]         = useState([]);
+
+  useEffect(() => { loadStores(); }, []);
+
+  const loadStores = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('supermarkets').select('*').order('created_at', { ascending: false });
+    setStores(data || []);
+    setLoading(false);
+  };
+
+  const selectStore = async (store) => {
+    setSelected(store);
+    const { data } = await supabase
+      .from('supermarket_staff').select('*').eq('supermarket_id', store.id)
+      .order('created_at', { ascending: false });
+    setStaff(data || []);
+  };
+
+  const assignStaff = async () => {
+    if (!assignEmail.trim()) return;
+    setAssigning(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_assign_staff', {
+        p_supermarket_id: selected.id,
+        p_email:          assignEmail.trim(),
+        p_role:           assignRole,
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error);
+      alert(`✅ ${data.message}`);
+      setEmail('');
+      selectStore(selected);
+    } catch (e) {
+      alert('Error: ' + (e.message || 'Assignment failed'));
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const toggleStatus = async (store) => {
+    const next = store.status === 'active' ? 'suspended' : 'active';
+    await supabase.from('supermarkets').update({ status: next }).eq('id', store.id);
+    loadStores();
+    if (selected?.id === store.id) setSelected({ ...store, status: next });
+  };
+
+  if (loading) return <div className="text-center py-16 text-gray-400">Loading supermarkets…</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-emerald-500 to-cyan-600 rounded-xl p-6 text-white shadow-lg">
+        <h2 className="text-2xl font-bold flex items-center gap-2">🏪 Supermarket Management</h2>
+        <p className="text-emerald-100 mt-1 text-sm">
+          Assign managers and cashiers to each supermarket. Staff get their portal scoped to their store on login.
+        </p>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Store list */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-700">All Supermarkets ({stores.length})</h3>
+          </div>
+          {stores.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">No supermarkets registered yet.</div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {stores.map(store => (
+                <button key={store.id} onClick={() => selectStore(store)}
+                  className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${selected?.id === store.id ? 'bg-emerald-50' : ''}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800">{store.name}</p>
+                      <p className="text-xs text-gray-400">{store.city}, {store.country}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                        store.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                        store.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-600'}`}>
+                        {store.status}
+                      </span>
+                      <button onClick={e => { e.stopPropagation(); toggleStatus(store); }}
+                        className="text-xs px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100">
+                        {store.status === 'active' ? 'Suspend' : 'Activate'}
+                      </button>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Staff assignment panel */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          {!selected ? (
+            <div className="p-12 text-center text-gray-400">
+              <p className="text-4xl mb-3">👈</p>
+              <p>Select a supermarket to manage its staff</p>
+            </div>
+          ) : (
+            <>
+              <div className="p-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-700">{selected.name} — Staff</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Assign managers and cashiers. They'll see their portal scoped to this store.</p>
+              </div>
+              <div className="p-4 space-y-4">
+                {/* Assign form */}
+                <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                  <p className="text-sm font-semibold text-gray-600">Assign Staff Member</p>
+                  <input type="email" placeholder="staff@email.com" value={assignEmail}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-400" />
+                  <div className="flex gap-2">
+                    <select value={assignRole} onChange={e => setRole(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none">
+                      <option value="cashier">Cashier</option>
+                      <option value="manager">Manager</option>
+                    </select>
+                    <button onClick={assignStaff} disabled={assigning || !assignEmail}
+                      className="px-5 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 disabled:opacity-40">
+                      {assigning ? '…' : 'Assign'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Staff list */}
+                <div className="divide-y divide-gray-50">
+                  {staff.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-4 text-center">No staff assigned yet</p>
+                  ) : staff.map(s => (
+                    <div key={s.id} className="py-2 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-700">{s.invited_email}</p>
+                        <p className="text-xs text-gray-400 capitalize">{s.role} · {s.status}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                        s.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                        s.status === 'invited' ? 'bg-blue-100 text-blue-600' :
+                        'bg-gray-100 text-gray-500'}`}>
+                        {s.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default AdminPortal;
