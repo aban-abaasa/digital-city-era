@@ -92,8 +92,16 @@ export const checkClockSkew = () => {
 
 export const validateTokenTiming = (tokenIssuedTime, tokenExpireTime, options = {}) => {
   const { log = true, source = 'auth-session' } = options;
-  const now = Math.floor(Date.now() / 1000);
-  const skew = now - tokenIssuedTime;
+  const now          = Math.floor(Date.now() / 1000);
+  const skew         = now - tokenIssuedTime;
+  const tokenLifetime = tokenExpireTime - tokenIssuedTime;
+
+  // If the apparent "skew" is larger than the token's own lifetime, the token
+  // is simply old (e.g. a stale email-confirmation URL from hours ago).
+  // That is NOT a device clock problem — ignore it entirely.
+  if (tokenLifetime > 0 && skew > tokenLifetime) {
+    return { status: 'OK', skew: 0, source, message: 'Stale auth URL — not a clock issue' };
+  }
 
   if (log) {
     console.warn('[TOKEN TIMING]');
@@ -159,6 +167,14 @@ export const clearClockSkewState = () => {
 export const initClockDiagnostic = () => {
   if (typeof window === 'undefined') {
     return;
+  }
+
+  // Clear any previously-stored skew state that was triggered by a stale
+  // auth URL (the token age was mistaken for clock drift). We re-evaluate
+  // below and only persist a real skew if one is detected.
+  const existingSkew = getClockSkewState();
+  if (existingSkew) {
+    clearClockSkewState();
   }
 
   checkClockSkew();

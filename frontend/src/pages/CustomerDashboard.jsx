@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -26,8 +26,14 @@ import {
   FiDownload,
   FiShare2,
   FiArrowRight,
-  FiZap
+  FiZap,
+  FiMoreVertical,
+  FiX,
+  FiCheckCircle,
+  FiArrowDownLeft,
+  FiArrowUpRight,
 } from 'react-icons/fi';
+import { getBalance, getTransactions } from '../../../../mybodaguy/frontend/src/mybodaguy/services/icanWalletService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
@@ -35,6 +41,10 @@ import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
 import { customerService } from '../services/customerService';
+import EnhancedRideRequest from '../../../../mybodaguy/frontend/src/mybodaguy/components/EnhancedRideRequest';
+import CustomerSelfCheckout from '../../../../mybodaguy/frontend/src/mybodaguy/components/CustomerSelfCheckout';
+import IcanCoinBadge from '../components/IcanCoinBadge';
+import ICANWalletPage from './ICANWalletPage';
 
 const CustomerDashboard = () => {
   const navigate = useNavigate();
@@ -57,6 +67,25 @@ const CustomerDashboard = () => {
   const [loyaltyData, setLoyaltyData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Mobile 3-dot nav
+  const [mobileMenuOpen, setMobileMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // ICAN wallet for rewards tab
+  const [icanBalance, setIcanBalance] = useState(null);
+  const [icanTxs, setIcanTxs]         = useState([]);
+  const [icanLoading, setIcanLoading] = useState(false);
+
+  // Delivery form state
+  const STORES = ['Shoprite', 'Carrefour', 'Quality Supermarket', 'Game', 'Capital Shoppers'];
+  const [deliveries, setDeliveries]     = useState([]);
+  const [delivView, setDelivView]       = useState('list');
+  const [delivLoading, setDelivLoading] = useState(false);
+  const [delivSubmitting, setDelivSubmitting] = useState(false);
+  const [delivForm, setDelivForm]       = useState({
+    store: STORES[0], name: '', phone: '', address: '', items: '', total: '',
+  });
 
   // Real role from Supabase (overrides mock AuthContext)
   const [staffRole, setStaffRole] = useState(null); // 'manager' | 'cashier' | null
@@ -211,6 +240,93 @@ const CustomerDashboard = () => {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Close mobile menu on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMobileMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Load ICAN wallet when rewards tab opens
+  useEffect(() => {
+    if (activeTab !== 'rewards' || !user?.id) return;
+    setIcanLoading(true);
+    Promise.all([getBalance(user.id), getTransactions(user.id, 20)])
+      .then(([bal, txs]) => { 
+        setIcanBalance(bal); 
+        setIcanTxs(txs); 
+      })
+      .catch(() => {})
+      .finally(() => setIcanLoading(false));
+  }, [activeTab, user?.id]);
+
+  // Load delivery orders when delivery tab opens
+  useEffect(() => {
+    if ((activeTab !== 'delivery' && activeTab !== 'orders') || !user?.id) return;
+    const UID_TAG = `uid:${user.id}`;
+    setDelivLoading(true);
+    supabase
+      .from('mybodaguy_delivery_requests')
+      .select('id, supermarket_name, delivery_address, status, total_ugx, delivery_fee_ican, created_at')
+      .ilike('delivery_notes', `%${UID_TAG}%`)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => { setDeliveries(data || []); setDelivLoading(false); });
+  }, [activeTab, user?.id]);
+
+  const submitDelivery = async () => {
+    if (!delivForm.phone || !delivForm.address || !delivForm.items) {
+      toast.error('Please fill in phone, address and items.'); return;
+    }
+    setDelivSubmitting(true);
+    try {
+      const total = Number(delivForm.total) || 0;
+      const fee   = Math.max(3000, total * 0.05);
+      const { error: insErr } = await supabase.from('mybodaguy_delivery_requests').insert({
+        supermarket_name:  delivForm.store,
+        pickup_address:    delivForm.store + ', Kampala',
+        customer_name:     delivForm.name || user?.email?.split('@')[0] || 'Customer',
+        customer_phone:    delivForm.phone,
+        delivery_address:  delivForm.address,
+        delivery_notes:    `uid:${user.id}`,
+        items_summary:     delivForm.items,
+        total_ugx:         total,
+        delivery_fee_ugx:  fee,
+        delivery_fee_ican: fee / 5000,
+        status:            'pending',
+      });
+      if (insErr) throw insErr;
+      toast.success('Delivery order placed! A boda guy will pick it up shortly.');
+      setDelivView('list');
+      setDelivForm(f => ({ ...f, phone: '', address: '', items: '', total: '' }));
+      // Refresh list
+      const { data } = await supabase
+        .from('mybodaguy_delivery_requests')
+        .select('id, supermarket_name, delivery_address, status, total_ugx, delivery_fee_ican, created_at')
+        .ilike('delivery_notes', `%uid:${user.id}%`)
+        .order('created_at', { ascending: false }).limit(20);
+      setDeliveries(data || []);
+    } catch (e) {
+      toast.error(e.message || 'Could not place order');
+    } finally {
+      setDelivSubmitting(false);
+    }
+  };
+
+  const switchTab = (id) => { setActiveTab(id); setMobileMenu(false); };
+
+  const ALL_TABS = [
+    { id: 'overview', label: 'Overview', emoji: '🏠' },
+    { id: 'book-ride', label: 'Book Ride', emoji: '🏍️' },
+    { id: 'delivery', label: 'Delivery', emoji: '📦' },
+    { id: 'shop', label: 'Shop', emoji: '🛒' },
+    { id: 'orders', label: 'Orders', emoji: '📋' },
+    { id: 'rewards', label: 'Rewards', emoji: '🎁' },
+    { id: 'profile', label: 'Profile', emoji: '👤' },
+  ];
 
   // Authentication check for non-demo mode
   // For demo, we'll use fallback data
@@ -402,44 +518,102 @@ const CustomerDashboard = () => {
           .animate-wiggle:hover { animation: wiggle 0.5s ease-in-out; }
         `
       }} />
-      {/* Header */}
-      <div className="bg-white/90 backdrop-blur-sm shadow-lg border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                <FiUser className="h-6 w-6 text-white" />
+      {/* Header — 2 rows: brand + nav */}
+      <div className="sticky top-0 z-50 shadow-md">
+        {/* Row 1 — brand + user + mobile 3-dot */}
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between h-14">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                  <FiUser className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="font-bold leading-none text-sm">Hi, {currentUser.firstName}! 👋</p>
+                  <p className="text-[10px] opacity-75">{currentTime.toLocaleTimeString()}</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Welcome back, {currentUser.firstName}! 👋
-                </h1>
-                <p className="text-sm text-gray-600">
-                  {currentTime.toLocaleDateString('en-UG', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  })} • {currentTime.toLocaleTimeString()}
-                </p>
+              <div className="flex items-center gap-2">
+                <button className="p-1.5 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors">
+                  <FiBell className="h-4 w-4" />
+                </button>
+                <button className="p-1.5 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors hidden sm:flex">
+                  <FiSettings className="h-4 w-4" />
+                </button>
+                <button onClick={handleLogout}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors">
+                  <FiLogOut className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+                {/* 3-dot — mobile only */}
+                <div className="relative sm:hidden" ref={menuRef}>
+                  <button onClick={() => setMobileMenu(o => !o)}
+                    className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors">
+                    {mobileMenuOpen ? <FiX className="h-4 w-4" /> : <FiMoreVertical className="h-4 w-4" />}
+                  </button>
+                  {mobileMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
+                      {ALL_TABS.map(tab => (
+                        <button key={tab.id} onClick={() => switchTab(tab.id)}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left
+                            ${activeTab === tab.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700 hover:bg-slate-50'}`}>
+                          <span>{tab.emoji}</span>
+                          {tab.label}
+                          {activeTab === tab.id && <FiCheckCircle className="ml-auto text-blue-500 h-3.5 w-3.5" />}
+                        </button>
+                      ))}
+                      <button onClick={() => { setActiveTab('ican-wallet'); setMobileMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 border-t border-slate-100">
+                        <span>₡</span> ICAN Wallet
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                <FiBell className="h-5 w-5" />
-              </button>
-              <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                <FiSettings className="h-5 w-5" />
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                <FiLogOut className="h-4 w-4 mr-2" />
-                Logout
-              </button>
             </div>
           </div>
+        </div>
+
+        {/* Row 2 — nav tabs (desktop only) */}
+        <div className="hidden sm:block bg-white border-b border-blue-100">
+          <div className="max-w-7xl mx-auto px-2">
+            <nav className="flex overflow-x-auto scrollbar-hide gap-0.5 py-1 items-center">
+              {ALL_TABS.map(tab => (
+                <button key={tab.id} onClick={() => switchTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                    activeTab === tab.id
+                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+                  }`}>
+                  <span>{tab.emoji}</span>
+                  {tab.label}
+                </button>
+              ))}
+              <button onClick={() => setActiveTab('ican-wallet')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                  activeTab === 'ican-wallet' 
+                    ? 'bg-violet-100 text-violet-700 font-semibold' 
+                    : 'text-violet-600 hover:bg-violet-50'
+                }`}>
+                <span>₡</span> ICAN Wallet
+              </button>
+              <div className="ml-auto flex-shrink-0 pr-1">
+                <div className="w-36"><IcanCoinBadge /></div>
+              </div>
+            </nav>
+          </div>
+        </div>
+
+        {/* Mobile active-tab bar */}
+        <div className="sm:hidden bg-white border-b border-blue-100 px-4 py-2 flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-700">
+            {ALL_TABS.find(t => t.id === activeTab)?.emoji}{' '}
+            {ALL_TABS.find(t => t.id === activeTab)?.label}
+          </span>
+          <button onClick={() => setMobileMenu(o => !o)}
+            className="text-xs text-blue-500 font-medium flex items-center gap-1">
+            <FiMoreVertical className="h-3.5 w-3.5" /> Menu
+          </button>
         </div>
       </div>
 
@@ -619,25 +793,6 @@ const CustomerDashboard = () => {
           </div>
         </div>
 
-        {/* Main Content Tabs */}
-        <div className="mb-6">
-          <div className="flex space-x-4 border-b border-gray-200">
-            {['overview', 'orders', 'rewards', 'profile'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`py-2 px-4 font-medium text-sm rounded-t-lg transition-colors ${
-                  activeTab === tab
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Tab Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
@@ -714,6 +869,144 @@ const CustomerDashboard = () => {
               </div>
             )}
 
+            {/* Book Ride — mybodaguy ride booking */}
+            {activeTab === 'book-ride' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <EnhancedRideRequest customerId={user?.id} />
+              </div>
+            )}
+
+            {/* Delivery — real order form + tracking */}
+            {activeTab === 'delivery' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <FiTruck className="text-blue-600" /> Supermarket Delivery
+                  </h3>
+                  <div className="flex gap-2">
+                    <button onClick={() => setDelivView('list')}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${delivView === 'list' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      My Orders
+                    </button>
+                    <button onClick={() => setDelivView('form')}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${delivView === 'form' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      + New Order
+                    </button>
+                  </div>
+                </div>
+
+                {delivView === 'form' ? (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+                    <h4 className="font-semibold text-gray-700">Place a Delivery Order</h4>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium mb-1 block">Store</label>
+                      <select value={delivForm.store} onChange={e => setDelivForm(f => ({ ...f, store: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        {STORES.map(s => <option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500 font-medium mb-1 block">Your Name</label>
+                        <input value={delivForm.name} onChange={e => setDelivForm(f => ({ ...f, name: e.target.value }))}
+                          placeholder={currentUser.firstName || 'Full name'}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 font-medium mb-1 block">Phone *</label>
+                        <input value={delivForm.phone} onChange={e => setDelivForm(f => ({ ...f, phone: e.target.value }))}
+                          placeholder="+256..." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium mb-1 block">Delivery Address *</label>
+                      <input value={delivForm.address} onChange={e => setDelivForm(f => ({ ...f, address: e.target.value }))}
+                        placeholder="Street, area, landmark"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium mb-1 block">Items Needed *</label>
+                      <textarea value={delivForm.items} onChange={e => setDelivForm(f => ({ ...f, items: e.target.value }))}
+                        rows={3} placeholder="e.g. 2x milk 1L, 1x bread loaf..."
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium mb-1 block">Estimated Total (UGX)</label>
+                      <input type="number" value={delivForm.total} onChange={e => setDelivForm(f => ({ ...f, total: e.target.value }))}
+                        placeholder="0" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
+                    <div className="flex gap-3">
+                      <button onClick={() => setDelivView('list')}
+                        className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
+                        Cancel
+                      </button>
+                      <button onClick={submitDelivery} disabled={delivSubmitting}
+                        className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl text-sm hover:opacity-90 disabled:opacity-50">
+                        {delivSubmitting ? 'Placing…' : '🏍️ Place Order'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-center text-gray-400">Delivery fee: 5% of order (min UGX 3,000) · Powered by My Boda Guy</p>
+                  </div>
+                ) : (
+                  <div>
+                    <button onClick={() => {
+                      const UID_TAG = `uid:${user?.id}`;
+                      setDelivLoading(true);
+                      supabase.from('mybodaguy_delivery_requests')
+                        .select('id, supermarket_name, delivery_address, status, total_ugx, delivery_fee_ican, created_at')
+                        .ilike('delivery_notes', `%${UID_TAG}%`)
+                        .order('created_at', { ascending: false }).limit(20)
+                        .then(({ data }) => { setDeliveries(data || []); setDelivLoading(false); });
+                    }} className="text-xs text-blue-500 flex items-center gap-1 mb-3 hover:opacity-80">
+                      <FiRefreshCw className="h-3 w-3" /> Refresh
+                    </button>
+                    {delivLoading ? (
+                      <p className="text-gray-400 text-sm text-center py-8">Loading…</p>
+                    ) : deliveries.length === 0 ? (
+                      <div className="bg-white rounded-xl p-10 text-center shadow-sm border border-gray-100">
+                        <FiPackage className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-400 text-sm">No delivery orders yet.</p>
+                        <button onClick={() => setDelivView('form')}
+                          className="mt-4 px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg text-sm font-medium">
+                          Place Your First Order
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {deliveries.map(d => {
+                          const SC = { pending:'bg-yellow-100 text-yellow-700', assigned:'bg-blue-100 text-blue-700', picked_up:'bg-cyan-100 text-cyan-700', in_transit:'bg-indigo-100 text-indigo-700', delivered:'bg-emerald-100 text-emerald-700', cancelled:'bg-red-100 text-red-700' };
+                          return (
+                            <div key={d.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <div>
+                                  <p className="font-semibold text-gray-800 text-sm">🏪 {d.supermarket_name}</p>
+                                  <p className="text-xs text-gray-400 mt-0.5">{d.delivery_address}</p>
+                                </div>
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold capitalize ${SC[d.status] || 'bg-gray-100 text-gray-500'}`}>
+                                  {d.status.replace('_', ' ')}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-gray-400">
+                                <span>{new Date(d.created_at).toLocaleDateString()}</span>
+                                <span className="font-medium text-gray-700">UGX {Number(d.total_ugx || 0).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Shop — self-checkout POS */}
+            {activeTab === 'shop' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <CustomerSelfCheckout user={user} />
+              </div>
+            )}
+
             {activeTab === 'orders' && (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                 <h3 className="text-xl font-semibold text-gray-900 mb-6">Order History</h3>
@@ -768,42 +1061,108 @@ const CustomerDashboard = () => {
             )}
 
             {activeTab === 'rewards' && (
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-xl font-semibold text-gray-900 mb-6">Loyalty Rewards</h3>
-                <div className="space-y-4">
-                  {customerData.loyaltyRewards.map((reward) => (
-                    <div key={reward.id} className={`p-4 rounded-lg border-2 ${reward.is_available ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-2xl">{reward.icon || '🎁'}</span>
-                          <div>
-                            <h4 className="font-medium text-gray-900">{reward.title}</h4>
-                            <p className="text-sm text-gray-600">{reward.description}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">{reward.points_required || reward.points} points</p>
-                          {reward.is_available || reward.earned ? (
-                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                              Available
-                            </span>
-                          ) : (
-                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                              Locked
-                            </span>
-                          )}
-                        </div>
+              <div className="space-y-4">
+                {/* ICAN balance card */}
+                <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-2xl p-5 text-white">
+                  <p className="text-violet-200 text-sm mb-1">ICAN Balance</p>
+                  <p className="text-4xl font-bold">
+                    {icanLoading ? '…' : (icanBalance?.ican ?? 0).toFixed(4)} <span className="text-2xl">₡</span>
+                  </p>
+                  <p className="text-violet-200 text-xs mt-1">≈ UGX {icanLoading ? '…' : Number(icanBalance?.ugx ?? 0).toLocaleString()}</p>
+                  <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                    {[
+                      { label: 'Earned', value: icanBalance?.totalEarned },
+                      { label: 'Spent',  value: icanBalance?.totalSpent },
+                      { label: 'Tithe',  value: icanBalance?.totalTithe },
+                    ].map(s => (
+                      <div key={s.label} className="bg-white/10 rounded-xl p-2">
+                        <p className="text-xs text-violet-200">{s.label}</p>
+                        <p className="font-bold text-sm">{icanLoading ? '…' : (s.value ?? 0).toFixed(2)} ₡</p>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => setActiveTab('ican-wallet')}
+                    className="mt-4 w-full py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-semibold transition-colors">
+                    Open Full Wallet →
+                  </button>
+                </div>
+
+                {/* Loyalty points (existing) */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <FiStar className="text-yellow-500" /> Loyalty Points
+                  </h4>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-3xl font-bold text-gray-900">{currentUser.loyaltyPoints}</p>
+                      <p className="text-sm text-gray-500">points balance</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-500">{1000 - (currentUser.loyaltyPoints % 1000)} pts to next reward</p>
+                      <div className="w-32 h-2 bg-gray-200 rounded-full mt-1">
+                        <div className="h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                          style={{ width: `${(currentUser.loyaltyPoints % 1000) / 10}%` }} />
                       </div>
                     </div>
-                  ))}
-                  {customerData.loyaltyRewards.length === 0 && (
-                    <div className="text-center py-12 text-gray-500">
-                      <FiGift className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                      <h4 className="text-lg font-medium mb-2">No Rewards Available</h4>
-                      <p>Keep shopping to earn loyalty points and unlock rewards!</p>
+                  </div>
+                  <div className="space-y-2">
+                    {customerData.loyaltyRewards.slice(0, 3).map(r => (
+                      <div key={r.id} className={`flex items-center justify-between p-3 rounded-lg border ${r.is_available ? 'border-green-200 bg-green-50' : 'border-gray-100'}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{r.icon || '🎁'}</span>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{r.title}</p>
+                            <p className="text-xs text-gray-500">{r.points_required || r.points} pts</p>
+                          </div>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${r.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {r.is_available ? 'Available' : 'Locked'}
+                        </span>
+                      </div>
+                    ))}
+                    {customerData.loyaltyRewards.length === 0 && (
+                      <p className="text-sm text-gray-400 text-center py-3">Keep shopping to unlock rewards!</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ICAN transaction history */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <FiTrendingUp className="text-blue-500" /> ICAN Transactions
+                  </h4>
+                  {icanLoading ? (
+                    <p className="text-gray-400 text-sm text-center py-4">Loading…</p>
+                  ) : icanTxs.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-4">No ICAN transactions yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {icanTxs.map(tx => (
+                        <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                          <div className="flex items-center gap-2">
+                            {tx.direction === 'in'
+                              ? <FiArrowDownLeft className="text-emerald-500 h-4 w-4" />
+                              : <FiArrowUpRight className="text-red-400 h-4 w-4" />}
+                            <div>
+                              <p className="text-sm text-gray-700 font-medium capitalize">{tx.transaction_type.replace('_', ' ')}</p>
+                              <p className="text-xs text-gray-400">{new Date(tx.created_at).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <p className={`font-bold text-sm ${tx.direction === 'in' ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {tx.direction === 'in' ? '+' : '-'}{tx.ican_amount.toFixed(4)} ₡
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Full ICAN Wallet Tab - Unified with other apps */}
+            {activeTab === 'ican-wallet' && (
+              <div className="mt-0 -mx-4 sm:-mx-0">
+                <ICANWalletPage embedded={true} userId={user?.id} />
               </div>
             )}
 

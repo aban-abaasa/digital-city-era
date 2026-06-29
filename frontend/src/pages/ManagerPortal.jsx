@@ -27,6 +27,7 @@ import Receipt from '../components/Receipt';
 import TillSuppliesOrderManagement from '../components/TillSuppliesOrderManagement';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
+import IcanCoinBadge from '../components/IcanCoinBadge';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 
@@ -12087,18 +12088,20 @@ FAREDEAL Uganda Management Team
                 // { id: 'tillsupplies', icon: '🏪', label: 'Till Supplies', desc: 'Cashier requests', gradient: 'from-teal-500 to-teal-600' }, // DISABLED - Cashier supply ordering removed
                 // { id: 'inventory', icon: '📋', label: 'Inventory', desc: 'Stock control', gradient: 'from-indigo-500 to-indigo-600' }, // DISABLED - Inventory management removed
                 { id: 'reports', icon: '📄', label: 'Reports', desc: 'Access control', gradient: 'from-pink-500 to-pink-600' },
-                { id: 'alerts', icon: '🔔', label: 'Alerts', desc: 'Notifications', gradient: 'from-red-500 to-red-600' }
+                { id: 'alerts', icon: '🔔', label: 'Alerts', desc: 'Notifications', gradient: 'from-red-500 to-red-600' },
+                { id: 'ican-wallet', icon: '₡', label: 'ICAN Wallet', desc: 'Buy, sell & transfer', gradient: 'from-violet-500 to-violet-600', href: '/ican-wallet' }
               ].map((item) => (
                 <button
                   key={item.id}
                   onClick={() => {
+                    if (item.href) { window.location.href = item.href; return; }
                     setActiveTab(item.id);
                     setShowMobileDropdown(false);
                     toast.success(`Switched to ${item.label}`);
                   }}
                   className={`w-full group relative flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                    activeTab === item.id 
-                      ? 'bg-gradient-to-r ' + item.gradient + ' text-white shadow-lg scale-[1.02]' 
+                    activeTab === item.id
+                      ? 'bg-gradient-to-r ' + item.gradient + ' text-white shadow-lg scale-[1.02]'
                       : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 >
@@ -12388,6 +12391,10 @@ FAREDEAL Uganda Management Team
         }>
           {/* Enhanced Overview Dashboard with Uganda Context */}
           {activeTab === 'overview' && (
+            <>
+            <div className="mb-4 flex justify-end">
+              <div className="w-48"><IcanCoinBadge /></div>
+            </div>
             <UgandaOverviewDashboard
               businessMetrics={businessMetrics}
               currentTime={currentTime}
@@ -12404,6 +12411,7 @@ FAREDEAL Uganda Management Team
               setShowInventoryModal={setShowInventoryModal}
               openEditModal={openEditModal}
             />
+            </>
           )}
 
           {/* 🚀 Real-Time Portal Control Dashboard */}

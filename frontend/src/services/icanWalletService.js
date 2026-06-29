@@ -36,6 +36,9 @@ export async function getBalance(userId) {
     ican: wallet?.ican_balance ?? 0,
     ugx: (wallet?.ican_balance ?? 0) * ICAN_TO_UGX,
     address: wallet?.wallet_address ?? null,
+    totalEarned: wallet?.total_earned ?? 0,
+    totalSpent: wallet?.total_spent ?? 0,
+    totalTithe: wallet?.total_tithe_paid ?? 0,
   };
 }
 
@@ -120,6 +123,39 @@ export async function creditSupplierDelivery({ supplierUserId, ugxValue, orderId
   return data;
 }
 
+// ─── Buy / Sell ────────────────────────────────────────────────────────────
+
+/**
+ * Buy ICAN coins — user pays UGX (notional), ICAN credited to wallet.
+ * 1 ICAN = 5,000 UGX floor price. No tithe on purchases.
+ */
+export async function buyICAN({ userId, icanAmount, paymentRef = null }) {
+  const { data, error } = await supabase.rpc('buy_ican_coins', {
+    p_user_id: userId,
+    p_ican_amount: icanAmount,
+    p_source_app: SOURCE_APP,
+    p_payment_ref: paymentRef,
+  });
+  if (error) throw error;
+  if (!data.success) throw new Error(data.error ?? 'Buy failed');
+  return data;
+}
+
+/**
+ * Sell ICAN coins — ICAN debited, UGX payout handled offline by cashier/admin.
+ */
+export async function sellICAN({ userId, icanAmount, reference = null }) {
+  const { data, error } = await supabase.rpc('sell_ican_coins', {
+    p_user_id: userId,
+    p_ican_amount: icanAmount,
+    p_source_app: SOURCE_APP,
+    p_reference: reference,
+  });
+  if (error) throw error;
+  if (!data.success) throw new Error(data.error ?? 'Sell failed');
+  return data;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 /** Convert UGX to ICAN at floor price (rounds down to 8 dp). */
@@ -150,6 +186,9 @@ export default {
   sendICAN,
   payWithICAN,
   creditCashback,
+  creditSupplierDelivery,
+  buyICAN,
+  sellICAN,
   ugxToICAN,
   icanToUGX,
   formatICAN,

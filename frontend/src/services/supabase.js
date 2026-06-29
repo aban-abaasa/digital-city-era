@@ -16,6 +16,20 @@ if (!supabaseAnonKey) {
   console.error('⚠️ Missing Supabase Anon Key. Please check your environment variables.')
 }
 
+// Strip expired auth hashes from the URL so Supabase never tries to use a
+// stale implicit-flow token (e.g. an email-confirmation link clicked yesterday).
+if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
+  try {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const expiresAt = Number(params.get('expires_at') || 0);
+    const nowSec    = Math.floor(Date.now() / 1000);
+    if (expiresAt > 0 && expiresAt < nowSec) {
+      console.warn('[SUPABASE] Stale auth URL detected — clearing hash to prevent 403 sign-out loop.');
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  } catch (_) { /* hash parsing failed — leave it alone */ }
+}
+
 // Create Supabase client as singleton - Fixed pattern
 let supabaseInstance = null
 
@@ -26,10 +40,9 @@ function initSupabase() {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
-        flowType: 'implicit',  // Changed from 'pkce' to 'implicit' for debugging
-        persistSessionTimeout: 30000,  // 30 second timeout for session persistence
-        storage: localStorage,  // Explicitly use localStorage
-        storageKey: 'supabase.auth.token',  // Explicit key name
+        flowType: 'implicit',
+        storage: localStorage,
+        storageKey: 'supabase.auth.token',
       },
       realtime: {
         params: {

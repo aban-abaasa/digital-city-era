@@ -14,8 +14,17 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        'src': path.resolve(__dirname, './src')
-      }
+        'src': path.resolve(__dirname, './src'),
+        // Force all cross-project imports to use this app's copies of React
+        // and shared UI libs, preventing the "two copies of React" hook error.
+        'react':           path.resolve(__dirname, './node_modules/react'),
+        'react-dom':       path.resolve(__dirname, './node_modules/react-dom'),
+        'react/jsx-runtime': path.resolve(__dirname, './node_modules/react/jsx-runtime'),
+        'react/jsx-dev-runtime': path.resolve(__dirname, './node_modules/react/jsx-dev-runtime'),
+        'lucide-react':    path.resolve(__dirname, './node_modules/lucide-react'),
+        'sonner':          path.resolve(__dirname, './node_modules/sonner'),
+      },
+      dedupe: ['react', 'react-dom', 'lucide-react', 'sonner'],
     },
     server: {
       host: '0.0.0.0', // Listen on all network interfaces

@@ -29,6 +29,7 @@ import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
+import IcanCoinBadge from '../components/IcanCoinBadge';
 
 const CashierPortal = () => {
   const [activeTab, setActiveTab] = useState('pos');
@@ -1920,6 +1921,7 @@ const CashierPortal = () => {
                 <FiRefreshCw className={`h-4 w-4 md:h-5 md:w-5 ${refreshingProducts ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">{refreshingProducts ? 'Loading...' : 'Load POS'}</span>
               </button>
+              {/* COMMENTED OUT - Add Product button removed from POS
               <button
                 onClick={() => setShowAddProductModal(true)}
                 className="px-3 py-2 md:px-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-bold hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 shadow-lg text-sm md:text-base"
@@ -1927,6 +1929,7 @@ const CashierPortal = () => {
                 <FiPlus className="h-4 w-4 md:h-5 md:w-5" />
                 <span className="hidden xs:inline">Add Product</span>
               </button>
+              */}
               <button
                 onClick={() => setShowBarcodeScanner(true)}
                 className="px-3 py-2 md:px-4 bg-gradient-to-r from-blue-600 to-green-600 text-white rounded-lg font-bold hover:from-blue-700 hover:to-green-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 shadow-lg text-sm md:text-base"
@@ -2192,6 +2195,11 @@ const CashierPortal = () => {
 
   const renderDashboard = () => (
     <div className="space-y-4 md:space-y-6 animate-slideInLeft container-3d bg-white rounded-none md:rounded-2xl p-2 md:p-8 shadow-none md:shadow-2xl">
+      {/* ICAN Coin Balance */}
+      <div className="flex justify-end">
+        <div className="w-44"><IcanCoinBadge /></div>
+      </div>
+
       {/* Ugandan-themed Welcome Section - Real Data */}
       <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-none md:rounded-xl p-2 md:p-4 text-white shadow-none md:shadow-lg">
         <div className="flex items-center justify-between">
@@ -3068,7 +3076,8 @@ const CashierPortal = () => {
     { id: 'profile', label: 'My Profile', icon: FiUser },
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     // { id: 'inventory', label: 'Till Supplies', icon: FiPackage }, // DISABLED - Supply ordering removed from cashier portal
-    { id: 'notifications', label: 'Notifications', icon: FiBell }
+    { id: 'notifications', label: 'Notifications', icon: FiBell },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard, href: '/ican-wallet' },
   ];
 
   return (
@@ -3266,7 +3275,7 @@ const CashierPortal = () => {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => { if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
                   className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
                     activeTab === tab.id
                       ? 'border-yellow-500 text-yellow-600'

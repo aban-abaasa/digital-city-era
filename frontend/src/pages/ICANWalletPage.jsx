@@ -11,6 +11,8 @@ import {
   ICAN_TO_UGX,
 } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
+import BuyIcan from '../../../../ICAN/frontend/src/components/ICAN/BuyIcan';
+import SellIcan from '../../../../ICAN/frontend/src/components/ICAN/SellIcan';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -51,21 +53,26 @@ function formatDate(ts) {
 
 // ─── sub-components ────────────────────────────────────────────────────────
 
-function BalanceCard({ balance, walletAddress, onRefresh, refreshing }) {
+function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded = false }) {
   const [hidden, setHidden] = useState(false);
+  
+  const bgStyle = embedded 
+    ? { background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)' }
+    : { background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)' };
+    
+  const textColor = embedded ? 'text-white' : 'text-white';
+  
   return (
-    <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{
-      background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)',
-    }}>
+    <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={bgStyle}>
       <div className="absolute inset-0 opacity-10 pointer-events-none"
         style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, #7c3aed 0%, transparent 60%)' }} />
       <div className="relative p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">I</span>
+              <span className={`${textColor} font-bold text-sm`}>I</span>
             </div>
-            <span className="text-white font-semibold text-sm">Icaneracoin Wallet</span>
+            <span className={`${textColor} font-semibold text-sm`}>Supermarket — ICAN Wallet</span>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setHidden(h => !h)}
@@ -80,20 +87,34 @@ function BalanceCard({ balance, walletAddress, onRefresh, refreshing }) {
         </div>
 
         <div className="mb-1 text-white/60 text-xs uppercase tracking-widest">ICAN Balance</div>
-        <div className="text-4xl font-bold text-white mb-1">
+        <div className={`text-4xl font-bold ${textColor} mb-1`}>
           {hidden ? '••••••' : `${formatICAN(balance.ican)} ICAN`}
         </div>
         <div className="text-white/70 text-sm mb-4">
           {hidden ? '••••••' : `≈ UGX ${Number(balance.ugx).toLocaleString()}`}
         </div>
 
-        <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2">
-          <span className="text-white/50 text-xs">Address:</span>
-          <span className="text-white/80 text-xs font-mono truncate">{walletAddress ?? 'Generating…'}</span>
+        <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-3">
+          <span className="text-white/50 text-xs shrink-0">Address:</span>
+          <span className="text-white/80 text-xs font-mono truncate flex-1">{walletAddress ?? 'Generating…'}</span>
           {walletAddress && (
             <button onClick={() => { navigator.clipboard.writeText(walletAddress); toast.info('Address copied'); }}
               className="text-white/50 hover:text-white text-xs ml-auto shrink-0">Copy</button>
           )}
+        </div>
+
+        {/* Stats row - showing total earned, spent, tithe */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {[
+            { label: 'Earned', value: `${formatICAN(balance.totalEarned ?? 0)}` },
+            { label: 'Spent', value: `${formatICAN(balance.totalSpent ?? 0)}` },
+            { label: 'Tithe', value: `${formatICAN(balance.totalTithe ?? 0)}` },
+          ].map(s => (
+            <div key={s.label} className="bg-white/10 rounded-xl p-2 text-center">
+              <p className="text-white/50 text-xs mb-1">{s.label}</p>
+              <p className="text-white font-bold text-xs">{s.value} ₡</p>
+            </div>
+          ))}
         </div>
 
         <div className="mt-3 text-white/40 text-xs">Floor price: 1 ICAN = UGX {ICAN_TO_UGX.toLocaleString()}</div>
@@ -215,21 +236,23 @@ function ReceiveModal({ walletAddress, onClose }) {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
-export default function ICANWalletPage() {
-  const [userId, setUserId] = useState(null);
+export default function ICANWalletPage({ embedded = false, userId: propUserId = null }) {
+  const [userId, setUserId] = useState(propUserId);
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState({ ican: 0, ugx: 0, address: null });
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [modal, setModal] = useState(null); // 'send' | 'receive' | null
+  const [modal, setModal] = useState(null); // 'send' | 'receive' | 'buy' | 'sell' | null
   const [activeTab, setActiveTab] = useState('all');
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user) setUserId(data.user.id);
-    });
-  }, []);
+    if (!propUserId) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) setUserId(data.user.id);
+      });
+    }
+  }, [propUserId]);
 
   const loadWallet = useCallback(async () => {
     if (!userId) return;
@@ -268,7 +291,7 @@ export default function ICANWalletPage() {
 
   if (!userId) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className={`${embedded ? '' : 'min-h-screen bg-gray-950'} flex items-center justify-center ${embedded ? 'py-10' : ''}`}>
         <div className="text-white text-center">
           <div className="text-6xl mb-4">🔒</div>
           <p className="text-gray-400">Please sign in to access your ICAN Wallet</p>
@@ -279,7 +302,7 @@ export default function ICANWalletPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className={`${embedded ? '' : 'min-h-screen bg-gray-950'} flex items-center justify-center ${embedded ? 'py-10' : ''}`}>
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-gray-400">Loading your ICAN wallet…</p>
@@ -288,20 +311,30 @@ export default function ICANWalletPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+  const containerClass = embedded 
+    ? "px-4 py-6 space-y-6" 
+    : "min-h-screen bg-gray-950 text-white";
+  
+  const innerContainerClass = embedded 
+    ? "" 
+    : "max-w-2xl mx-auto px-4 py-8 space-y-6";
 
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center">
-            <span className="font-bold text-lg">₡</span>
+  return (
+    <div className={containerClass}>
+      <div className={innerContainerClass}>
+
+        {/* Header - only show if not embedded */}
+        {!embedded && (
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center">
+              <span className="font-bold text-lg">₡</span>
+            </div>
+            <div>
+              <h1 className="font-bold text-xl">ICAN Wallet</h1>
+              <p className="text-gray-500 text-sm">Supermarket — powered by Icaneracoin</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-xl">ICAN Wallet</h1>
-            <p className="text-gray-500 text-sm">Supermarket — powered by Icaneracoin</p>
-          </div>
-        </div>
+        )}
 
         {/* Balance card */}
         <BalanceCard
@@ -309,13 +342,16 @@ export default function ICANWalletPage() {
           walletAddress={balance.address}
           onRefresh={handleRefresh}
           refreshing={refreshing}
+          embedded={embedded}
         />
 
         {/* Quick actions */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-5 gap-3">
           {[
             { label: 'Send', icon: '↑', color: 'from-violet-700 to-violet-900', action: () => setModal('send') },
             { label: 'Receive', icon: '↓', color: 'from-emerald-700 to-emerald-900', action: () => setModal('receive') },
+            { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => setModal('buy') },
+            { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => setModal('sell') },
             { label: 'History', icon: '≡', color: 'from-blue-700 to-blue-900', action: () => document.getElementById('tx-section')?.scrollIntoView({ behavior: 'smooth' }) },
           ].map(btn => (
             <button key={btn.label} onClick={btn.action}
@@ -327,27 +363,29 @@ export default function ICANWalletPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Total Earned', value: `${formatICAN(balance.ican)} ICAN` },
-            { label: 'Rate', value: `1 ICAN = ${ICAN_TO_UGX.toLocaleString()} UGX` },
-            { label: 'Tithe Rate', value: '10% auto-deducted' },
-          ].map(s => (
-            <div key={s.label} className="bg-gray-900 rounded-xl p-3 text-center">
-              <p className="text-gray-500 text-xs mb-1">{s.label}</p>
-              <p className="text-white font-semibold text-xs">{s.value}</p>
-            </div>
-          ))}
-        </div>
+        {!embedded && (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Total Earned', value: `${formatICAN(balance.totalEarned ?? 0)} ICAN` },
+              { label: 'Rate', value: `1 ICAN = ${ICAN_TO_UGX.toLocaleString()} UGX` },
+              { label: 'Tithe Rate', value: '10% auto-deducted' },
+            ].map(s => (
+              <div key={s.label} className="bg-gray-900 rounded-xl p-3 text-center">
+                <p className="text-gray-500 text-xs mb-1">{s.label}</p>
+                <p className="text-white font-semibold text-xs">{s.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Transaction history */}
         <div id="tx-section">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-base">Transaction History</h2>
-            <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
+            <h2 className={`font-semibold text-base ${embedded ? 'text-gray-900' : 'text-white'}`}>Transaction History</h2>
+            <div className={`flex gap-1 ${embedded ? 'bg-gray-100' : 'bg-gray-900'} rounded-lg p-1`}>
               {['all', 'in', 'out', 'tithe'].map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`text-xs px-3 py-1.5 rounded-md capitalize transition-colors ${activeTab === tab ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                  className={`text-xs px-3 py-1.5 rounded-md capitalize transition-colors ${activeTab === tab ? (embedded ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white') : (embedded ? 'text-gray-600 hover:text-gray-900' : 'text-gray-400 hover:text-white')}`}>
                   {tab}
                 </button>
               ))}
@@ -355,9 +393,9 @@ export default function ICANWalletPage() {
           </div>
 
           {filteredTx.length === 0 ? (
-            <div className="bg-gray-900 rounded-2xl p-8 text-center">
+            <div className={`${embedded ? 'bg-slate-50' : 'bg-gray-900'} rounded-2xl p-8 text-center`}>
               <div className="text-4xl mb-3">💳</div>
-              <p className="text-gray-500 text-sm">No transactions yet. Pay or receive ICAN at the supermarket checkout.</p>
+              <p className={`${embedded ? 'text-gray-600' : 'text-gray-500'} text-sm`}>No transactions yet. Pay or receive ICAN at the supermarket checkout.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -365,25 +403,25 @@ export default function ICANWalletPage() {
                 const badge = APP_BADGE[tx.source_app] ?? APP_BADGE.ican;
                 const isIn = tx.direction === 'in';
                 return (
-                  <div key={tx.id} className="bg-gray-900 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${isIn ? 'bg-emerald-900' : 'bg-rose-900'}`}>
-                      {isIn ? '↓' : '↑'}
+                  <div key={tx.id} className={`${embedded ? 'bg-white border border-gray-200' : 'bg-gray-900'} rounded-xl px-4 py-3 flex items-center gap-3`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${isIn ? (embedded ? 'bg-emerald-100' : 'bg-emerald-900') : (embedded ? 'bg-rose-100' : 'bg-rose-900')}`}>
+                      <span className={isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400')}>{isIn ? '↓' : '↑'}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-white text-sm font-medium">
+                        <span className={`${embedded ? 'text-gray-900' : 'text-white'} text-sm font-medium`}>
                           {TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
                         </span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>
                       </div>
-                      <p className="text-gray-500 text-xs truncate">{tx.note || '—'}</p>
-                      <p className="text-gray-600 text-xs">{formatDate(tx.created_at)}</p>
+                      <p className={`${embedded ? 'text-gray-600' : 'text-gray-500'} text-xs truncate`}>{tx.note || '—'}</p>
+                      <p className={`${embedded ? 'text-gray-400' : 'text-gray-600'} text-xs`}>{formatDate(tx.created_at)}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className={`font-semibold text-sm ${TX_COLORS[tx.transaction_type] ?? (isIn ? 'text-emerald-400' : 'text-rose-400')}`}>
+                      <p className={`font-semibold text-sm ${TX_COLORS[tx.transaction_type] ?? (isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400'))}`}>
                         {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
                       </p>
-                      <p className="text-gray-600 text-xs">
+                      <p className={`${embedded ? 'text-gray-500' : 'text-gray-600'} text-xs`}>
                         UGX {Number(tx.ican_amount * ICAN_TO_UGX).toLocaleString()}
                       </p>
                     </div>
@@ -395,14 +433,16 @@ export default function ICANWalletPage() {
         </div>
 
         {/* Earn more section */}
-        <div className="bg-gradient-to-br from-violet-900/40 to-blue-900/40 border border-violet-700/30 rounded-2xl p-5">
-          <h3 className="font-semibold mb-2">Earn ICAN at the Supermarket</h3>
-          <ul className="space-y-2 text-sm text-gray-300">
-            <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> Pay with ICAN at checkout — 1% cashback on every purchase</li>
-            <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> Suppliers earn ICAN on every approved delivery</li>
-            <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> 10% tithe is auto-deducted from all earnings</li>
-          </ul>
-        </div>
+        {!embedded && (
+          <div className="bg-gradient-to-br from-violet-900/40 to-blue-900/40 border border-violet-700/30 rounded-2xl p-5">
+            <h3 className="font-semibold mb-2">Earn ICAN at the Supermarket</h3>
+            <ul className="space-y-2 text-sm text-gray-300">
+              <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> Pay with ICAN at checkout — 1% cashback on every purchase</li>
+              <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> Suppliers earn ICAN on every approved delivery</li>
+              <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> 10% tithe is auto-deducted from all earnings</li>
+            </ul>
+          </div>
+        )}
 
       </div>
 
@@ -417,6 +457,38 @@ export default function ICANWalletPage() {
       )}
       {modal === 'receive' && balance.address && (
         <ReceiveModal walletAddress={balance.address} onClose={() => setModal(null)} />
+      )}
+      {modal === 'buy' && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-700">
+              <h2 className="text-white font-bold text-lg">💳 Buy ICAN Coins</h2>
+              <button onClick={() => setModal(null)} className="text-gray-400 hover:text-white text-xl">×</button>
+            </div>
+            <div className="p-2">
+              <BuyIcan userId={userId} onSuccess={() => { loadWallet(); setModal(null); }} />
+            </div>
+            <div className="px-6 pb-5">
+              <button onClick={() => setModal(null)} className="w-full py-3 rounded-xl bg-gray-800 text-gray-300 font-medium text-sm">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {modal === 'sell' && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-700">
+              <h2 className="text-white font-bold text-lg">💰 Sell ICAN Coins</h2>
+              <button onClick={() => setModal(null)} className="text-gray-400 hover:text-white text-xl">×</button>
+            </div>
+            <div className="p-2">
+              <SellIcan userId={userId} onSuccess={() => { loadWallet(); setModal(null); }} />
+            </div>
+            <div className="px-6 pb-5">
+              <button onClick={() => setModal(null)} className="w-full py-3 rounded-xl bg-gray-800 text-gray-300 font-medium text-sm">Close</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import { supabase } from '../services/supabase';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
+import IcanCoinBadge from '../components/IcanCoinBadge';
 import { 
   FiUsers, FiUser, FiShield, FiSettings, FiBarChart, FiActivity,
   FiGlobe, FiServer, FiDatabase, FiLock, FiAlertTriangle,
@@ -2535,6 +2536,11 @@ const AdminPortal = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ICAN Coin Balance */}
+      <div className="flex justify-end mb-2">
+        <div className="w-48"><IcanCoinBadge /></div>
       </div>
 
       {/* Admin Access Status Banner - Ultra Mobile Optimized */}
@@ -7541,10 +7547,12 @@ const AdminPortal = () => {
               { id: 'users', label: 'User Management', icon: FiUsers },
               { id: 'supermarkets', label: '🏪 Supermarkets', icon: FiGlobe },
               { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
+              { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
             ].map((item) => (
               <button
                 key={item.id}
                 onClick={() => {
+                  if (item.href) { window.location.href = item.href; return; }
                   setActiveSection(item.id);
                   setShowMobileMenu(false);
                 }}
@@ -7610,10 +7618,11 @@ const AdminPortal = () => {
               // { id: 'suppliers', label: 'Supplier Network', icon: FiTrendingUp },
               { id: 'users', label: 'User Management', icon: FiUsers },
               { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
+              { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
             ].map((item) => (
               <button
                 key={item.id}
-                onClick={() => setActiveSection(item.id)}
+                onClick={() => { if (item.href) { window.location.href = item.href; return; } setActiveSection(item.id); }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-300 relative ${
                   activeSection === item.id 
                     ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'

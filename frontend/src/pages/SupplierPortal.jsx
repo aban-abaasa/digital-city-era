@@ -20,6 +20,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, ComposedChart
 } from 'recharts';
 import { supabase } from '../services/supabase';
+import IcanCoinBadge from '../components/IcanCoinBadge';
 import { notificationService } from '../services/notificationService';
 import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
@@ -1761,6 +1762,11 @@ const SupplierPortal = () => {
 
   const renderOverview = () => (
     <div className="space-y-6 animate-fadeInUp">
+      {/* ICAN Coin Balance */}
+      <div className="flex justify-end">
+        <div className="w-44"><IcanCoinBadge /></div>
+      </div>
+
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl p-6 text-white shadow-lg">
         <div className="flex items-center justify-between">
@@ -2648,7 +2654,8 @@ const SupplierPortal = () => {
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     { id: 'notifications', label: 'Notifications', icon: FiBell },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
-    { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend }
+    { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
   ];
 
   return (
@@ -2922,6 +2929,7 @@ const SupplierPortal = () => {
                 <button
                   key={tab.id}
                   onClick={() => {
+                    if (tab.href) { window.location.href = tab.href; return; }
                     setActiveTab(tab.id);
                     setShowMobileMenu(false);
                   }}
@@ -2975,7 +2983,7 @@ const SupplierPortal = () => {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => { if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
                   className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
                     activeTab === tab.id
                       ? 'border-purple-500 text-purple-600'

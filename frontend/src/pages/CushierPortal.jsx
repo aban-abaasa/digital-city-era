@@ -27,6 +27,7 @@ import inventoryService from '../services/inventorySupabaseService';
 import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
 import { supabase } from '../services/supabase';
+import IcanCoinBadge from '../components/IcanCoinBadge';
 
 const CashierPortal = () => {
   const [activeTab, setActiveTab] = useState('pos');
@@ -1766,6 +1767,10 @@ const CashierPortal = () => {
 
   const renderDashboard = () => (
     <div className="space-y-3 md:space-y-6 animate-slideInLeft container-3d bg-white rounded-lg md:rounded-2xl p-4 md:p-8 shadow-2xl">
+      {/* ICAN Coin Balance */}
+      <div className="flex justify-end">
+        <div className="w-44"><IcanCoinBadge /></div>
+      </div>
       {/* Ugandan-themed Welcome Section - Responsive */}
       <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-lg md:rounded-xl p-3 md:p-6 text-white shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-6">
@@ -2644,7 +2649,8 @@ const CashierPortal = () => {
     { id: 'profile', label: 'My Profile', icon: FiUser },
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     { id: 'inventory', label: 'Till Supplies', icon: FiPackage },
-    { id: 'notifications', label: 'Notifications', icon: FiBell }
+    { id: 'notifications', label: 'Notifications', icon: FiBell },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard, href: '/ican-wallet' },
   ];
 
   return (
@@ -2764,7 +2770,7 @@ const CashierPortal = () => {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => { if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
                 className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
                   activeTab === tab.id
                     ? 'border-yellow-500 text-yellow-600'
