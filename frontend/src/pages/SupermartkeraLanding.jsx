@@ -438,6 +438,11 @@ const SupermartkeraLanding = () => {
           </form>
         </section>
       </main>
+
+      {/* Minimal footer */}
+      <footer className={`relative z-10 border-t py-6 px-6 text-center text-xs ${palette.muted} ${palette.header}`}>
+        <p>© {new Date().getFullYear()} Supermartkera · Built on the ICAN ecosystem</p>
+      </footer>
     </div>
   );
 };

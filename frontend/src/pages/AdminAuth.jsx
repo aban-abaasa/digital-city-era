@@ -70,19 +70,38 @@ export default function AdminAuth() {
   // ── on mount: check session ────────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    (async () => {
+      const { data: { session: s } } = await supabase.auth.getSession();
       if (!alive) return;
-      if (s) {
-        setSession(s);
-        // pre-fill store email from their account
-        setForm(f => ({ ...f, storeEmail: s.user.email || '' }));
-        setView('create');
-      } else {
+
+      if (!s) {
         setView('signin');
+        return;
       }
-    });
+
+      setSession(s);
+      setForm(f => ({ ...f, storeEmail: s.user.email || '' }));
+
+      // If this session already belongs to a fully set-up admin, send them
+      // straight to their own portal — never show "create a supermarket"
+      // again, and never let a stray/shared session land someone in a
+      // system that isn't a fresh one for them.
+      const uid = s.user.id;
+      const { data: userData } = await supabase
+        .from('users').select('role, supermarket_id').eq('auth_id', uid).maybeSingle();
+      const metaRole = s.user.user_metadata?.role || s.user.app_metadata?.role;
+      const isAdmin = (userData?.role === 'admin' || metaRole === 'admin') && !!userData?.supermarket_id;
+
+      if (!alive) return;
+      if (isAdmin) {
+        navigate('/admin-portal', { replace: true });
+        return;
+      }
+
+      setView('create');
+    })();
     return () => { alive = false; };
-  }, []);
+  }, [navigate]);
 
   // ── sign-in ────────────────────────────────────────────────────────────────
   const handleSignIn = async (e) => {

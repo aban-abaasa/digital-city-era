@@ -45,9 +45,11 @@ import EnhancedRideRequest from '../../../../mybodaguy/frontend/src/mybodaguy/co
 import CustomerSelfCheckout from '../../../../mybodaguy/frontend/src/mybodaguy/components/CustomerSelfCheckout';
 import IcanCoinBadge from '../components/IcanCoinBadge';
 import ICANWalletPage from './ICANWalletPage';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const CustomerDashboard = () => {
   const navigate = useNavigate();
+  const branding = useSupermarketBranding();
   const { user, customer, logout, loading: authLoading, isAuthenticated } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState('overview');
@@ -468,7 +470,12 @@ const CustomerDashboard = () => {
   // No loading or authentication checks needed for demo
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div
+      className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 bg-cover bg-center bg-fixed"
+      style={branding.backgroundUrl ? {
+        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(239,246,255,0.92)), url(${branding.backgroundUrl})`
+      } : undefined}
+    >
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeIn {

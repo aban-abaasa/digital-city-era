@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import { useNavigate } from 'react-router-dom';
+import {
   FiUser, FiShoppingBag, FiPackage, FiTruck, FiTrendingUp, 
   FiZap, FiAward, FiBell, FiSettings, FiLogOut, FiSearch,
   FiCreditCard, FiShield, FiMessageCircle, FiCalendar, 
@@ -30,8 +31,16 @@ import cashierOrdersService from '../services/cashierOrdersService';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import PortalSwitcher from '../components/PortalSwitcher';
+import ProfileModal from '../components/ProfileModal';
 
 const CashierPortal = () => {
+  const navigate = useNavigate();
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Each supermarket's own name/background — auto-populated, no manual retyping
+  const branding = useSupermarketBranding();
   const [activeTab, setActiveTab] = useState('pos');
   const [currentTime, setCurrentTime] = useState(new Date());
   
@@ -621,12 +630,11 @@ const CashierPortal = () => {
           // Save to database - update avatar_url in users table
           const { error } = await supabase
             .from('users')
-            .update({ 
+            .update({
               avatar_url: base64String,
               updated_at: new Date().toISOString()
             })
-            .eq('auth_id', user.id)
-            .eq('role', 'cashier');
+            .eq('auth_id', user.id);
 
           if (error) {
             console.error('❌ Error saving to database:', error);
@@ -676,15 +684,11 @@ const CashierPortal = () => {
     }
   };
 
-  // Open Edit Profile Modal
+  // Editing now happens on the single unified profile page (role-based,
+  // shared with admin/manager/customer), shown as a popup instead of a
+  // portal-local modal.
   const openEditProfileModal = () => {
-    setEditProfileForm({
-      name: cashierProfile.name || '',
-      phone: cashierProfile.phone || '',
-      email: cashierProfile.email || '',
-      languages: cashierProfile.languages || []
-    });
-    setShowEditProfileModal(true);
+    setShowProfileModal(true);
   };
 
   // Save Profile Changes
@@ -720,8 +724,7 @@ const CashierPortal = () => {
           },
           updated_at: new Date().toISOString()
         })
-        .eq('auth_id', user.id)
-        .eq('role', 'cashier');
+        .eq('auth_id', user.id);
 
       if (error) {
         console.error('Error updating profile:', error);
@@ -1130,7 +1133,7 @@ const CashierPortal = () => {
       const systemNotifications = [
         {
           id: 1,
-          title: 'Welcome to FAREDEAL',
+          title: `Welcome to ${branding.name}`,
           message: 'Your cashier portal is ready to use',
           time: new Date().toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
           read: false,
@@ -2232,8 +2235,7 @@ const CashierPortal = () => {
           </div>
           <div className="text-right">
             <div className="text-5xl md:text-6xl mb-2">🏪</div>
-            <p className="text-yellow-100 font-semibold">FAREDEAL</p>
-            <p className="text-yellow-200 text-sm">Uganda</p>
+            <p className="text-yellow-100 font-semibold">{branding.name}</p>
             <p className="text-yellow-100 text-xs mt-1">Supermarket</p>
             
             {/* Quick Scanner Access */}
@@ -3073,7 +3075,7 @@ const CashierPortal = () => {
     { id: 'pos', label: 'POS System', icon: FiShoppingCart },
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
     { id: 'transactions', label: 'My Receipts', icon: FiPrinter },
-    { id: 'profile', label: 'My Profile', icon: FiUser },
+    { id: 'profile', label: 'My Profile', icon: FiUser, openProfileModal: true },
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     // { id: 'inventory', label: 'Till Supplies', icon: FiPackage }, // DISABLED - Supply ordering removed from cashier portal
     { id: 'notifications', label: 'Notifications', icon: FiBell },
@@ -3081,7 +3083,12 @@ const CashierPortal = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      style={branding.backgroundUrl ? {
+        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+      } : undefined}
+    >
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -3203,6 +3210,8 @@ const CashierPortal = () => {
                 <button
                   key={tab.id}
                   onClick={() => {
+                    if (tab.openProfileModal) { setShowProfileModal(true); setShowMobileMenu(false); return; }
+                    if (tab.href) { window.location.href = tab.href; return; }
                     setActiveTab(tab.id);
                     setShowMobileMenu(false);
                   }}
@@ -3220,8 +3229,12 @@ const CashierPortal = () => {
                 </button>
               ))}
             </nav>
+
+            <div className="p-4 border-t border-gray-200">
+              <PortalSwitcher variant="light" fullWidth onNavigate={() => setShowMobileMenu(false)} />
+            </div>
           </div>
-          
+
           <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)}></div>
         </div>
       )}
@@ -3242,7 +3255,7 @@ const CashierPortal = () => {
               </div>
               <div className="flex items-center space-x-4">
                 <button 
-                  onClick={() => setActiveTab('profile')}
+                  onClick={() => setShowProfileModal(true)}
                   className="text-right hover:bg-gray-50 p-2 rounded-lg transition-all duration-300 cursor-pointer group"
                 >
                   <p className="text-sm text-gray-600 group-hover:text-gray-900 font-medium">{cashierProfile.name}</p>
@@ -3251,13 +3264,14 @@ const CashierPortal = () => {
                 <button className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-300">
                   <FiBell className="h-6 w-6" />
                 </button>
-                <button 
-                  onClick={() => setActiveTab('profile')}
+                <button
+                  onClick={() => setShowProfileModal(true)}
                   className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-300"
                   title="Profile Settings"
                 >
                   <FiSettings className="h-6 w-6" />
                 </button>
+                <PortalSwitcher />
                 <button className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-300">
                   <FiLogOut className="h-6 w-6" />
                 </button>
@@ -3275,7 +3289,7 @@ const CashierPortal = () => {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => { if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
+                  onClick={() => { if (tab.openProfileModal) { setShowProfileModal(true); return; } if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
                   className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
                     activeTab === tab.id
                       ? 'border-yellow-500 text-yellow-600'
@@ -3788,6 +3802,8 @@ const CashierPortal = () => {
           </div>
         </div>
       )}
+
+      <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
     </div>
   );
 };

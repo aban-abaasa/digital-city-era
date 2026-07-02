@@ -41,7 +41,7 @@ const TX_COLORS = {
 const APP_BADGE = {
   ican: { label: 'ICAN', color: 'bg-violet-900 text-violet-200' },
   'digital-city-era': { label: 'Supermarket', color: 'bg-blue-900 text-blue-200' },
-  'farm-agent': { label: 'Farm Agent', color: 'bg-green-900 text-green-200' },
+  'farm-agent': { label: 'Backbone', color: 'bg-green-900 text-green-200' },
   mybodaguy: { label: 'My Boda Guy', color: 'bg-orange-900 text-orange-200' },
 };
 

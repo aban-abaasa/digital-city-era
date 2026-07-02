@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
-import { 
+import { useNavigate } from 'react-router-dom';
+import {
   FiTrendingUp, FiUsers, FiDollarSign, FiPackage, FiBarChart, 
   FiPieChart, FiTarget, FiAward, FiClock, FiAlertTriangle,
   FiCalendar, FiMail, FiBell, FiSettings, FiLogOut, FiSearch,
@@ -30,6 +31,9 @@ import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import IcanCoinBadge from '../components/IcanCoinBadge';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import PortalSwitcher from '../components/PortalSwitcher';
+import ProfileModal from '../components/ProfileModal';
 
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
@@ -224,6 +228,12 @@ const CHART_COLORS = {
 };
 
 const ManagerPortal = () => {
+  const navigate = useNavigate();
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Each supermarket's own name/background — auto-populated, no manual retyping
+  const branding = useSupermarketBranding();
+
   // Core State Management
   const [activeTab, setActiveTab] = useState('overview');
   const [timeRange, setTimeRange] = useState('7d');
@@ -290,83 +300,8 @@ const ManagerPortal = () => {
   });
   
   // Enhanced Notifications System
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'urgent',
-      title: 'Critical Stock Alert',
-      message: 'iPhone 15 Pro Max inventory critically low - Only 2 units remaining',
-      time: '2 minutes ago',
-      timestamp: new Date(Date.now() - 2 * 60 * 1000),
-      icon: '⚠️',
-      color: 'bg-red-100 text-red-800 border-red-200',
-      unread: true,
-      category: 'inventory',
-      action: 'reorder',
-      priority: 'high',
-      ugandaContext: 'Kampala store'
-    },
-    {
-      id: 2,
-      type: 'success',
-      title: 'Mobile Money Payment Received',
-      message: 'MTN Mobile Money payment of UGX 450,000 processed successfully from customer Nakato Grace',
-      time: '8 minutes ago',
-      timestamp: new Date(Date.now() - 8 * 60 * 1000),
-      icon: '💰',
-      color: 'bg-green-100 text-green-800 border-green-200',
-      unread: true,
-      category: 'payment',
-      action: 'view_receipt',
-      priority: 'medium',
-      ugandaContext: 'MTN MoMo'
-    },
-    {
-      id: 3,
-      type: 'info',
-      title: 'New Supplier Order',
-      message: 'Order #PO-2024-087 received from Tech Solutions Ltd - Requires manager approval',
-      time: '15 minutes ago',
-      timestamp: new Date(Date.now() - 15 * 60 * 1000),
-      icon: '📦',
-      color: 'bg-blue-100 text-blue-800 border-blue-200',
-      unread: true,
-      category: 'orders',
-      action: 'approve_order',
-      priority: 'medium',
-      ugandaContext: 'Kampala supplier'
-    },
-    {
-      id: 4,
-      type: 'achievement',
-      title: 'Team Performance Milestone',
-      message: 'Sarah Nakiyonga completed "Customer Excellence Training" with 98% score',
-      time: '1 hour ago',
-      timestamp: new Date(Date.now() - 60 * 60 * 1000),
-      icon: '🏆',
-      color: 'bg-purple-100 text-purple-800 border-purple-200',
-      unread: false,
-      category: 'team',
-      action: 'view_certificate',
-      priority: 'low',
-      ugandaContext: 'Uganda team'
-    },
-    {
-      id: 5,
-      type: 'warning',
-      title: 'Delivery Delay Notice',
-      message: 'Fresh vegetables delivery from Wakiso farmers delayed by 45 minutes due to Kampala traffic',
-      time: '2 hours ago',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      icon: '🚛',
-      color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      unread: false,
-      category: 'logistics',
-      action: 'update_schedule',
-      priority: 'medium',
-      ugandaContext: 'Wakiso-Kampala route'
-    }
-  ]);
+  // Notifications disabled — was seeded with hardcoded fake/demo alerts.
+  const [notifications, setNotifications] = useState([]);
   
   const [notificationCount, setNotificationCount] = useState(
     notifications.filter(n => n.unread).length
@@ -374,7 +309,6 @@ const ManagerPortal = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState('all');
   const [showMobileDropdown, setShowMobileDropdown] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(false);
   const [showMainQuickActions, setShowMainQuickActions] = useState(false);
   
   // Reports system state
@@ -852,29 +786,10 @@ const ManagerPortal = () => {
     }
   };
 
-  const addNewNotification = (type, title, message, category = 'general') => {
-    const newNotification = {
-      id: Date.now(),
-      type,
-      title,
-      message,
-      time: 'Just now',
-      timestamp: new Date(),
-      icon: type === 'urgent' ? '⚠️' : type === 'success' ? '✅' : '📢',
-      color: type === 'urgent' ? 'bg-red-100 text-red-800 border-red-200' : 
-             type === 'success' ? 'bg-green-100 text-green-800 border-green-200' : 
-             'bg-blue-100 text-blue-800 border-blue-200',
-      unread: true,
-      category,
-      action: 'view_details',
-      priority: type === 'urgent' ? 'high' : 'medium',
-      ugandaContext: 'FAREDEAL Uganda'
-    };
-    
-    setNotifications(prev => [newNotification, ...prev]);
-    setNotificationCount(prev => prev + 1);
-    toast.info(`📢 New notification: ${title}`);
-  };
+  // Notifications disabled for the manager portal — single choke point so
+  // every caller (the simulated real-time activity system, broadcast
+  // actions, etc.) becomes a no-op instead of hunting down 30+ call sites.
+  const addNewNotification = () => {};
 
   // 🚀 REAL-TIME PORTAL CONTROL FUNCTIONS
 
@@ -4431,16 +4346,18 @@ _Automated Business Report System_`)}`;
         return;
       }
 
-      // Try to load profile data from manager_profiles table
+      // Load role-specific fields from the single unified_profiles table
       let profileData = null;
-      const { data: managerProfileData } = await supabase
-        .from('manager_profiles')
-        .select('*')
-        .or(`manager_id.eq.${authId},manager_id.eq.${parsedUser.id}`)
-        .maybeSingle();
+      if (managerData) {
+        const { data: unifiedProfileData } = await supabase
+          .from('unified_profiles')
+          .select('*')
+          .eq('user_id', managerData.id)
+          .maybeSingle();
 
-      if (managerProfileData) {
-        profileData = managerProfileData;
+        if (unifiedProfileData) {
+          profileData = unifiedProfileData;
+        }
       }
 
       if (managerData) {
@@ -4519,12 +4436,15 @@ _Automated Business Report System_`)}`;
         updated_at: new Date().toISOString()
       };
 
-      // Update users table
+      // Update users table — no role filter: this is always "my own row"
+      // (matched by auth_id/id, already enforced by RLS), and an admin
+      // viewing the manager portal via the role-hierarchy switcher has
+      // role='admin', not 'manager', so filtering on it would silently
+      // save nothing for them.
       const { error: usersError } = await supabase
         .from('users')
         .update(usersUpdateData)
-        .or(`auth_id.eq.${userId},id.eq.${userId}`)
-        .eq('role', 'manager');
+        .or(`auth_id.eq.${userId},id.eq.${userId}`);
 
       if (usersError) {
         console.error('Error updating users table:', usersError);
@@ -4532,45 +4452,40 @@ _Automated Business Report System_`)}`;
         return;
       }
 
-      // Prepare data for manager_profiles table
-      const profileData = {
-        manager_id: userId,
-        full_name: editedProfile.name || managerProfile.name,
-        phone: editedProfile.phoneNumber || managerProfile.phoneNumber,
-        department: editedProfile.department || managerProfile.department,
-        location: editedProfile.location || managerProfile.location,
-        languages: (editedProfile.languages || managerProfile.languages || ['English']).join(','),
-        avatar: editedProfile.avatar || managerProfile.avatar,
-        employee_id: managerProfile.employeeId,
-        updated_at: new Date().toISOString()
-      };
-
-      // Check if profile record exists
-      const { data: existingProfile } = await supabase
-        .from('manager_profiles')
-        .select('id')
-        .eq('manager_id', userId)
+      // Get the internal users.id (unified_profiles.user_id references this, not the auth id)
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('id, role')
+        .or(`auth_id.eq.${userId},id.eq.${userId}`)
         .maybeSingle();
 
-      let profileError;
-      if (existingProfile) {
-        // Update existing profile
-        const { error } = await supabase
-          .from('manager_profiles')
-          .update(profileData)
-          .eq('manager_id', userId);
-        profileError = error;
-      } else {
-        // Insert new profile
-        const { error } = await supabase
-          .from('manager_profiles')
-          .insert([profileData]);
-        profileError = error;
-      }
+      if (userRow) {
+        // Single source of truth for role-specific fields: unified_profiles.
+        // Use the account's actual role, not a hardcoded 'manager' — an
+        // admin viewing this portal via the role-hierarchy switcher must
+        // never have their real role overwritten just by saving here.
+        const profileData = {
+          user_id: userRow.id,
+          full_name: editedProfile.name || managerProfile.name,
+          email: managerProfile.email,
+          role: userRow.role,
+          phone: editedProfile.phoneNumber || managerProfile.phoneNumber,
+          department: editedProfile.department || managerProfile.department,
+          location: editedProfile.location || managerProfile.location,
+          languages: editedProfile.languages || managerProfile.languages || ['English'],
+          avatar: editedProfile.avatar || managerProfile.avatar,
+          employee_id: managerProfile.employeeId,
+          updated_at: new Date().toISOString()
+        };
 
-      if (profileError && profileError.code !== 'PGRST116') {
-        console.error('Error saving to manager_profiles table:', profileError);
-        toast.warning('⚠️ Profile partially saved - database table error');
+        const { error: profileError } = await supabase
+          .from('unified_profiles')
+          .upsert(profileData, { onConflict: 'user_id' });
+
+        if (profileError) {
+          console.error('Error saving to unified_profiles table:', profileError);
+          toast.warning('⚠️ Profile partially saved - database table error');
+        }
       }
 
       // Update local state with the updated data
@@ -4598,17 +4513,11 @@ _Automated Business Report System_`)}`;
     }
   };
 
-  // Start editing profile
+  // Editing now happens on the single unified profile page (role-based,
+  // shared with admin/cashier/customer), shown as a popup instead of a
+  // portal-local modal.
   const startEditingProfile = () => {
-    setEditedProfile({
-      name: managerProfile.name,
-      phoneNumber: managerProfile.phoneNumber,
-      department: managerProfile.department,
-      avatar: managerProfile.avatar,
-      location: managerProfile.location,
-      languages: managerProfile.languages
-    });
-    setIsEditingProfile(true);
+    setShowProfileModal(true);
   };
 
   // Cancel editing
@@ -5194,7 +5103,7 @@ _Automated Business Report System_`)}`;
 
       // Get transactions for each employee to calculate their sales
       const { data: allTransactions } = await supabase
-        .from('sales_transactions')
+        .from('transactions')
         .select('cashier_id, total_amount, created_at');
 
       const teamData = await Promise.all(employees.map(async (employee) => {
@@ -5249,7 +5158,7 @@ _Automated Business Report System_`)}`;
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
       const { data: recentTransactions } = await supabase
-        .from('sales_transactions')
+        .from('transactions')
         .select('items, created_at')
         .gte('created_at', thirtyDaysAgo.toISOString());
 
@@ -5328,7 +5237,7 @@ _Automated Business Report System_`)}`;
 
       // Fetch sales data
       const { data: allTransactions } = await supabase
-        .from('sales_transactions')
+        .from('transactions')
         .select('*')
         .order('created_at', { ascending: false });
 
@@ -5398,7 +5307,7 @@ _Automated Business Report System_`)}`;
       const thirtyDaysAgo = new Date(today);
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const { data: recentTransactions } = await supabase
-        .from('sales_transactions')
+        .from('transactions')
         .select('items')
         .gte('created_at', thirtyDaysAgo.toISOString());
 
@@ -6514,8 +6423,36 @@ _Automated Business Report System_`)}`;
     setShowNotifications(!showNotifications);
   };
 
-  // Enhanced Profile Function with Editable Information
+  // Real logout handler — pulled out so it works regardless of whether the
+  // (now unreachable) legacy profile popup below ever runs. It used to only
+  // exist as window.handleManagerLogout, defined as a side effect of opening
+  // that popup, which meant logout silently broke for anyone who reached it
+  // via the mobile quick-actions button without opening the popup first.
+  const handleManagerLogout = async () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      try {
+        await supabase.auth.signOut();
+        localStorage.clear();
+        toast.success('👋 Logged out successfully');
+        setTimeout(() => {
+          window.location.href = '/manager-auth';
+        }, 500);
+      } catch (error) {
+        console.error('Logout error:', error);
+        toast.error('Failed to logout');
+      }
+    }
+  };
+
+  // Editing now happens on the single unified profile page (role-based,
+  // shared with admin/cashier/customer), shown as a popup — the rest of
+  // this function is legacy dead code (a raw DOM-injected modal full of
+  // prompt()-based field editors) kept only to avoid a large risky
+  // deletion; it can never run since we return before reaching it.
   const handleProfileClick = () => {
+    setShowProfileModal(true);
+    return;
+    // eslint-disable-next-line no-unreachable
     const profileModal = document.createElement('div');
     profileModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-end pt-16 pr-4';
     profileModal.innerHTML = `
@@ -7260,7 +7197,7 @@ _Automated Business Report System_`)}`;
               </div>
               <div class="animate-slide-in">
                 <h2 class="text-3xl font-bold mb-1">Advanced Settings Hub</h2>
-                <p class="text-white text-opacity-90 text-lg">Manager Portal - FAREDEAL Uganda 🇺🇬</p>
+                <p class="text-white text-opacity-90 text-lg">Manager Portal - ${branding.name} 🇺🇬</p>
                 <div class="flex items-center space-x-4 mt-2">
                   <span class="px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm">v2.1.0</span>
                   <span class="px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm">🔒 Secure</span>
@@ -11252,7 +11189,7 @@ FAREDEAL Uganda Management Team
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold mb-2">🇺🇬 Supplier Order Verification</h2>
-                <p className="text-green-100">FAREDEAL Uganda - Manager Portal</p>
+                <p className="text-green-100">{branding.name} - Manager Portal</p>
               </div>
               <div className="text-right">
                 <div className="text-3xl font-bold">{orderStats.pending}</div>
@@ -11637,7 +11574,7 @@ FAREDEAL Uganda Management Team
               {/* Brand Text with Creative Styling */}
               <div className="text-white font-bold text-xl group-hover:scale-105 transition-transform duration-300">
                 <span className="bg-gradient-to-r from-white to-yellow-200 bg-clip-text text-transparent">
-                  FAREDEAL
+                  {branding.name}
                 </span>
                 <div className="text-xs text-yellow-200 font-normal">Pearl of Africa</div>
               </div>
@@ -11792,6 +11729,9 @@ FAREDEAL Uganda Management Team
                   </div>
                 </button>
 
+                {/* Switch to the cashier or customer portal — manager outranks both */}
+                <PortalSwitcher variant="dark" />
+
                 {/* Quick Action Floating Button */}
                 <button
                   onClick={() => {
@@ -11820,7 +11760,12 @@ FAREDEAL Uganda Management Team
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      style={branding.backgroundUrl ? {
+        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+      } : undefined}
+    >
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -12036,7 +11981,7 @@ FAREDEAL Uganda Management Team
                   <span className="text-2xl">🇺🇬</span>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold">FAREDEAL</h2>
+                  <h2 className="text-xl font-bold">{branding.name}</h2>
                   <p className="text-blue-100 text-sm">Manager Portal</p>
                 </div>
               </div>
@@ -12077,19 +12022,8 @@ FAREDEAL Uganda Management Team
               </div>
               {[
                 { id: 'overview', icon: '📊', label: 'Dashboard', desc: 'Business overview', gradient: 'from-blue-500 to-blue-600' },
-                // { id: 'portal-control', icon: '🚀', label: 'Portal Control', desc: 'AI management', gradient: 'from-cyan-500 to-cyan-600' }, // DISABLED - Portal control feature removed
                 { id: 'analytics', icon: '📈', label: 'Analytics', desc: 'Data insights', gradient: 'from-green-500 to-green-600' },
-                { id: 'transactions', icon: '🧾', label: 'Transactions', desc: 'Sales & receipts', gradient: 'from-yellow-500 to-yellow-600' },
-                // { id: 'team', icon: '👥', label: 'Team', desc: 'Staff management', gradient: 'from-purple-500 to-purple-600' }, // DISABLED - Team management removed
-                // { id: 'suppliers', icon: '🤝', label: 'Suppliers', desc: 'Partner verification', gradient: 'from-orange-500 to-orange-600' }, // DISABLED - Supplier verification moved to Order Management
-                { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' },
-                { id: 'pos', icon: '🛒', label: 'POS Items', desc: 'Products for sale', gradient: 'from-emerald-500 to-emerald-600' },
-                { id: 'pos-control', icon: '⚙️', label: 'POS Pricing', desc: 'Manage pricing & stock', gradient: 'from-orange-500 to-orange-600' },
-                // { id: 'tillsupplies', icon: '🏪', label: 'Till Supplies', desc: 'Cashier requests', gradient: 'from-teal-500 to-teal-600' }, // DISABLED - Cashier supply ordering removed
-                // { id: 'inventory', icon: '📋', label: 'Inventory', desc: 'Stock control', gradient: 'from-indigo-500 to-indigo-600' }, // DISABLED - Inventory management removed
-                { id: 'reports', icon: '📄', label: 'Reports', desc: 'Access control', gradient: 'from-pink-500 to-pink-600' },
-                { id: 'alerts', icon: '🔔', label: 'Alerts', desc: 'Notifications', gradient: 'from-red-500 to-red-600' },
-                { id: 'ican-wallet', icon: '₡', label: 'ICAN Wallet', desc: 'Buy, sell & transfer', gradient: 'from-violet-500 to-violet-600', href: '/ican-wallet' }
+                { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' }
               ].map((item) => (
                 <button
                   key={item.id}
@@ -12097,7 +12031,6 @@ FAREDEAL Uganda Management Team
                     if (item.href) { window.location.href = item.href; return; }
                     setActiveTab(item.id);
                     setShowMobileDropdown(false);
-                    toast.success(`Switched to ${item.label}`);
                   }}
                   className={`w-full group relative flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${
                     activeTab === item.id
@@ -12130,57 +12063,36 @@ FAREDEAL Uganda Management Team
               ))}
             </div>
 
-            {/* Quick Actions - Collapsible */}
-            <div className="p-4 border-t border-gray-200">
-              <button
-                onClick={() => setShowQuickActions(!showQuickActions)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 hover:text-purple-600 transition-colors"
-              >
-                <span>⚡ Quick Actions • Ebiragiro byamangu</span>
-                {showQuickActions ? <FiChevronUp className="h-4 w-4" /> : <FiChevronDown className="h-4 w-4" />}
-              </button>
-              
-              {showQuickActions && (
-                <div className="grid grid-cols-3 gap-2 animate-fadeIn">
-                  <button
-                    onClick={() => {
-                      setShowNotifications(!showNotifications);
-                      setShowMobileDropdown(false);
-                    }}
-                    className="relative p-3 bg-red-50 hover:bg-red-100 rounded-xl text-center border border-red-200 transition-all"
-                  >
-                    <div className="text-xl mb-1">🔔</div>
-                    <div className="text-xs font-medium text-red-800">Alerts</div>
-                    {notificationCount > 0 && (
-                      <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
-                        {notificationCount}
-                      </div>
-                    )}
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      startEditingProfile();
-                      setShowMobileDropdown(false);
-                    }}
-                    className="p-3 bg-blue-50 hover:bg-blue-100 rounded-xl text-center border border-blue-200 transition-all"
-                  >
-                    <div className="text-xl mb-1">⚙️</div>
-                    <div className="text-xs font-medium text-blue-800">Settings</div>
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      handleManagerLogout();
-                      setShowMobileDropdown(false);
-                    }}
-                    className="p-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-center border border-gray-300 transition-all"
-                  >
-                    <div className="text-xl mb-1">🚪</div>
-                    <div className="text-xs font-medium text-gray-800">Logout</div>
-                  </button>
-                </div>
-              )}
+            {/* Switch Portal */}
+            <div className="px-4 pt-4 border-t border-gray-200">
+              <PortalSwitcher variant="light" fullWidth onNavigate={() => setShowMobileDropdown(false)} />
+            </div>
+
+            {/* Settings / Logout */}
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    startEditingProfile();
+                    setShowMobileDropdown(false);
+                  }}
+                  className="p-3 bg-blue-50 hover:bg-blue-100 rounded-xl text-center border border-blue-200 transition-all"
+                >
+                  <div className="text-xl mb-1">⚙️</div>
+                  <div className="text-xs font-medium text-blue-800">Settings</div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleManagerLogout();
+                    setShowMobileDropdown(false);
+                  }}
+                  className="p-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-center border border-gray-300 transition-all"
+                >
+                  <div className="text-xl mb-1">🚪</div>
+                  <div className="text-xs font-medium text-gray-800">Logout</div>
+                </button>
+              </div>
             </div>
 
             {/* Footer */}
@@ -13835,6 +13747,8 @@ FAREDEAL Uganda Management Team
           </div>
         </div>
       )}
+
+      <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
     </div>
   );
 };

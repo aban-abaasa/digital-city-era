@@ -6,11 +6,12 @@ import { AppProvider } from '@/contexts/AppContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import AdminProtectedRoute from '@/components/AdminProtectedRoute';
+import RoleProtectedRoute from '@/components/RoleProtectedRoute';
 import ClockSkewNotification from '@/components/ClockSkewNotification';
+import ChatWidget from '@/components/ChatWidget';
 
 // Pages and Components
 import AdminPortal from '@/pages/AdminPortal';
-import AdminProfile from '@/pages/AdminProfile';
 import CustomerLogin from '@/pages/CustomerLogin';
 import EmployeeAuth from '@/pages/EmployeeAuth';
 import UnifiedAuth from '@/pages/UnifiedAuth';
@@ -36,6 +37,8 @@ import CustomerDashboard from '@/pages/CustomerDashboard';
 import CustomerPayment from '@/pages/CustomerPayment';
 import CustomerDelivery from '@/pages/CustomerDelivery';
 import ICANWalletPage from '@/pages/ICANWalletPage';
+import UnifiedProfilePage from '@/pages/UnifiedProfilePage';
+import DevPanel from '@/pages/DevPanel';
 
 // Styles
 import 'react-toastify/dist/ReactToastify.css';
@@ -221,32 +224,28 @@ function App() {
                   </AdminProtectedRoute>
                 } 
               />
-              <Route 
-                path="/admin-profile" 
-                element={
-                  <AdminProtectedRoute>
-                    <AdminProfile />
-                  </AdminProtectedRoute>
-                } 
-              />
-              
-              {/* Main role pages - directly accessible */}
-              <Route path="/manager-portal" element={<ManagerPortal />} />
-              <Route path="/manager" element={<ManagerPortal />} />
-              
-              <Route path="/cashier-portal" element={<CashierPortal />} />
-              <Route path="/cashier" element={<CashierPortal />} />
-              
-              <Route path="/employee-portal" element={<EmployeePortal />} />
-              <Route path="/employee" element={<EmployeePortal />} />
-              
-              <Route path="/supplier-portal" element={<SupplierPortal />} />
-              <Route path="/supplier" element={<SupplierPortal />} />
-              
-              <Route path="/customer-portal" element={<CustomerDashboard />} />
-              <Route path="/customer" element={<CustomerDashboard />} />
-              <Route path="/customer-dashboard" element={<CustomerDashboard />} />
-              
+              {/* Legacy standalone admin profile page retired — everyone uses the single unified profile now */}
+              <Route path="/admin-profile" element={<Navigate to="/profile" replace />} />
+
+              {/* Main role pages — hierarchical: manager also gets cashier+customer,
+                  cashier also gets customer, admin gets everywhere. Supplier is its
+                  own silo outside the ladder. */}
+              <Route path="/manager-portal" element={<RoleProtectedRoute minLevel={2}><ManagerPortal /></RoleProtectedRoute>} />
+              <Route path="/manager" element={<RoleProtectedRoute minLevel={2}><ManagerPortal /></RoleProtectedRoute>} />
+
+              <Route path="/cashier-portal" element={<RoleProtectedRoute minLevel={1}><CashierPortal /></RoleProtectedRoute>} />
+              <Route path="/cashier" element={<RoleProtectedRoute minLevel={1}><CashierPortal /></RoleProtectedRoute>} />
+
+              <Route path="/employee-portal" element={<RoleProtectedRoute minLevel={1}><EmployeePortal /></RoleProtectedRoute>} />
+              <Route path="/employee" element={<RoleProtectedRoute minLevel={1}><EmployeePortal /></RoleProtectedRoute>} />
+
+              <Route path="/supplier-portal" element={<RoleProtectedRoute exactRoles={['supplier']}><SupplierPortal /></RoleProtectedRoute>} />
+              <Route path="/supplier" element={<RoleProtectedRoute exactRoles={['supplier']}><SupplierPortal /></RoleProtectedRoute>} />
+
+              <Route path="/customer-portal" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />
+              <Route path="/customer" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />
+              <Route path="/customer-dashboard" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />
+
               {/* Operational features - accessible to all */}
               <Route path="/pos" element={<POS />} />
               <Route path="/products" element={<Products />} />
@@ -261,7 +260,11 @@ function App() {
               <Route path="/customer-delivery" element={<CustomerDelivery />} />
               <Route path="/payment-dashboard" element={<PaymentDashboard />} />
               <Route path="/ican-wallet" element={<ICANWalletPage />} />
-              
+              <Route path="/profile" element={<UnifiedProfilePage />} />
+
+              {/* Developer panel — hardcoded credentials, not for end users */}
+              <Route path="/dev-panel" element={<DevPanel />} />
+
               {/* Fallback route */}
               <Route 
                 path="*" 
@@ -272,7 +275,9 @@ function App() {
                 } 
               />
               </Routes>
-              
+
+              <ChatWidget />
+
               <ToastContainer
                 position="top-right"
                 autoClose={3000}

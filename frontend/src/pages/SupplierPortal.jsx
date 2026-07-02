@@ -11,7 +11,7 @@ import {
   FiCreditCard, FiMessageCircle, FiShare2, FiThumbsUp,
   FiBookmark, FiGrid, FiList, FiInfo, FiHelpCircle,
   FiMaximize, FiMinimize, FiRotateCw, FiUpload, FiPrinter,
-  FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiUsers,
+  FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiUsers, FiUser,
   FiShoppingCart, FiPercent, FiFlag, FiWifi, FiSend, FiFileText,
   FiMenu, FiX, FiChevronUp
 } from 'react-icons/fi';
@@ -27,9 +27,11 @@ import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
 import { SupplierCatalogTab, SupplierApplicationsTab } from '../components/SupplierMarketplace';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
+  const branding = useSupermarketBranding();
   const [activeTab, setActiveTab] = useState('overview');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -2646,20 +2648,21 @@ const SupplierPortal = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: FiBarChart },
-    { id: 'profile', label: 'My Profile', icon: FiUsers },
     { id: 'orders', label: 'Orders', icon: FiPackage },
-    { id: 'products', label: 'Products', icon: FiShoppingCart },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
-    { id: 'performance', label: 'Performance', icon: FiTrendingUp },
-    { id: 'notifications', label: 'Notifications', icon: FiBell },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
     { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend },
     { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      style={branding.backgroundUrl ? {
+        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+      } : undefined}
+    >
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -2686,23 +2689,33 @@ const SupplierPortal = () => {
             {/* Mobile: Show only hamburger button */}
             {isMobile ? (
               <div className="flex items-center justify-between w-full">
-                <button
-                  onClick={() => setShowMobileMenu(!showMobileMenu)}
-                  className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
-                >
-                  <div className="space-y-1.5">
-                    <div className="w-6 h-0.5 bg-white"></div>
-                    <div className="w-6 h-0.5 bg-white"></div>
-                    <div className="w-6 h-0.5 bg-white"></div>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setShowMobileMenu(!showMobileMenu)}
+                    className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="w-6 h-0.5 bg-white"></div>
+                      <div className="w-6 h-0.5 bg-white"></div>
+                      <div className="w-6 h-0.5 bg-white"></div>
+                    </div>
+                  </button>
+
+                  <div className="flex items-center space-x-2">
+                    <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
+                      <span className="text-2xl">🏢</span>
+                    </div>
+                    <h1 className="text-xl font-bold text-white">Supplier Portal</h1>
                   </div>
-                </button>
-                
-                <div className="flex items-center space-x-2">
-                  <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-2xl">🏢</span>
-                  </div>
-                  <h1 className="text-xl font-bold text-white">Supplier Portal</h1>
                 </div>
+
+                <button
+                  onClick={() => { setActiveTab('profile'); setShowMobileMenu(false); }}
+                  className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
+                  title="My Profile"
+                >
+                  <FiUser className="h-5 w-5 text-white" />
+                </button>
               </div>
             ) : (
               <>
@@ -2897,7 +2910,7 @@ const SupplierPortal = () => {
                   <span className="text-2xl">🏢</span>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold">FAREDEAL</h2>
+                  <h2 className="text-xl font-bold">{branding.name}</h2>
                   <p className="text-blue-100 text-sm">Supplier Portal</p>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import { useNavigate } from 'react-router-dom';
+import {
   FiUser, FiShoppingBag, FiPackage, FiTruck, FiTrendingUp, 
   FiZap, FiAward, FiBell, FiSettings, FiLogOut, FiSearch,
   FiCreditCard, FiShield, FiMessageCircle, FiCalendar, 
@@ -28,8 +29,16 @@ import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
 import { supabase } from '../services/supabase';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import PortalSwitcher from '../components/PortalSwitcher';
+import ProfileModal from '../components/ProfileModal';
 
 const CashierPortal = () => {
+  const navigate = useNavigate();
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Each supermarket's own name/background — auto-populated, no manual retyping
+  const branding = useSupermarketBranding();
   const [activeTab, setActiveTab] = useState('pos');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [currentTransaction, setCurrentTransaction] = useState({
@@ -331,12 +340,13 @@ const CashierPortal = () => {
         return;
       }
 
-      // Get cashier data from users table
+      // Get cashier data from users table — matched by auth_id only (already
+      // "my own row"); an admin visiting via the role-hierarchy switcher has
+      // role='admin', not 'cashier', so filtering on role would find nothing.
       const { data: cashierData, error } = await supabase
         .from('users')
         .select('*')
         .eq('auth_id', user.id)
-        .eq('role', 'cashier')
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -431,12 +441,11 @@ const CashierPortal = () => {
           // Save to database - update avatar_url in users table
           const { error } = await supabase
             .from('users')
-            .update({ 
+            .update({
               avatar_url: base64String,
               updated_at: new Date().toISOString()
             })
-            .eq('auth_id', user.id)
-            .eq('role', 'cashier');
+            .eq('auth_id', user.id);
 
           if (error) {
             console.error('❌ Error saving to database:', error);
@@ -486,15 +495,11 @@ const CashierPortal = () => {
     }
   };
 
-  // Open Edit Profile Modal
+  // Editing now happens on the single unified profile page (role-based,
+  // shared with admin/manager/customer), shown as a popup instead of a
+  // portal-local modal.
   const openEditProfileModal = () => {
-    setEditProfileForm({
-      name: cashierProfile.name || '',
-      phone: cashierProfile.phone || '',
-      email: cashierProfile.email || '',
-      languages: cashierProfile.languages || []
-    });
-    setShowEditProfileModal(true);
+    setShowProfileModal(true);
   };
 
   // Save Profile Changes
@@ -530,8 +535,7 @@ const CashierPortal = () => {
           },
           updated_at: new Date().toISOString()
         })
-        .eq('auth_id', user.id)
-        .eq('role', 'cashier');
+        .eq('auth_id', user.id);
 
       if (error) {
         console.error('Error updating profile:', error);
@@ -974,7 +978,7 @@ const CashierPortal = () => {
         const systemNotifications = [
           {
             id: 1,
-            title: 'Welcome to FAREDEAL',
+            title: `Welcome to ${branding.name}`,
             message: 'Your cashier portal is ready to use',
             time: new Date().toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
             read: false,
@@ -1803,7 +1807,7 @@ const CashierPortal = () => {
           </div>
           <div className="text-center md:text-right flex-shrink-0">
             <div className="text-4xl md:text-6xl mb-1 md:mb-2">🏪</div>
-            <p className="text-yellow-100 font-semibold text-sm md:text-base">FAREDEAL Uganda</p>
+            <p className="text-yellow-100 font-semibold text-sm md:text-base">{branding.name}</p>
             <p className="text-yellow-200 text-xs md:text-sm">Supermarket</p>
             
             {/* Quick Scanner Access */}
@@ -2646,7 +2650,7 @@ const CashierPortal = () => {
     { id: 'pos', label: 'POS System', icon: FiShoppingCart },
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
     { id: 'transactions', label: 'My Receipts', icon: FiPrinter },
-    { id: 'profile', label: 'My Profile', icon: FiUser },
+    { id: 'profile', label: 'My Profile', icon: FiUser, openProfileModal: true },
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     { id: 'inventory', label: 'Till Supplies', icon: FiPackage },
     { id: 'notifications', label: 'Notifications', icon: FiBell },
@@ -2654,7 +2658,12 @@ const CashierPortal = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      style={branding.backgroundUrl ? {
+        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+      } : undefined}
+    >
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -2739,7 +2748,7 @@ const CashierPortal = () => {
             </div>
             <div className="flex items-center space-x-4">
               <button 
-                onClick={() => setActiveTab('profile')}
+                onClick={() => setShowProfileModal(true)}
                 className="text-right hover:bg-gray-50 p-2 rounded-lg transition-all duration-300 cursor-pointer group"
               >
                 <p className="text-sm text-gray-600 group-hover:text-gray-900 font-medium">{cashierProfile.name}</p>
@@ -2748,13 +2757,14 @@ const CashierPortal = () => {
               <button className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-300">
                 <FiBell className="h-6 w-6" />
               </button>
-              <button 
-                onClick={() => setActiveTab('profile')}
+              <button
+                onClick={() => setShowProfileModal(true)}
                 className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-300"
                 title="Profile Settings"
               >
                 <FiSettings className="h-6 w-6" />
               </button>
+              <PortalSwitcher />
               <button className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-300">
                 <FiLogOut className="h-6 w-6" />
               </button>
@@ -2770,7 +2780,7 @@ const CashierPortal = () => {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => { if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
+                onClick={() => { if (tab.openProfileModal) { setShowProfileModal(true); return; } if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
                 className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
                   activeTab === tab.id
                     ? 'border-yellow-500 text-yellow-600'
@@ -3290,6 +3300,8 @@ const CashierPortal = () => {
           </div>
         </div>
       )}
+
+      <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
     </div>
   );
 };
