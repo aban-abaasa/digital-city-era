@@ -11,6 +11,7 @@ import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import ICANWalletPage from './ICANWalletPage';
 import { 
   FiUsers, FiUser, FiShield, FiSettings, FiBarChart, FiActivity,
   FiGlobe, FiServer, FiDatabase, FiLock, FiAlertTriangle,
@@ -2550,7 +2551,7 @@ const AdminPortal = () => {
 
       {/* ICAN Coin Balance */}
       <div className="flex justify-end mb-2">
-        <div className="w-48"><IcanCoinBadge /></div>
+        <div className="w-48"><IcanCoinBadge onOpen={() => setActiveSection('ican-wallet')} /></div>
       </div>
 
       {/* Admin Access Status Banner - Ultra Mobile Optimized */}
@@ -7377,7 +7378,7 @@ const AdminPortal = () => {
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
     { id: 'users', label: 'User Management', icon: FiUsers },
     { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' }
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign }
   ];
 
   const handleLogout = () => {
@@ -7846,6 +7847,11 @@ const AdminPortal = () => {
                   Live System Monitoring
                 </h2>
                 <p className="text-gray-600">Real-time system monitoring dashboard coming soon...</p>
+              </div>
+            )}
+            {activeSection === 'ican-wallet' && (
+              <div className="mt-0 -mx-4 sm:-mx-0">
+                <ICANWalletPage embedded={true} />
               </div>
             )}
           </div>

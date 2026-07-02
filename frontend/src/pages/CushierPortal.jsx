@@ -29,6 +29,7 @@ import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
 import { supabase } from '../services/supabase';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
@@ -2654,7 +2655,7 @@ const CashierPortal = () => {
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     { id: 'inventory', label: 'Till Supplies', icon: FiPackage },
     { id: 'notifications', label: 'Notifications', icon: FiBell },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard, href: '/ican-wallet' },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard },
   ];
 
   return (
@@ -2814,6 +2815,11 @@ const CashierPortal = () => {
         {activeTab === 'performance' && renderPerformance()}
         {activeTab === 'inventory' && renderInventory()}
         {activeTab === 'notifications' && renderNotifications()}
+        {activeTab === 'ican-wallet' && (
+          <div className="mt-0 -mx-4 sm:-mx-0">
+            <ICANWalletPage embedded={true} />
+          </div>
+        )}
       </div>
 
       {/* Payment Modal */}

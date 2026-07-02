@@ -27,6 +27,7 @@ import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
 import { SupplierCatalogTab, SupplierApplicationsTab } from '../components/SupplierMarketplace';
+import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const SupplierPortal = () => {
@@ -1766,7 +1767,7 @@ const SupplierPortal = () => {
     <div className="space-y-6 animate-fadeInUp">
       {/* ICAN Coin Balance */}
       <div className="flex justify-end">
-        <div className="w-44"><IcanCoinBadge /></div>
+        <div className="w-44"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
       </div>
 
       {/* Welcome Section */}
@@ -2653,7 +2654,7 @@ const SupplierPortal = () => {
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
     { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign, href: '/ican-wallet' },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign },
   ];
 
   return (
@@ -3037,6 +3038,11 @@ const SupplierPortal = () => {
             )}
             {activeTab === 'apply-stores' && (
               <SupplierApplicationsTab userId={supplierProfile.auth_id || supplierProfile.id} />
+            )}
+            {activeTab === 'ican-wallet' && (
+              <div className="mt-0 -mx-4 sm:-mx-0">
+                <ICANWalletPage embedded={true} />
+              </div>
             )}
           </>
         )}
