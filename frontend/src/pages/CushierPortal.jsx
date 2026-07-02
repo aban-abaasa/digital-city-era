@@ -1774,7 +1774,7 @@ const CashierPortal = () => {
     <div className="space-y-3 md:space-y-6 animate-slideInLeft container-3d bg-white rounded-lg md:rounded-2xl p-4 md:p-8 shadow-2xl">
       {/* ICAN Coin Balance */}
       <div className="flex justify-end">
-        <div className="w-44"><IcanCoinBadge /></div>
+        <div className="w-44"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
       </div>
       {/* Ugandan-themed Welcome Section - Responsive */}
       <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-lg md:rounded-xl p-3 md:p-6 text-white shadow-lg">

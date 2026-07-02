@@ -31,6 +31,7 @@ import cashierOrdersService from '../services/cashierOrdersService';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
@@ -2200,7 +2201,7 @@ const CashierPortal = () => {
     <div className="space-y-4 md:space-y-6 animate-slideInLeft container-3d bg-white rounded-none md:rounded-2xl p-2 md:p-8 shadow-none md:shadow-2xl">
       {/* ICAN Coin Balance */}
       <div className="flex justify-end">
-        <div className="w-44"><IcanCoinBadge /></div>
+        <div className="w-44"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
       </div>
 
       {/* Ugandan-themed Welcome Section - Real Data */}
@@ -3079,7 +3080,7 @@ const CashierPortal = () => {
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     // { id: 'inventory', label: 'Till Supplies', icon: FiPackage }, // DISABLED - Supply ordering removed from cashier portal
     { id: 'notifications', label: 'Notifications', icon: FiBell },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard, href: '/ican-wallet' },
+    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard },
   ];
 
   return (
@@ -3324,6 +3325,11 @@ const CashierPortal = () => {
         {activeTab === 'performance' && renderPerformance()}
         {activeTab === 'inventory' && renderInventory()}
         {activeTab === 'notifications' && renderNotifications()}
+        {activeTab === 'ican-wallet' && (
+          <div className="mt-0 -mx-4 sm:-mx-0">
+            <ICANWalletPage embedded={true} />
+          </div>
+        )}
       </div>
 
       {/* Payment Modal */}
