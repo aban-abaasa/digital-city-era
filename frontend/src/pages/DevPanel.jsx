@@ -8,6 +8,7 @@ import {
   FiAlertTriangle, FiCopy, FiSearch,
   FiMapPin, FiCalendar, FiPackage, FiBarChart2,
   FiActivity, FiAward, FiMessageCircle, FiSend,
+  FiGlobe, FiLock, FiTrash2, FiCheckSquare,
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
@@ -19,6 +20,13 @@ import {
   subscribeToAllConversations,
   subscribeToMessages,
 } from '../services/chatService';
+import {
+  devListAllLandingMessages,
+  devDeleteLandingMessage,
+  devReplyToLandingMessage,
+  devMarkCorrectAnswer,
+  devGrantLandingBonus,
+} from '../services/landingMessagesService';
 
 const SESSION_KEY = 'dev_panel_auth';
 const DEV_TOKEN   = 'dev_Sup3rmarktera_KV25';
@@ -752,10 +760,15 @@ const MessagesTab = ({ p }) => {
                 {c.unread_by_dev && <span className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />}
               </div>
               <p className={`text-xs truncate ${p.muted}`}>{c.guest_email}</p>
-              <div className="mt-1.5 flex items-center gap-2">
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${PORTAL_BADGE[c.portal] || PORTAL_BADGE.landing}`}>
                   {c.portal}
                 </span>
+                {c.origin_app && c.origin_app !== 'digital-city-era' && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${p.pill}`}>
+                    {c.origin_app}
+                  </span>
+                )}
                 <span className={`text-[10px] ${p.muted}`}>{fmtChatTime(c.last_message_at)}</span>
               </div>
               {c.last_message_preview && <p className={`mt-1 truncate text-xs ${p.muted}`}>{c.last_message_preview}</p>}
@@ -811,6 +824,293 @@ const MessagesTab = ({ p }) => {
               </button>
             </div>
           </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Public landing-page message board (moderation) ────────────────────
+const PublicBoardTab = ({ p }) => {
+  const [items,      setItems]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replying,   setReplying]   = useState(false);
+  const [markingId,  setMarkingId]  = useState(null);
+  const [markError,  setMarkError]  = useState('');
+  const [grantTargetId, setGrantTargetId] = useState(null);
+  const [grantAmount,   setGrantAmount]   = useState('');
+  const [grantingId,    setGrantingId]    = useState(null);
+  const [grantError,    setGrantError]    = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      setItems(await devListAllLandingMessages(DEV_TOKEN));
+    } catch (e) {
+      console.error('[PublicBoardTab] failed to load messages:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const handleDelete = async (id) => {
+    if (deletingId) return;
+    setDeletingId(id);
+    try {
+      await devDeleteLandingMessage(DEV_TOKEN, id);
+      if (expandedId === id) setExpandedId(null);
+      await refresh();
+    } catch (e) {
+      console.error('[PublicBoardTab] failed to delete message:', e);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleReply = async (id) => {
+    const body = replyDraft.trim();
+    if (!body || replying) return;
+    setReplying(true);
+    try {
+      await devReplyToLandingMessage(DEV_TOKEN, id, body);
+      setReplyDraft('');
+      await refresh();
+    } catch (e) {
+      console.error('[PublicBoardTab] failed to reply:', e);
+    } finally {
+      setReplying(false);
+    }
+  };
+
+  const handleMarkCorrect = async (id) => {
+    if (markingId) return;
+    setMarkingId(id);
+    setMarkError('');
+    try {
+      await devMarkCorrectAnswer(DEV_TOKEN, id);
+      await refresh();
+    } catch (e) {
+      console.error('[PublicBoardTab] failed to mark correct answer:', e);
+      setMarkError(e?.message || 'Failed to mark as correct answer.');
+    } finally {
+      setMarkingId(null);
+    }
+  };
+
+  const handleOpenGrant = (id) => {
+    setGrantTargetId((prev) => (prev === id ? null : id));
+    setGrantAmount('');
+    setGrantError('');
+  };
+
+  const handleGrant = async (item) => {
+    const amt = parseFloat(grantAmount);
+    if (!amt || amt <= 0 || grantingId) return;
+    setGrantingId(item.id);
+    setGrantError('');
+    try {
+      await devGrantLandingBonus(DEV_TOKEN, item.user_id, amt, 'Manual grant from Public Board');
+      setGrantTargetId(null);
+      setGrantAmount('');
+      await refresh();
+    } catch (e) {
+      console.error('[PublicBoardTab] failed to grant bonus:', e);
+      setGrantError(e?.message || 'Failed to grant ICAN.');
+    } finally {
+      setGrantingId(null);
+    }
+  };
+
+  const topLevel = items.filter(m => !m.parent_id);
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden ${p.card}`}>
+      <div className={`flex items-center justify-between px-4 py-3 border-b text-xs font-semibold uppercase tracking-wider ${p.muted} ${p.divider}`}>
+        <span>Landing page messages ({topLevel.length})</span>
+        <button onClick={refresh} className={`rounded-lg p-1.5 transition ${p.tab}`}>
+          <FiRefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+      <div className="max-h-[65vh] divide-y overflow-y-auto">
+        {topLevel.map(m => {
+          const replies = items.filter(i => i.parent_id === m.id);
+          const isExpanded = expandedId === m.id;
+          return (
+            <div key={m.id} className={`px-4 py-3 ${p.divider}`}>
+              <div className="flex items-start justify-between gap-3">
+                <button
+                  onClick={() => { setExpandedId(isExpanded ? null : m.id); setReplyDraft(''); }}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">{m.name || 'Website visitor'}</p>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                      m.is_public
+                        ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400'
+                        : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                    }`}>
+                      {m.is_public ? <FiGlobe className="h-3 w-3" /> : <FiLock className="h-3 w-3" />}
+                      {m.is_public ? 'Public' : 'Private'}
+                    </span>
+                    {m.origin_app && (
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${p.pill}`}>
+                        {m.origin_app}
+                      </span>
+                    )}
+                    {m.reward_reason === 'popular' && (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                        🪙 Popular
+                      </span>
+                    )}
+                    <span className={`text-[10px] ${p.muted}`}>{fmtChatTime(m.created_at)}</span>
+                    {replies.length > 0 && (
+                      <span className={`text-[10px] ${p.muted}`}>· {replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span>
+                    )}
+                  </div>
+                  {m.email && <p className={`text-xs ${p.muted}`}>{m.email}</p>}
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm">{m.message}</p>
+                </button>
+                <button
+                  onClick={() => handleDelete(m.id)}
+                  disabled={deletingId === m.id}
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-rose-400 transition hover:bg-rose-500/10 disabled:opacity-40"
+                  title="Delete message"
+                >
+                  <FiTrash2 className="h-4 w-4" />
+                </button>
+              </div>
+
+              {isExpanded && (
+                <div className={`mt-3 space-y-2 border-l-2 pl-3 ${p.divider}`}>
+                  {m.user_id && (
+                    <div>
+                      <button
+                        onClick={() => handleOpenGrant(m.id)}
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400 transition hover:bg-amber-500/20"
+                      >
+                        <FiGift className="h-3 w-3" /> Grant ICAN to {m.name || 'this poster'}
+                      </button>
+                      {grantTargetId === m.id && (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={grantAmount}
+                            onChange={e => setGrantAmount(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') handleGrant(m); }}
+                            placeholder="Amount"
+                            className={`w-24 rounded-lg border px-2 py-1 text-xs outline-none focus:border-amber-400/60 ${p.input}`}
+                          />
+                          <button
+                            onClick={() => handleGrant(m)}
+                            disabled={grantingId === m.id || !grantAmount}
+                            className="rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-semibold text-slate-950 transition disabled:opacity-40"
+                          >
+                            {grantingId === m.id ? 'Granting…' : 'Confirm'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {replies.map(r => (
+                    <div key={r.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 ${r.sender_role === 'dev' ? 'bg-violet-500/10' : p.soft}`}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs font-semibold">{r.sender_role === 'dev' ? 'Supermartkera Team' : (r.name || 'Website visitor')}</p>
+                          {r.reward_reason && (
+                            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                              🪙 {r.reward_reason === 'correct_answer' ? 'Correct answer' : 'Popular'}
+                            </span>
+                          )}
+                          <span className={`text-[10px] ${p.muted}`}>{fmtChatTime(r.created_at)}</span>
+                        </div>
+                        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm">{r.message}</p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {r.sender_role !== 'dev' && r.user_id && !r.rewarded_at && (
+                            <button
+                              onClick={() => handleMarkCorrect(r.id)}
+                              disabled={markingId === r.id}
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                            >
+                              <FiCheckSquare className="h-3 w-3" /> {markingId === r.id ? 'Marking…' : 'Mark correct answer (+1 ICAN)'}
+                            </button>
+                          )}
+                          {r.sender_role !== 'dev' && r.user_id && (
+                            <button
+                              onClick={() => handleOpenGrant(r.id)}
+                              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400 transition hover:bg-amber-500/20"
+                            >
+                              <FiGift className="h-3 w-3" /> Grant ICAN
+                            </button>
+                          )}
+                        </div>
+                        {grantTargetId === r.id && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={grantAmount}
+                              onChange={e => setGrantAmount(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleGrant(r); }}
+                              placeholder="Amount"
+                              className={`w-24 rounded-lg border px-2 py-1 text-xs outline-none focus:border-amber-400/60 ${p.input}`}
+                            />
+                            <button
+                              onClick={() => handleGrant(r)}
+                              disabled={grantingId === r.id || !grantAmount}
+                              className="rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-semibold text-slate-950 transition disabled:opacity-40"
+                            >
+                              {grantingId === r.id ? 'Granting…' : 'Confirm'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDelete(r.id)}
+                        disabled={deletingId === r.id}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-rose-400 transition hover:bg-rose-500/10 disabled:opacity-40"
+                        title="Delete reply"
+                      >
+                        <FiTrash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {replies.length === 0 && <p className={`text-xs ${p.muted}`}>No replies yet.</p>}
+                  {markError && <p className="text-xs text-rose-400">{markError}</p>}
+                  {grantError && <p className="text-xs text-rose-400">{grantError}</p>}
+
+                  {m.is_public && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        value={replyDraft}
+                        onChange={e => setReplyDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleReply(m.id); }}
+                        placeholder="Reply as Supermartkera Team…"
+                        className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-violet-400/60 ${p.input}`}
+                      />
+                      <button
+                        onClick={() => handleReply(m.id)}
+                        disabled={replying || !replyDraft.trim()}
+                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition disabled:opacity-40 ${p.btn}`}
+                      >
+                        <FiSend className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {!loading && topLevel.length === 0 && (
+          <p className={`px-4 py-10 text-center text-sm ${p.muted}`}>No landing page messages yet.</p>
         )}
       </div>
     </div>
@@ -987,6 +1287,7 @@ const DevDashboard = ({ onLogout }) => {
   const TABS = [
     { id: 'overview',      label: 'Overview'      },
     { id: 'messages',      label: 'Messages'      },
+    { id: 'public-board',  label: 'Public Board'  },
     { id: 'supermarts',    label: 'Supermarts'    },
     { id: 'suppliers',     label: 'Suppliers'     },
     { id: 'customers',     label: 'Customers'     },
@@ -1048,6 +1349,7 @@ const DevDashboard = ({ onLogout }) => {
 
         {/* ── MESSAGES ── */}
         {tab === 'messages' && <MessagesTab p={p} />}
+        {tab === 'public-board' && <PublicBoardTab p={p} />}
 
         {/* ── OVERVIEW ── */}
         {tab === 'overview' && (

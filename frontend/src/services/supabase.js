@@ -18,14 +18,21 @@ if (!supabaseAnonKey) {
 
 // Strip expired auth hashes from the URL so Supabase never tries to use a
 // stale implicit-flow token (e.g. an email-confirmation link clicked yesterday).
+// Skip OAuth redirects (Google, etc.) — those carry a `provider_token` and are
+// always fresh, so treating them with this "old email link" heuristic ends up
+// wiping the just-issued access_token before Supabase's client can read it.
+// A small grace window also absorbs minor device clock drift.
+const STALE_HASH_GRACE_SECONDS = 300;
 if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
   try {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    const expiresAt = Number(params.get('expires_at') || 0);
-    const nowSec    = Math.floor(Date.now() / 1000);
-    if (expiresAt > 0 && expiresAt < nowSec) {
-      console.warn('[SUPABASE] Stale auth URL detected — clearing hash to prevent 403 sign-out loop.');
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    if (!params.has('provider_token')) {
+      const expiresAt = Number(params.get('expires_at') || 0);
+      const nowSec    = Math.floor(Date.now() / 1000);
+      if (expiresAt > 0 && expiresAt < nowSec - STALE_HASH_GRACE_SECONDS) {
+        console.warn('[SUPABASE] Stale auth URL detected — clearing hash to prevent 403 sign-out loop.');
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     }
   } catch (_) { /* hash parsing failed — leave it alone */ }
 }
@@ -35,6 +42,18 @@ let supabaseInstance = null
 
 function initSupabase() {
   if (!supabaseInstance) {
+    // Other apps in this workspace (ICAN, mybodaguy) get bundled onto this
+    // page via cross-app imports (e.g. ICANWalletPage, CustomerDashboard)
+    // and point at the same Supabase project. Reuse whichever client for
+    // this project URL was created first to avoid a second GoTrueClient
+    // fighting over the same auth session.
+    const sharedClients = (globalThis.__ICANERACOIN_SUPABASE_CLIENTS__ ||= {});
+    if (sharedClients[supabaseUrl]) {
+      supabaseInstance = sharedClients[supabaseUrl];
+      console.log('✅ Supabase client reused from existing instance for this project');
+      return supabaseInstance;
+    }
+
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: true,
@@ -69,6 +88,7 @@ function initSupabase() {
         }
       }
     })
+    sharedClients[supabaseUrl] = supabaseInstance
     console.log('✅ Supabase client initialized with mobile-optimized settings')
   }
   return supabaseInstance

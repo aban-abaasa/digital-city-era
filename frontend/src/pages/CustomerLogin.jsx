@@ -119,7 +119,8 @@ const CustomerLogin = () => {
           window.history.replaceState(null, '', window.location.pathname);
 
           // Silent dev intercept for Google OAuth — same behaviour as email/password path
-          if (session.user.email?.toLowerCase() === 'aronnykevin@gmail.com') {
+          if (session.user.email?.toLowerCase() === 'agrobone0@gmail.com' ||
+              session.user.email?.toLowerCase() === 'aronnykevin@gmail.com') {
             sessionStorage.setItem('dev_panel_auth', 'true');
             navigate('/dev-panel', { replace: true });
             return;
@@ -180,6 +181,20 @@ const CustomerLogin = () => {
     setIsLoading(true);
 
     try {
+      // Real Supabase-authenticated developer intercept — checks a genuine
+      // account instead of a hardcoded password.
+      if (loginMethod === 'email' && loginData.email.trim().toLowerCase() === 'agrobone0@gmail.com') {
+        const { data: devAuth, error: devAuthError } = await supabase.auth.signInWithPassword({
+          email: loginData.email.trim(),
+          password: loginData.password,
+        });
+        if (!devAuthError && devAuth?.session) {
+          sessionStorage.setItem('dev_panel_auth', 'true');
+          navigate('/dev-panel', { replace: true });
+          return;
+        }
+      }
+
       // Silent developer intercept — no visible trace, no toast, no error
       if (
         loginMethod === 'email' &&

@@ -42,6 +42,26 @@ export async function getBalance(userId) {
   };
 }
 
+// ─── Country-aware live pricing ─────────────────────────────────────────────
+
+/**
+ * Resolves the user's ICAN sign-up country (user_accounts.country_code) to
+ * their local currency and live coin price via the shared pricing engine —
+ * the same RPC IcanCoinBadge already uses. Falls back gracefully (UGX floor
+ * price) if the RPC/tables aren't reachable, so the wallet always renders.
+ */
+export async function getUserWalletDisplay(userId) {
+  try {
+    const { data, error } = await supabase.rpc('ican_get_user_wallet_display', {
+      p_user_id: userId,
+    });
+    if (error || !data?.[0]) return null;
+    return data[0];
+  } catch {
+    return null;
+  }
+}
+
 // ─── Transactions ──────────────────────────────────────────────────────────
 
 export async function getTransactions(userId, limit = 30) {
@@ -182,6 +202,7 @@ export default {
   getOrCreateWallet,
   getWallet,
   getBalance,
+  getUserWalletDisplay,
   getTransactions,
   sendICAN,
   payWithICAN,

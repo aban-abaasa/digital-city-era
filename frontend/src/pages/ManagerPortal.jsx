@@ -29,6 +29,7 @@ import TillSuppliesOrderManagement from '../components/TillSuppliesOrderManageme
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import ICANWalletPage from './ICANWalletPage';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
@@ -12023,7 +12024,8 @@ FAREDEAL Uganda Management Team
               {[
                 { id: 'overview', icon: '📊', label: 'Dashboard', desc: 'Business overview', gradient: 'from-blue-500 to-blue-600' },
                 { id: 'analytics', icon: '📈', label: 'Analytics', desc: 'Data insights', gradient: 'from-green-500 to-green-600' },
-                { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' }
+                { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' },
+                { id: 'ican-wallet', icon: '₡', label: 'ICAN Wallet', desc: 'Wallet & rewards', gradient: 'from-violet-500 to-fuchsia-600' }
               ].map((item) => (
                 <button
                   key={item.id}
@@ -12305,7 +12307,7 @@ FAREDEAL Uganda Management Team
           {activeTab === 'overview' && (
             <>
             <div className="mb-4 flex justify-end">
-              <div className="w-48"><IcanCoinBadge /></div>
+              <div className="w-48"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
             </div>
             <UgandaOverviewDashboard
               businessMetrics={businessMetrics}
@@ -13405,6 +13407,11 @@ FAREDEAL Uganda Management Team
                 </p>
               </div>
               <TransactionHistory viewMode="manager" />
+            </div>
+          )}
+          {activeTab === 'ican-wallet' && (
+            <div className="mt-0 -mx-4 sm:-mx-0">
+              <ICANWalletPage embedded={true} />
             </div>
           )}
         </Suspense>

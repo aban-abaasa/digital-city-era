@@ -605,7 +605,7 @@ const CustomerDashboard = () => {
                 <span>₡</span> ICAN Wallet
               </button>
               <div className="ml-auto flex-shrink-0 pr-1">
-                <div className="w-36"><IcanCoinBadge /></div>
+                <div className="w-36"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
               </div>
             </nav>
           </div>

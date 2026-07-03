@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { FiMessageCircle, FiX, FiSend, FiUsers, FiHeadphones } from 'react-icons/fi';
+import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   resolveChatIdentity,
@@ -18,6 +18,14 @@ import {
   subscribeToMessages,
   subscribeToConversation,
 } from '../services/chatService';
+import {
+  createLandingMessage,
+  fetchPublicThreads,
+  getOrCreateGuestLikeKey,
+  likeMessage,
+  replyToLandingMessage,
+  subscribeToPublicLandingMessages,
+} from '../services/landingMessagesService';
 
 const portalForPath = (pathname) => {
   if (pathname.startsWith('/admin')) return 'admin';
@@ -45,7 +53,7 @@ const ChatWidget = () => {
   const [guestFormError, setGuestFormError] = useState('');
 
   const [open, setOpen] = useState(false);
-  const [channel, setChannel] = useState('support'); // 'support' | 'team'
+  const [channel, setChannel] = useState('support'); // 'support' | 'team' | 'community'
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -56,6 +64,10 @@ const ChatWidget = () => {
   const [teamConvId, setTeamConvId] = useState(null);
   const [teamMessages, setTeamMessages] = useState([]);
   const [teamUnread, setTeamUnread] = useState(false);
+
+  const [communityThreads, setCommunityThreads] = useState([]);
+  const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const [guestLikeKey] = useState(() => getOrCreateGuestLikeKey());
 
   const scrollRef = useRef(null);
   const openRef = useRef(open);
@@ -177,19 +189,45 @@ const ChatWidget = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamConvId]);
 
+  // ── Community channel: the public landing-page board, same everywhere ──
+  useEffect(() => {
+    if (hidden) return;
+    let cancelled = false;
+    const load = () => fetchPublicThreads(50, { authId: identity?.authId, guestKey: guestLikeKey })
+      .then((rows) => { if (!cancelled) setCommunityThreads(rows); }).catch(() => {});
+    load();
+    const unsubscribe = subscribeToPublicLandingMessages(() => load());
+    return () => { cancelled = true; unsubscribe(); };
+  }, [hidden, identity?.authId, guestLikeKey]);
+
+  const handleCommunityLike = async (messageId) => {
+    setCommunityThreads((prev) => prev.map((t) => {
+      const bump = (m) => (m.id === messageId && !m.likedByMe
+        ? { ...m, likeCount: (m.likeCount || 0) + 1, likedByMe: true }
+        : m);
+      return { ...bump(t), replies: t.replies.map(bump) };
+    }));
+    try {
+      await likeMessage({ messageId, authId: identity?.authId, guestKey: guestLikeKey });
+    } catch (err) {
+      console.error('[ChatWidget] failed to like message:', err);
+    }
+  };
+
   const activeMessages = channel === 'team' ? teamMessages : supportMessages;
+  const selectedThread = communityThreads.find((t) => t.id === selectedThreadId) || null;
 
   useEffect(() => {
     if (open && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeMessages, open, channel]);
+  }, [activeMessages, communityThreads, selectedThreadId, open, channel]);
 
   const markChannelRead = (ch) => {
     if (ch === 'support') {
       setSupportUnread(false);
       if (supportConvId) markConversationRead(supportConvId, 'user');
-    } else {
+    } else if (ch === 'team') {
       setTeamUnread(false);
       if (teamSeenKey) localStorage.setItem(teamSeenKey, Date.now().toString());
     }
@@ -228,7 +266,29 @@ const ChatWidget = () => {
 
     setSending(true);
     try {
-      if (channel === 'team' && who.supermarketId) {
+      if (channel === 'community') {
+        // The widget only ever posts/replies publicly — private posting (which
+        // requires an active ICAN wallet) lives on the landing page's full form.
+        const senderAuthId = who.isGuest ? null : who.authId;
+        if (selectedThreadId) {
+          await replyToLandingMessage({
+            parentId: selectedThreadId,
+            name: who.name,
+            email: who.email,
+            authId: senderAuthId,
+            message: body,
+          });
+        } else {
+          await createLandingMessage({
+            name: who.name,
+            email: who.email,
+            authId: senderAuthId,
+            message: body,
+            isPublic: true,
+          });
+        }
+        setCommunityThreads(await fetchPublicThreads());
+      } else if (channel === 'team' && who.supermarketId) {
         let convId = teamConvId;
         if (!convId) {
           const conv = await getOrCreateTeamConversation({ supermarketId: who.supermarketId, portal: who.role });
@@ -289,10 +349,14 @@ const ChatWidget = () => {
           <div className="flex items-center justify-between bg-gradient-to-r from-cyan-500 via-blue-600 to-violet-600 px-4 py-3 text-white">
             <div>
               <p className="text-sm font-semibold">
-                {channel === 'team' ? 'My Store Team' : 'Supermartkera Support'}
+                {channel === 'team' ? 'My Store Team' : channel === 'community' ? 'Community' : 'Supermartkera Support'}
               </p>
               <p className="text-[11px] text-white/80">
-                {channel === 'team' ? 'Shared with your supermarket colleagues' : 'We usually reply within a few minutes'}
+                {channel === 'team'
+                  ? 'Shared with your supermarket colleagues'
+                  : channel === 'community'
+                    ? 'Public Q&A — everyone can read this'
+                    : 'We usually reply within a few minutes'}
               </p>
             </div>
             <button onClick={() => setOpen(false)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
@@ -300,19 +364,19 @@ const ChatWidget = () => {
             </button>
           </div>
 
-          {canTeamChat && (
-            <div className={`flex gap-1 border-b px-3 py-2 ${dark ? 'border-white/10 bg-[#0b1220]' : 'border-slate-200 bg-slate-50'}`}>
-              <button
-                onClick={() => handleSwitchChannel('support')}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
-                  channel === 'support'
-                    ? 'bg-gradient-to-r from-cyan-500 to-violet-600 text-white'
-                    : dark ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-100'
-                }`}
-              >
-                <FiHeadphones className="h-3.5 w-3.5" /> Support
-                {supportUnread && channel !== 'support' && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
-              </button>
+          <div className={`flex gap-1 border-b px-3 py-2 ${dark ? 'border-white/10 bg-[#0b1220]' : 'border-slate-200 bg-slate-50'}`}>
+            <button
+              onClick={() => handleSwitchChannel('support')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
+                channel === 'support'
+                  ? 'bg-gradient-to-r from-cyan-500 to-violet-600 text-white'
+                  : dark ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <FiHeadphones className="h-3.5 w-3.5" /> Support
+              {supportUnread && channel !== 'support' && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
+            </button>
+            {canTeamChat && (
               <button
                 onClick={() => handleSwitchChannel('team')}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
@@ -324,40 +388,134 @@ const ChatWidget = () => {
                 <FiUsers className="h-3.5 w-3.5" /> My Store
                 {teamUnread && channel !== 'team' && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
               </button>
-            </div>
-          )}
+            )}
+            <button
+              onClick={() => handleSwitchChannel('community')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
+                channel === 'community'
+                  ? 'bg-gradient-to-r from-cyan-500 to-violet-600 text-white'
+                  : dark ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <FiGlobe className="h-3.5 w-3.5" /> Community
+            </button>
+          </div>
 
           <div ref={scrollRef} className={`flex-1 space-y-2 overflow-y-auto px-3 py-3 ${dark ? 'bg-[#0b1220]' : 'bg-slate-50'}`}>
-            {activeMessages.length === 0 && (
-              <p className={`mt-6 text-center text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
-                {channel === 'team'
-                  ? 'Say hello to your store team — everyone on this supermarket sees this channel.'
-                  : 'Send us a message — a real person from the team will reply here.'}
-              </p>
-            )}
-            {activeMessages.map((m) => {
-              const isMe = channel === 'team'
-                ? (identity && !identity.isGuest && m.sender_name === identity.name && m.sender_role === identity.role)
-                : m.sender_role !== 'dev';
-              return (
-                <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                      isMe
-                        ? 'bg-gradient-to-br from-cyan-500 to-violet-600 text-white'
-                        : dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'
+            {channel === 'community' ? (
+              selectedThread ? (
+                <>
+                  <button
+                    onClick={() => setSelectedThreadId(null)}
+                    className={`mb-1 text-[11px] font-medium ${dark ? 'text-cyan-400' : 'text-cyan-600'}`}
+                  >
+                    ← Back to Community
+                  </button>
+                  <div className={`rounded-xl px-3 py-2 text-sm ${dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'}`}>
+                    <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
+                      {selectedThread.name || 'Website visitor'}
+                    </p>
+                    <p className="whitespace-pre-wrap break-words">{selectedThread.message}</p>
+                    <button
+                      onClick={() => handleCommunityLike(selectedThread.id)}
+                      disabled={selectedThread.likedByMe}
+                      className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        selectedThread.likedByMe ? 'text-cyan-400' : 'opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <FiThumbsUp className="h-3 w-3" /> {selectedThread.likeCount || 0}
+                    </button>
+                  </div>
+                  {selectedThread.replies.map((r) => (
+                    <div
+                      key={r.id}
+                      className={`ml-4 mt-2 rounded-xl px-3 py-2 text-sm ${
+                        r.sender_role === 'dev'
+                          ? 'bg-gradient-to-br from-cyan-500 to-violet-600 text-white'
+                          : dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'
+                      }`}
+                    >
+                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                        {r.sender_role === 'dev' ? 'Supermartkera Team' : (r.name || 'Website visitor')}
+                        {r.reward_reason && ' · 🪙'}
+                      </p>
+                      <p className="whitespace-pre-wrap break-words">{r.message}</p>
+                      <button
+                        onClick={() => handleCommunityLike(r.id)}
+                        disabled={r.likedByMe}
+                        className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          r.likedByMe ? 'text-cyan-300' : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <FiThumbsUp className="h-3 w-3" /> {r.likeCount || 0}
+                      </button>
+                    </div>
+                  ))}
+                  {selectedThread.replies.length === 0 && (
+                    <p className={`mt-3 text-center text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                      No replies yet — be the first to reply.
+                    </p>
+                  )}
+                </>
+              ) : communityThreads.length === 0 ? (
+                <p className={`mt-6 text-center text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  No public questions yet — ask something below.
+                </p>
+              ) : (
+                communityThreads.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setSelectedThreadId(t.id)}
+                    className={`block w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
+                      dark ? 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
                     }`}
                   >
-                    {!isMe && (
-                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
-                        {channel === 'team' ? (m.sender_name || m.sender_role) : 'Team'}
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
+                      {t.name || 'Website visitor'}
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words">{t.message}</p>
+                    {t.replies.length > 0 && (
+                      <p className={`mt-1 text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {t.replies.length} {t.replies.length === 1 ? 'reply' : 'replies'}
                       </p>
                     )}
-                    <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                  </div>
-                </div>
-              );
-            })}
+                  </button>
+                ))
+              )
+            ) : (
+              <>
+                {activeMessages.length === 0 && (
+                  <p className={`mt-6 text-center text-xs ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {channel === 'team'
+                      ? 'Say hello to your store team — everyone on this supermarket sees this channel.'
+                      : 'Send us a message — a real person from the team will reply here.'}
+                  </p>
+                )}
+                {activeMessages.map((m) => {
+                  const isMe = channel === 'team'
+                    ? (identity && !identity.isGuest && m.sender_name === identity.name && m.sender_role === identity.role)
+                    : m.sender_role !== 'dev';
+                  return (
+                    <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                          isMe
+                            ? 'bg-gradient-to-br from-cyan-500 to-violet-600 text-white'
+                            : dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'
+                        }`}
+                      >
+                        {!isMe && (
+                          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
+                            {channel === 'team' ? (m.sender_name || m.sender_role) : 'Team'}
+                          </p>
+                        )}
+                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
 
           {needsGuestForm && (
@@ -385,12 +543,25 @@ const ChatWidget = () => {
             </div>
           )}
 
-          <div className={`flex items-center gap-2 border-t px-3 py-3 ${dark ? 'border-white/10' : 'border-slate-200'}`}>
+          <div className={`border-t px-3 py-3 ${dark ? 'border-white/10' : 'border-slate-200'}`}>
+            {channel === 'community' && selectedThread && (
+              <div className={`mb-2 flex items-center justify-between gap-2 text-[11px] ${dark ? 'text-cyan-400' : 'text-cyan-600'}`}>
+                <span className="truncate">Replying to: "{selectedThread.message}"</span>
+                <button onClick={() => setSelectedThreadId(null)} className="flex-shrink-0 underline">Cancel</button>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={channel === 'team' ? 'Message your store team…' : 'Type your message…'}
+              placeholder={
+                channel === 'team'
+                  ? 'Message your store team…'
+                  : channel === 'community'
+                    ? (selectedThreadId ? 'Write a reply…' : 'Ask something publicly…')
+                    : 'Type your message…'
+              }
               rows={1}
               className={`flex-1 resize-none rounded-xl border px-3 py-2 text-sm outline-none focus:border-cyan-500 ${
                 dark ? 'border-white/10 bg-white/5 text-white placeholder:text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-800'
@@ -403,6 +574,7 @@ const ChatWidget = () => {
             >
               <FiSend className="h-4 w-4" />
             </button>
+            </div>
           </div>
         </div>
       )}

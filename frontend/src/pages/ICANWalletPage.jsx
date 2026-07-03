@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import {
   getOrCreateWallet,
   getBalance,
+  getUserWalletDisplay,
   getTransactions,
   sendICAN,
   formatICAN,
@@ -53,15 +54,20 @@ function formatDate(ts) {
 
 // ─── sub-components ────────────────────────────────────────────────────────
 
-function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded = false }) {
+function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded = false, display }) {
   const [hidden, setHidden] = useState(false);
-  
-  const bgStyle = embedded 
+
+  const currencyCode = display?.currency_code || 'UGX';
+  const countryName  = display?.country_name;
+  const priceLocal   = Number(display?.price_local ?? ICAN_TO_UGX);
+  const localBalance = balance.ican * priceLocal;
+
+  const bgStyle = embedded
     ? { background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)' }
     : { background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)' };
-    
+
   const textColor = embedded ? 'text-white' : 'text-white';
-  
+
   return (
     <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={bgStyle}>
       <div className="absolute inset-0 opacity-10 pointer-events-none"
@@ -86,12 +92,19 @@ function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded =
           </div>
         </div>
 
-        <div className="mb-1 text-white/60 text-xs uppercase tracking-widest">ICAN Balance</div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-white/60 text-xs uppercase tracking-widest">ICAN Balance</div>
+          {countryName && (
+            <span className="text-white/50 text-[10px] bg-white/10 rounded-full px-2 py-0.5">
+              🌍 {countryName} · {currencyCode}
+            </span>
+          )}
+        </div>
         <div className={`text-4xl font-bold ${textColor} mb-1`}>
           {hidden ? '••••••' : `${formatICAN(balance.ican)} ICAN`}
         </div>
         <div className="text-white/70 text-sm mb-4">
-          {hidden ? '••••••' : `≈ UGX ${Number(balance.ugx).toLocaleString()}`}
+          {hidden ? '••••••' : `≈ ${currencyCode} ${localBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
         </div>
 
         <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-3">
@@ -117,7 +130,10 @@ function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded =
           ))}
         </div>
 
-        <div className="mt-3 text-white/40 text-xs">Floor price: 1 ICAN = UGX {ICAN_TO_UGX.toLocaleString()}</div>
+        <div className="mt-3 text-white/40 text-xs">
+          Live price: 1 ICAN = {currencyCode} {priceLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          {display?.is_protected && <span className="text-emerald-300 ml-2">✓ beating local inflation</span>}
+        </div>
       </div>
     </div>
   );
@@ -240,6 +256,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
   const [userId, setUserId] = useState(propUserId);
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState({ ican: 0, ugx: 0, address: null });
+  const [display, setDisplay] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -258,12 +275,14 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
     if (!userId) return;
     try {
       await getOrCreateWallet(userId);
-      const [bal, txs] = await Promise.all([
+      const [bal, txs, disp] = await Promise.all([
         getBalance(userId),
         getTransactions(userId, 50),
+        getUserWalletDisplay(userId),
       ]);
       setBalance(bal);
       setTransactions(txs);
+      setDisplay(disp);
     } catch (e) {
       toast.error('Could not load wallet: ' + e.message);
     }
@@ -288,6 +307,11 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
     if (activeTab === 'tithe') return tx.transaction_type === 'tithe';
     return true;
   });
+
+  // Live, country-aware currency (falls back to the UGX floor price if the
+  // pricing RPC — or the user's sign-up country — isn't resolved yet).
+  const currencyCode = display?.currency_code || 'UGX';
+  const priceLocal    = Number(display?.price_local ?? ICAN_TO_UGX);
 
   if (!userId) {
     return (
@@ -343,6 +367,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
           onRefresh={handleRefresh}
           refreshing={refreshing}
           embedded={embedded}
+          display={display}
         />
 
         {/* Quick actions */}
@@ -367,7 +392,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
           <div className="grid grid-cols-3 gap-3">
             {[
               { label: 'Total Earned', value: `${formatICAN(balance.totalEarned ?? 0)} ICAN` },
-              { label: 'Rate', value: `1 ICAN = ${ICAN_TO_UGX.toLocaleString()} UGX` },
+              { label: 'Rate', value: `1 ICAN = ${currencyCode} ${priceLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
               { label: 'Tithe Rate', value: '10% auto-deducted' },
             ].map(s => (
               <div key={s.label} className="bg-gray-900 rounded-xl p-3 text-center">
@@ -422,7 +447,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
                         {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
                       </p>
                       <p className={`${embedded ? 'text-gray-500' : 'text-gray-600'} text-xs`}>
-                        UGX {Number(tx.ican_amount * ICAN_TO_UGX).toLocaleString()}
+                        {currencyCode} {Number(tx.ican_amount * priceLocal).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </p>
                     </div>
                   </div>

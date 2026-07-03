@@ -1,7 +1,7 @@
 // ManagerNavigation Component v2.0 - Mobile: Hidden, Desktop: Full Navigation
 import React from 'react';
 import {
-  FiBarChart, FiPieChart, FiTruck
+  FiBarChart, FiPieChart, FiTruck, FiDollarSign
 } from 'react-icons/fi';
 
 const ManagerNavigation = ({ activeTab, setActiveTab, isMobile }) => {
@@ -29,6 +29,14 @@ const ManagerNavigation = ({ activeTab, setActiveTab, isMobile }) => {
       description: 'Order management',
       color: 'from-orange-500 to-orange-600',
       ugandaEmoji: '📦'
+    },
+    {
+      id: 'ican-wallet',
+      label: 'ICAN Wallet',
+      icon: FiDollarSign,
+      description: 'Wallet & rewards',
+      color: 'from-violet-500 to-fuchsia-600',
+      ugandaEmoji: '₡'
     }
   ];
 

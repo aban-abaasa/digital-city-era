@@ -198,6 +198,10 @@ export const resolveChatIdentity = async () => {
 
     return {
       userId: profile.id,
+      // Canonical cross-app identity (auth.uid()) — used for tables shared
+      // across all 4 apps like landing_messages/ican_user_wallets, which key
+      // off auth.users(id) directly rather than this app's local users.id.
+      authId: user.id,
       name: profile.full_name || profile.email || 'User',
       email: profile.email || user.email || '',
       role: profile.role || 'customer',
