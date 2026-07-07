@@ -97,11 +97,15 @@ const AdminPortal = () => {
   // All Registered Users State
   const [allUsers, setAllUsers] = useState([]);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('all'); // 'all' | 'applications' | 'staff'
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'applications' | 'staff' | 'riders'
 
   // Applications (supplier / mybodaguy)
   const [applications, setApplications] = useState([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
+
+  // Approved My Boda Guy riders partnered with this supermarket
+  const [riders, setRiders] = useState([]);
+  const [ridersLoading, setRidersLoading] = useState(false);
 
   // Staff assignment
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
@@ -440,7 +444,36 @@ const AdminPortal = () => {
         created_at:       a.created_at,
       }));
 
-      const merged = [...(legacyApps || []), ...normalizedSupplier]
+      // 3. My Boda Guy rider partnership applications (contact info denormalized
+      // on the row — mbg_users/mbg_riders are locked to "read own row only",
+      // so an admin's session can't join them directly)
+      const { data: riderApps } = await supabase
+        .from('rider_supermarket_applications')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      const normalizedRider = (riderApps || []).map(a => ({
+        id:               a.id,
+        _source:          'rider_supermarket_applications',
+        application_type: 'mybodaguy',
+        applicant_name:   a.rider_name || 'Rider',
+        applicant_email:  a.rider_email || '',
+        applicant_phone:  a.rider_phone || '',
+        business_name:    null,
+        business_address: null,
+        vehicle_type:     a.vehicle_type,
+        license_number:   a.license_number,
+        notes:            a.message || null,
+        supermarket_id:   a.supermarket_id,
+        supermarket_name: '',
+        rider_user_id:    a.rider_user_id,
+        user_id:          null,
+        status:           a.status,
+        created_at:       a.created_at,
+      }));
+
+      const merged = [...(legacyApps || []), ...normalizedSupplier, ...normalizedRider]
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
       setApplications(merged);
@@ -465,6 +498,17 @@ const AdminPortal = () => {
           await supabase.from('users').update({ role: 'supplier', is_active: true })
             .eq('id', app.supplier_user_id);
         }
+      } else if (app._source === 'rider_supermarket_applications') {
+        // Rider partnership application — riders are managed entirely inside
+        // mybodaguy's own tables, so just flip the application status.
+        const { data: updated, error: riderErr } = await supabase
+          .from('rider_supermarket_applications')
+          .update({ status: 'approved', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString() })
+          .eq('id', app.id)
+          .select('id')
+          .maybeSingle();
+        if (riderErr) throw riderErr;
+        if (!updated) throw new Error('Update blocked — this application is not scoped to your supermarket (RLS).');
       } else {
         // Legacy user_applications flow (manager, cashier, mybodaguy)
         const smId = app.supermarket_id || currentAdmin?.supermarket_id;
@@ -492,15 +536,67 @@ const AdminPortal = () => {
 
   const rejectApplication = async (appId) => {
     const app = applications.find(a => a.id === appId);
-    if (app?._source === 'supplier_applications') {
-      await supabase.from('supplier_applications').update({ status: 'rejected' }).eq('id', appId);
-    } else {
-      await supabase.from('user_applications').update({
-        status: 'rejected', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString()
-      }).eq('id', appId);
+    try {
+      if (app?._source === 'supplier_applications') {
+        await supabase.from('supplier_applications').update({ status: 'rejected' }).eq('id', appId);
+      } else if (app?._source === 'rider_supermarket_applications') {
+        const { data: updated, error: riderErr } = await supabase
+          .from('rider_supermarket_applications')
+          .update({ status: 'rejected', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString() })
+          .eq('id', appId)
+          .select('id')
+          .maybeSingle();
+        if (riderErr) throw riderErr;
+        if (!updated) throw new Error('Update blocked — this application is not scoped to your supermarket (RLS).');
+      } else {
+        await supabase.from('user_applications').update({
+          status: 'rejected', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString()
+        }).eq('id', appId);
+      }
+      setApplications(prev => prev.filter(a => a.id !== appId));
+      notificationService.show('Application rejected', 'info');
+    } catch (e) {
+      console.error('rejectApplication error:', e);
+      notificationService.show(e.message || 'Failed to reject application', 'error');
     }
-    setApplications(prev => prev.filter(a => a.id !== appId));
-    notificationService.show('Application rejected', 'info');
+  };
+
+  // Load riders currently partnered (approved) with this supermarket
+  const loadRiders = useCallback(async () => {
+    try {
+      setRidersLoading(true);
+      const { data, error } = await supabase
+        .from('rider_supermarket_applications')
+        .select('*')
+        .eq('status', 'approved')
+        .order('reviewed_at', { ascending: false });
+      if (error) throw error;
+      setRiders(data || []);
+    } catch (e) {
+      console.warn('loadRiders failed:', e);
+    } finally {
+      setRidersLoading(false);
+    }
+  }, []);
+
+  // End a rider partnership (reverts the application to rejected so the
+  // rider stops appearing as an active partner for this supermarket)
+  const revokeRiderPartnership = async (riderAppId) => {
+    try {
+      const { data: updated, error } = await supabase
+        .from('rider_supermarket_applications')
+        .update({ status: 'rejected', reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString() })
+        .eq('id', riderAppId)
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!updated) throw new Error('Update blocked — this rider is not scoped to your supermarket (RLS).');
+      setRiders(prev => prev.filter(r => r.id !== riderAppId));
+      notificationService.show('Rider partnership ended', 'info');
+    } catch (e) {
+      console.error('revokeRiderPartnership error:', e);
+      notificationService.show(e.message || 'Failed to end partnership', 'error');
+    }
   };
 
   // Candidates an admin can assign as staff: every customer/unassigned
@@ -847,6 +943,8 @@ const AdminPortal = () => {
       } else if (viewMode === 'staff') {
         loadCurrentStaff();
         loadAllUsersForStaff();
+      } else if (viewMode === 'riders') {
+        loadRiders();
       } else {
         // Default: load all users — no pending concept
         loadAllUsers();
@@ -879,7 +977,7 @@ const AdminPortal = () => {
       
       return () => clearInterval(refreshInterval);
     }
-  }, [activeSection, viewMode, loadPendingUsers, loadAllUsers, loadApplications, loadCurrentStaff, loadAllUsersForStaff, loadOrderStats, loadDetailedOrders]);
+  }, [activeSection, viewMode, loadPendingUsers, loadAllUsers, loadApplications, loadCurrentStaff, loadAllUsersForStaff, loadRiders, loadOrderStats, loadDetailedOrders]);
 
   // Real-time subscription for new user registrations
   useEffect(() => {
@@ -3933,7 +4031,7 @@ const AdminPortal = () => {
               <div className="flex-1 min-w-0">
                 <h2 className="text-base md:text-2xl lg:text-3xl font-bold text-white mb-1 md:mb-2 flex items-center gap-2 truncate">
                   <FiUsers className="flex-shrink-0" />
-                  <span className="truncate">{viewMode === 'staff' ? 'Assign Roles' : viewMode === 'applications' ? 'Applications' : 'All Users'}</span>
+                  <span className="truncate">{viewMode === 'staff' ? 'Assign Roles' : viewMode === 'applications' ? 'Applications' : viewMode === 'riders' ? 'Riders' : 'All Users'}</span>
                   {/* Real-time indicator */}
                   <span className="flex-shrink-0 flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 md:px-3 py-1 rounded-full text-xs md:text-sm whitespace-nowrap">
                     <span className="relative flex h-2 w-2 md:h-3 md:w-3">
@@ -3946,6 +4044,7 @@ const AdminPortal = () => {
                 <p className="text-purple-100 text-xs md:text-sm lg:text-base truncate md:truncate">
                   {viewMode === 'staff' ? 'Assign manager / cashier / supplier roles'
                     : viewMode === 'applications' ? 'Review supplier & driver applications • Auto-updates'
+                    : viewMode === 'riders' ? 'My Boda Guy riders partnered with your store'
                     : 'All registered users • Assign roles directly'}
                 </p>
               </div>
@@ -3968,6 +4067,12 @@ const AdminPortal = () => {
                     <FiBriefcase className="h-3 w-3 md:h-4 md:w-4" />
                     <span className="hidden sm:inline">Applications</span>
                     {applications.length > 0 && <span className="bg-orange-400 text-orange-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{applications.length}</span>}
+                  </button>
+                  <button onClick={() => setViewMode('riders')}
+                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'riders' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
+                    <span className="text-xs md:text-sm">🛵</span>
+                    <span className="hidden sm:inline">Riders</span>
+                    {riders.length > 0 && <span className="bg-green-400 text-green-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{riders.length}</span>}
                   </button>
                 </div>
 
@@ -4140,6 +4245,55 @@ const AdminPortal = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== RIDERS PANEL ===== */}
+        {viewMode === 'riders' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span>🛵</span> Partnered Riders
+                {riders.length > 0 && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-sm font-bold">{riders.length}</span>}
+              </h3>
+              <button onClick={loadRiders} disabled={ridersLoading}
+                className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 font-medium">
+                <FiRefreshCw className={ridersLoading ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
+            {ridersLoading ? (
+              <div className="text-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-green-500 mx-auto"></div></div>
+            ) : riders.length === 0 ? (
+              <div className="bg-white rounded-xl p-12 text-center shadow">
+                <div className="text-5xl mb-3">🛵</div>
+                <p className="text-gray-500 text-lg font-medium">No riders yet</p>
+                <p className="text-gray-400 text-sm mt-1">Approved applications from the Applications tab show up here</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {riders.map(rider => (
+                  <div key={rider.id} className="border-2 border-green-200 bg-green-50 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <span className="text-2xl">🛵</span>
+                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-white/80 text-green-700 border">Rider</span>
+                      </div>
+                      <span className="text-xs text-gray-400">Since {new Date(rider.reviewed_at || rider.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <h4 className="font-bold text-gray-900 text-base">{rider.rider_name || 'Rider'}</h4>
+                    {rider.rider_email && <p className="text-sm text-gray-600 flex items-center gap-1 mt-0.5"><FiMail className="h-3 w-3" />{rider.rider_email}</p>}
+                    {rider.rider_phone && <p className="text-sm text-gray-600 flex items-center gap-1"><FiPhone className="h-3 w-3" />{rider.rider_phone}</p>}
+                    {rider.vehicle_type && <p className="text-sm text-gray-700 mt-1">🚗 {rider.vehicle_type}{rider.license_number ? ` · ${rider.license_number}` : ''}</p>}
+                    <div className="flex gap-2 mt-4">
+                      <button onClick={() => revokeRiderPartnership(rider.id)}
+                        className="flex-1 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-lg text-sm font-bold hover:from-red-600 hover:to-rose-700 transition-all flex items-center justify-center gap-1 shadow">
+                        <FiXCircle className="h-4 w-4" /> End Partnership
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -7378,7 +7532,7 @@ const AdminPortal = () => {
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
     { id: 'users', label: 'User Management', icon: FiUsers },
     { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign }
+    { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign }
   ];
 
   const handleLogout = () => {
