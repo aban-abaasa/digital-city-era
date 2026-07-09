@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { sendICAN } from './icanWalletService';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -11,6 +12,22 @@ const getManagerId = () => {
   } catch {
     return null;
   }
+};
+
+// purchase_orders.supplier_id was historically written as either the supplier's
+// auth UUID or their internal users.id row (see FIX_CURRENT_USER_HELPERS_ID_FALLBACK.sql
+// for the same auth_id/id split elsewhere). Resolve both so orders stored under
+// either id are still found. Use this (instead of a bare .eq('supplier_id', authId))
+// in every supplier-facing query against purchase_orders.
+export const getSupplierOrderMatchIds = async (authId) => {
+  const { data: userRow } = await supabase
+    .from('users')
+    .select('id')
+    .or(`auth_id.eq.${authId},id.eq.${authId}`)
+    .eq('role', 'supplier')
+    .maybeSingle();
+
+  return [...new Set([authId, userRow?.id].filter(Boolean))];
 };
 
 // ---------------------------------------------------------------------------
@@ -126,17 +143,33 @@ export const createPurchaseOrder = async (orderData) => {
 
     const poNumber = `PO-${Date.now().toString().slice(-8)}`;
 
+    // Accept either camelCase (as sent by SupplierOrderManagement's CreateOrderModal)
+    // or snake_case keys — a prior mismatch here (orderData.supplier_id vs the
+    // supplierId actually sent) meant every order was inserted with a NULL
+    // supplier_id, so suppliers never saw orders managers had submitted.
+    const supplierId = orderData.supplierId ?? orderData.supplier_id;
+    const expectedDeliveryDate = orderData.expectedDeliveryDate ?? orderData.expected_delivery_date ?? null;
+    const deliveryAddress = orderData.deliveryAddress ?? orderData.delivery_address ?? null;
+    const deliveryInstructions = orderData.deliveryInstructions ?? orderData.delivery_instructions ?? null;
+
     const insertPayload = {
       po_number:             poNumber,
-      supplier_id:           orderData.supplier_id,
+      supplier_id:           supplierId,
       manager_id:            managerId,
       items:                 orderData.items || [],
       notes:                 orderData.notes || '',
-      expected_delivery_date: orderData.expected_delivery_date || null,
+      expected_delivery_date: expectedDeliveryDate,
+      delivery_address:      deliveryAddress,
+      delivery_instructions: deliveryInstructions,
+      priority:              orderData.priority || 'normal',
       status:                'pending_approval',
       subtotal:              subtotal,
       tax_amount:            taxAmount,
       total_amount:          totalAmount,
+      // Initialize payment tracking so the balance is correct from the start —
+      // otherwise balance_due_ugx stays NULL/0 and the "Add Payment" UI never appears.
+      payment_status:        'unpaid',
+      balance_due_ugx:       totalAmount,
       ordered_at:            new Date().toISOString(),
     };
 
@@ -296,6 +329,134 @@ export const recordPayment = async ({ orderId, amountPaid, paymentMethod, paymen
   }
 };
 
+// Pay a supplier order straight from the manager's ICAN wallet. Unlike cash/
+// mobile money/bank transfer, the transfer itself is provable and instant —
+// sendICAN() already validates the manager's balance and moves the coins —
+// so this records the payment as confirmed immediately instead of waiting
+// on a separate supplier confirmation step.
+// Note: like every ICAN transfer platform-wide, a 10% tithe is deducted on
+// the recipient side (see transfer_ican) — the supplier nets 90% of the
+// ICAN sent, same as a customer paying a cashier with ICAN elsewhere in the app.
+export const payOrderWithICAN = async ({ orderId, supplierUserId, icanAmount, ugxAmount, notes }) => {
+  try {
+    if (!supplierUserId) throw new Error('This order has no supplier assigned — cannot pay with ICAN.');
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('No authenticated user for ICAN payment');
+
+    const transfer = await sendICAN({
+      fromUserId: user.id,
+      toUserId: supplierUserId,
+      amount: icanAmount,
+      note: notes || `Purchase order payment (${orderId})`,
+      referenceId: orderId,
+    });
+
+    const { data, error } = await supabase
+      .from('payment_transactions')
+      .insert({
+        purchase_order_id: orderId,
+        user_id: user.id,
+        recorded_by: user.id,
+        amount_ugx: ugxAmount,
+        payment_method: 'ican_wallet',
+        payment_reference: transfer?.out_tx_id || null,
+        payment_status: 'confirmed',
+        payment_date: new Date().toISOString(),
+        confirmed_by_supplier: true,
+        confirmation_date: new Date().toISOString(),
+        confirmation_notes: 'Auto-confirmed — ICAN wallet transfer completed instantly',
+        notes: notes || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const totals = await syncOrderPaymentTotals(orderId);
+    return { success: true, payment: data, transfer, ...totals };
+  } catch (error) {
+    const msg = error?.message || 'Unknown error';
+    console.error('Error paying order with ICAN:', msg);
+    return { success: false, error: msg };
+  }
+};
+
+// Recompute amount_paid_ugx / balance_due_ugx / payment_status on the order
+// from its confirmed payment_transactions rows. Must run after every
+// confirmation — nothing else keeps these columns in sync (the RPC these
+// were designed around, record_payment_with_tracking, was never created).
+export const syncOrderPaymentTotals = async (orderId) => {
+  const { data: order, error: orderErr } = await supabase
+    .from('purchase_orders')
+    .select('total_amount')
+    .eq('id', orderId)
+    .single();
+
+  if (orderErr) throw orderErr;
+
+  const { data: txns, error: txErr } = await supabase
+    .from('payment_transactions')
+    .select('amount_ugx')
+    .eq('purchase_order_id', orderId)
+    .eq('confirmed_by_supplier', true);
+
+  if (txErr) throw txErr;
+
+  const totalAmount = parseFloat(order?.total_amount) || 0;
+  const amountPaid = (txns || []).reduce((sum, t) => sum + (parseFloat(t.amount_ugx) || 0), 0);
+  const balanceDue = Math.max(totalAmount - amountPaid, 0);
+  const paymentStatus = amountPaid <= 0 ? 'unpaid' : balanceDue <= 0 ? 'paid' : 'partially_paid';
+
+  const { error: updateErr } = await supabase
+    .from('purchase_orders')
+    .update({
+      amount_paid_ugx: amountPaid,
+      balance_due_ugx: balanceDue,
+      payment_status: paymentStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orderId);
+
+  if (updateErr) throw updateErr;
+
+  return { amountPaid, balanceDue, paymentStatus };
+};
+
+// Confirm a payment transaction (supplier side) and roll the totals up onto
+// the order — the two must happen together or the order's tracked balance
+// silently stops matching the actual confirmed payments.
+export const confirmPayment = async (txnId, confirmationNotes = '') => {
+  try {
+    const { data: txn, error: fetchErr } = await supabase
+      .from('payment_transactions')
+      .select('purchase_order_id')
+      .eq('id', txnId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    const { error: confirmErr } = await supabase
+      .from('payment_transactions')
+      .update({
+        confirmed_by_supplier: true,
+        confirmation_date: new Date().toISOString(),
+        confirmation_notes: confirmationNotes.trim() || null,
+        payment_status: 'confirmed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', txnId);
+
+    if (confirmErr) throw confirmErr;
+
+    const totals = await syncOrderPaymentTotals(txn.purchase_order_id);
+    return { success: true, ...totals };
+  } catch (error) {
+    console.error('Error confirming payment:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Approve supplier (status management in users table)
 // ---------------------------------------------------------------------------
@@ -336,6 +497,10 @@ const supplierOrdersService = {
   createDelivery,
   updateSupplierStatus,
   recordPayment,
+  payOrderWithICAN,
+  confirmPayment,
+  syncOrderPaymentTotals,
+  getSupplierOrderMatchIds,
 };
 
 export default supplierOrdersService;

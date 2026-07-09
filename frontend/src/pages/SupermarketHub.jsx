@@ -12,7 +12,7 @@ const TABS = [
   { id: 'staff',      label: '👥 Staff' },
   { id: 'suppliers',  label: '🚚 Suppliers' },
   { id: 'deliveries', label: '🛵 Deliveries' },
-  { id: 'wallet',     label: '₡ ICAN Wallet' },
+  { id: 'wallet',     label: '₡ IcanEra Wallet' },
 ];
 
 // ─── STATUS BADGE ─────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ function Overview({ supermarket, navigate }) {
         <StatCard icon="👥" label="Active Staff"       value={stats.staff}      color="blue" />
         <StatCard icon="🚚" label="Pending Suppliers"  value={stats.suppliers}  color="yellow" />
         <StatCard icon="🛵" label="Pending Deliveries" value={stats.deliveries} color="orange" />
-        <StatCard icon="₡"  label="ICAN Wallet"        value="Active"           color="emerald" />
+        <StatCard icon="₡"  label="IcanEra Wallet"      value="Active"           color="emerald" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -316,7 +316,7 @@ function Overview({ supermarket, navigate }) {
           onClick={() => navigate('/ican-wallet')}
           className="mt-4 px-5 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-semibold"
         >
-          View My ICAN Wallet →
+          View My IcanEra Wallet →
         </button>
       </div>
     </div>
@@ -626,7 +626,7 @@ function WalletTab({ wallet, navigate }) {
   return (
     <div className="space-y-4">
       <div className="bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-2xl p-6 text-white">
-        <p className="text-sm text-emerald-100 mb-1">ICAN Balance</p>
+        <p className="text-sm text-emerald-100 mb-1">IcanEra Balance</p>
         <p className="text-4xl font-bold">{fmtIcan(wallet.ican_balance)}</p>
         <p className="text-emerald-200 text-sm mt-1">≈ {fmtUGX(wallet.ican_balance * 5000)}</p>
       </div>
@@ -642,7 +642,7 @@ function WalletTab({ wallet, navigate }) {
       </div>
       <button onClick={() => navigate('/ican-wallet')}
         className="w-full py-3 bg-white border border-emerald-200 text-emerald-600 font-semibold rounded-xl hover:bg-emerald-50">
-        Full ICAN Wallet →
+        Full IcanEra Wallet →
       </button>
     </div>
   );

@@ -53,6 +53,58 @@ const UnifiedAuth = () => {
   const [loginMethod, setLoginMethod] = useState('email');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionIssue, setSessionIssue] = useState(false);
+
+  const handleClearSessions = async () => {
+    try {
+      setLoading(true);
+      
+      // Sign out from Supabase
+      await supabase.auth.signOut();
+      
+      // Clear all storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Clear cookies
+      document.cookie.split(";").forEach(cookie => {
+        document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+      
+      // Clear the URL hash
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      
+      toast.success('All sessions cleared. Please try signing in again.');
+      setSessionIssue(false);
+      
+      // Reset form
+      setFormData({ email: '', phone: '' });
+      setPassword('');
+    } catch (err) {
+      console.error('Clear sessions error:', err);
+      toast.error('Error clearing sessions. Please refresh the page.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Check for session issues on mount
+  useEffect(() => {
+    const checkSessionIssues = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error && (error.message.includes('session') || error.message.includes('confirm'))) {
+          setSessionIssue(true);
+        }
+      } catch (err) {
+        console.error('Session check error:', err);
+      }
+    };
+    
+    checkSessionIssues();
+  }, []);
 
   const getSignedInRoute = (signedInUser) => {
     const role = signedInUser?.role?.toLowerCase?.() || signedInUser?.role || 'guest';

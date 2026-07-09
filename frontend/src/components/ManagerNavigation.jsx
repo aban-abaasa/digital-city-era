@@ -32,7 +32,7 @@ const ManagerNavigation = ({ activeTab, setActiveTab, isMobile }) => {
     },
     {
       id: 'ican-wallet',
-      label: 'ICAN Wallet',
+      label: 'IcanEra Wallet',
       icon: FiDollarSign,
       description: 'Wallet & rewards',
       color: 'from-violet-500 to-fuchsia-600',

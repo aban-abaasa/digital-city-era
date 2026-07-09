@@ -4,24 +4,45 @@
  * Works with Manager, Employee, and Supplier portals
  */
 
-import React, { useState, useEffect } from 'react';
-import { 
+import React, { useState, useEffect, useRef } from 'react';
+import {
   FiX, FiSave, FiPackage, FiDollarSign, FiHash, FiTag,
-  FiBox, FiTruck, FiMapPin, FiAlertCircle, FiCheck, FiUpload, FiZap, FiCamera
+  FiBox, FiTruck, FiMapPin, FiAlertCircle, FiCheck, FiUpload, FiZap, FiCamera, FiImage
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import { supabase } from '../services/supabase';
 
-const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }) => {
+const PRODUCT_IMAGE_BUCKET = 'product-photos';
+
+const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null }) => {
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
+  const isEditMode = Boolean(editingProductId);
 
-  // Quick add mode for fast product entry
-  const [quickAddMode, setQuickAddMode] = useState(true);
+  // Product photo
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(
+    Array.isArray(prefilledData.images) ? prefilledData.images[0] || null : null
+  );
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleImageSelect = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  // Quick add mode for fast product entry (not relevant once editing an existing product)
+  const [quickAddMode, setQuickAddMode] = useState(!isEditMode);
   
   // Scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -84,12 +105,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
       if (categoriesData.length === 0) {
         toast.info('Creating default categories...');
         const defaultCategories = [
-          { name: 'Groceries', description: 'Basic grocery items', is_active: true, sort_order: 1 },
-          { name: 'Beverages', description: 'Drinks and beverages', is_active: true, sort_order: 2 },
-          { name: 'Dairy', description: 'Milk and dairy products', is_active: true, sort_order: 3 },
-          { name: 'Bakery', description: 'Bread and bakery items', is_active: true, sort_order: 4 },
-          { name: 'Household', description: 'Household items and supplies', is_active: true, sort_order: 5 },
-          { name: 'Personal Care', description: 'Personal care products', is_active: true, sort_order: 6 },
+          { name: 'Groceries', description: 'Basic grocery items', is_active: true },
+          { name: 'Beverages', description: 'Drinks and beverages', is_active: true },
+          { name: 'Dairy', description: 'Milk and dairy products', is_active: true },
+          { name: 'Bakery', description: 'Bread and bakery items', is_active: true },
+          { name: 'Household', description: 'Household items and supplies', is_active: true },
+          { name: 'Personal Care', description: 'Personal care products', is_active: true },
         ];
         
         for (const cat of defaultCategories) {
@@ -263,6 +284,32 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
     return Object.keys(newErrors).length === 0;
   };
 
+  // Uploads the selected photo to the shared product-photos bucket (same
+  // Supabase project MyBodaGuy uses) and points products.images at it.
+  const uploadProductPhoto = async (productId) => {
+    if (!imageFile) return;
+    setUploadingImage(true);
+    try {
+      const ext = imageFile.name.split('.').pop() || 'jpg';
+      const path = `${productId}/${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(PRODUCT_IMAGE_BUCKET)
+        .upload(path, imageFile, { upsert: true, cacheControl: '3600' });
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
+
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({ images: [data.publicUrl] })
+        .eq('id', productId);
+      if (updateError) throw updateError;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -295,24 +342,54 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
         warehouse: formData.warehouse || 'Main Warehouse'
       };
 
-      // Create product in Supabase
-      const newProduct = await inventoryService.createProduct(productData);
+      let productId;
 
-      if (newProduct) {
+      if (isEditMode) {
+        // products table only has these columns — stock fields live on
+        // inventory and are updated separately below.
+        const productFields = {
+          sku: productData.sku,
+          barcode: productData.barcode,
+          name: productData.name,
+          description: productData.description,
+          category_id: productData.category_id,
+          supplier_id: productData.supplier_id,
+          brand: productData.brand,
+          cost_price: productData.cost_price,
+          selling_price: productData.selling_price,
+          tax_rate: productData.tax_rate,
+        };
+        const updated = await inventoryService.updateProduct(editingProductId, productFields);
+        productId = updated.id;
+
+        const { error: invError } = await supabase
+          .from('inventory')
+          .update({
+            current_stock: productData.initial_stock,
+            minimum_stock: productData.minimum_stock,
+            reorder_point: productData.reorder_point,
+          })
+          .eq('product_id', productId);
+        if (invError) console.warn('⚠️ Inventory update failed:', invError);
+      } else {
+        const newProduct = await inventoryService.createProduct(productData);
+        productId = newProduct.id;
         toast.success(`✅ Product "${productData.name}" added successfully!`);
-        
-        // Call parent callback
-        if (onProductAdded) {
-          onProductAdded(newProduct);
-        }
-
-        // Reset form and close modal
-        resetForm();
-        onClose();
       }
+
+      if (imageFile) {
+        await uploadProductPhoto(productId);
+      }
+
+      if (onProductAdded) {
+        onProductAdded({ id: productId, ...productData });
+      }
+
+      resetForm();
+      onClose();
     } catch (error) {
-      console.error('Error creating product:', error);
-      toast.error('Failed to add product: ' + (error.message || 'Unknown error'));
+      console.error('Error saving product:', error);
+      toast.error(`Failed to ${isEditMode ? 'update' : 'add'} product: ` + (error.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -341,98 +418,139 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
     setErrors({});
     setCalculatedMarkup(0);
     setCalculatedProfit(0);
+    setImageFile(null);
+    setImagePreview(null);
   };
 
   if (!isOpen) return null;
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-none sm:rounded-xl shadow-2xl max-w-4xl w-full h-full sm:h-auto max-h-full sm:max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <FiPackage className="h-8 w-8" />
-            <div>
-              <h2 className="text-2xl font-bold">Add New Product</h2>
-              <p className="text-blue-100 text-sm">Add product to inventory with real-time sync</p>
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-3 sm:p-6 rounded-t-none sm:rounded-t-xl flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <FiPackage className="h-6 w-6 sm:h-8 sm:w-8 flex-shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-2xl font-bold truncate">{isEditMode ? 'Edit Product' : 'Add New Product'}</h2>
+              <p className="text-blue-100 text-[11px] sm:text-sm truncate">
+                {isEditMode ? 'Update product details and photo' : 'Add product to inventory with real-time sync'}
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors"
+            className="text-white hover:bg-white hover:bg-opacity-20 p-1.5 sm:p-2 rounded-lg transition-colors flex-shrink-0"
           >
-            <FiX className="h-6 w-6" />
+            <FiX className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} className="p-3 sm:p-6">
           {loadingData ? (
             <div className="text-center py-8">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               <p className="text-gray-500 mt-2">Loading form data...</p>
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Quick Add Mode Toggle */}
-              <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
-                <div className="flex items-center space-x-3">
-                  <FiZap className="h-5 w-5 text-green-600" />
-                  <div>
-                    <h4 className="font-semibold text-gray-900">Quick Add Mode</h4>
-                    <p className="text-xs text-gray-600">Select from common Uganda products or enter manually</p>
-                  </div>
-                </div>
+            <div className="space-y-4 sm:space-y-6">
+              {/* Product Photo */}
+              <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <button
                   type="button"
-                  onClick={() => setQuickAddMode(!quickAddMode)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    quickAddMode 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-gray-200 text-gray-700'
-                  }`}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-white border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0"
                 >
-                  {quickAddMode ? 'Quick Add ON' : 'Manual Entry'}
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="Product preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <FiImage className="h-6 w-6 text-gray-400" />
+                  )}
                 </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleImageSelect(e.target.files?.[0])}
+                />
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  >
+                    {uploadingImage ? 'Uploading…' : imagePreview ? 'Change photo' : 'Add photo (optional)'}
+                  </button>
+                  <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">Shown to customers browsing this product</p>
+                </div>
               </div>
 
-              {/* Quick Select Common Products */}
-              {quickAddMode && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
-                    <FiPackage className="mr-2 h-5 w-5 text-blue-600" />
-                    Common Uganda Supermarket Products
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {commonProducts.map((product, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => quickSelectProduct(product)}
-                        className="text-left p-3 bg-white border border-gray-200 rounded-lg hover:border-green-500 hover:shadow-md transition-all group"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm text-gray-900 group-hover:text-green-600">{product.name}</p>
-                            <p className="text-xs text-gray-500">{product.brand}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs font-semibold text-blue-600">UGX {product.typical_price.toLocaleString()}</p>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
+              {/* Quick Add Mode Toggle — not relevant when editing an existing product */}
+              {!isEditMode && (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between p-3 sm:p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <FiZap className="h-5 w-5 text-green-600 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Quick Add Mode</h4>
+                        <p className="text-[11px] sm:text-xs text-gray-600">Select from common Uganda products or enter manually</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddMode(!quickAddMode)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm self-start sm:self-auto ${
+                        quickAddMode
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {quickAddMode ? 'Quick Add ON' : 'Manual Entry'}
+                    </button>
                   </div>
-                  <p className="text-xs text-gray-600 mt-3 text-center">
-                    💡 Click any product to auto-fill the form with typical prices
-                  </p>
-                </div>
+
+                  {/* Quick Select Common Products */}
+                  {quickAddMode && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center text-sm sm:text-base">
+                        <FiPackage className="mr-2 h-5 w-5 text-blue-600 flex-shrink-0" />
+                        Common Uganda Supermarket Products
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {commonProducts.map((product, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => quickSelectProduct(product)}
+                            className="text-left p-2 sm:p-3 bg-white border border-gray-200 rounded-lg hover:border-green-500 hover:shadow-md transition-all group"
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-xs sm:text-sm text-gray-900 group-hover:text-green-600 truncate">{product.name}</p>
+                                <p className="text-[11px] sm:text-xs text-gray-500 truncate">{product.brand}</p>
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className="text-[11px] sm:text-xs font-semibold text-blue-600">UGX {product.typical_price.toLocaleString()}</p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-gray-600 mt-3 text-center">
+                        💡 Click any product to auto-fill the form with typical prices
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Basic Information */}
               <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
                   <FiTag className="mr-2" />
                   Product Details {quickAddMode && <span className="ml-2 text-sm text-green-600">(Auto-filled or customize)</span>}
                 </h3>
@@ -583,7 +701,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
 
               {/* Pricing */}
               <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
                   <FiDollarSign className="mr-2" />
                   Pricing (UGX)
                 </h3>
@@ -667,7 +785,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
 
               {/* Inventory Settings */}
               <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
                   <FiBox className="mr-2" />
                   Inventory Settings
                 </h3>
@@ -775,33 +893,33 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {} }
           )}
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t">
-            <div className="text-sm text-gray-500">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6 sm:mt-8 pt-4 sm:pt-6 border-t sticky bottom-0 bg-white pb-1">
+            <div className="text-xs sm:text-sm text-gray-500 order-2 sm:order-1">
               <FiAlertCircle className="inline mr-1" />
               Fields marked with * are required
             </div>
-            <div className="flex space-x-3">
+            <div className="flex gap-3 order-1 sm:order-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 sm:py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm sm:text-base"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={loading || loadingData}
-                className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading || loadingData || uploadingImage}
+                className="flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 sm:py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
               >
-                {loading ? (
+                {loading || uploadingImage ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    <span>Adding Product...</span>
+                    <span>{isEditMode ? 'Saving…' : 'Adding Product…'}</span>
                   </>
                 ) : (
                   <>
                     <FiSave className="h-4 w-4" />
-                    <span>Add Product</span>
+                    <span>{isEditMode ? 'Save Changes' : 'Add Product'}</span>
                   </>
                 )}
               </button>

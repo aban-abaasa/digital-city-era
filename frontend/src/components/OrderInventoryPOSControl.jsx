@@ -6,15 +6,27 @@
 // Real-time inventory sync with database - FAREDEAL Uganda 🇺🇬
 // =====================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FiSearch, FiEdit, FiSave, FiX, FiTrendingUp, FiTrendingDown,
   FiBox, FiAlertTriangle, FiCheckCircle, FiDownload, FiRefreshCw,
-  FiPlus, FiTrash2, FiDollarSign, FiBarChart2, FiLock, FiAlertCircle, FiCamera, FiHash
+  FiPlus, FiTrash2, FiDollarSign, FiBarChart2, FiLock, FiAlertCircle, FiCamera, FiHash, FiUpload, FiImage
 } from 'react-icons/fi';
+
+// Same bucket the MyBodaGuy app uploads product photos to — one shared
+// Supabase project, so a photo added from either admin surface shows up
+// everywhere `products.images` is read from.
+const PRODUCT_IMAGE_BUCKET = 'product-photos';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
+import {
+  SUPPORTED_IMPORT_EXTENSIONS,
+  parseProductFile,
+  bulkImportProductRows,
+  exportRowsToFile
+} from '../utils/inventoryFileIO';
 
 const OrderInventoryPOSControl = () => {
   // Admin Authorization Check
@@ -48,6 +60,139 @@ const OrderInventoryPOSControl = () => {
     category_id: null
   });
   const [expandedId, setExpandedId] = useState(null); // Track which product row is expanded
+  const [uploadingProducts, setUploadingProducts] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Product photo — "Add Product" modal
+  const [newProductImageFile, setNewProductImageFile] = useState(null);
+  const [newProductImagePreview, setNewProductImagePreview] = useState(null);
+  const newProductImageInputRef = useRef(null);
+
+  // Product photo — inline row edit
+  const [editImageFile, setEditImageFile] = useState(null);
+  const [editImagePreview, setEditImagePreview] = useState(null);
+  const [uploadingEditImage, setUploadingEditImage] = useState(false);
+  const editImageInputRef = useRef(null);
+
+  // Product photo — one-tap upload straight from the compact table row
+  const [quickPhotoTargetId, setQuickPhotoTargetId] = useState(null);
+  const [uploadingQuickPhotoId, setUploadingQuickPhotoId] = useState(null);
+  const quickPhotoInputRef = useRef(null);
+
+  const selectImageFile = (file, setFile, setPreview) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    setFile(file);
+    setPreview(URL.createObjectURL(file));
+  };
+
+  // Uploads to the shared product-photos bucket and points products.images at it
+  const uploadProductPhoto = async (productId, file) => {
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${productId}/${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(PRODUCT_IMAGE_BUCKET)
+      .upload(path, file, { upsert: true, cacheControl: '3600' });
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
+
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ images: [data.publicUrl] })
+      .eq('id', productId);
+    if (updateError) throw updateError;
+
+    return data.publicUrl;
+  };
+
+  // Deterministic "clean animated" placeholder for products without a photo —
+  // initials on a gradient tile instead of a blank/broken image box.
+  const AVATAR_GRADIENTS = [
+    'from-blue-400 to-indigo-500',
+    'from-emerald-400 to-teal-500',
+    'from-orange-400 to-amber-500',
+    'from-fuchsia-400 to-purple-500',
+    'from-rose-400 to-pink-500',
+    'from-cyan-400 to-blue-500',
+  ];
+  const productAvatar = (name = '') => {
+    let hash = 0;
+    for (let i = 0; i < name.length; i += 1) hash = (hash << 5) - hash + name.charCodeAt(i);
+    const gradient = AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+    const initials = name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+    return { gradient, initials };
+  };
+
+  // One-tap photo upload straight from the compact product row — no need to
+  // open the full edit form just to add/replace a picture.
+  const openQuickPhotoPicker = (productId) => {
+    setQuickPhotoTargetId(productId);
+    quickPhotoInputRef.current?.click();
+  };
+
+  const handleQuickPhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    const productId = quickPhotoTargetId;
+    e.target.value = '';
+    if (!file || !productId) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    setUploadingQuickPhotoId(productId);
+    try {
+      const url = await uploadProductPhoto(productId, file);
+      const applyImage = (p) => (p.id === productId ? { ...p, images: [url] } : p);
+      setProducts(prev => prev.map(applyImage));
+      setFilteredProducts(prev => prev.map(applyImage));
+      toast.success('✅ Photo updated');
+    } catch (error) {
+      console.error('Error uploading product photo:', error);
+      toast.error('Failed to upload photo');
+    } finally {
+      setUploadingQuickPhotoId(null);
+      setQuickPhotoTargetId(null);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!SUPPORTED_IMPORT_EXTENSIONS.includes(ext)) {
+      toast.error('Please upload a .csv, .xlsx, .xls, or .pdf file');
+      e.target.value = '';
+      return;
+    }
+
+    setUploadingProducts(true);
+    try {
+      const rows = await parseProductFile(file);
+
+      if (rows.length === 0) {
+        toast.error('No product rows found in the file');
+        return;
+      }
+
+      const { created, failed } = await bulkImportProductRows(rows);
+      toast.success(`✅ Imported ${created} product${created === 1 ? '' : 's'}${failed ? `, ${failed} row${failed === 1 ? '' : 's'} failed` : ''}`);
+      await loadData();
+    } catch (error) {
+      console.error('Bulk upload failed:', error);
+      toast.error(`Failed to process the uploaded file: ${error.message || 'Unknown error'}`);
+    } finally {
+      setUploadingProducts(false);
+      e.target.value = '';
+    }
+  };
 
   // Handle barcode scanned from scanner
   const handleBarcodeScanned = async (barcode) => {
@@ -91,6 +236,7 @@ const OrderInventoryPOSControl = () => {
       
       const generatedName = `Product - ${trimmedBarcode}`;
       const generatedSKU = `SKU-${trimmedBarcode.substring(0, 8)}`;
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
 
       const { data: newProduct, error: createError } = await supabase
         .from('products')
@@ -103,7 +249,8 @@ const OrderInventoryPOSControl = () => {
           tax_rate: 18,
           quantity: 0,
           is_active: true,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          supermarket_id: supermarketId || undefined
         }])
         .select()
         .single();
@@ -115,13 +262,14 @@ const OrderInventoryPOSControl = () => {
       }
 
       console.log('⚡ Product created. Creating inventory in parallel...');
-      
+
       // ✅ CREATE INVENTORY RECORD IN PARALLEL (not waiting for this to finish)
       // This makes the UI responsive immediately
       supabase
         .from('inventory')
         .insert({
           product_id: newProduct.id,
+          supermarket_id: supermarketId || undefined,
           current_stock: 0,
           reserved_stock: 0,
           minimum_stock: 10,
@@ -230,13 +378,25 @@ const OrderInventoryPOSControl = () => {
     try {
       setLoading(true);
       setRefreshing(true);
-      
+
+      // Each supermarket's catalog is private — only show products that
+      // belong to the signed-in admin's supermarket. Rows created before
+      // this isolation existed have supermarket_id NULL, so those are
+      // included too rather than disappearing from view.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
-      const { data: productsData, error: productsError } = await supabase
+      let productsQuery = supabase
         .from('products')
-        .select('id, name, sku, barcode, category_id, cost_price, selling_price, tax_rate, is_active')
+        .select('id, name, sku, barcode, category_id, cost_price, selling_price, tax_rate, is_active, images')
         .eq('is_active', true)
         .order('name');
+
+      productsQuery = supermarketId
+        ? productsQuery.or(`supermarket_id.eq.${supermarketId},supermarket_id.is.null`)
+        : productsQuery;
+
+      const { data: productsData, error: productsError } = await productsQuery;
 
       if (productsError) throw productsError;
 
@@ -285,6 +445,7 @@ const OrderInventoryPOSControl = () => {
           selling_price: p.selling_price,
           tax_rate: p.tax_rate,
           is_active: p.is_active,
+          images: Array.isArray(p.images) ? p.images : [],
           current_stock: invMap[p.id]?.current_stock || 0
         }));
 
@@ -403,11 +564,15 @@ const OrderInventoryPOSControl = () => {
       selling_price: product.selling_price,
       tax_rate: product.tax_rate || 18
     });
+    setEditImageFile(null);
+    setEditImagePreview(product.images?.[0] || null);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditValues({});
+    setEditImageFile(null);
+    setEditImagePreview(null);
   };
 
   const saveEdit = async (productId) => {
@@ -425,17 +590,31 @@ const OrderInventoryPOSControl = () => {
 
       if (error) throw error;
 
+      let imageUrl = null;
+      if (editImageFile) {
+        setUploadingEditImage(true);
+        try {
+          imageUrl = await uploadProductPhoto(productId, editImageFile);
+        } finally {
+          setUploadingEditImage(false);
+        }
+      }
+
       // Update local state
-      setProducts(products.map(p => 
-        p.id === productId 
-          ? { ...p, ...editValues }
+      const applyUpdate = (p) => (
+        p.id === productId
+          ? { ...p, ...editValues, ...(imageUrl ? { images: [imageUrl] } : {}) }
           : p
-      ));
+      );
+      setProducts(products.map(applyUpdate));
+      setFilteredProducts(filteredProducts.map(applyUpdate));
 
       setEditingId(null);
       setEditValues({});
+      setEditImageFile(null);
+      setEditImagePreview(null);
       toast.success('✅ Product updated successfully');
-      calculateStats(products.map(p => p.id === productId ? { ...p, ...editValues } : p));
+      calculateStats(products.map(applyUpdate));
     } catch (error) {
       console.error('❌ Error saving product:', error);
       toast.error('Failed to update product');
@@ -515,7 +694,9 @@ const OrderInventoryPOSControl = () => {
       } else {
         // Otherwise, CREATE new product (traditional add product flow)
         console.log('➕ Creating new product from form');
-        
+
+        const supermarketId = await inventoryService.getCurrentSupermarketId();
+
         const { data: created, error: createError } = await supabase
           .from('products')
           .insert({
@@ -526,23 +707,36 @@ const OrderInventoryPOSControl = () => {
             tax_rate: newProduct.tax_rate,
             category_id: newProduct.category_id,
             is_active: true,
-            barcode: newProduct.barcode || `AUTO-${Date.now()}` // ✅ Use scanned barcode if available
+            barcode: newProduct.barcode || `AUTO-${Date.now()}`, // ✅ Use scanned barcode if available
+            supermarket_id: supermarketId || undefined
           })
           .select('*')
           .single();
-        
+
         data = created;
         error = createError;
       }
 
       if (error) throw error;
 
+      if (newProductImageFile && data?.id) {
+        try {
+          const url = await uploadProductPhoto(data.id, newProductImageFile);
+          data = { ...data, images: [url] };
+        } catch (photoError) {
+          console.warn('⚠️ Product saved but photo upload failed:', photoError);
+          toast.warning('Product saved, but the photo failed to upload');
+        }
+      }
+
       // ✅ CREATE INVENTORY RECORD FOR NEW PRODUCT (only if newly created)
       if (data && data.id && !newlyRegisteredProductId) {
+        const supermarketId = await inventoryService.getCurrentSupermarketId();
         const { error: inventoryError } = await supabase
           .from('inventory')
           .insert({
             product_id: data.id,
+            supermarket_id: supermarketId || undefined,
             current_stock: 0,
             reserved_stock: 0,
             minimum_stock: 10,
@@ -578,7 +772,9 @@ const OrderInventoryPOSControl = () => {
         category_id: null,
         barcode: ''
       });
-      
+      setNewProductImageFile(null);
+      setNewProductImagePreview(null);
+
       setNewlyRegisteredProductId(null);
       setShowAddProductModal(false);
       
@@ -630,29 +826,27 @@ const OrderInventoryPOSControl = () => {
     }
   };
 
-  const exportToCSV = () => {
-    const headers = ['Product Name', 'SKU', 'Category', 'Cost Price', 'Selling Price', 'Margin %', 'Current Stock', 'Minimum Stock', 'Status'];
+  const exportInventory = (format = 'csv') => {
+    if (filteredProducts.length === 0) {
+      toast.info('No products to export yet');
+      return;
+    }
+
     const rows = filteredProducts.map(p => {
       const margin = p.selling_price && p.cost_price ? ((p.selling_price - p.cost_price) / p.cost_price * 100).toFixed(1) : 0;
-      return [
-        p.name,
-        p.sku,
-        categories.find(c => c.id === p.category_id)?.name || 'N/A',
-        p.cost_price || 0,
-        p.selling_price || 0,
-        margin,
-        p.is_active ? 'Active' : 'Inactive'
-      ];
+      return {
+        name: p.name,
+        sku: p.sku,
+        category: categories.find(c => c.id === p.category_id)?.name || 'N/A',
+        cost_price: p.cost_price || 0,
+        selling_price: p.selling_price || 0,
+        margin_percent: margin,
+        current_stock: p.current_stock || 0,
+        status: p.is_active ? 'Active' : 'Inactive'
+      };
     });
 
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `inventory-control-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    exportRowsToFile(rows, format, `inventory-control-${new Date().toISOString().split('T')[0]}`);
   };
 
   const formatCurrency = (amount) => {
@@ -767,7 +961,7 @@ const OrderInventoryPOSControl = () => {
       <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-6 shadow-md space-y-2 sm:space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 mb-2 sm:mb-4">
           <h2 className="text-base sm:text-lg lg:text-xl font-bold text-gray-800 w-full sm:w-auto">🔍 Products</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 w-full sm:w-auto">
             <button
               onClick={() => {
                 if (!isAdmin) {
@@ -777,14 +971,51 @@ const OrderInventoryPOSControl = () => {
                 setShowAddProductModal(true);
               }}
               className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-all flex items-center justify-center gap-1 font-semibold whitespace-nowrap ${
-                isAdmin 
-                  ? 'bg-green-500 text-white hover:bg-green-600 shadow-lg hover:shadow-xl' 
+                isAdmin
+                  ? 'bg-green-500 text-white hover:bg-green-600 shadow-lg hover:shadow-xl'
                   : 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300 cursor-default'
               }`}
               title={!isAdmin ? 'Admin access required' : 'Add new product to inventory'}
             >
               <FiPlus className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4 lg:w-4 flex-shrink-0" />
               <span className="hidden sm:inline">Add</span>
+            </button>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,.pdf"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              ref={quickPhotoInputRef}
+              onChange={handleQuickPhotoChange}
+              className="hidden"
+            />
+            <button
+              onClick={() => {
+                if (!isAdmin) {
+                  toast.error('❌ Admin access required to import products');
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
+              disabled={uploadingProducts}
+              className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-all flex items-center justify-center gap-1 font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
+                isAdmin
+                  ? 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-lg hover:shadow-xl'
+                  : 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300 cursor-default'
+              }`}
+              title={!isAdmin ? 'Admin access required' : 'Import products from a CSV, Excel, or PDF file'}
+            >
+              {uploadingProducts ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              ) : (
+                <FiUpload className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4 lg:w-4 flex-shrink-0" />
+              )}
+              <span className="hidden sm:inline">{uploadingProducts ? 'Importing...' : 'Import'}</span>
             </button>
             <button
               onClick={() => {
@@ -798,13 +1029,17 @@ const OrderInventoryPOSControl = () => {
               <FiRefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? 'Syncing...' : 'Refresh'}
             </button>
-            <button
-              onClick={exportToCSV}
-              className="bg-green-500 text-white px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-1 font-semibold whitespace-nowrap"
+            <select
+              value=""
+              onChange={(e) => { if (e.target.value) exportInventory(e.target.value); e.target.value = ''; }}
+              title="Export current inventory"
+              className="bg-green-500 text-white px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg hover:bg-green-600 transition-colors font-semibold whitespace-nowrap border-none"
             >
-              <FiDownload className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4 lg:w-4 flex-shrink-0" />
-              <span className="hidden sm:inline">Export</span>
-            </button>
+              <option value="" className="text-gray-700">📤 Export</option>
+              <option value="csv" className="text-gray-700">Export as CSV</option>
+              <option value="xlsx" className="text-gray-700">Export as Excel</option>
+              <option value="pdf" className="text-gray-700">Export as PDF</option>
+            </select>
             <button
               onClick={() => {
                 if (!isAdmin) {
@@ -913,140 +1148,209 @@ const OrderInventoryPOSControl = () => {
         </p>
       </div>
 
-      {/* Products Table */}
+      {/* Products List — a div-based (not <table>) layout so rows genuinely
+          restack into cards on small phones instead of squeezing table
+          columns or relying on horizontal scroll. */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm md:text-base">
-            <thead className="bg-gradient-to-r from-gray-100 to-gray-200 border-b-2 border-gray-300">
-              <tr>
-                <th className="px-2 md:px-4 py-2 md:py-3 text-left font-bold text-gray-800 text-xs md:text-sm">Product</th>
-                <th className="px-2 md:px-4 py-2 md:py-3 text-center font-bold text-gray-800 text-xs md:text-sm w-16">Stock</th>
-                <th className="px-2 md:px-4 py-2 md:py-3 text-center font-bold text-gray-800 text-xs md:text-sm w-16">Status</th>
-                <th className="px-2 md:px-4 py-2 md:py-3 text-center font-bold text-gray-800 text-xs md:text-sm w-20">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProducts.map((product) => (
-                <React.Fragment key={product.id}>
-                  {editingId === product.id ? (
-                    // EDIT MODE - Full Width Form
-                    <tr className="bg-blue-50">
-                      <td colSpan="4" className="px-2 md:px-4 py-2 md:py-3">
-                        <div className="bg-blue-50 rounded-lg p-2 md:p-4 space-y-3 md:space-y-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 md:gap-4">
-                            <div className="sm:col-span-1 lg:col-span-2">
-                              <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Product Name</label>
-                              <input type="text" value={editValues.name} onChange={(e) => setEditValues({ ...editValues, name: e.target.value })} className="w-full px-2 md:px-3 py-1 md:py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Product name" />
-                            </div>
-                            <div className="sm:col-span-1">
-                              <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">SKU</label>
-                              <input type="text" value={editValues.sku} onChange={(e) => setEditValues({ ...editValues, sku: e.target.value })} className="w-full px-2 md:px-3 py-1 md:py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="SKU" />
-                            </div>
-                            <div>
-                              <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Cost Price</label>
-                              <input type="number" value={editValues.cost_price} onChange={(e) => setEditValues({ ...editValues, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-1 md:py-2 border-2 border-orange-300 rounded-lg focus:outline-none focus:border-orange-500 text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Selling Price</label>
-                              <input type="number" value={editValues.selling_price} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-1 md:py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Tax Rate %</label>
-                              <input type="number" value={editValues.tax_rate} onChange={(e) => setEditValues({ ...editValues, tax_rate: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-1 md:py-2 border-2 border-yellow-300 rounded-lg focus:outline-none focus:border-yellow-500 text-sm" />
-                            </div>
-                          </div>
-                          <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                            <button onClick={() => saveEdit(product.id)} className="flex-1 bg-green-500 text-white px-3 md:px-4 py-2 rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base">
-                              <FiSave className="h-4 w-4" />
-                              <span className="hidden sm:inline">Save</span>
-                            </button>
-                            <button onClick={cancelEdit} className="flex-1 bg-gray-400 text-white px-3 md:px-4 py-2 rounded-lg hover:bg-gray-500 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base">
-                              <FiX className="h-4 w-4" />
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : expandedId === product.id ? (
-                    // EXPANDED VIEW - Show All Details
-                    <tr className="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-300">
-                      <td colSpan="4" className="px-2 md:px-4 py-3 md:py-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-bold text-sm md:text-base text-gray-800">{product.name}</h3>
-                            <button onClick={() => setExpandedId(null)} className="text-blue-600 hover:text-blue-800 font-bold text-lg" title="Collapse">▼</button>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
-                            <div className="bg-white rounded p-2">
-                              <p className="text-xs font-semibold text-gray-600">COST</p>
-                              <p className="text-sm md:text-base font-bold text-orange-600">{formatCurrency(product.cost_price)}</p>
-                            </div>
-                            <div className="bg-white rounded p-2">
-                              <p className="text-xs font-semibold text-gray-600">SELLING</p>
-                              <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
-                            </div>
-                            <div className="bg-white rounded p-2">
-                              <p className="text-xs font-semibold text-gray-600">MARGIN</p>
-                              <p className="text-sm md:text-base font-bold text-purple-600">{calculateMargin(product.cost_price, product.selling_price)}%</p>
-                            </div>
-                            <div className="bg-white rounded p-2">
-                              <p className="text-xs font-semibold text-gray-600">TAX</p>
-                              <p className="text-sm md:text-base font-bold text-yellow-600">{product.tax_rate || 18}%</p>
-                            </div>
-                            <div className="bg-white rounded p-2">
-                              <p className="text-xs font-semibold text-gray-600">MIN/RO</p>
-                              <p className="text-sm md:text-base font-bold text-gray-700">{inventoryMap[product.id]?.minimum_stock || 10}/{inventoryMap[product.id]?.reorder_point || 20}</p>
-                            </div>
-                            <div className="bg-white rounded p-2">
-                              <p className="text-xs font-semibold text-gray-600">SKU</p>
-                              <p className="text-xs md:text-sm font-mono text-gray-700 truncate">{product.sku || 'N/A'}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    // COMPACT VIEW - Click to Expand
-                    <tr className="border-b border-gray-200 hover:bg-blue-50 cursor-pointer transition-colors" onClick={() => setExpandedId(product.id)}>
-                      <td className="px-2 md:px-4 py-2 md:py-3 text-center text-gray-400">▶</td>
-                      <td className="px-2 md:px-4 py-2 md:py-3">
-                        <div>
-                          <p className="font-bold text-gray-800 text-sm md:text-base">{product.name}</p>
-                          <p className="text-xs text-gray-600">SKU: {product.sku || 'N/A'}</p>
-                        </div>
-                      </td>
-                      <td className="px-2 md:px-4 py-2 md:py-3 text-center">
-                        {(() => {
-                          const invData = inventoryMap[product.id];
-                          const qty = invData ? (invData.quantity || 0) : 0;
-                          const minStock = invData ? (invData.minimum_stock || 10) : 10;
-                          const isLow = qty < minStock && qty > 0;
-                          const isOutOfStock = qty === 0;
-                          return (
-                            <span className={`inline-block px-2 md:px-3 py-1 rounded-full font-bold text-xs md:text-sm ${
-                              isOutOfStock ? 'bg-red-100 text-red-700' : isLow ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
-                            }`}>
-                              {qty} {isOutOfStock && '❌'} {isLow && '⚠️'}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-2 md:px-4 py-2 md:py-3 text-center space-y-1">
-                        <button onClick={(e) => { e.stopPropagation(); startEdit(product); }} disabled={!isAdmin} className={`block w-full px-2 py-1 rounded text-xs md:text-sm font-semibold ${ isAdmin ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-300 text-gray-600 cursor-not-allowed' }`}>
-                          <FiEdit className="h-3 w-3 inline mr-1" />
-                          Edit
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); toggleProductStatus(product); }} disabled={!isAdmin} className={`block w-full px-2 py-1 rounded text-xs md:text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
-                          {product.is_active ? '✅' : '❌'}
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+        {/* Column header — only makes sense once there's room for a row */}
+        <div className="hidden sm:flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-gray-100 to-gray-200 border-b-2 border-gray-300">
+          <div className="flex-1 font-bold text-gray-800 text-xs md:text-sm">Product</div>
+          <div className="w-24 text-center font-bold text-gray-800 text-xs md:text-sm">Stock</div>
+          <div className="w-36 text-center font-bold text-gray-800 text-xs md:text-sm">Actions</div>
+        </div>
+
+        <div className="divide-y divide-gray-200">
+          {filteredProducts.map((product) => {
+            if (editingId === product.id) {
+              // EDIT MODE
+              return (
+                <div key={product.id} className="bg-blue-50 p-3 md:p-4 space-y-3 md:space-y-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => editImageInputRef.current?.click()}
+                      className="w-14 h-14 md:w-16 md:h-16 rounded-lg bg-white border-2 border-dashed border-blue-300 flex items-center justify-center overflow-hidden flex-shrink-0"
+                    >
+                      {editImagePreview ? (
+                        <img src={editImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <FiImage className="h-5 w-5 text-blue-400" />
+                      )}
+                    </button>
+                    <input
+                      ref={editImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => selectImageFile(e.target.files?.[0], setEditImageFile, setEditImagePreview)}
+                    />
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => editImageInputRef.current?.click()}
+                        disabled={uploadingEditImage}
+                        className="text-xs md:text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                      >
+                        {uploadingEditImage ? 'Uploading…' : editImagePreview ? 'Change photo' : 'Add photo'}
+                      </button>
+                      <p className="text-[11px] text-gray-500">Optional — shown to customers</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-6 gap-2 md:gap-4">
+                    <div className="col-span-2 lg:col-span-2">
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Product Name</label>
+                      <input type="text" value={editValues.name} onChange={(e) => setEditValues({ ...editValues, name: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Product name" />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">SKU</label>
+                      <input type="text" value={editValues.sku} onChange={(e) => setEditValues({ ...editValues, sku: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="SKU" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Cost Price</label>
+                      <input type="number" value={editValues.cost_price} onChange={(e) => setEditValues({ ...editValues, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-orange-300 rounded-lg focus:outline-none focus:border-orange-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Selling Price</label>
+                      <input type="number" value={editValues.selling_price} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Tax Rate %</label>
+                      <input type="number" value={editValues.tax_rate} onChange={(e) => setEditValues({ ...editValues, tax_rate: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-yellow-300 rounded-lg focus:outline-none focus:border-yellow-500 text-sm" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => saveEdit(product.id)} className="flex-1 bg-green-500 text-white px-3 md:px-4 py-2.5 rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base">
+                      <FiSave className="h-4 w-4" />
+                      <span>Save</span>
+                    </button>
+                    <button onClick={cancelEdit} className="flex-1 bg-gray-400 text-white px-3 md:px-4 py-2.5 rounded-lg hover:bg-gray-500 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base">
+                      <FiX className="h-4 w-4" />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            if (expandedId === product.id) {
+              // EXPANDED VIEW
+              return (
+                <div key={product.id} className="bg-gradient-to-r from-blue-50 to-blue-100 border-t-2 border-blue-300 p-3 md:p-4 space-y-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="font-bold text-sm md:text-base text-gray-800">{product.name}</h3>
+                    <button onClick={() => setExpandedId(null)} className="text-blue-600 hover:text-blue-800 font-bold text-lg px-2 -mr-2" title="Collapse">▼</button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">COST</p>
+                      <p className="text-sm md:text-base font-bold text-orange-600">{formatCurrency(product.cost_price)}</p>
+                    </div>
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">SELLING</p>
+                      <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
+                    </div>
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">MARGIN</p>
+                      <p className="text-sm md:text-base font-bold text-purple-600">{calculateMargin(product.cost_price, product.selling_price)}%</p>
+                    </div>
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">TAX</p>
+                      <p className="text-sm md:text-base font-bold text-yellow-600">{product.tax_rate || 18}%</p>
+                    </div>
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">MIN/RO</p>
+                      <p className="text-sm md:text-base font-bold text-gray-700">{inventoryMap[product.id]?.minimum_stock || 10}/{inventoryMap[product.id]?.reorder_point || 20}</p>
+                    </div>
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">SKU</p>
+                      <p className="text-xs md:text-sm font-mono text-gray-700 truncate">{product.sku || 'N/A'}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 ${ isAdmin ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-300 text-gray-600 cursor-not-allowed' }`}>
+                      <FiEdit className="h-3.5 w-3.5" /> Edit
+                    </button>
+                    <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
+                      {product.is_active ? '✅ Active' : '❌ Inactive'}
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            // COMPACT VIEW — stacks into a card on mobile, single row from sm: up
+            const invData = inventoryMap[product.id];
+            const qty = invData ? (invData.quantity || 0) : 0;
+            const minStock = invData ? (invData.minimum_stock || 10) : 10;
+            const isLow = qty < minStock && qty > 0;
+            const isOutOfStock = qty === 0;
+
+            return (
+              <div
+                key={product.id}
+                onClick={() => setExpandedId(product.id)}
+                className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-blue-50 cursor-pointer transition-colors active:bg-blue-100"
+              >
+                {/* Photo + name/SKU — always a single row, even on mobile */}
+                <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); if (isAdmin) openQuickPhotoPicker(product.id); }}
+                    title={isAdmin ? 'Tap to add/change photo' : 'Product photo'}
+                    className="relative flex-shrink-0 w-11 h-11 sm:w-10 sm:h-10 rounded-lg overflow-hidden group"
+                  >
+                    {product.images?.[0] ? (
+                      <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                      (() => {
+                        const { gradient, initials } = productAvatar(product.name);
+                        return (
+                          <span className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${gradient} text-white text-xs font-bold animate-pulse`}>
+                            {initials}
+                          </span>
+                        );
+                      })()
+                    )}
+                    {isAdmin && (
+                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+                        <FiCamera className="h-3.5 w-3.5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </span>
+                    )}
+                    {uploadingQuickPhotoId === product.id && (
+                      <span className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </span>
+                    )}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-gray-800 text-sm sm:text-base truncate">{product.name}</p>
+                    <p className="text-xs text-gray-600 truncate">SKU: {product.sku || 'N/A'}</p>
+                  </div>
+                  <span className="text-gray-300 flex-shrink-0 sm:hidden">▶</span>
+                </div>
+
+                {/* Stock + actions — full-width row on mobile, fixed-width columns from sm: up */}
+                <div className="flex items-center justify-between sm:justify-center sm:w-24 flex-shrink-0">
+                  <span className="text-[11px] text-gray-400 sm:hidden">Stock</span>
+                  <span className={`inline-block px-2.5 sm:px-3 py-1 rounded-full font-bold text-xs sm:text-sm whitespace-nowrap ${
+                    isOutOfStock ? 'bg-red-100 text-red-700' : isLow ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                  }`}>
+                    {qty} {isOutOfStock && '❌'} {isLow && '⚠️'}
+                  </span>
+                </div>
+
+                <div className="flex gap-2 sm:w-36 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ isAdmin ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-300 text-gray-600 cursor-not-allowed' }`}>
+                    <FiEdit className="h-3 w-3 inline mr-1" />
+                    Edit
+                  </button>
+                  <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
+                    {product.is_active ? '✅' : '❌'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1080,6 +1384,8 @@ const OrderInventoryPOSControl = () => {
                     tax_rate: 18,
                     category_id: null
                   });
+                  setNewProductImageFile(null);
+                  setNewProductImagePreview(null);
                 }}
                 className="text-white hover:bg-white hover:bg-opacity-20 p-1 md:p-2 rounded-lg transition"
               >
@@ -1088,6 +1394,38 @@ const OrderInventoryPOSControl = () => {
             </div>
 
             <div className="p-3 md:p-6 space-y-4">
+              {/* Product Photo */}
+              <div className="flex items-center gap-3 md:gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => newProductImageInputRef.current?.click()}
+                  className="w-14 h-14 md:w-16 md:h-16 rounded-lg bg-white border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0"
+                >
+                  {newProductImagePreview ? (
+                    <img src={newProductImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <FiImage className="h-5 w-5 text-gray-400" />
+                  )}
+                </button>
+                <input
+                  ref={newProductImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => selectImageFile(e.target.files?.[0], setNewProductImageFile, setNewProductImagePreview)}
+                />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => newProductImageInputRef.current?.click()}
+                    className="text-xs md:text-sm font-medium text-green-600 hover:text-green-700"
+                  >
+                    {newProductImagePreview ? 'Change photo' : 'Add photo (optional)'}
+                  </button>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Shown to customers browsing this product</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1 md:mb-2">
@@ -1266,6 +1604,8 @@ const OrderInventoryPOSControl = () => {
                       tax_rate: 18,
                       category_id: null
                     });
+                    setNewProductImageFile(null);
+                    setNewProductImagePreview(null);
                   }}
                   className="flex-1 bg-gray-400 text-white px-3 md:px-4 py-2 md:py-3 rounded-lg hover:bg-gray-500 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base"
                 >

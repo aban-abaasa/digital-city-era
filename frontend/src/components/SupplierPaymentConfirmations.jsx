@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiCheckCircle, FiClock, FiDollarSign, FiCalendar, FiFileText, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
+import { confirmPayment, getSupplierOrderMatchIds } from '../services/supplierOrdersService';
 
 const SupplierPaymentConfirmations = () => {
   const [payments, setPayments] = useState([]);
@@ -23,11 +24,13 @@ const SupplierPaymentConfirmations = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setError('Not logged in'); setLoading(false); return; }
 
-      // Step 1: find all purchase_orders for this supplier (auth UUID)
+      // Step 1: find all purchase_orders for this supplier — supplier_id may be
+      // stored as either the auth UUID or the internal users.id row
+      const matchIds = await getSupplierOrderMatchIds(user.id);
       const { data: orders, error: ordErr } = await supabase
         .from('purchase_orders')
         .select('id, po_number, total_amount, status, ordered_at')
-        .eq('supplier_id', user.id);
+        .in('supplier_id', matchIds);
 
       if (ordErr) throw ordErr;
       if (!orders?.length) { setPayments([]); setLoading(false); return; }
@@ -64,18 +67,12 @@ const SupplierPaymentConfirmations = () => {
 
   const handleConfirm = async (txnId) => {
     try {
-      const { error } = await supabase
-        .from('payment_transactions')
-        .update({
-          confirmed_by_supplier: true,
-          confirmation_date: new Date().toISOString(),
-          confirmation_notes: confirmNotes.trim() || null,
-          payment_status: 'confirmed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', txnId);
-
-      if (error) throw error;
+      // Confirms the payment_transactions row AND rolls the confirmed total
+      // up onto purchase_orders.amount_paid_ugx/balance_due_ugx/payment_status —
+      // updating only the transaction row (as before) left the order's
+      // tracked balance stuck at "unpaid" even after confirmation.
+      const result = await confirmPayment(txnId, confirmNotes);
+      if (!result.success) throw new Error(result.error);
 
       setSuccessMsg('✅ Payment confirmed successfully!');
       setConfirmingId(null);

@@ -2655,7 +2655,7 @@ const CashierPortal = () => {
     { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     { id: 'inventory', label: 'Till Supplies', icon: FiPackage },
     { id: 'notifications', label: 'Notifications', icon: FiBell },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiCreditCard },
+    { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiCreditCard },
   ];
 
   return (

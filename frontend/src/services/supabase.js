@@ -23,18 +23,46 @@ if (!supabaseAnonKey) {
 // wiping the just-issued access_token before Supabase's client can read it.
 // A small grace window also absorbs minor device clock drift.
 const STALE_HASH_GRACE_SECONDS = 300;
-if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
-  try {
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    if (!params.has('provider_token')) {
-      const expiresAt = Number(params.get('expires_at') || 0);
-      const nowSec    = Math.floor(Date.now() / 1000);
-      if (expiresAt > 0 && expiresAt < nowSec - STALE_HASH_GRACE_SECONDS) {
-        console.warn('[SUPABASE] Stale auth URL detected — clearing hash to prevent 403 sign-out loop.');
+if (typeof window !== 'undefined' && window.location.hash) {
+  const hash = window.location.hash;
+  
+  // Check if this is an auth-related hash
+  if (hash.includes('access_token') || hash.includes('error')) {
+    try {
+      const params = new URLSearchParams(hash.slice(1));
+      
+      // ALWAYS clear error hashes immediately - these cause loops
+      if (params.has('error') || params.has('error_description')) {
+        const errorDesc = params.get('error_description') || params.get('error') || 'Unknown error';
+        console.error('[SUPABASE] Auth error in URL:', errorDesc);
+        
+        // Clear the error hash immediately
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        
+        // Store the error for display
+        sessionStorage.setItem('supabase_auth_error', errorDesc);
+        
+        // Redirect to login if not already there
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
+      } else if (params.has('access_token') && !params.has('provider_token')) {
+        // Not an OAuth flow, check for stale tokens
+        const expiresAt = Number(params.get('expires_at') || 0);
+        const nowSec = Math.floor(Date.now() / 1000);
+        
+        if (expiresAt > 0 && expiresAt < nowSec - STALE_HASH_GRACE_SECONDS) {
+          console.warn('[SUPABASE] Stale auth URL detected — clearing hash to prevent 403 sign-out loop.');
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
       }
+    } catch (err) { 
+      console.error('[SUPABASE] Hash parsing failed:', err);
+      // If we can't parse it, it's probably corrupt - clear it
+      console.warn('[SUPABASE] Clearing corrupt auth hash');
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
-  } catch (_) { /* hash parsing failed — leave it alone */ }
+  }
 }
 
 // Create Supabase client as singleton - Fixed pattern
@@ -122,6 +150,35 @@ export const auth = {
   signOut: async () => {
     const { error } = await supabase.auth.signOut()
     return { error }
+  },
+
+  // Complete logout - clears all sessions and storage
+  completeLogout: async () => {
+    try {
+      // Sign out from Supabase
+      await supabase.auth.signOut();
+      
+      // Clear all storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Clear cookies
+      if (typeof document !== 'undefined') {
+        document.cookie.split(";").forEach(cookie => {
+          document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      }
+      
+      // Clear the URL hash if it exists
+      if (typeof window !== 'undefined' && window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      
+      return { error: null };
+    } catch (error) {
+      console.error('Complete logout error:', error);
+      return { error };
+    }
   },
 
   // Get current session

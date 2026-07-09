@@ -29,6 +29,7 @@ import OrderPaymentTracker from '../components/OrderPaymentTracker';
 import { SupplierCatalogTab, SupplierApplicationsTab } from '../components/SupplierMarketplace';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { getSupplierOrderMatchIds } from '../services/supplierOrdersService';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
@@ -616,15 +617,15 @@ const SupplierPortal = () => {
         return;
       }
 
-      // Use auth UUID — this is what is stored in purchase_orders.supplier_id
-      // (supplier_applications.supplier_user_id = auth UUID, stored by SupplierMarketplace)
+      // supplier_id may be stored as either the auth UUID or the internal users.id row
       const authId = user.id;
+      const matchIds = await getSupplierOrderMatchIds(authId);
 
       // Get all orders in one query — match by auth UUID OR users.id (covers old rows)
       const { data: allOrders, count: totalOrders } = await supabase
         .from('purchase_orders')
         .select('id, status, total_amount, ordered_at, expected_delivery_date', { count: 'exact' })
-        .or(`supplier_id.eq.${authId}`);
+        .in('supplier_id', matchIds);
 
       if (!allOrders) {
         console.log('No orders found for supplier');
@@ -683,12 +684,13 @@ const SupplierPortal = () => {
       if (!user) return;
 
       const authId = user.id;
+      const matchIds = await getSupplierOrderMatchIds(authId);
       console.log('📚 Loading order history for supplier auth ID:', authId);
 
       const { data: orders, error: ordersError } = await supabase
         .from('purchase_orders')
         .select('id, po_number, status, total_amount, items, ordered_at, expected_delivery_date, notes')
-        .eq('supplier_id', authId)
+        .in('supplier_id', matchIds)
         .order('ordered_at', { ascending: false })
         .limit(20);
 
@@ -800,6 +802,7 @@ const SupplierPortal = () => {
       if (!user) return;
 
       const authId = user.id;
+      const matchIds = await getSupplierOrderMatchIds(authId);
 
       // Get orders from last 6 months
       const sixMonthsAgo = new Date();
@@ -808,7 +811,7 @@ const SupplierPortal = () => {
       const { data: orders } = await supabase
         .from('purchase_orders')
         .select('total_amount, status, ordered_at')
-        .eq('supplier_id', authId)
+        .in('supplier_id', matchIds)
         .gte('ordered_at', sixMonthsAgo.toISOString())
         .order('ordered_at');
 
@@ -843,15 +846,16 @@ const SupplierPortal = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Use auth UUID — matches what was stored by the manager when creating the order
+      // supplier_id may be stored as either the auth UUID or the internal users.id row
       const authId = user.id;
+      const matchIds = await getSupplierOrderMatchIds(authId);
       console.log('Loading orders for supplier auth ID:', authId);
 
       // Get orders sent to this supplier
       const { data: orders, error } = await supabase
         .from('purchase_orders')
         .select('*')
-        .eq('supplier_id', authId)
+        .in('supplier_id', matchIds)
         .order('ordered_at', { ascending: false });
 
       if (error) {
@@ -2654,7 +2658,7 @@ const SupplierPortal = () => {
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
     { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend },
-    { id: 'ican-wallet', label: '₡ ICAN Wallet', icon: FiDollarSign },
+    { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign },
   ];
 
   return (

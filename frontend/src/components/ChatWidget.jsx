@@ -75,6 +75,17 @@ const ChatWidget = () => {
   useEffect(() => { openRef.current = open; }, [open]);
   useEffect(() => { channelRef.current = channel; }, [channel]);
 
+  // Lets other components (e.g. a "Need Help?" card) open the real support
+  // chat instead of duplicating fake contact info.
+  useEffect(() => {
+    const openSupportChat = () => {
+      setChannel('support');
+      setOpen(true);
+    };
+    window.addEventListener('faredeal:open-support-chat', openSupportChat);
+    return () => window.removeEventListener('faredeal:open-support-chat', openSupportChat);
+  }, []);
+
   const portal = portalForPath(location.pathname);
   const hidden = HIDDEN_PREFIXES.some((p) => location.pathname.startsWith(p)) || isDeveloperSession();
 

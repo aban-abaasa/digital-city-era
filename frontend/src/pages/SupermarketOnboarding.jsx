@@ -99,7 +99,7 @@ export default function SupermarketOnboarding() {
               onClick={() => navigate('/ican-wallet')}
               className="flex-1 py-3 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200"
             >
-              View ICAN Wallet
+              View IcanEra Wallet
             </button>
           </div>
         </div>

@@ -462,7 +462,7 @@ const OnboardingWizard = ({ onComplete, onSkip }) => {
       {[
         { icon: '🛒', title: '1% cashback on every purchase', desc: 'Automatically added to your ICAN wallet after checkout.' },
         { icon: '💰', title: '1 ICAN = 5,000 UGX', desc: 'Redeem your coins for discounts or transfers.' },
-        { icon: '🌍', title: 'Works across all apps', desc: 'Use your ICAN balance in Supermartkera, MybodaGuy, and Backbone.' },
+        { icon: '🌍', title: 'Works across all apps', desc: 'Use your ICAN balance in Supermartkera, MybodaGuy, and AgriBone.' },
       ].map((item) => (
         <div key={item.title} className="flex gap-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100 p-4">
           <span className="text-3xl flex-shrink-0">{item.icon}</span>

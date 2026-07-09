@@ -12,8 +12,8 @@ import {
   ICAN_TO_UGX,
 } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
-import BuyIcan from '../../../../ICAN/frontend/src/components/ICAN/BuyIcan';
-import SellIcan from '../../../../ICAN/frontend/src/components/ICAN/SellIcan';
+
+const ICANERA_APP_URL = 'https://icanera.space/';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ const TX_COLORS = {
 const APP_BADGE = {
   ican: { label: 'ICAN', color: 'bg-violet-900 text-violet-200' },
   'digital-city-era': { label: 'Supermarket', color: 'bg-blue-900 text-blue-200' },
-  'farm-agent': { label: 'Backbone', color: 'bg-green-900 text-green-200' },
+  'farm-agent': { label: 'AgriBone', color: 'bg-green-900 text-green-200' },
   mybodaguy: { label: 'My Boda Guy', color: 'bg-orange-900 text-orange-200' },
 };
 
@@ -78,7 +78,7 @@ function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded =
             <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center">
               <span className={`${textColor} font-bold text-sm`}>I</span>
             </div>
-            <span className={`${textColor} font-semibold text-sm`}>Supermarket — ICAN Wallet</span>
+            <span className={`${textColor} font-semibold text-sm`}>Supermarket — IcanEra Wallet</span>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setHidden(h => !h)}
@@ -93,7 +93,7 @@ function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded =
         </div>
 
         <div className="flex items-center justify-between mb-1">
-          <div className="text-white/60 text-xs uppercase tracking-widest">ICAN Balance</div>
+          <div className="text-white/60 text-xs uppercase tracking-widest">IcanEra Balance</div>
           {countryName && (
             <span className="text-white/50 text-[10px] bg-white/10 rounded-full px-2 py-0.5">
               🌍 {countryName} · {currencyCode}
@@ -260,7 +260,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [modal, setModal] = useState(null); // 'send' | 'receive' | 'buy' | 'sell' | null
+  const [modal, setModal] = useState(null); // 'send' | 'receive' | null
   const [activeTab, setActiveTab] = useState('all');
 
   useEffect(() => {
@@ -318,7 +318,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
       <div className={`${embedded ? '' : 'min-h-screen bg-gray-950'} flex items-center justify-center ${embedded ? 'py-10' : ''}`}>
         <div className="text-white text-center">
           <div className="text-6xl mb-4">🔒</div>
-          <p className="text-gray-400">Please sign in to access your ICAN Wallet</p>
+          <p className="text-gray-400">Please sign in to access your IcanEra Wallet</p>
         </div>
       </div>
     );
@@ -354,7 +354,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
               <span className="font-bold text-lg">₡</span>
             </div>
             <div>
-              <h1 className="font-bold text-xl">ICAN Wallet</h1>
+              <h1 className="font-bold text-xl">IcanEra Wallet</h1>
               <p className="text-gray-500 text-sm">Supermarket — powered by Icaneracoin</p>
             </div>
           </div>
@@ -375,8 +375,8 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
           {[
             { label: 'Send', icon: '↑', color: 'from-violet-700 to-violet-900', action: () => setModal('send') },
             { label: 'Receive', icon: '↓', color: 'from-emerald-700 to-emerald-900', action: () => setModal('receive') },
-            { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => setModal('buy') },
-            { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => setModal('sell') },
+            { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => window.open(ICANERA_APP_URL, '_blank', 'noopener,noreferrer') },
+            { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => window.open(ICANERA_APP_URL, '_blank', 'noopener,noreferrer') },
             { label: 'History', icon: '≡', color: 'from-blue-700 to-blue-900', action: () => document.getElementById('tx-section')?.scrollIntoView({ behavior: 'smooth' }) },
           ].map(btn => (
             <button key={btn.label} onClick={btn.action}
@@ -482,38 +482,6 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
       )}
       {modal === 'receive' && balance.address && (
         <ReceiveModal walletAddress={balance.address} onClose={() => setModal(null)} />
-      )}
-      {modal === 'buy' && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-700">
-              <h2 className="text-white font-bold text-lg">💳 Buy ICAN Coins</h2>
-              <button onClick={() => setModal(null)} className="text-gray-400 hover:text-white text-xl">×</button>
-            </div>
-            <div className="p-2">
-              <BuyIcan userId={userId} onSuccess={() => { loadWallet(); setModal(null); }} />
-            </div>
-            <div className="px-6 pb-5">
-              <button onClick={() => setModal(null)} className="w-full py-3 rounded-xl bg-gray-800 text-gray-300 font-medium text-sm">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {modal === 'sell' && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-700">
-              <h2 className="text-white font-bold text-lg">💰 Sell ICAN Coins</h2>
-              <button onClick={() => setModal(null)} className="text-gray-400 hover:text-white text-xl">×</button>
-            </div>
-            <div className="p-2">
-              <SellIcan userId={userId} onSuccess={() => { loadWallet(); setModal(null); }} />
-            </div>
-            <div className="px-6 pb-5">
-              <button onClick={() => setModal(null)} className="w-full py-3 rounded-xl bg-gray-800 text-gray-300 font-medium text-sm">Close</button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -25,6 +25,24 @@ body {
   transition: background-color 200ms ease, color 200ms ease;
 }
 
+/* Form controls across this app sit on light/white card backgrounds
+   regardless of the current app theme, but Tailwind's preflight reset makes
+   them inherit `color` from body — which is near-white in the default dark
+   theme (--app-fg above). That made typed text in inputs/textareas/selects
+   effectively invisible (near-white text on a white field). Give form
+   controls an explicit, always-legible dark text color instead of
+   inheriting the theme-dependent body color. */
+input,
+textarea,
+select {
+  color: #0f172a;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+}
+
 /* Notification animations */
 @keyframes slideIn {
   from {

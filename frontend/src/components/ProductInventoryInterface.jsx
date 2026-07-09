@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
-import { FiPackage, FiShoppingCart, FiSettings, FiTrendingUp, FiAlertTriangle, FiPlus, FiTruck, FiZap } from 'react-icons/fi';
+import { FiPackage, FiShoppingCart, FiSettings, FiTrendingUp, FiAlertTriangle, FiPlus, FiTruck, FiZap, FiUpload, FiEdit2 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import AddProductModal from './AddProductModal';
+import inventoryService from '../services/inventorySupabaseService';
+import {
+  SUPPORTED_IMPORT_EXTENSIONS,
+  parseProductFile,
+  bulkImportProductRows,
+  downloadProductTemplate,
+  exportRowsToFile
+} from '../utils/inventoryFileIO';
 // import PurchaseOrderManager from './PurchaseOrderManager'; // COMMENTED OUT - Using order system instead
 
 const ProductInventoryInterface = () => {
@@ -18,6 +26,9 @@ const ProductInventoryInterface = () => {
   const [reorderQuantity, setReorderQuantity] = useState(0);
   const [expandedProductId, setExpandedProductId] = useState(null); // Track which product is expanded
   const [showProductList, setShowProductList] = useState(false); // Track if product list is shown
+  const [editingProduct, setEditingProduct] = useState(null); // Full row + inventory data for the product being edited
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Load products from Supabase on mount
   useEffect(() => {
@@ -27,12 +38,23 @@ const ProductInventoryInterface = () => {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      
-      // Fetch products
-      const { data: productsData, error: productsError } = await supabase
+
+      // Each supermarket's catalog is private — only show products that
+      // belong to the signed-in admin's supermarket. Rows created before
+      // this isolation existed have supermarket_id NULL, so those are
+      // included too rather than disappearing from view.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+
+      let productsQuery = supabase
         .from('products')
         .select('*')
         .order('created_at', { ascending: false });
+
+      productsQuery = supermarketId
+        ? productsQuery.or(`supermarket_id.eq.${supermarketId},supermarket_id.is.null`)
+        : productsQuery;
+
+      const { data: productsData, error: productsError } = await productsQuery;
 
       if (productsError) {
         console.error('Error loading products:', productsError);
@@ -90,6 +112,62 @@ const ProductInventoryInterface = () => {
     }
   };
 
+  const downloadTemplate = (format) => downloadProductTemplate(format);
+
+  // Exports the currently loaded product list so it can be edited and re-imported
+  const exportProducts = (format) => {
+    if (products.length === 0) {
+      toast.info('No products to export yet');
+      return;
+    }
+
+    const rows = products.map(p => ({
+      name: p.name,
+      sku: p.sku,
+      price: p.price,
+      stock: p.stock,
+      minimum_stock: p.minStock,
+      maximum_stock: p.maxStock,
+      status: p.status,
+      location: p.location,
+      supplier: p.supplier
+    }));
+
+    exportRowsToFile(rows, format, 'inventory_export');
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!SUPPORTED_IMPORT_EXTENSIONS.includes(ext)) {
+      toast.error('Please upload a .csv, .xlsx, .xls, or .pdf file');
+      e.target.value = '';
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const rows = await parseProductFile(file);
+
+      if (rows.length === 0) {
+        toast.error('No product rows found in the file');
+        return;
+      }
+
+      const { created, failed } = await bulkImportProductRows(rows);
+      toast.success(`✅ Imported ${created} product${created === 1 ? '' : 's'}${failed ? `, ${failed} row${failed === 1 ? '' : 's'} failed` : ''}`);
+      await loadProducts();
+    } catch (error) {
+      console.error('Bulk upload failed:', error);
+      toast.error(`Failed to process the uploaded file: ${error.message || 'Unknown error'}`);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const calculateStatus = (stock, minStock) => {
     if (stock === 0) return 'Out of Stock';
     if (stock <= minStock) return 'Low Stock';
@@ -129,6 +207,49 @@ const ProductInventoryInterface = () => {
     setAdjustmentAmount(0);
     setAdjustmentReason('');
     setShowAdjustModal(true);
+  };
+
+  // Loads the full product row + its inventory record (the summary `product`
+  // object from the list is a stripped-down view) so AddProductModal can be
+  // pre-filled with everything, including its current photo.
+  const handleEditProduct = async (product) => {
+    try {
+      const [{ data: prod, error: prodError }, { data: inv }] = await Promise.all([
+        supabase.from('products').select('*').eq('id', product.id).single(),
+        supabase.from('inventory').select('current_stock, minimum_stock, reorder_point').eq('product_id', product.id).maybeSingle(),
+      ]);
+      if (prodError) throw prodError;
+
+      setEditingProduct({
+        id: prod.id,
+        sku: prod.sku || '',
+        barcode: prod.barcode || '',
+        name: prod.name || '',
+        description: prod.description || '',
+        category_id: prod.category_id || '',
+        supplier_id: prod.supplier_id || '',
+        brand: prod.brand || '',
+        cost_price: prod.cost_price != null ? String(prod.cost_price) : '',
+        selling_price: prod.selling_price != null ? String(prod.selling_price) : '',
+        tax_rate: prod.tax_rate != null ? String(prod.tax_rate) : '18',
+        initial_stock: String(inv?.current_stock ?? 0),
+        minimum_stock: String(inv?.minimum_stock ?? 10),
+        maximum_stock: '1000',
+        reorder_point: String(inv?.reorder_point ?? 20),
+        location: 'Main Storage',
+        warehouse: 'Main Warehouse',
+        images: Array.isArray(prod.images) ? prod.images : [],
+      });
+      setShowAddProductModal(true);
+    } catch (error) {
+      console.error('Error loading product for edit:', error);
+      toast.error('Failed to load product for editing');
+    }
+  };
+
+  const closeProductModal = () => {
+    setShowAddProductModal(false);
+    setEditingProduct(null);
   };
 
   /**
@@ -372,6 +493,48 @@ const ProductInventoryInterface = () => {
               <span className="hidden md:inline">Add Product</span>
               <span className="md:hidden">Add</span>
             </button>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,.pdf"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Upload a CSV, Excel, or PDF file to bulk-add products"
+              className="col-span-1 px-3 md:px-6 py-2 md:py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-xs md:text-sm rounded-lg hover:from-indigo-700 hover:to-blue-700 transition-all font-medium shadow-lg flex items-center justify-center md:justify-start space-x-1 md:space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              ) : (
+                <FiUpload className="h-4 w-4 md:h-5 md:w-5" />
+              )}
+              <span className="hidden md:inline">{uploading ? 'Uploading...' : 'Upload File'}</span>
+              <span className="md:hidden">{uploading ? '...' : 'Upload'}</span>
+            </button>
+            <select
+              value=""
+              onChange={(e) => { if (e.target.value) downloadTemplate(e.target.value); e.target.value = ''; }}
+              title="Download a sample template to fill in and upload"
+              className="col-span-1 px-3 py-2 md:py-2.5 border border-gray-300 rounded-lg text-xs md:text-sm bg-white shadow-sm text-gray-700"
+            >
+              <option value="">📥 Template</option>
+              <option value="csv">CSV Template</option>
+              <option value="xlsx">Excel Template</option>
+            </select>
+            <select
+              value=""
+              onChange={(e) => { if (e.target.value) exportProducts(e.target.value); e.target.value = ''; }}
+              title="Export current inventory"
+              className="col-span-1 px-3 py-2 md:py-2.5 border border-gray-300 rounded-lg text-xs md:text-sm bg-white shadow-sm text-gray-700"
+            >
+              <option value="">📤 Export</option>
+              <option value="csv">Export as CSV</option>
+              <option value="xlsx">Export as Excel</option>
+              <option value="pdf">Export as PDF</option>
+            </select>
             <button
               onClick={loadProducts}
               className="col-span-1 px-3 md:px-4 py-2 md:py-2.5 bg-blue-600 text-white text-xs md:text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md flex items-center justify-center space-x-1"
@@ -562,6 +725,16 @@ const ProductInventoryInterface = () => {
 
                       {/* Action Buttons - Full Width Stack */}
                       <div className="flex flex-col gap-2 pt-2 md:pt-3 border-t border-gray-200">
+                        <button
+                          onClick={() => {
+                            handleEditProduct(product);
+                            setExpandedProductId(null);
+                          }}
+                          className="w-full bg-purple-600 text-white py-2.5 md:py-3 px-3 md:px-4 rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm md:text-base flex items-center justify-center gap-2"
+                        >
+                          <FiEdit2 className="h-4 w-4" />
+                          <span>Edit Product</span>
+                        </button>
                         <button
                           onClick={() => {
                             handleReorder(product);
@@ -762,13 +935,18 @@ const ProductInventoryInterface = () => {
 
       {/* Add Product Modal */}
       <AddProductModal
+        key={editingProduct?.id || 'add-product'}
         isOpen={showAddProductModal}
-        onClose={() => setShowAddProductModal(false)}
-        onProductAdded={async (newProduct) => {
-          console.log('✅ New product added:', newProduct);
-          toast.success(`🎉 Product "${newProduct.name}" added successfully!`);
-          setShowAddProductModal(false);
-          // Reload products to show the new one
+        onClose={closeProductModal}
+        prefilledData={editingProduct || {}}
+        editingProductId={editingProduct?.id || null}
+        onProductAdded={async (savedProduct) => {
+          console.log(editingProduct ? '✅ Product updated:' : '✅ New product added:', savedProduct);
+          if (!editingProduct) {
+            toast.success(`🎉 Product "${savedProduct.name}" added successfully!`);
+          }
+          closeProductModal();
+          // Reload products to reflect the change
           await loadProducts();
         }}
       />

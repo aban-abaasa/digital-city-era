@@ -23,10 +23,13 @@ export const useSupermarketBranding = () => {
         return;
       }
 
+      // supermarket_id lives directly on users — rows link to auth either
+      // via auth_id (older trigger) or by using auth.users.id as users.id
+      // directly (newer trigger), so match either.
       const { data: userRow } = await supabase
         .from('users')
         .select('supermarket_id')
-        .eq('auth_id', user.id)
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
 
       if (!userRow?.supermarket_id) {

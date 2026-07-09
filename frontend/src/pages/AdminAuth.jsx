@@ -335,7 +335,7 @@ export default function AdminAuth() {
               onClick={() => navigate('/ican-wallet')}
               className="w-full py-3 rounded-2xl border border-white/10 text-white/70 text-sm font-semibold hover:bg-white/5 transition-colors"
             >
-              View ICAN Wallet
+              View IcanEra Wallet
             </button>
           </div>
         </div>

@@ -12025,7 +12025,7 @@ FAREDEAL Uganda Management Team
                 { id: 'overview', icon: '📊', label: 'Dashboard', desc: 'Business overview', gradient: 'from-blue-500 to-blue-600' },
                 { id: 'analytics', icon: '📈', label: 'Analytics', desc: 'Data insights', gradient: 'from-green-500 to-green-600' },
                 { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' },
-                { id: 'ican-wallet', icon: '₡', label: 'ICAN Wallet', desc: 'Wallet & rewards', gradient: 'from-violet-500 to-fuchsia-600' }
+                { id: 'ican-wallet', icon: '₡', label: 'IcanEra Wallet', desc: 'Wallet & rewards', gradient: 'from-violet-500 to-fuchsia-600' }
               ].map((item) => (
                 <button
                   key={item.id}

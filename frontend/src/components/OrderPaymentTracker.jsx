@@ -9,6 +9,7 @@ import React, { useState, useEffect } from 'react';
 import { FiDollarSign, FiPlus, FiCheck, FiClock, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import supplierOrdersService from '../services/supplierOrdersService';
+import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
 
 const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -21,6 +22,20 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
     notes: ''
   });
   const [loading, setLoading] = useState(false);
+  const [icanBalance, setIcanBalance] = useState(null);
+  const [icanBalanceLoading, setIcanBalanceLoading] = useState(false);
+
+  // Load the current user's ICAN balance when they switch to the ICAN Wallet method
+  useEffect(() => {
+    if (paymentData.method !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
+
+    setIcanBalanceLoading(true);
+    supabase.auth.getUser()
+      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+      .then((bal) => setIcanBalance(bal))
+      .catch(() => setIcanBalance(null))
+      .finally(() => setIcanBalanceLoading(false));
+  }, [paymentData.method, icanBalance, icanBalanceLoading]);
 
   // Fetch payment transactions for this order
   useEffect(() => {
@@ -58,9 +73,12 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
   };
 
   // Calculate payment percentage
+  // purchase_orders stores the total as `total_amount` — `total_amount_ugx` is
+  // never populated by order creation, so fall back to keep this in sync.
   const totalPaidAmount = calculateTotalPaid();
-  const paymentPercentage = order.total_amount_ugx > 0
-    ? (totalPaidAmount / order.total_amount_ugx * 100)
+  const orderTotal = parseFloat(order.total_amount_ugx || order.total_amount) || 0;
+  const paymentPercentage = orderTotal > 0
+    ? (totalPaidAmount / orderTotal * 100)
     : 0;
 
   // Get status color
@@ -102,41 +120,70 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
       return;
     }
 
+    const orderId = order?.orderId || order?.order_uuid || order?.id;
+
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // Get the internal user ID from users table (not auth_id)
-      let internalUserId = null;
-      if (user?.id) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('id')
-          .eq('auth_id', user.id)
-          .single();
-        
-        internalUserId = userData?.id;
+      if (paymentData.method === 'ican_wallet') {
+        const icanNeeded = ugxToICAN(amount);
+        if (!icanBalance || icanBalance.ican < icanNeeded) {
+          alert(
+            `Insufficient ICAN balance.\n\n` +
+            `Needed: ${formatICAN(icanNeeded)} ICAN\n` +
+            `Available: ${formatICAN(icanBalance?.ican || 0)} ICAN`
+          );
+          setLoading(false);
+          return;
+        }
+
+        const payResult = await supplierOrdersService.payOrderWithICAN({
+          orderId,
+          supplierUserId: order.supplier_id,
+          icanAmount:     icanNeeded,
+          ugxAmount:      amount,
+          notes:          paymentData.notes || null,
+        });
+
+        if (!payResult.success) throw new Error(payResult.error);
+
+        alert(
+          `✅ Paid ${formatICAN(icanNeeded)} ICAN from your wallet!\n\n` +
+          `Amount: ${formatUGX(amount)}\n\n` +
+          `The supplier's wallet has been credited instantly — no confirmation needed.`
+        );
+      } else {
+        // Get the internal user ID from users table (not auth_id)
+        const { data: { user } } = await supabase.auth.getUser();
+        let internalUserId = null;
+        if (user?.id) {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('id')
+            .eq('auth_id', user.id)
+            .single();
+
+          internalUserId = userData?.id;
+        }
+
+        const payResult = await supplierOrdersService.recordPayment({
+          orderId:          orderId,
+          amountPaid:       amount,
+          paymentMethod:    paymentData.method,
+          paymentReference: paymentData.reference || null,
+          notes:            paymentData.notes || null,
+          paidBy:           internalUserId
+        });
+
+        if (!payResult.success) throw new Error(payResult.error);
+
+        alert(
+          `✅ Payment Submitted for Supplier Confirmation!\n\n` +
+          `Amount: ${formatUGX(amount)}\n` +
+          `Method: ${paymentData.method.toUpperCase()}\n\n` +
+          `⏳ This payment is PENDING supplier confirmation.\n` +
+          `The order balance will update once the supplier confirms receipt.`
+        );
       }
-      
-      const orderId = order?.orderId || order?.order_uuid || order?.id;
-      const payResult = await supplierOrdersService.recordPayment({
-        orderId:          orderId,
-        amountPaid:       amount,
-        paymentMethod:    paymentData.method,
-        paymentReference: paymentData.reference || null,
-        notes:            paymentData.notes || null,
-        paidBy:           internalUserId
-      });
-
-      if (!payResult.success) throw new Error(payResult.error);
-
-      alert(
-        `✅ Payment Submitted for Supplier Confirmation!\n\n` +
-        `Amount: ${formatUGX(amount)}\n` +
-        `Method: ${paymentData.method.toUpperCase()}\n\n` +
-        `⏳ This payment is PENDING supplier confirmation.\n` +
-        `The order balance will update once the supplier confirms receipt.`
-      );
 
       // Reset form
       setPaymentData({
@@ -145,6 +192,7 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
         reference: '',
         notes: ''
       });
+      setIcanBalance(null);
       setShowPaymentModal(false);
 
       // Refresh transactions
@@ -375,25 +423,49 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
                 className="w-full px-4 py-3 sm:py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm bg-white"
               >
                 <option value="cash">💵 Cash</option>
-                <option value="bank_transfer">🏦 Bank Transfer</option>
-                <option value="mobile_money">📱 Mobile Money</option>
-                <option value="cheque">📄 Cheque</option>
+                <option value="ican_wallet">🪙 IcanEra Wallet</option>
               </select>
             </div>
 
-            {/* Payment Reference */}
-            <div className="mb-4">
-              <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
-                Reference Number
-              </label>
-              <input
-                type="text"
-                value={paymentData.reference}
-                onChange={(e) => setPaymentData({ ...paymentData, reference: e.target.value })}
-                className="w-full px-4 py-3 sm:py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-                placeholder="Transaction reference"
-              />
-            </div>
+            {/* ICAN Wallet Balance — shown only when paying with ICAN */}
+            {paymentData.method === 'ican_wallet' && (
+              <div className="mb-4 p-3 sm:p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
+                <div className="text-xs sm:text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+                {icanBalanceLoading ? (
+                  <div className="text-sm text-gray-500">Loading balance...</div>
+                ) : (
+                  <>
+                    <div className="text-lg sm:text-xl font-bold text-purple-700">
+                      {formatICAN(icanBalance?.ican || 0)} ICAN
+                    </div>
+                    {parseFloat(paymentData.amount) > 0 && (
+                      <div className="text-xs sm:text-sm text-gray-600 mt-1">
+                        This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(paymentData.amount)))} ICAN
+                        {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(paymentData.amount)) && (
+                          <span className="text-red-600 font-semibold"> — insufficient balance</span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Payment Reference — not applicable to ICAN Wallet, the on-chain tx is the reference */}
+            {paymentData.method !== 'ican_wallet' && (
+              <div className="mb-4">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                  Reference Number
+                </label>
+                <input
+                  type="text"
+                  value={paymentData.reference}
+                  onChange={(e) => setPaymentData({ ...paymentData, reference: e.target.value })}
+                  className="w-full px-4 py-3 sm:py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
+                  placeholder="Transaction reference"
+                />
+              </div>
+            )}
 
             {/* Notes */}
             <div className="mb-6">
@@ -420,10 +492,15 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
               </button>
               <button
                 onClick={handleAddPayment}
-                disabled={loading}
+                disabled={loading || (
+                  paymentData.method === 'ican_wallet' &&
+                  parseFloat(paymentData.amount) > 0 &&
+                  icanBalance &&
+                  icanBalance.ican < ugxToICAN(parseFloat(paymentData.amount))
+                )}
                 className="flex-1 px-4 py-3 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 active:bg-green-800 font-semibold text-base sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
               >
-                {loading ? 'Recording...' : 'Record Payment'}
+                {loading ? 'Recording...' : paymentData.method === 'ican_wallet' ? 'Pay with ICAN' : 'Record Payment'}
               </button>
             </div>
           </div>

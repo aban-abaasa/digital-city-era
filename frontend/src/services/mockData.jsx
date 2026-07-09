@@ -170,8 +170,77 @@ export const mockService = {
   },
 
   // Auth
-  login: (email) => {
-    // Super simple demo login - just match the role name
+  login: async (email) => {
+    // Import supabase dynamically to avoid circular dependencies
+    const { supabase } = await import('./supabase');
+    
+    try {
+      // First check if there's a valid Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        // User is authenticated with Supabase, fetch their profile from users
+        // table. role/full_name/supermarket_id live directly on users — no
+        // join needed. Rows created by different signup paths over time link
+        // to auth either via auth_id (older trigger) or by using
+        // auth.users.id as users.id directly (newer trigger), so match
+        // either rather than assuming one convention.
+        let { data: userRow, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .or(`auth_id.eq.${session.user.id},id.eq.${session.user.id}`)
+          .maybeSingle();
+
+        // If user doesn't exist in users table, create them
+        if (!userRow && !userError) {
+          console.log('[MOCK-SERVICE] Creating user record for authenticated user...');
+
+          const fullName = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User';
+
+          const { data: newUser, error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: session.user.id,
+              auth_id: session.user.id,
+              email: session.user.email,
+              full_name: fullName,
+              role: 'customer',
+              is_active: true
+            })
+            .select('*')
+            .single();
+
+          if (insertError) {
+            console.error('[MOCK-SERVICE] Failed to create user:', insertError);
+          } else {
+            userRow = newUser;
+          }
+        }
+
+        if (userRow) {
+          const primaryRole = userRow.role?.toLowerCase() || 'customer';
+
+          // Convert Supabase user to mock format
+          const user = {
+            id: userRow.id,
+            name: userRow.full_name || userRow.email?.split('@')[0] || 'User',
+            full_name: userRow.full_name || userRow.email?.split('@')[0] || 'User',
+            role: primaryRole,
+            email: userRow.email,
+            avatar: userRow.avatar_url || `https://picsum.photos/200/200?random=${userRow.id}`,
+            phone: userRow.phone || '',
+            created_at: userRow.created_at || null
+          };
+
+          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+          return Promise.resolve({ success: true, user });
+        }
+      }
+    } catch (error) {
+      console.error('[MOCK-SERVICE] Supabase auth check failed:', error);
+    }
+    
+    // Fallback to mock user system for demo/testing
     const fallbackUser = mockData.users.find(u => u.role === 'customer') || mockData.users[0];
     const user = mockData.users.find(u => 
       u.email.toLowerCase() === email.toLowerCase() || 

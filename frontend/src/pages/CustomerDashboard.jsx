@@ -32,6 +32,8 @@ import {
   FiCheckCircle,
   FiArrowDownLeft,
   FiArrowUpRight,
+  FiMessageCircle,
+  FiChevronDown,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '../../../../mybodaguy/frontend/src/mybodaguy/services/icanWalletService';
 import { useAuth } from '../contexts/AuthContext';
@@ -53,6 +55,13 @@ const CustomerDashboard = () => {
   const { user, customer, logout, loading: authLoading, isAuthenticated } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState('overview');
+  // Small phones: collapse the membership/stats/actions blocks behind a
+  // compact tab switcher instead of stacking three tall sections.
+  const [heroTab, setHeroTab] = useState('actions');
+  // Overview main column: Recent Orders / Recommended split into small tabs
+  // instead of two stacked cards. Tabs stay visible; content collapses.
+  const [overviewSubTab, setOverviewSubTab] = useState('orders');
+  const [overviewContentOpen, setOverviewContentOpen] = useState(false);
   const [showShoppingModal, setShowShoppingModal] = useState(false);
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [showRewardsModal, setShowRewardsModal] = useState(false);
@@ -78,16 +87,6 @@ const CustomerDashboard = () => {
   const [icanBalance, setIcanBalance] = useState(null);
   const [icanTxs, setIcanTxs]         = useState([]);
   const [icanLoading, setIcanLoading] = useState(false);
-
-  // Delivery form state
-  const STORES = ['Shoprite', 'Carrefour', 'Quality Supermarket', 'Game', 'Capital Shoppers'];
-  const [deliveries, setDeliveries]     = useState([]);
-  const [delivView, setDelivView]       = useState('list');
-  const [delivLoading, setDelivLoading] = useState(false);
-  const [delivSubmitting, setDelivSubmitting] = useState(false);
-  const [delivForm, setDelivForm]       = useState({
-    store: STORES[0], name: '', phone: '', address: '', items: '', total: '',
-  });
 
   // Real role from Supabase (overrides mock AuthContext)
   const [staffRole, setStaffRole] = useState(null); // 'manager' | 'cashier' | null
@@ -265,67 +264,17 @@ const CustomerDashboard = () => {
       .finally(() => setIcanLoading(false));
   }, [activeTab, user?.id]);
 
-  // Load delivery orders when delivery tab opens
-  useEffect(() => {
-    if ((activeTab !== 'delivery' && activeTab !== 'orders') || !user?.id) return;
-    const UID_TAG = `uid:${user.id}`;
-    setDelivLoading(true);
-    supabase
-      .from('mybodaguy_delivery_requests')
-      .select('id, supermarket_name, delivery_address, status, total_ugx, delivery_fee_ican, created_at')
-      .ilike('delivery_notes', `%${UID_TAG}%`)
-      .order('created_at', { ascending: false })
-      .limit(20)
-      .then(({ data }) => { setDeliveries(data || []); setDelivLoading(false); });
-  }, [activeTab, user?.id]);
-
-  const submitDelivery = async () => {
-    if (!delivForm.phone || !delivForm.address || !delivForm.items) {
-      toast.error('Please fill in phone, address and items.'); return;
-    }
-    setDelivSubmitting(true);
-    try {
-      const total = Number(delivForm.total) || 0;
-      const fee   = Math.max(3000, total * 0.05);
-      const { error: insErr } = await supabase.from('mybodaguy_delivery_requests').insert({
-        supermarket_name:  delivForm.store,
-        pickup_address:    delivForm.store + ', Kampala',
-        customer_name:     delivForm.name || user?.email?.split('@')[0] || 'Customer',
-        customer_phone:    delivForm.phone,
-        delivery_address:  delivForm.address,
-        delivery_notes:    `uid:${user.id}`,
-        items_summary:     delivForm.items,
-        total_ugx:         total,
-        delivery_fee_ugx:  fee,
-        delivery_fee_ican: fee / 5000,
-        status:            'pending',
-      });
-      if (insErr) throw insErr;
-      toast.success('Delivery order placed! A boda guy will pick it up shortly.');
-      setDelivView('list');
-      setDelivForm(f => ({ ...f, phone: '', address: '', items: '', total: '' }));
-      // Refresh list
-      const { data } = await supabase
-        .from('mybodaguy_delivery_requests')
-        .select('id, supermarket_name, delivery_address, status, total_ugx, delivery_fee_ican, created_at')
-        .ilike('delivery_notes', `%uid:${user.id}%`)
-        .order('created_at', { ascending: false }).limit(20);
-      setDeliveries(data || []);
-    } catch (e) {
-      toast.error(e.message || 'Could not place order');
-    } finally {
-      setDelivSubmitting(false);
-    }
-  };
-
   const switchTab = (id) => { setActiveTab(id); setMobileMenu(false); };
 
+  // Delivery is its own tab, separate from Book Ride — both render
+  // EnhancedRideRequest (the one real matching-engine implementation) but
+  // each locks it to a single fixedServiceType so Book Ride never shows the
+  // delivery toggle and vice versa.
   const ALL_TABS = [
     { id: 'overview', label: 'Overview', emoji: '🏠' },
     { id: 'book-ride', label: 'Book Ride', emoji: '🏍️' },
-    { id: 'delivery', label: 'Delivery', emoji: '📦' },
     { id: 'shop', label: 'Shop', emoji: '🛒' },
-    { id: 'orders', label: 'Orders', emoji: '📋' },
+    { id: 'delivery', label: 'Delivery', emoji: '📦' },
     { id: 'rewards', label: 'Rewards', emoji: '🎁' },
     { id: 'profile', label: 'Profile', emoji: '👤' },
   ];
@@ -458,6 +407,21 @@ const CustomerDashboard = () => {
     }
   };
 
+  // Small tier badge — icon + label chip shown next to the membership title
+  const getMembershipBadge = (level) => {
+    switch (level) {
+      case 'platinum': return { icon: '💎', label: 'Platinum' };
+      case 'gold': return { icon: '🥇', label: 'Gold' };
+      case 'silver': return { icon: '🥈', label: 'Silver' };
+      default: return { icon: '🥉', label: 'Bronze' };
+    }
+  };
+
+  // Real "member since" year from the customer's actual account creation date
+  const memberSinceYear = customer?.created_at
+    ? new Date(customer.created_at).getFullYear()
+    : new Date().getFullYear();
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'delivered': return 'bg-green-100 text-green-800';
@@ -552,30 +516,6 @@ const CustomerDashboard = () => {
                   <FiLogOut className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Logout</span>
                 </button>
-                {/* 3-dot — mobile only */}
-                <div className="relative sm:hidden" ref={menuRef}>
-                  <button onClick={() => setMobileMenu(o => !o)}
-                    className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors">
-                    {mobileMenuOpen ? <FiX className="h-4 w-4" /> : <FiMoreVertical className="h-4 w-4" />}
-                  </button>
-                  {mobileMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
-                      {ALL_TABS.map(tab => (
-                        <button key={tab.id} onClick={() => switchTab(tab.id)}
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left
-                            ${activeTab === tab.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700 hover:bg-slate-50'}`}>
-                          <span>{tab.emoji}</span>
-                          {tab.label}
-                          {activeTab === tab.id && <FiCheckCircle className="ml-auto text-blue-500 h-3.5 w-3.5" />}
-                        </button>
-                      ))}
-                      <button onClick={() => { setActiveTab('ican-wallet'); setMobileMenu(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 border-t border-slate-100">
-                        <span>₡</span> ICAN Wallet
-                      </button>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -602,7 +542,7 @@ const CustomerDashboard = () => {
                     ? 'bg-violet-100 text-violet-700 font-semibold' 
                     : 'text-violet-600 hover:bg-violet-50'
                 }`}>
-                <span>₡</span> ICAN Wallet
+                <span>₡</span> IcanEra Wallet
               </button>
               <div className="ml-auto flex-shrink-0 pr-1">
                 <div className="w-36"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
@@ -611,16 +551,33 @@ const CustomerDashboard = () => {
           </div>
         </div>
 
-        {/* Mobile active-tab bar */}
-        <div className="sm:hidden bg-white border-b border-blue-100 px-4 py-2 flex items-center justify-between">
+        {/* Mobile active-tab bar — the one and only mobile menu trigger */}
+        <div className="sm:hidden bg-white border-b border-blue-100 px-4 py-2 flex items-center justify-between relative" ref={menuRef}>
           <span className="text-sm font-semibold text-slate-700">
             {ALL_TABS.find(t => t.id === activeTab)?.emoji}{' '}
             {ALL_TABS.find(t => t.id === activeTab)?.label}
           </span>
           <button onClick={() => setMobileMenu(o => !o)}
             className="text-xs text-blue-500 font-medium flex items-center gap-1">
-            <FiMoreVertical className="h-3.5 w-3.5" /> Menu
+            {mobileMenuOpen ? <FiX className="h-3.5 w-3.5" /> : <FiMoreVertical className="h-3.5 w-3.5" />} Menu
           </button>
+          {mobileMenuOpen && (
+            <div className="absolute right-4 top-full mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
+              {ALL_TABS.map(tab => (
+                <button key={tab.id} onClick={() => switchTab(tab.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left
+                    ${activeTab === tab.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700 hover:bg-slate-50'}`}>
+                  <span>{tab.emoji}</span>
+                  {tab.label}
+                  {activeTab === tab.id && <FiCheckCircle className="ml-auto text-blue-500 h-3.5 w-3.5" />}
+                </button>
+              ))}
+              <button onClick={() => { setActiveTab('ican-wallet'); setMobileMenu(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 border-t border-slate-100">
+                <span>₡</span> IcanEra Wallet
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -652,6 +609,169 @@ const CustomerDashboard = () => {
       })()}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Small phones: membership / stats / actions collapsed behind a
+            small tab switcher — full real content per tab, just one
+            section visible at a time instead of three stacked full-height
+            blocks before any real page content. */}
+        <div className="sm:hidden mb-6">
+          <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1">
+            {[
+              { id: 'membership', label: '👑 Membership' },
+              { id: 'stats', label: '📊 Stats' },
+              { id: 'actions', label: '⚡ Actions' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setHeroTab(t.id)}
+                className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                  heroTab === t.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {heroTab === 'membership' && (
+            <div className={`bg-gradient-to-r ${getMembershipColor(currentUser.membershipLevel)} rounded-2xl p-5 text-white relative overflow-hidden`}>
+              <div className="absolute inset-0 bg-black/10"></div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-1">
+                  <h1 className="text-xl font-bold">
+                    Your {currentUser.membershipLevel.charAt(0).toUpperCase() + currentUser.membershipLevel.slice(1)} Membership
+                  </h1>
+                  <span className="inline-flex items-center gap-1 bg-white/25 backdrop-blur-sm rounded-full px-2 py-0.5 text-[11px] font-semibold flex-shrink-0">
+                    {getMembershipBadge(currentUser.membershipLevel).icon} {getMembershipBadge(currentUser.membershipLevel).label}
+                  </span>
+                </div>
+                <p className="text-white/90 text-sm mb-4">Enjoy exclusive benefits and rewards</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2.5 text-center">
+                    <div className="text-base mb-0.5">⭐</div>
+                    <div className="text-lg font-bold"><AnimatedCounter end={currentUser.loyaltyPoints} duration={2000} /></div>
+                    <div className="text-white/90 text-[10px] leading-tight">Loyalty Points</div>
+                  </div>
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2.5 text-center">
+                    <div className="text-base mb-0.5">🛍️</div>
+                    <div className="text-lg font-bold"><AnimatedCounter end={currentUser.totalVisits} duration={1500} /></div>
+                    <div className="text-white/90 text-[10px] leading-tight">Total Visits</div>
+                  </div>
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2.5 text-center">
+                    <div className="text-base mb-0.5">💰</div>
+                    <div className="text-sm font-bold">{formatCurrency(currentUser.totalSpent)}</div>
+                    <div className="text-white/90 text-[10px] leading-tight">Total Spent</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {heroTab === 'stats' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-gray-600 text-[11px] truncate">Active Orders</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      <AnimatedCounter end={customerData.recentOrders.filter(o => o.status !== 'delivered').length} duration={1000} />
+                    </p>
+                  </div>
+                  <FiPackage className="h-6 w-6 text-blue-500 flex-shrink-0" />
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-gray-600 text-[11px] truncate">Available Rewards</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.earned).length} duration={1200} />
+                    </p>
+                  </div>
+                  <FiGift className="h-6 w-6 text-green-500 flex-shrink-0" />
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-gray-600 text-[11px] truncate">Member Since</p>
+                    <p className="text-xl font-bold text-gray-900">{memberSinceYear}</p>
+                  </div>
+                  <FiStar className="h-6 w-6 text-yellow-500 flex-shrink-0" />
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-gray-600 text-[11px] truncate">Next Reward</p>
+                    <p className="text-xl font-bold text-gray-900">{1000 - (currentUser.loyaltyPoints % 1000)} pts</p>
+                  </div>
+                  <FiTrendingUp className="h-6 w-6 text-purple-500 flex-shrink-0" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {heroTab === 'actions' && (
+            <div className="space-y-3">
+              <button
+                onClick={handleStartShopping}
+                className="w-full text-left bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <FiShoppingBag className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-sm">Shop the Store</h3>
+                    <p className="text-blue-100 text-xs mt-0.5">
+                      Browse products, track orders, and start shopping right away.
+                    </p>
+                  </div>
+                  <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
+                </div>
+              </button>
+
+              <button
+                onClick={handleCreateSupermarket}
+                className="w-full text-left bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <FiBriefcase className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-sm">Create Your Supermarket</h3>
+                    <p className="text-emerald-100 text-xs mt-0.5">
+                      Open the admin setup flow to create a supermarket and assign managers or cashiers.
+                    </p>
+                  </div>
+                  <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
+                </div>
+              </button>
+
+              <button
+                onClick={handleBecomeSupplier}
+                className="w-full text-left bg-gradient-to-br from-purple-600 to-fuchsia-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <FiUserPlus className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-sm">Become a Supplier</h3>
+                    <p className="text-fuchsia-100 text-xs mt-0.5">
+                      Apply to available supermarkets from the supplier onboarding page.
+                    </p>
+                  </div>
+                  <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* sm and up: full stacked layout — there's room to show everything at once */}
+        <div className="hidden sm:block">
         {/* Welcome Section */}
         <div className="mb-8">
           <div className={`bg-gradient-to-r ${getMembershipColor(currentUser.membershipLevel)} rounded-3xl p-8 text-white relative overflow-hidden`}>
@@ -659,32 +779,40 @@ const CustomerDashboard = () => {
             <div className="relative z-10">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-3xl font-bold mb-2">
-                    Your {currentUser.membershipLevel.charAt(0).toUpperCase() + currentUser.membershipLevel.slice(1)} Membership
-                  </h1>
+                  <div className="flex items-center gap-3 mb-2">
+                    <h1 className="text-3xl font-bold">
+                      Your {currentUser.membershipLevel.charAt(0).toUpperCase() + currentUser.membershipLevel.slice(1)} Membership
+                    </h1>
+                    <span className="inline-flex items-center gap-1.5 bg-white/25 backdrop-blur-sm rounded-full px-3 py-1 text-sm font-semibold">
+                      {getMembershipBadge(currentUser.membershipLevel).icon} {getMembershipBadge(currentUser.membershipLevel).label}
+                    </span>
+                  </div>
                   <p className="text-white/90 text-lg">
                     Enjoy exclusive benefits and rewards
                   </p>
                 </div>
                 <div className="hidden md:block">
-                  <div className="text-6xl opacity-20">👑</div>
+                  <div className="text-6xl opacity-20">{getMembershipBadge(currentUser.membershipLevel).icon}</div>
                 </div>
               </div>
-              
+
               <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
+                  <div className="text-xl mb-1">⭐</div>
                   <div className="text-2xl font-bold">
                     <AnimatedCounter end={currentUser.loyaltyPoints} duration={2000} />
                   </div>
                   <div className="text-white/90 text-sm">Loyalty Points</div>
                 </div>
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
+                  <div className="text-xl mb-1">🛍️</div>
                   <div className="text-2xl font-bold">
                     <AnimatedCounter end={currentUser.totalVisits} duration={1500} />
                   </div>
                   <div className="text-white/90 text-sm">Total Visits</div>
                 </div>
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
+                  <div className="text-xl mb-1">💰</div>
                   <div className="text-2xl font-bold">
                     {formatCurrency(currentUser.totalSpent)}
                   </div>
@@ -725,7 +853,7 @@ const CustomerDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm">Member Since</p>
-                <p className="text-2xl font-bold text-gray-900">2023</p>
+                <p className="text-2xl font-bold text-gray-900">{memberSinceYear}</p>
               </div>
               <FiStar className="h-8 w-8 text-yellow-500" />
             </div>
@@ -799,211 +927,126 @@ const CustomerDashboard = () => {
             </button>
           </div>
         </div>
+        </div>
+        {/* end sm-and-up hero/stats/actions wrapper */}
 
         {/* Tab Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2">
             {activeTab === 'overview' && (
-              <div className="space-y-6">
-                {/* Recent Orders */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                    <FiShoppingBag className="h-5 w-5 mr-2 text-blue-600" />
-                    Recent Orders
-                  </h3>
-                  <div className="space-y-4">
-                    {customerData.recentOrders.slice(0, 3).map((order) => (
-                      <div key={order.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div className="flex items-center space-x-4">
-                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <FiPackage className="h-6 w-6 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{order.order_number || order.id}</p>
-                            <p className="text-sm text-gray-600">
-                              {new Date(order.order_date || order.date).toLocaleDateString()} • 
-                              {order.order_items?.length || order.items} items
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-medium text-gray-900">
-                            {formatCurrency(order.total_amount || order.total)}
-                          </p>
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                            {order.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    {customerData.recentOrders.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <FiPackage className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>No orders yet. Start shopping to see your orders here!</p>
-                      </div>
-                    )}
+              <div className="space-y-4">
+                {/* Small sub-tabs instead of two stacked cards — tabs always
+                    visible, the content panel below collapses to save space. */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+                    <button
+                      onClick={() => { setOverviewSubTab('orders'); setOverviewContentOpen(true); }}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        overviewSubTab === 'orders' && overviewContentOpen
+                          ? 'bg-gradient-to-r from-green-600 to-yellow-500 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <FiShoppingBag className="h-4 w-4" /> Recent Orders
+                    </button>
+                    <button
+                      onClick={() => { setOverviewSubTab('recommended'); setOverviewContentOpen(true); }}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        overviewSubTab === 'recommended' && overviewContentOpen
+                          ? 'bg-gradient-to-r from-green-600 to-yellow-500 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <FiHeart className="h-4 w-4" /> Recommended
+                    </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewContentOpen((o) => !o)}
+                    className="flex-shrink-0 p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                    title={overviewContentOpen ? 'Collapse' : 'Expand'}
+                  >
+                    <FiChevronDown className={`h-5 w-5 transition-transform ${overviewContentOpen ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
 
-                {/* Product Recommendations */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                    <FiHeart className="h-5 w-5 mr-2 text-red-600" />
-                    Recommended for You
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {customerData.recommendations.slice(0, 3).map((product) => (
-                      <div key={product.id} className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow">
-                        <div className="text-3xl mb-2">
-                          {product.product_images?.[0]?.image_url || product.image || '📦'}
+                {overviewContentOpen && overviewSubTab === 'orders' && (
+                  <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <div className="space-y-4">
+                      {customerData.recentOrders.slice(0, 3).map((order) => (
+                        <div key={order.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-4">
+                            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                              <FiPackage className="h-6 w-6 text-green-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{order.order_number || order.id}</p>
+                              <p className="text-sm text-gray-600">
+                                {new Date(order.order_date || order.date).toLocaleDateString()} •
+                                {order.order_items?.length || order.items} items
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-gray-900">
+                              {formatCurrency(order.total_amount || order.total)}
+                            </p>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </div>
                         </div>
-                        <h4 className="font-medium text-gray-900">{product.name}</h4>
-                        <p className="text-sm text-gray-600">{product.categories?.name || product.category || 'Product'}</p>
-                        <p className="text-lg font-bold text-blue-600 mt-2">
-                          {formatCurrency(product.selling_price || product.price)}
-                        </p>
-                      </div>
-                    ))}
-                    {customerData.recommendations.length === 0 && (
-                      <div className="col-span-3 text-center py-8 text-gray-500">
-                        <FiHeart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>No recommendations available at the moment.</p>
-                      </div>
-                    )}
+                      ))}
+                      {customerData.recentOrders.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                          <FiPackage className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>No orders yet. Start shopping to see your orders here!</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {overviewContentOpen && overviewSubTab === 'recommended' && (
+                  <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {customerData.recommendations.slice(0, 3).map((product) => (
+                        <div key={product.id} className="p-4 border border-gray-200 rounded-lg hover:shadow-md hover:border-yellow-300 transition-all">
+                          <div className="text-3xl mb-2">
+                            {product.product_images?.[0]?.image_url || product.image || '📦'}
+                          </div>
+                          <h4 className="font-medium text-gray-900">{product.name}</h4>
+                          <p className="text-sm text-gray-600">{product.categories?.name || product.category || 'Product'}</p>
+                          <p className="text-lg font-bold text-green-600 mt-2">
+                            {formatCurrency(product.selling_price || product.price)}
+                          </p>
+                        </div>
+                      ))}
+                      {customerData.recommendations.length === 0 && (
+                        <div className="col-span-3 text-center py-8 text-gray-500">
+                          <FiHeart className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>No recommendations available at the moment.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Book Ride — mybodaguy ride booking */}
             {activeTab === 'book-ride' && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <EnhancedRideRequest customerId={user?.id} />
+                <EnhancedRideRequest customerId={user?.id} fixedServiceType="ride" />
               </div>
             )}
 
-            {/* Delivery — real order form + tracking */}
+            {/* Delivery — same real matching-engine flow as Book Ride,
+                locked to delivery so the two never mix */}
             {activeTab === 'delivery' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <FiTruck className="text-blue-600" /> Supermarket Delivery
-                  </h3>
-                  <div className="flex gap-2">
-                    <button onClick={() => setDelivView('list')}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${delivView === 'list' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                      My Orders
-                    </button>
-                    <button onClick={() => setDelivView('form')}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${delivView === 'form' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                      + New Order
-                    </button>
-                  </div>
-                </div>
-
-                {delivView === 'form' ? (
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
-                    <h4 className="font-semibold text-gray-700">Place a Delivery Order</h4>
-                    <div>
-                      <label className="text-xs text-gray-500 font-medium mb-1 block">Store</label>
-                      <select value={delivForm.store} onChange={e => setDelivForm(f => ({ ...f, store: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-                        {STORES.map(s => <option key={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs text-gray-500 font-medium mb-1 block">Your Name</label>
-                        <input value={delivForm.name} onChange={e => setDelivForm(f => ({ ...f, name: e.target.value }))}
-                          placeholder={currentUser.firstName || 'Full name'}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-500 font-medium mb-1 block">Phone *</label>
-                        <input value={delivForm.phone} onChange={e => setDelivForm(f => ({ ...f, phone: e.target.value }))}
-                          placeholder="+256..." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 font-medium mb-1 block">Delivery Address *</label>
-                      <input value={delivForm.address} onChange={e => setDelivForm(f => ({ ...f, address: e.target.value }))}
-                        placeholder="Street, area, landmark"
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 font-medium mb-1 block">Items Needed *</label>
-                      <textarea value={delivForm.items} onChange={e => setDelivForm(f => ({ ...f, items: e.target.value }))}
-                        rows={3} placeholder="e.g. 2x milk 1L, 1x bread loaf..."
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 font-medium mb-1 block">Estimated Total (UGX)</label>
-                      <input type="number" value={delivForm.total} onChange={e => setDelivForm(f => ({ ...f, total: e.target.value }))}
-                        placeholder="0" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                    </div>
-                    <div className="flex gap-3">
-                      <button onClick={() => setDelivView('list')}
-                        className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
-                        Cancel
-                      </button>
-                      <button onClick={submitDelivery} disabled={delivSubmitting}
-                        className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl text-sm hover:opacity-90 disabled:opacity-50">
-                        {delivSubmitting ? 'Placing…' : '🏍️ Place Order'}
-                      </button>
-                    </div>
-                    <p className="text-xs text-center text-gray-400">Delivery fee: 5% of order (min UGX 3,000) · Powered by My Boda Guy</p>
-                  </div>
-                ) : (
-                  <div>
-                    <button onClick={() => {
-                      const UID_TAG = `uid:${user?.id}`;
-                      setDelivLoading(true);
-                      supabase.from('mybodaguy_delivery_requests')
-                        .select('id, supermarket_name, delivery_address, status, total_ugx, delivery_fee_ican, created_at')
-                        .ilike('delivery_notes', `%${UID_TAG}%`)
-                        .order('created_at', { ascending: false }).limit(20)
-                        .then(({ data }) => { setDeliveries(data || []); setDelivLoading(false); });
-                    }} className="text-xs text-blue-500 flex items-center gap-1 mb-3 hover:opacity-80">
-                      <FiRefreshCw className="h-3 w-3" /> Refresh
-                    </button>
-                    {delivLoading ? (
-                      <p className="text-gray-400 text-sm text-center py-8">Loading…</p>
-                    ) : deliveries.length === 0 ? (
-                      <div className="bg-white rounded-xl p-10 text-center shadow-sm border border-gray-100">
-                        <FiPackage className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-400 text-sm">No delivery orders yet.</p>
-                        <button onClick={() => setDelivView('form')}
-                          className="mt-4 px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg text-sm font-medium">
-                          Place Your First Order
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {deliveries.map(d => {
-                          const SC = { pending:'bg-yellow-100 text-yellow-700', assigned:'bg-blue-100 text-blue-700', picked_up:'bg-cyan-100 text-cyan-700', in_transit:'bg-indigo-100 text-indigo-700', delivered:'bg-emerald-100 text-emerald-700', cancelled:'bg-red-100 text-red-700' };
-                          return (
-                            <div key={d.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                              <div className="flex items-start justify-between mb-2">
-                                <div>
-                                  <p className="font-semibold text-gray-800 text-sm">🏪 {d.supermarket_name}</p>
-                                  <p className="text-xs text-gray-400 mt-0.5">{d.delivery_address}</p>
-                                </div>
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold capitalize ${SC[d.status] || 'bg-gray-100 text-gray-500'}`}>
-                                  {d.status.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between text-xs text-gray-400">
-                                <span>{new Date(d.created_at).toLocaleDateString()}</span>
-                                <span className="font-medium text-gray-700">UGX {Number(d.total_ugx || 0).toLocaleString()}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <EnhancedRideRequest customerId={user?.id} fixedServiceType="delivery" />
               </div>
             )}
 
@@ -1014,64 +1057,11 @@ const CustomerDashboard = () => {
               </div>
             )}
 
-            {activeTab === 'orders' && (
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-xl font-semibold text-gray-900 mb-6">Order History</h3>
-                <div className="space-y-4">
-                  {customerData.recentOrders.map((order) => (
-                    <div key={order.id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-medium text-gray-900">{order.order_number || order.id}</h4>
-                        <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-600">Date</p>
-                          <p className="font-medium">{new Date(order.order_date || order.date).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Items</p>
-                          <p className="font-medium">{order.order_items?.length || order.items}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Total</p>
-                          <p className="font-medium">{formatCurrency(order.total_amount || order.total)}</p>
-                        </div>
-                        <div className="flex space-x-2">
-                          <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
-                            <FiEye className="h-4 w-4" />
-                          </button>
-                          <button className="p-1 text-green-600 hover:bg-green-50 rounded">
-                            <FiDownload className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {customerData.recentOrders.length === 0 && (
-                    <div className="text-center py-12 text-gray-500">
-                      <FiPackage className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                      <h4 className="text-lg font-medium mb-2">No Orders Yet</h4>
-                      <p>Start shopping to see your order history here!</p>
-                      <button 
-                        onClick={() => navigate('/customer-delivery')}
-                        className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-                      >
-                        Start Shopping
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {activeTab === 'rewards' && (
               <div className="space-y-4">
                 {/* ICAN balance card */}
                 <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-2xl p-5 text-white">
-                  <p className="text-violet-200 text-sm mb-1">ICAN Balance</p>
+                  <p className="text-violet-200 text-sm mb-1">IcanEra Balance</p>
                   <p className="text-4xl font-bold">
                     {icanLoading ? '…' : (icanBalance?.ican ?? 0).toFixed(4)} <span className="text-2xl">₡</span>
                   </p>
@@ -1226,96 +1216,65 @@ const CustomerDashboard = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Quick Actions */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                <span className="mr-2">⚡</span>
-                Quick Actions
-              </h3>
-              <div className="space-y-3">
-                <button 
+            {/* Quick Actions — no header/collapse, just the compact tab-style
+                grid, always visible */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
                   onClick={handleStartShopping}
-                  className="group w-full flex items-center p-4 text-left hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg border border-transparent hover:border-blue-200"
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-100 transition-colors"
                 >
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors duration-300">
-                    <FiShoppingBag className="h-5 w-5 text-blue-600 group-hover:animate-bounce" />
+                  <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <FiShoppingBag className="h-4 w-4 text-blue-600" />
                   </div>
-                  <div className="ml-3 flex-1">
-                    <span className="font-medium text-gray-900 group-hover:text-blue-700 transition-colors">Start Shopping</span>
-                    <p className="text-sm text-gray-500 group-hover:text-blue-600">Browse & buy products</p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <span className="text-blue-600">→</span>
-                  </div>
+                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Start Shopping</span>
                 </button>
-                
-                <button 
+
+                <button
                   onClick={handleTrackOrders}
-                  className="group w-full flex items-center p-4 text-left hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg border border-transparent hover:border-green-200"
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-green-50 hover:bg-green-100 border border-green-100 transition-colors"
                 >
-                  <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors duration-300">
-                    <FiTruck className="h-5 w-5 text-green-600 group-hover:animate-pulse" />
+                  <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
+                    <FiTruck className="h-4 w-4 text-green-600" />
                   </div>
-                  <div className="ml-3 flex-1">
-                    <span className="font-medium text-gray-900 group-hover:text-green-700 transition-colors">Track Orders</span>
-                    <p className="text-sm text-gray-500 group-hover:text-green-600">Monitor delivery status</p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <span className="text-green-600">→</span>
-                  </div>
+                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Track Orders</span>
                 </button>
-                
-                <button 
+
+                <button
                   onClick={handleRedeemRewards}
-                  className="group w-full flex items-center p-4 text-left hover:bg-gradient-to-r hover:from-purple-50 hover:to-purple-100 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg border border-transparent hover:border-purple-200"
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-100 transition-colors"
                 >
-                  <div className="flex-shrink-0 w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition-colors duration-300">
-                    <FiGift className="h-5 w-5 text-purple-600 group-hover:animate-spin" />
+                  <div className="w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <FiGift className="h-4 w-4 text-purple-600" />
                   </div>
-                  <div className="ml-3 flex-1">
-                    <span className="font-medium text-gray-900 group-hover:text-purple-700 transition-colors">Redeem Rewards</span>
-                    <p className="text-sm text-gray-500 group-hover:text-purple-600">Use loyalty points</p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <span className="text-purple-600">→</span>
-                  </div>
+                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Redeem Rewards</span>
                 </button>
-                
-                <button 
+
+                <button
                   onClick={handleReferFriends}
-                  className="group w-full flex items-center p-4 text-left hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg border border-transparent hover:border-orange-200"
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-100 transition-colors"
                 >
-                  <div className="flex-shrink-0 w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center group-hover:bg-orange-200 transition-colors duration-300">
-                    <FiShare2 className="h-5 w-5 text-orange-600 group-hover:animate-ping" />
+                  <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <FiShare2 className="h-4 w-4 text-orange-600" />
                   </div>
-                  <div className="ml-3 flex-1">
-                    <span className="font-medium text-gray-900 group-hover:text-orange-700 transition-colors">Refer Friends</span>
-                    <p className="text-sm text-gray-500 group-hover:text-orange-600">Earn bonus points</p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <span className="text-orange-600">→</span>
-                  </div>
+                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Refer Friends</span>
                 </button>
               </div>
             </div>
 
-            {/* Contact Support */}
+            {/* Contact Support — opens the real support chat (ChatWidget),
+                not a static phone number nobody's answering */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Need Help?</h3>
-              <div className="space-y-3">
-                <div className="flex items-center text-sm text-gray-600">
-                  <FiPhone className="h-4 w-4 mr-2" />
-                  <span>+256 700 000 000</span>
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <FiMail className="h-4 w-4 mr-2" />
-                  <span>support@faredeal.com</span>
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <FiMapPin className="h-4 w-4 mr-2" />
-                  <span>Kampala, Uganda</span>
-                </div>
-              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <FiMessageCircle className="h-5 w-5 text-green-600" /> Need Help?
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">Chat live with our support team — real people, real answers.</p>
+              <button
+                onClick={() => window.dispatchEvent(new Event('faredeal:open-support-chat'))}
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-yellow-500 text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity shadow-sm"
+              >
+                <FiMessageCircle className="h-4 w-4" /> Chat with Support
+              </button>
             </div>
           </div>
         </div>

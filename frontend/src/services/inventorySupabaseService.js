@@ -18,6 +18,35 @@ class InventorySupabaseService {
     this.cache = new Map();
     this.cacheTimeout = 5000; // 5 seconds cache
     this.subscribers = new Set();
+    this._supermarketIdPromise = null;
+  }
+
+  /**
+   * Resolves the signed-in user's supermarket_id — it lives directly on the
+   * users row. Rows created by different signup paths over time link to
+   * auth either via auth_id (older trigger) or by using auth.users.id as
+   * users.id directly (newer trigger), so match either. Each supermarket's
+   * products/inventory are isolated from every other supermarket's — this
+   * is what scopes writes (and should scope reads) to the right one.
+   * Memoized per page load since bulk imports call this once per row.
+   */
+  async getCurrentSupermarketId() {
+    if (this._supermarketIdPromise) return this._supermarketIdPromise;
+
+    this._supermarketIdPromise = (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('supermarket_id')
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+
+      return userRow?.supermarket_id || null;
+    })();
+
+    return this._supermarketIdPromise;
   }
 
   // ============================================================================
@@ -238,12 +267,15 @@ class InventorySupabaseService {
         finalSellingPrice = finalCostPrice * 1.3; // 30% markup as default
       }
       
-      // Ensure we have at least a price
+      // No price data at all (e.g. a bulk-imported stock/quantity report
+      // that doesn't carry pricing) — leave it at 0 rather than fabricating
+      // a placeholder price that could be mistaken for a real one and
+      // accidentally sold at that amount. Zero is allowed by the schema;
+      // the product just needs pricing set later (e.g. via bulk price update).
       if (finalSellingPrice === 0 && finalCostPrice === 0) {
-        console.warn('⚠️ No price provided, using default price of 1000');
-        finalSellingPrice = 1000;
+        console.warn('⚠️ No price provided — importing with price left at 0 (needs pricing)');
       }
-      
+
       console.log(`💰 Product pricing: cost=${finalCostPrice}, selling=${finalSellingPrice}`);
 
       // Calculate markup percentage
@@ -273,25 +305,32 @@ class InventorySupabaseService {
         uniqueSku = `SKU-${generateUniqueId()}`;
       }
       
-      // Insert product with required fields - ENSURE PRICE IS NEVER NULL
+      // Each supermarket's catalog is isolated from every other supermarket's
+      // (see FIX_SUPERMARKET_ISOLATION_V2.sql) — inventory INSERTs are
+      // rejected by RLS unless supermarket_id matches the signed-in user's.
+      const supermarketId = await this.getCurrentSupermarketId();
+
+      // Insert product with required fields - price/selling_price default to 0
+      // (never null) rather than a fabricated placeholder amount.
       const productInsert = {
         name: name || 'Unnamed Product',
         sku: uniqueSku,
         barcode: uniqueBarcode,
-        price: finalSellingPrice > 0 ? finalSellingPrice : 1000,  // CRITICAL: Never null or zero
-        selling_price: finalSellingPrice > 0 ? finalSellingPrice : 1000,
-        cost_price: finalCostPrice > 0 ? finalCostPrice : undefined
+        price: finalSellingPrice,
+        selling_price: finalSellingPrice,
+        cost_price: finalCostPrice > 0 ? finalCostPrice : undefined,
+        supermarket_id: supermarketId || undefined
       };
-      
+
       console.log('📦 Inserting product:', productInsert);
-      
+
       // Add optional fields
       if (description && String(description).trim()) productInsert.description = String(description).trim();
       if (category_id) productInsert.category_id = category_id;
       if (brand && String(brand).trim()) productInsert.brand = String(brand).trim();
       if (tax_rate) productInsert.tax_rate = parseFloat(tax_rate) || 18;
       if (markup_percentage) productInsert.markup_percentage = parseFloat(markup_percentage);
-      
+
       const { data: product, error: productError } = await supabase
         .from('products')
         .insert(productInsert)
@@ -307,6 +346,7 @@ class InventorySupabaseService {
           .from('inventory')
           .insert({
             product_id: product.id,
+            supermarket_id: supermarketId || undefined,
             current_stock: initial_stock || 0
           })
           .select()
@@ -314,6 +354,8 @@ class InventorySupabaseService {
 
         if (!inventoryError) {
           inventory = inv;
+        } else {
+          console.error('❌ Inventory row creation failed for product', product.id, ':', inventoryError);
         }
       } catch (invError) {
         // Inventory creation failed, continue anyway
@@ -797,7 +839,7 @@ class InventorySupabaseService {
         .from('categories')
         .select('*')
         .eq('is_active', true)
-        .order('sort_order', { ascending: true });
+        .order('name', { ascending: true });
 
       if (error) throw error;
 

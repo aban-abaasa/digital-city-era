@@ -16,6 +16,7 @@ import {
 import { toast } from 'react-toastify';
 import supplierOrdersService from '../services/supplierOrdersService';
 import { supabase } from '../services/supabase';
+import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
 
@@ -75,6 +76,21 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
     adjustmentReason: '',
     notes: ''
   });
+  const [approvalIcanBalance, setApprovalIcanBalance] = useState(null);
+  const [approvalIcanBalanceLoading, setApprovalIcanBalanceLoading] = useState(false);
+
+  // Load the manager's live ICAN balance when they switch to the IcanEra Wallet method
+  // in the order-approval modal
+  useEffect(() => {
+    if (approvalData.paymentMethod !== 'ican_wallet' || approvalIcanBalance !== null || approvalIcanBalanceLoading) return;
+
+    setApprovalIcanBalanceLoading(true);
+    supabase.auth.getUser()
+      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+      .then((bal) => setApprovalIcanBalance(bal))
+      .catch(() => setApprovalIcanBalance(null))
+      .finally(() => setApprovalIcanBalanceLoading(false));
+  }, [approvalData.paymentMethod, approvalIcanBalance, approvalIcanBalanceLoading]);
 
   // Load data on component mount
   useEffect(() => {
@@ -233,6 +249,7 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
       paymentMethod: 'cash',
       notes: ''
     });
+    setApprovalIcanBalance(null);
     setShowApprovalModal(true);
   };
   
@@ -273,73 +290,83 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         console.log('� Balance adjusted:', adjustData);
       }
       
-      // Step 2: Approve order with payment details
-      console.log('�📝 Approving order with payment:', {
-        orderId: approvalOrderId,
-        managerId,
-        ...approvalData
-      });
-      
-      const { data, error } = await supabase.rpc('approve_order_with_payment', {
-        p_order_id: approvalOrderId,
-        p_approved_by: managerId,
-        p_initial_payment: parseFloat(approvalData.initialPayment) || 0,
-        p_payment_method: approvalData.paymentMethod,
-        p_payment_date: approvalData.paymentDate ? new Date(approvalData.paymentDate).toISOString() : new Date().toISOString(),
-        p_next_payment_date: approvalData.nextPaymentDate || null,
-        p_notes: approvalData.notes
-      });
+      // Step 2: Approve the order directly. This no longer calls the
+      // approve_order_with_payment RPC — that RPC is listed in
+      // VERIFY_DATABASE_DEPLOYMENT.sql in the same "required" group as
+      // record_payment_with_tracking, which we already confirmed was never
+      // actually created on this DB (see supplierOrdersService.recordPayment).
+      // ManagerPortal.jsx's own approve button already does this exact direct
+      // update successfully, so it doesn't depend on a possibly-missing RPC.
+      console.log('📝 Approving order:', { orderId: approvalOrderId, managerId, ...approvalData });
 
-      if (error) {
-        console.error('❌ Error approving order:', error);
-        alert(`❌ Error: ${error.message}`);
-        return;
-      }
-      
-      if (data && !data.success) {
-        alert(`❌ Error: ${data.error}`);
+      const { error: approveError } = await supabase
+        .from('purchase_orders')
+        .update({
+          status: 'approved',
+          approved_by: managerId,
+          approved_at: new Date().toISOString(),
+          notes: approvalData.notes || selectedOrderData.notes,
+        })
+        .eq('id', approvalOrderId);
+
+      if (approveError) {
+        console.error('❌ Error approving order:', approveError);
+        alert(`❌ Error: ${approveError.message}`);
         return;
       }
 
-      // Step 3: Record cash payment with tracking if cash was paid now
-      let cashPaymentResult = null;
-      if (approvalData.cashPaidNow && parseFloat(approvalData.cashPaidNow) > 0) {
-        const cashResult = await supplierOrdersService.recordPayment({
-          orderId:          approvalOrderId,
-          amountPaid:       parseFloat(approvalData.cashPaidNow),
-          paymentMethod:    'cash',
-          paymentReference: `CASH-APPROVAL-${approvalOrderId.substring(0, 8)}`,
-          notes:            `Cash payment made during order approval. ${approvalData.notes || ''}`,
-          paidBy:           managerId
-        });
+      // Step 3: Record any payment made at approval time — "Cash Paid Now"
+      // and the legacy "Initial Payment" field both represent money paid
+      // right now, so they're combined into a single payment routed through
+      // whichever method is selected (Cash or IcanEra Wallet).
+      const amountPaidNow = (parseFloat(approvalData.cashPaidNow) || 0) + (parseFloat(approvalData.initialPayment) || 0);
+      let paymentResult = null;
 
-        if (!cashResult.success) {
-          console.error('⚠️ Cash payment tracking failed:', cashResult.error);
-          alert(`⚠️ Order approved but cash tracking issue: ${cashResult.error}`);
+      if (amountPaidNow > 0) {
+        if (approvalData.paymentMethod === 'ican_wallet') {
+          const icanNeeded = ugxToICAN(amountPaidNow);
+          if (!approvalIcanBalance || approvalIcanBalance.ican < icanNeeded) {
+            alert(
+              `⚠️ Order approved, but ICAN payment skipped — insufficient balance ` +
+              `(needed ${formatICAN(icanNeeded)}, have ${formatICAN(approvalIcanBalance?.ican || 0)}).`
+            );
+          } else {
+            paymentResult = await supplierOrdersService.payOrderWithICAN({
+              orderId:        approvalOrderId,
+              supplierUserId: selectedOrderData.supplier_id,
+              icanAmount:     icanNeeded,
+              ugxAmount:      amountPaidNow,
+              notes:          `Payment made during order approval. ${approvalData.notes || ''}`,
+            });
+          }
         } else {
-          cashPaymentResult = cashResult.payment;
-          console.log('💵 Cash payment recorded:', cashPaymentResult);
+          paymentResult = await supplierOrdersService.recordPayment({
+            orderId:          approvalOrderId,
+            amountPaid:       amountPaidNow,
+            paymentMethod:    approvalData.paymentMethod,
+            paymentReference: `APPROVAL-${approvalOrderId.substring(0, 8)}`,
+            notes:            `Payment made during order approval. ${approvalData.notes || ''}`,
+            paidBy:           managerId
+          });
+        }
+
+        if (paymentResult && !paymentResult.success) {
+          console.error('⚠️ Payment tracking failed:', paymentResult.error);
+          alert(`⚠️ Order approved but payment tracking failed: ${paymentResult.error}`);
         }
       }
 
       // Show success message with payment details
       let successMsg = '✅ Purchase order approved successfully!\n\n';
-      
-      // Show cash payment info if recorded
-      if (cashPaymentResult) {
-        successMsg += `💵 CASH PAID NOW: UGX ${parseFloat(approvalData.cashPaidNow).toLocaleString()}\n`;
-        successMsg += `🔖 Transaction #: ${cashPaymentResult.transaction_number}\n`;
-        successMsg += `⏳ Status: Awaiting supplier confirmation\n\n`;
-      }
-      
-      if (data.balance_due > 0) {
-        successMsg += `💰 Initial Payment: UGX ${approvalData.initialPayment.toLocaleString()}\n`;
-        successMsg += `📊 Balance Remaining: UGX ${data.balance_due.toLocaleString()}\n`;
-        if (approvalData.nextPaymentDate) {
-          successMsg += `📅 Next Payment: ${approvalData.nextPaymentDate}`;
+
+      if (paymentResult?.success) {
+        if (approvalData.paymentMethod === 'ican_wallet') {
+          successMsg += `🪙 PAID WITH ICAN: ${formatICAN(ugxToICAN(amountPaidNow))} ICAN (UGX ${amountPaidNow.toLocaleString()})\n`;
+          successMsg += `✅ Supplier's wallet credited instantly — no confirmation needed\n`;
+        } else {
+          successMsg += `💵 PAID NOW: UGX ${amountPaidNow.toLocaleString()}\n`;
+          successMsg += `⏳ Status: Awaiting supplier confirmation\n`;
         }
-      } else if (approvalData.initialPayment > 0) {
-        successMsg += '💚 FULLY PAID!';
       }
 
       alert(successMsg);
@@ -354,6 +381,7 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         adjustmentReason: '',
         notes: ''
       });
+      setApprovalIcanBalance(null);
       loadAllData(); // Reload data
     } catch (err) {
       console.error('Error approving order:', err);
@@ -907,6 +935,341 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
       </div>
     );
   }
+
+  // Approval-with-payment modal. This was previously defined at module scope
+  // (after PaymentModal's closing brace) instead of nested here — meaning it
+  // referenced showApprovalModal/selectedOrder/approvalData/etc. from a scope
+  // that didn't have them, and would throw a ReferenceError the moment it
+  // rendered. Moved inside SupplierOrderManagement so it has proper closure
+  // access to this component's state.
+  const ApprovalModal = () => {
+    if (!showApprovalModal || !selectedOrder) return null;
+
+    const originalTotal = selectedOrder.total_amount_ugx || 0;
+    const adjustedTotal = approvalData.adjustedTotal ? parseFloat(approvalData.adjustedTotal) : originalTotal;
+    const totalAmount = adjustedTotal;
+    const paymentAmount = parseFloat(approvalData.initialPayment) || 0;
+    const balance = totalAmount - paymentAmount;
+    const discount = originalTotal - adjustedTotal;
+    const paymentStatus = paymentAmount >= totalAmount ? 'paid' : paymentAmount > 0 ? 'partially_paid' : 'unpaid';
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+          {/* Header */}
+          <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">✅ Approve Purchase Order</h2>
+                <p className="text-blue-100 mt-1">Order #{selectedOrder.po_number}</p>
+              </div>
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="text-white hover:text-gray-200 text-3xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          {/* Order Summary */}
+          <div className="p-6 space-y-6">
+            <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
+              <h3 className="font-bold text-gray-800 mb-3">📋 Order Summary</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-600">Supplier:</span>
+                  <p className="font-semibold">{selectedOrder.supplierName || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Total Amount:</span>
+                  {discount > 0 ? (
+                    <div>
+                      <p className="font-semibold text-sm line-through text-gray-500">
+                        UGX {originalTotal.toLocaleString()}
+                      </p>
+                      <p className="font-bold text-lg text-purple-600">
+                        UGX {totalAmount.toLocaleString()}
+                        <span className="text-xs text-green-600 ml-2">(-{discount.toLocaleString()})</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="font-bold text-lg text-blue-600">
+                      {new Intl.NumberFormat('en-UG', {
+                        style: 'currency',
+                        currency: 'UGX',
+                        minimumFractionDigits: 0
+                      }).format(totalAmount)}
+                    </p>
+                  )}
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-600">Items:</span>
+                  <p className="font-semibold">{selectedOrder.items?.length || 0} items</p>
+                </div>
+                {discount > 0 && (
+                  <div className="col-span-2 bg-green-100 p-2 rounded border border-green-300">
+                    <p className="text-xs text-green-800 font-bold">
+                      ✨ Discount Applied: UGX {discount.toLocaleString()}
+                      <span className="ml-2">({((discount/originalTotal)*100).toFixed(1)}% off)</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Payment Section */}
+            <div className="bg-green-50 rounded-lg p-4 border-2 border-green-200">
+              <h3 className="font-bold text-gray-800 mb-4">💰 Payment Details</h3>
+
+              {/* Cash Paid Now - Prominent Field */}
+              <div className="mb-6 bg-gradient-to-r from-green-100 to-emerald-100 p-4 rounded-lg border-2 border-green-400">
+                <label className="block text-sm font-bold text-green-800 mb-2 flex items-center gap-2">
+                  💵 Cash Paid Now (UGX)
+                  <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Awaits Supplier Confirmation</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={totalAmount}
+                  step="1000"
+                  value={approvalData.cashPaidNow}
+                  onChange={(e) => setApprovalData({...approvalData, cashPaidNow: e.target.value})}
+                  placeholder="Enter cash amount paid at this moment"
+                  className="w-full px-4 py-4 border-2 border-green-500 rounded-lg focus:border-green-600 focus:outline-none text-xl font-bold text-green-700 bg-white"
+                />
+                <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
+                  <FiAlertTriangle className="text-yellow-600" />
+                  This payment will be recorded and sent to supplier for confirmation
+                </p>
+              </div>
+
+              {/* Initial Payment Amount */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  💵 Initial Payment Amount (UGX)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={totalAmount}
+                  step="1000"
+                  value={approvalData.initialPayment}
+                  onChange={(e) => setApprovalData({...approvalData, initialPayment: e.target.value})}
+                  placeholder="Enter amount (0 for unpaid)"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none text-lg font-semibold"
+                />
+                <div className="mt-2 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Payment:</span>
+                    <span className="font-bold text-green-600">
+                      {new Intl.NumberFormat('en-UG', {
+                        style: 'currency',
+                        currency: 'UGX',
+                        minimumFractionDigits: 0
+                      }).format(paymentAmount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Balance Due:</span>
+                    <span className={`font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {new Intl.NumberFormat('en-UG', {
+                        style: 'currency',
+                        currency: 'UGX',
+                        minimumFractionDigits: 0
+                      }).format(balance)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-gray-300">
+                    <span className="text-gray-700 font-semibold">Status:</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
+                      paymentStatus === 'partially_paid' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {paymentStatus === 'paid' && '✅ FULLY PAID'}
+                      {paymentStatus === 'partially_paid' && '⚠️ HALF PAID'}
+                      {paymentStatus === 'unpaid' && '❌ UNPAID'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  💳 Payment Method
+                </label>
+                <select
+                  value={approvalData.paymentMethod}
+                  onChange={(e) => setApprovalData({...approvalData, paymentMethod: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+                >
+                  <option value="cash">💵 Cash</option>
+                  <option value="ican_wallet">🪙 IcanEra Wallet</option>
+                </select>
+              </div>
+
+              {/* IcanEra Wallet Balance — shown only when paying with ICAN */}
+              {approvalData.paymentMethod === 'ican_wallet' && (
+                <div className="mb-4 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
+                  <div className="text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+                  {approvalIcanBalanceLoading ? (
+                    <div className="text-sm text-gray-500">Loading balance...</div>
+                  ) : (
+                    <>
+                      <div className="text-xl font-bold text-purple-700">
+                        {formatICAN(approvalIcanBalance?.ican || 0)} ICAN
+                      </div>
+                      {(parseFloat(approvalData.cashPaidNow || 0) + parseFloat(approvalData.initialPayment || 0)) > 0 && (
+                        <div className="text-sm text-gray-600 mt-1">
+                          This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(approvalData.cashPaidNow || 0) + parseFloat(approvalData.initialPayment || 0)))} ICAN
+                          {approvalIcanBalance && approvalIcanBalance.ican < ugxToICAN(parseFloat(approvalData.cashPaidNow || 0) + parseFloat(approvalData.initialPayment || 0)) && (
+                            <span className="text-red-600 font-semibold"> — insufficient balance</span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Payment Date */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  📅 Payment Date
+                </label>
+                <input
+                  type="date"
+                  value={approvalData.paymentDate}
+                  onChange={(e) => setApprovalData({...approvalData, paymentDate: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Next Payment Date (if partial payment) */}
+              {balance > 0 && paymentAmount > 0 && (
+                <div className="mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    📆 Next Payment Due Date (Optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={approvalData.nextPaymentDate}
+                    onChange={(e) => setApprovalData({...approvalData, nextPaymentDate: e.target.value})}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-4 py-3 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
+                  />
+                  <p className="text-xs text-yellow-700 mt-1">
+                    ⚠️ Set when you expect the next payment of UGX {balance.toLocaleString()}
+                  </p>
+                </div>
+              )}
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  📝 Notes (Optional)
+                </label>
+                <textarea
+                  value={approvalData.notes}
+                  onChange={(e) => setApprovalData({...approvalData, notes: e.target.value})}
+                  placeholder="Add any notes about this approval or payment..."
+                  rows="3"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Balance Adjustment Section */}
+            <div className="bg-purple-50 rounded-lg p-4 border-2 border-purple-200">
+              <h3 className="font-bold text-gray-800 mb-4">✂️ Adjust Order Total (Optional)</h3>
+              <p className="text-sm text-purple-700 mb-4">
+                💡 You can reduce the order total (apply discount). Supplier must accept this change.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  💰 Adjusted Total Amount (UGX)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={originalTotal}
+                  step="1000"
+                  value={approvalData.adjustedTotal || originalTotal}
+                  onChange={(e) => setApprovalData({...approvalData, adjustedTotal: e.target.value})}
+                  placeholder={`Original: ${originalTotal.toLocaleString()}`}
+                  className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none text-lg font-semibold"
+                />
+                {discount > 0 && (
+                  <div className="mt-2 bg-white rounded p-3 border border-purple-300">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Original Total:</span>
+                      <span className="font-semibold line-through">UGX {originalTotal.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-purple-600 font-bold">Discount:</span>
+                      <span className="font-bold text-green-600">-UGX {discount.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-purple-200">
+                      <span className="text-gray-800">New Total:</span>
+                      <span className="text-purple-600">UGX {adjustedTotal.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {discount > 0 && (
+                <div className="mb-4">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    📋 Reason for Adjustment *
+                  </label>
+                  <textarea
+                    value={approvalData.adjustmentReason}
+                    onChange={(e) => setApprovalData({...approvalData, adjustmentReason: e.target.value})}
+                    placeholder="E.g., Volume discount, damaged goods, price negotiation..."
+                    rows="2"
+                    required
+                    className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                  />
+                  <p className="text-xs text-purple-600 mt-1 flex items-center">
+                    <span className="mr-1">🔔</span>
+                    Supplier will be notified and must accept this change
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowApprovalModal(false)}
+                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-300 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitOrderApproval}
+                disabled={
+                  approvalData.paymentMethod === 'ican_wallet' &&
+                  (parseFloat(approvalData.cashPaidNow || 0) + parseFloat(approvalData.initialPayment || 0)) > 0 &&
+                  approvalIcanBalance &&
+                  approvalIcanBalance.ican < ugxToICAN(parseFloat(approvalData.cashPaidNow || 0) + parseFloat(approvalData.initialPayment || 0))
+                }
+                className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                <FiCheckCircle className="h-5 w-5" />
+                <span>Approve Order</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 animate-fadeInUp">
@@ -1650,6 +2013,14 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         />
       )}
 
+      {/* Approval Modal — was defined but never mounted here, so the
+          "Approve" action (handleApproveOrder) set showApprovalModal to
+          true with no visible effect. Its own submitOrderApproval also
+          depended on the approve_order_with_payment RPC, which — like
+          record_payment_with_tracking — was never actually created on
+          this DB; both issues are fixed above. */}
+      <ApprovalModal />
+
       {/* 🆕 ADD PRODUCT TO ORDER MODAL */}
       {showAddProductModal && selectedOrderForProduct && (
         <AddProductToOrderModal
@@ -1693,6 +2064,20 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+  const [icanBalance, setIcanBalance] = useState(null);
+  const [icanBalanceLoading, setIcanBalanceLoading] = useState(false);
+
+  // Load the manager's live ICAN balance when they switch to the ICAN Wallet method
+  useEffect(() => {
+    if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
+
+    setIcanBalanceLoading(true);
+    supabase.auth.getUser()
+      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+      .then((bal) => setIcanBalance(bal))
+      .catch(() => setIcanBalance(null))
+      .finally(() => setIcanBalanceLoading(false));
+  }, [paymentMethod, icanBalance, icanBalanceLoading]);
 
   const handleAddItem = () => {
     if (!newItem.productName || newItem.quantity <= 0 || newItem.unitPrice <= 0) {
@@ -1779,24 +2164,48 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
       if (response.success) {
         let successMsg = '✅ Purchase order created successfully!';
         
-        // If cash was paid during order creation, record it with tracking
+        // If cash (or ICAN) was paid during order creation, record it with tracking
         if (cashPaidNow && parseFloat(cashPaidNow) > 0 && response.order?.id) {
           try {
-            const payResult = await supplierOrdersService.recordPayment({
-              orderId:          response.order.id,
-              amountPaid:       parseFloat(cashPaidNow),
-              paymentMethod:    paymentMethod,
-              paymentReference: paymentReference || `ORDER-CREATE-${response.order.id.substring(0, 8)}`,
-              notes:            `Payment made at order creation. ${paymentNotes}`,
-              paidBy:           managerId
-            });
+            if (paymentMethod === 'ican_wallet') {
+              const icanNeeded = ugxToICAN(parseFloat(cashPaidNow));
+              if (!icanBalance || icanBalance.ican < icanNeeded) {
+                successMsg += `\n\n⚠️ Order created, but ICAN payment skipped — insufficient balance ` +
+                  `(needed ${formatICAN(icanNeeded)}, have ${formatICAN(icanBalance?.ican || 0)}).`;
+              } else {
+                const payResult = await supplierOrdersService.payOrderWithICAN({
+                  orderId:         response.order.id,
+                  supplierUserId:  response.order.supplier_id,
+                  icanAmount:      icanNeeded,
+                  ugxAmount:       parseFloat(cashPaidNow),
+                  notes:           `Payment made at order creation. ${paymentNotes}`,
+                });
 
-            if (!payResult.success) {
-              console.error('⚠️ Payment recording error:', payResult.error);
-              successMsg += `\n\n⚠️ Warning: Order created but payment tracking failed: ${payResult.error || 'table may not exist yet — run CREATE_PAYMENT_TRANSACTIONS_TABLE.sql'}`;
+                if (!payResult.success) {
+                  console.error('⚠️ ICAN payment error:', payResult.error);
+                  successMsg += `\n\n⚠️ Warning: Order created but ICAN payment failed: ${payResult.error}`;
+                } else {
+                  successMsg += `\n\n🪙 PAID WITH ICAN: ${formatICAN(icanNeeded)} ICAN (${formatUGX(cashPaidNow)})`;
+                  successMsg += `\n✅ Supplier's wallet credited instantly — no confirmation needed`;
+                }
+              }
             } else {
-              successMsg += `\n\n💵 CASH PAID: ${formatUGX(cashPaidNow)}`;
-              successMsg += `\n⏳ Awaiting supplier confirmation`;
+              const payResult = await supplierOrdersService.recordPayment({
+                orderId:          response.order.id,
+                amountPaid:       parseFloat(cashPaidNow),
+                paymentMethod:    paymentMethod,
+                paymentReference: paymentReference || `ORDER-CREATE-${response.order.id.substring(0, 8)}`,
+                notes:            `Payment made at order creation. ${paymentNotes}`,
+                paidBy:           managerId
+              });
+
+              if (!payResult.success) {
+                console.error('⚠️ Payment recording error:', payResult.error);
+                successMsg += `\n\n⚠️ Warning: Order created but payment tracking failed: ${payResult.error || 'table may not exist yet — run CREATE_PAYMENT_TRANSACTIONS_TABLE.sql'}`;
+              } else {
+                successMsg += `\n\n💵 CASH PAID: ${formatUGX(cashPaidNow)}`;
+                successMsg += `\n⏳ Awaiting supplier confirmation`;
+              }
             }
           } catch (paymentErr) {
             console.error('⚠️ Payment recording error:', paymentErr);
@@ -2010,25 +2419,49 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
                       className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
                     >
                       <option value="cash">💵 Cash</option>
-                      <option value="mobile_money">📱 Mobile Money</option>
-                      <option value="bank_transfer">🏦 Bank Transfer</option>
-                      <option value="check">📝 Cheque</option>
-                      <option value="credit">💳 Credit</option>
+                      <option value="ican_wallet">🪙 IcanEra Wallet</option>
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-green-800 mb-2">
-                      🔖 Payment Reference (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                      placeholder="Transaction ID, receipt #, etc."
-                      className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
-                    />
-                  </div>
+                  {/* ICAN Wallet Balance — shown only when paying with ICAN */}
+                  {paymentMethod === 'ican_wallet' && (
+                    <div className="md:col-span-2 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
+                      <div className="text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+                      {icanBalanceLoading ? (
+                        <div className="text-sm text-gray-500">Loading balance...</div>
+                      ) : (
+                        <>
+                          <div className="text-xl font-bold text-purple-700">
+                            {formatICAN(icanBalance?.ican || 0)} ICAN
+                          </div>
+                          {parseFloat(cashPaidNow) > 0 && (
+                            <div className="text-sm text-gray-600 mt-1">
+                              This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(cashPaidNow)))} ICAN
+                              {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow)) && (
+                                <span className="text-red-600 font-semibold"> — insufficient balance</span>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Payment Reference — not applicable to ICAN Wallet, the on-chain tx is the reference */}
+                  {paymentMethod !== 'ican_wallet' && (
+                    <div>
+                      <label className="block text-sm font-bold text-green-800 mb-2">
+                        🔖 Payment Reference (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentReference}
+                        onChange={(e) => setPaymentReference(e.target.value)}
+                        placeholder="Transaction ID, receipt #, etc."
+                        className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
+                      />
+                    </div>
+                  )}
 
                   <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-green-800 mb-2">
@@ -2059,7 +2492,12 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
             </button>
             <button
               type="submit"
-              disabled={submitting || orderItems.length === 0}
+              disabled={submitting || orderItems.length === 0 || (
+                paymentMethod === 'ican_wallet' &&
+                parseFloat(cashPaidNow) > 0 &&
+                icanBalance &&
+                icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow))
+              )}
               className="px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {submitting ? (
@@ -2086,10 +2524,24 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
 // =====================================================================
 const PaymentModal = ({ order, onClose, onSuccess }) => {
   const [amountPaid, setAmountPaid] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [icanBalance, setIcanBalance] = useState(null);
+  const [icanBalanceLoading, setIcanBalanceLoading] = useState(false);
+
+  // Load the manager's live ICAN balance when they switch to the IcanEra Wallet method
+  useEffect(() => {
+    if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
+
+    setIcanBalanceLoading(true);
+    supabase.auth.getUser()
+      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+      .then((bal) => setIcanBalance(bal))
+      .catch(() => setIcanBalance(null))
+      .finally(() => setIcanBalanceLoading(false));
+  }, [paymentMethod, icanBalance, icanBalanceLoading]);
 
   const formatUGX = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -2114,30 +2566,56 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
       return;
     }
 
+    if (paymentMethod === 'ican_wallet') {
+      const icanNeeded = ugxToICAN(amount);
+      if (!icanBalance || icanBalance.ican < icanNeeded) {
+        alert(
+          `Insufficient ICAN balance.\n\n` +
+          `Needed: ${formatICAN(icanNeeded)} ICAN\n` +
+          `Available: ${formatICAN(icanBalance?.ican || 0)} ICAN`
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
-      // Get manager ID from localStorage
-      const storedUser = localStorage.getItem('supermarket_user');
-      if (!storedUser) {
-        throw new Error('No user session found');
+      if (paymentMethod === 'ican_wallet') {
+        const payResult = await supplierOrdersService.payOrderWithICAN({
+          orderId:        order.id,
+          supplierUserId: order.supplier_id,
+          icanAmount:     ugxToICAN(amount),
+          ugxAmount:      amount,
+          notes:          paymentNotes || null,
+        });
+
+        if (!payResult.success) throw new Error(payResult.error);
+
+        alert(`✅ Paid ${formatICAN(ugxToICAN(amount))} ICAN from your wallet!\n\nAmount: ${formatUGX(amount)}\n\nThe supplier's wallet has been credited instantly — no confirmation needed.`);
+      } else {
+        // Get manager ID from localStorage
+        const storedUser = localStorage.getItem('supermarket_user');
+        if (!storedUser) {
+          throw new Error('No user session found');
+        }
+        const parsedUser = JSON.parse(storedUser);
+        const managerId = parsedUser.id;
+
+        // Record payment directly into payment_transactions
+        const payResult = await supplierOrdersService.recordPayment({
+          orderId:          order.id,
+          amountPaid:       amount,
+          paymentMethod:    paymentMethod,
+          paymentReference: paymentReference || null,
+          notes:            paymentNotes || null,
+          paidBy:           managerId
+        });
+
+        if (!payResult.success) throw new Error(payResult.error);
+
+        alert(`✅ Payment recorded successfully!\n\nAmount Paid: ${formatUGX(amount)}\n⏳ Awaiting supplier confirmation...`);
       }
-      const parsedUser = JSON.parse(storedUser);
-      const managerId = parsedUser.id;
-      
-      // Record payment directly into payment_transactions
-      const payResult = await supplierOrdersService.recordPayment({
-        orderId:          order.id,
-        amountPaid:       amount,
-        paymentMethod:    paymentMethod,
-        paymentReference: paymentReference || null,
-        notes:            paymentNotes || null,
-        paidBy:           managerId
-      });
-
-      if (!payResult.success) throw new Error(payResult.error);
-
-      alert(`✅ Payment recorded successfully!\n\nAmount Paid: ${formatUGX(amount)}\n⏳ Awaiting supplier confirmation...`);
       onSuccess();
     } catch (err) {
       console.error('Error recording payment:', err);
@@ -2227,27 +2705,50 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
               required
             >
-              <option value="bank_transfer">🏦 Bank Transfer</option>
-              <option value="mobile_money">📱 Mobile Money (MTN/Airtel)</option>
               <option value="cash">💵 Cash</option>
-              <option value="cheque">📝 Cheque</option>
-              <option value="credit_card">💳 Credit Card</option>
+              <option value="ican_wallet">🪙 IcanEra Wallet</option>
             </select>
           </div>
 
-          {/* Payment Reference */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              🔖 Payment Reference / Transaction ID
-            </label>
-            <input
-              type="text"
-              value={paymentReference}
-              onChange={(e) => setPaymentReference(e.target.value)}
-              placeholder="e.g., TXN123456789, Cheque #12345"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-            />
-          </div>
+          {/* IcanEra Wallet Balance — shown only when paying with ICAN */}
+          {paymentMethod === 'ican_wallet' && (
+            <div className="p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
+              <div className="text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+              {icanBalanceLoading ? (
+                <div className="text-sm text-gray-500">Loading balance...</div>
+              ) : (
+                <>
+                  <div className="text-xl font-bold text-purple-700">
+                    {formatICAN(icanBalance?.ican || 0)} ICAN
+                  </div>
+                  {parseFloat(amountPaid) > 0 && (
+                    <div className="text-sm text-gray-600 mt-1">
+                      This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(amountPaid)))} ICAN
+                      {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(amountPaid)) && (
+                        <span className="text-red-600 font-semibold"> — insufficient balance</span>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Payment Reference — not applicable to IcanEra Wallet, the on-chain tx is the reference */}
+          {paymentMethod !== 'ican_wallet' && (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                🔖 Payment Reference / Transaction ID
+              </label>
+              <input
+                type="text"
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                placeholder="e.g., TXN123456789, Cheque #12345"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+              />
+            </div>
+          )}
 
           {/* Payment Notes */}
           <div>
@@ -2275,7 +2776,12 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (
+                paymentMethod === 'ican_wallet' &&
+                parseFloat(amountPaid) > 0 &&
+                icanBalance &&
+                icanBalance.ican < ugxToICAN(parseFloat(amountPaid))
+              )}
               className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {submitting ? (
@@ -2286,7 +2792,7 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
               ) : (
                 <>
                   <FiCheckCircle className="h-5 w-5" />
-                  <span>Record Payment</span>
+                  <span>{paymentMethod === 'ican_wallet' ? 'Pay with ICAN' : 'Record Payment'}</span>
                 </>
               )}
             </button>
@@ -2296,313 +2802,6 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
     </div>
   );
 };
-
-// =============================================
-// APPROVAL WITH PAYMENT MODAL
-  // =============================================
-  const ApprovalModal = () => {
-    if (!showApprovalModal || !selectedOrder) return null;
-
-    const originalTotal = selectedOrder.total_amount_ugx || 0;
-    const adjustedTotal = approvalData.adjustedTotal ? parseFloat(approvalData.adjustedTotal) : originalTotal;
-    const totalAmount = adjustedTotal;
-    const paymentAmount = parseFloat(approvalData.initialPayment) || 0;
-    const balance = totalAmount - paymentAmount;
-    const discount = originalTotal - adjustedTotal;
-    const paymentStatus = paymentAmount >= totalAmount ? 'paid' : paymentAmount > 0 ? 'partially_paid' : 'unpaid';
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-          {/* Header */}
-          <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">✅ Approve Purchase Order</h2>
-                <p className="text-blue-100 mt-1">Order #{selectedOrder.po_number}</p>
-              </div>
-              <button
-                onClick={() => setShowApprovalModal(false)}
-                className="text-white hover:text-gray-200 text-3xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-
-          {/* Order Summary */}
-          <div className="p-6 space-y-6">
-            <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
-              <h3 className="font-bold text-gray-800 mb-3">📋 Order Summary</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-600">Supplier:</span>
-                  <p className="font-semibold">{selectedOrder.supplierName || 'N/A'}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Total Amount:</span>
-                  {discount > 0 ? (
-                    <div>
-                      <p className="font-semibold text-sm line-through text-gray-500">
-                        UGX {originalTotal.toLocaleString()}
-                      </p>
-                      <p className="font-bold text-lg text-purple-600">
-                        UGX {totalAmount.toLocaleString()}
-                        <span className="text-xs text-green-600 ml-2">(-{discount.toLocaleString()})</span>
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="font-bold text-lg text-blue-600">
-                      {new Intl.NumberFormat('en-UG', {
-                        style: 'currency',
-                        currency: 'UGX',
-                        minimumFractionDigits: 0
-                      }).format(totalAmount)}
-                    </p>
-                  )}
-                </div>
-                <div className="col-span-2">
-                  <span className="text-gray-600">Items:</span>
-                  <p className="font-semibold">{selectedOrder.items?.length || 0} items</p>
-                </div>
-                {discount > 0 && (
-                  <div className="col-span-2 bg-green-100 p-2 rounded border border-green-300">
-                    <p className="text-xs text-green-800 font-bold">
-                      ✨ Discount Applied: UGX {discount.toLocaleString()} 
-                      <span className="ml-2">({((discount/originalTotal)*100).toFixed(1)}% off)</span>
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Payment Section */}
-            <div className="bg-green-50 rounded-lg p-4 border-2 border-green-200">
-              <h3 className="font-bold text-gray-800 mb-4">💰 Payment Details</h3>
-              
-              {/* Cash Paid Now - Prominent Field */}
-              <div className="mb-6 bg-gradient-to-r from-green-100 to-emerald-100 p-4 rounded-lg border-2 border-green-400">
-                <label className="block text-sm font-bold text-green-800 mb-2 flex items-center gap-2">
-                  💵 Cash Paid Now (UGX)
-                  <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Awaits Supplier Confirmation</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max={totalAmount}
-                  step="1000"
-                  value={approvalData.cashPaidNow}
-                  onChange={(e) => setApprovalData({...approvalData, cashPaidNow: e.target.value})}
-                  placeholder="Enter cash amount paid at this moment"
-                  className="w-full px-4 py-4 border-2 border-green-500 rounded-lg focus:border-green-600 focus:outline-none text-xl font-bold text-green-700 bg-white"
-                />
-                <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
-                  <FiAlertTriangle className="text-yellow-600" />
-                  This payment will be recorded and sent to supplier for confirmation
-                </p>
-              </div>
-              
-              {/* Initial Payment Amount */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  💵 Initial Payment Amount (UGX)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max={totalAmount}
-                  step="1000"
-                  value={approvalData.initialPayment}
-                  onChange={(e) => setApprovalData({...approvalData, initialPayment: e.target.value})}
-                  placeholder="Enter amount (0 for unpaid)"
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none text-lg font-semibold"
-                />
-                <div className="mt-2 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Payment:</span>
-                    <span className="font-bold text-green-600">
-                      {new Intl.NumberFormat('en-UG', {
-                        style: 'currency',
-                        currency: 'UGX',
-                        minimumFractionDigits: 0
-                      }).format(paymentAmount)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Balance Due:</span>
-                    <span className={`font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {new Intl.NumberFormat('en-UG', {
-                        style: 'currency',
-                        currency: 'UGX',
-                        minimumFractionDigits: 0
-                      }).format(balance)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-gray-300">
-                    <span className="text-gray-700 font-semibold">Status:</span>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
-                      paymentStatus === 'partially_paid' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {paymentStatus === 'paid' && '✅ FULLY PAID'}
-                      {paymentStatus === 'partially_paid' && '⚠️ HALF PAID'}
-                      {paymentStatus === 'unpaid' && '❌ UNPAID'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Payment Method */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  💳 Payment Method
-                </label>
-                <select
-                  value={approvalData.paymentMethod}
-                  onChange={(e) => setApprovalData({...approvalData, paymentMethod: e.target.value})}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-                >
-                  <option value="cash">💵 Cash</option>
-                  <option value="mobile_money">📱 Mobile Money</option>
-                  <option value="bank_transfer">🏦 Bank Transfer</option>
-                  <option value="check">📝 Cheque</option>
-                  <option value="credit">💳 Credit</option>
-                </select>
-              </div>
-
-              {/* Payment Date */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  📅 Payment Date
-                </label>
-                <input
-                  type="date"
-                  value={approvalData.paymentDate}
-                  onChange={(e) => setApprovalData({...approvalData, paymentDate: e.target.value})}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-                />
-              </div>
-
-              {/* Next Payment Date (if partial payment) */}
-              {balance > 0 && paymentAmount > 0 && (
-                <div className="mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    📆 Next Payment Due Date (Optional)
-                  </label>
-                  <input
-                    type="date"
-                    value={approvalData.nextPaymentDate}
-                    onChange={(e) => setApprovalData({...approvalData, nextPaymentDate: e.target.value})}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
-                  />
-                  <p className="text-xs text-yellow-700 mt-1">
-                    ⚠️ Set when you expect the next payment of UGX {balance.toLocaleString()}
-                  </p>
-                </div>
-              )}
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  📝 Notes (Optional)
-                </label>
-                <textarea
-                  value={approvalData.notes}
-                  onChange={(e) => setApprovalData({...approvalData, notes: e.target.value})}
-                  placeholder="Add any notes about this approval or payment..."
-                  rows="3"
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Balance Adjustment Section */}
-            <div className="bg-purple-50 rounded-lg p-4 border-2 border-purple-200">
-              <h3 className="font-bold text-gray-800 mb-4">✂️ Adjust Order Total (Optional)</h3>
-              <p className="text-sm text-purple-700 mb-4">
-                💡 You can reduce the order total (apply discount). Supplier must accept this change.
-              </p>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  💰 Adjusted Total Amount (UGX)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max={originalTotal}
-                  step="1000"
-                  value={approvalData.adjustedTotal || originalTotal}
-                  onChange={(e) => setApprovalData({...approvalData, adjustedTotal: e.target.value})}
-                  placeholder={`Original: ${originalTotal.toLocaleString()}`}
-                  className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none text-lg font-semibold"
-                />
-                {discount > 0 && (
-                  <div className="mt-2 bg-white rounded p-3 border border-purple-300">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Original Total:</span>
-                      <span className="font-semibold line-through">UGX {originalTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-sm mt-1">
-                      <span className="text-purple-600 font-bold">Discount:</span>
-                      <span className="font-bold text-green-600">-UGX {discount.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-purple-200">
-                      <span className="text-gray-800">New Total:</span>
-                      <span className="text-purple-600">UGX {adjustedTotal.toLocaleString()}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {discount > 0 && (
-                <div className="mb-4">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    📋 Reason for Adjustment *
-                  </label>
-                  <textarea
-                    value={approvalData.adjustmentReason}
-                    onChange={(e) => setApprovalData({...approvalData, adjustmentReason: e.target.value})}
-                    placeholder="E.g., Volume discount, damaged goods, price negotiation..."
-                    rows="2"
-                    required
-                    className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                  />
-                  <p className="text-xs text-purple-600 mt-1 flex items-center">
-                    <span className="mr-1">🔔</span>
-                    Supplier will be notified and must accept this change
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
-              <button
-                type="button"
-                onClick={() => setShowApprovalModal(false)}
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-300 font-semibold"
-              >
-                Cancel
-              </button>
-              {/* ❌ COMMENTED OUT: Approve Order button disabled
-              <button
-                type="button"
-                onClick={submitOrderApproval}
-                className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-bold shadow-lg flex items-center space-x-2"
-              >
-                <FiCheckCircle className="h-5 w-5" />
-                <span>Approve Order</span>
-              </button>
-              */}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
 /**
  * 🆕 ADD PRODUCT TO ORDER MODAL
