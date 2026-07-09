@@ -35,9 +35,12 @@ CREATE TABLE IF NOT EXISTS public.dev_operators (
 );
 
 INSERT INTO public.dev_operators (email) VALUES
-  ('agrobone0@gmail.com'),
-  ('aronnykevin@gmail.com')
+  ('agrobone0@gmail.com')
 ON CONFLICT (email) DO NOTHING;
+
+-- Revokes access for anyone a prior run of this migration already seeded
+-- that isn't in the INSERT above.
+DELETE FROM public.dev_operators WHERE email <> 'agrobone0@gmail.com';
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
