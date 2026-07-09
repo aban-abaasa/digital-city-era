@@ -69,7 +69,6 @@ const CustomerDashboard = () => {
   // instead of two stacked cards. Tabs stay visible; content collapses.
   const [overviewSubTab, setOverviewSubTab] = useState('orders');
   const [overviewContentOpen, setOverviewContentOpen] = useState(false);
-  const [showShoppingModal, setShowShoppingModal] = useState(false);
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [showRewardsModal, setShowRewardsModal] = useState(false);
   const [showReferModal, setShowReferModal] = useState(false);
@@ -332,10 +331,6 @@ const CustomerDashboard = () => {
   };
 
   // Quick Actions Handlers
-  const handleStartShopping = () => {
-    setShowShoppingModal(true);
-  };
-
   const handleTrackOrders = () => {
     setShowTrackModal(true);
   };
@@ -691,7 +686,7 @@ const CustomerDashboard = () => {
                   <div className="min-w-0">
                     <p className="text-gray-600 text-[11px] truncate">Available Rewards</p>
                     <p className="text-xl font-bold text-gray-900">
-                      <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.earned).length} duration={1200} />
+                      <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.is_available).length} duration={1200} />
                     </p>
                   </div>
                   <FiGift className="h-6 w-6 text-green-500 flex-shrink-0" />
@@ -721,7 +716,7 @@ const CustomerDashboard = () => {
           {heroTab === 'actions' && (
             <div className="space-y-3">
               <button
-                onClick={handleStartShopping}
+                onClick={() => switchTab('shop')}
                 className="w-full text-left bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
               >
                 <div className="flex items-start gap-3">
@@ -849,7 +844,7 @@ const CustomerDashboard = () => {
               <div>
                 <p className="text-gray-600 text-sm">Available Rewards</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.earned).length} duration={1200} />
+                  <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.is_available).length} duration={1200} />
                 </p>
               </div>
               <FiGift className="h-8 w-8 text-green-500" />
@@ -883,7 +878,7 @@ const CustomerDashboard = () => {
         <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <button
-              onClick={handleStartShopping}
+              onClick={() => switchTab('shop')}
               className="group text-left bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
             >
               <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
@@ -1228,7 +1223,7 @@ const CustomerDashboard = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={handleStartShopping}
+                  onClick={() => switchTab('shop')}
                   className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-100 transition-colors"
                 >
                   <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -1286,77 +1281,6 @@ const CustomerDashboard = () => {
           </div>
         </div>
       </div>
-
-      {/* Shopping Modal */}
-      {showShoppingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 animate-fadeIn">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-2xl rounded-2xl bg-white animate-slideUp">
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-bold text-gray-900 flex items-center">
-                  <span className="mr-3 text-3xl animate-bounce">🛍️</span>
-                  Start Shopping
-                </h3>
-                <button
-                  onClick={() => setShowShoppingModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors duration-200 hover:scale-110 transform"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="text-center py-8">
-                <div className="text-8xl mb-6 animate-pulse">🛒</div>
-                <h4 className="text-2xl font-bold text-gray-900 mb-3">Ready to Shop?</h4>
-                <p className="text-gray-600 mb-8 text-lg">Discover amazing deals and exclusive offers just for you!</p>
-                
-                {/* Shopping Categories */}
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 cursor-pointer">
-                    <div className="text-3xl mb-2">🍎</div>
-                    <h5 className="font-semibold text-blue-800">Fresh Groceries</h5>
-                    <p className="text-sm text-blue-600">Farm to table</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 cursor-pointer">
-                    <div className="text-3xl mb-2">📱</div>
-                    <h5 className="font-semibold text-green-800">Electronics</h5>
-                    <p className="text-sm text-green-600">Latest gadgets</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 cursor-pointer">
-                    <div className="text-3xl mb-2">👕</div>
-                    <h5 className="font-semibold text-purple-800">Fashion</h5>
-                    <p className="text-sm text-purple-600">Trendy styles</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 cursor-pointer">
-                    <div className="text-3xl mb-2">🏠</div>
-                    <h5 className="font-semibold text-orange-800">Home & Garden</h5>
-                    <p className="text-sm text-orange-600">Make it yours</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <button
-                    onClick={() => {
-                      setShowShoppingModal(false);
-                      navigate('/customer-delivery');
-                    }}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white py-4 px-8 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 transform hover:scale-105 hover:shadow-xl font-semibold text-lg"
-                  >
-                    🚀 Start Shopping Now
-                  </button>
-                  <button
-                    onClick={() => setShowShoppingModal(false)}
-                    className="w-full border-2 border-gray-300 text-gray-700 py-3 px-6 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 transform hover:scale-105"
-                  >
-                    Maybe Later
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Track Orders Modal */}
       {showTrackModal && (

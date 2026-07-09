@@ -151,25 +151,19 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      // Switch to the scanning view first so the <video> element mounts —
+      // it only renders when state === 'scanning', so assigning srcObject
+      // beforehand hit a null ref and the feed never appeared even though
+      // permission had already been granted. The effect below attaches the
+      // already-acquired stream the instant the element exists.
       setState('scanning');
-
-      if (detectorSupported) {
-        detectorRef.current = new window.BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix'],
-        });
-        scanLoop();
-      }
     } catch (err: any) {
       setScanError(err.name === 'NotAllowedError'
         ? 'Camera permission denied. Use manual entry below.'
         : 'Camera unavailable. Use manual barcode entry.');
       setState('idle');
     }
-  }, [detectorSupported, selectedSupermarketId]);
+  }, [selectedSupermarketId]);
 
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -207,6 +201,22 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
     };
     rafRef.current = requestAnimationFrame(detect);
   }, [handleBarcode]);
+
+  // Attach the already-acquired stream as soon as the video element mounts.
+  useEffect(() => {
+    if (state !== 'scanning' || !streamRef.current || !videoRef.current) return;
+    videoRef.current.srcObject = streamRef.current;
+    videoRef.current.play()
+      .then(() => {
+        if (detectorSupported) {
+          detectorRef.current = new window.BarcodeDetector({
+            formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix'],
+          });
+          scanLoop();
+        }
+      })
+      .catch(() => {});
+  }, [state, detectorSupported, scanLoop]);
 
   useEffect(() => {
     return () => {
@@ -384,6 +394,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
   const totals = cartTotals(cart);
   const icanNeeded = ugxToICAN(totals.total);
   const canPayICAN = (icanBalance?.ican ?? 0) >= icanNeeded;
+  const selectedSupermarket = supermarkets.find(sm => sm.id === selectedSupermarketId) || null;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -494,7 +505,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
                   shopMode === 'browse' ? 'bg-white shadow text-slate-800' : 'text-slate-500'
                 }`}
               >
-                <Store size={15} /> Browse Store
+                <Store size={15} /> View
               </button>
             </div>
           )}
@@ -503,10 +514,17 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           {shopMode === 'browse' && state !== 'scanning' && (
             <div className="bg-white rounded-2xl shadow-md p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Store className="text-orange-500" size={20} />
-                  Shop a Store
-                </h3>
+                <div>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Store className="text-orange-500" size={20} />
+                    View Store
+                  </h3>
+                  {selectedSupermarket && (
+                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                      <Store size={11} /> Viewing {selectedSupermarket.name}
+                    </p>
+                  )}
+                </div>
                 {cart.length > 0 && (
                   <button
                     onClick={() => setState('cart')}
@@ -529,10 +547,17 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           {shopMode === 'scan' && (state === 'scanning' || (
             <div className="bg-white rounded-2xl shadow-md p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <ScanLine className="text-orange-500" size={20} />
-                  Scan a Product
-                </h3>
+                <div>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <ScanLine className="text-orange-500" size={20} />
+                    Scan a Product
+                  </h3>
+                  {selectedSupermarket && (
+                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                      <Store size={11} /> Scanning at {selectedSupermarket.name}
+                    </p>
+                  )}
+                </div>
                 {cart.length > 0 && (
                   <button
                     onClick={() => setState('cart')}
@@ -601,6 +626,13 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
             playsInline
             muted
           />
+          {/* Store badge — makes it explicit which supermarket the scan is scoped to */}
+          {selectedSupermarket && (
+            <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Store size={12} className="text-orange-400" />
+              {selectedSupermarket.name}
+            </div>
+          )}
           {/* Crosshair overlay */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-48 h-48 border-2 border-orange-400 rounded-lg opacity-80">
