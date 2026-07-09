@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import {
   FiArrowRight,
   FiBarChart2,
@@ -18,6 +19,7 @@ import {
   FiSun,
   FiShield,
   FiShoppingBag,
+  FiShoppingCart,
   FiStar,
   FiThumbsUp,
   FiTruck,
@@ -39,6 +41,10 @@ import {
   replyToLandingMessage,
   subscribeToPublicLandingMessages,
 } from '../services/landingMessagesService';
+import { getShowcaseProducts } from '../services/showcaseProductsService';
+
+const SHOWCASE_VISIBLE_COUNT = 6;
+const SHOWCASE_ROTATE_MS = 4500;
 
 const serviceCards = [
   {
@@ -127,6 +133,9 @@ const themeStyles = {
 const SupermartkeraLanding = () => {
   const { theme, toggleTheme } = useTheme();
   const palette = themeStyles[theme];
+  const navigate = useNavigate();
+  const [showcaseProducts, setShowcaseProducts] = useState([]);
+  const [showcaseOffset, setShowcaseOffset] = useState(0);
   const [contactForm, setContactForm] = useState({
     name: '',
     email: '',
@@ -326,6 +335,40 @@ const SupermartkeraLanding = () => {
     }
   };
 
+  // Public preview of real in-stock products across every onboarded store —
+  // visible to anyone, but tapping one only opens the shop for a signed-in
+  // visitor; a guest is sent to sign in first.
+  useEffect(() => {
+    getShowcaseProducts(24)
+      .then((rows) => setShowcaseProducts(rows))
+      .catch((err) => console.error('[SupermartkeraLanding] failed to load showcase products:', err));
+  }, []);
+
+  // "Different products" — rotates which slice of the fetched pool is on
+  // screen every few seconds instead of showing one static set forever.
+  useEffect(() => {
+    if (showcaseProducts.length <= SHOWCASE_VISIBLE_COUNT) return;
+    const id = setInterval(() => {
+      setShowcaseOffset((prev) => (prev + SHOWCASE_VISIBLE_COUNT) % showcaseProducts.length);
+    }, SHOWCASE_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [showcaseProducts.length]);
+
+  const visibleShowcaseProducts = useMemo(() => {
+    if (showcaseProducts.length === 0) return [];
+    const count = Math.min(SHOWCASE_VISIBLE_COUNT, showcaseProducts.length);
+    return Array.from({ length: count }, (_, i) => showcaseProducts[(showcaseOffset + i) % showcaseProducts.length]);
+  }, [showcaseProducts, showcaseOffset]);
+
+  const handleShopProduct = () => {
+    if (identity) {
+      navigate('/customer-dashboard?tab=shop');
+      return;
+    }
+    toast.info('Sign in to add items to your cart.');
+    navigate('/login');
+  };
+
   return (
     <div className={`min-h-screen ${palette.shell}`}>
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -463,6 +506,55 @@ const SupermartkeraLanding = () => {
               </div>
             </div>
           </div>
+        </section>
+
+        <section className="mt-20">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Live from the shelves</p>
+              <h3 className={`mt-3 text-3xl font-bold md:text-4xl ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                Real products from real Supermartkera stores.
+              </h3>
+            </div>
+            <p className={`max-w-2xl text-sm leading-7 md:text-right ${palette.muted}`}>
+              A rotating look at what's in stock right now.{' '}
+              {identity ? 'Tap a product to shop.' : 'Sign in to add items to your cart.'}
+            </p>
+          </div>
+
+          {visibleShowcaseProducts.length === 0 ? (
+            <p className={`mt-8 text-sm ${palette.muted}`}>No products in stock yet — check back soon.</p>
+          ) : (
+            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {visibleShowcaseProducts.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={handleShopProduct}
+                  className={`group flex flex-col overflow-hidden rounded-[1.5rem] border text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+                >
+                  <div className="flex h-28 w-full items-center justify-center bg-gradient-to-br from-cyan-400/15 to-violet-500/15">
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <FiShoppingBag className="h-8 w-8 text-cyan-300/70" />
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col gap-1 p-4">
+                    <p className={`text-xs uppercase tracking-wide ${palette.muted}`}>{p.storeName}</p>
+                    <p className={`text-sm font-semibold leading-5 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{p.name}</p>
+                    <div className="mt-auto flex items-center justify-between pt-2">
+                      <span className="text-sm font-bold text-cyan-300">UGX {p.priceUgx.toLocaleString()}</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${palette.outline}`}>
+                        {identity ? <FiShoppingCart className="h-3 w-3" /> : <FiLock className="h-3 w-3" />}
+                        {identity ? 'Shop' : 'Sign in'}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         <section id="services" className="mt-20">

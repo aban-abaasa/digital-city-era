@@ -54,7 +54,14 @@ const CustomerDashboard = () => {
   const branding = useSupermarketBranding();
   const { user, customer, logout, loading: authLoading, isAuthenticated } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [activeTab, setActiveTab] = useState('overview');
+  // Lets the landing page's product showcase deep-link a signed-in visitor
+  // straight into the Shop tab (?tab=shop) instead of always landing on
+  // Overview — falls back to 'overview' for anything not a real tab id.
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    const validTabs = ['overview', 'book-ride', 'shop', 'delivery', 'rewards', 'profile'];
+    return validTabs.includes(requested) ? requested : 'overview';
+  });
   // Small phones: collapse the membership/stats/actions blocks behind a
   // compact tab switcher instead of stacking three tall sections.
   const [heroTab, setHeroTab] = useState('actions');
