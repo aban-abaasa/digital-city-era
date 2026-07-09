@@ -29,7 +29,6 @@ import {
 } from '../services/landingMessagesService';
 
 const SESSION_KEY = 'dev_panel_auth';
-const DEV_TOKEN   = 'dev_Sup3rmarktera_KV25';
 const ICAN_TO_UGX = 5000;
 
 // ─── Theme ───────────────────────────────────────────────────────────
@@ -848,7 +847,7 @@ const PublicBoardTab = ({ p }) => {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await devListAllLandingMessages(DEV_TOKEN));
+      setItems(await devListAllLandingMessages(null));
     } catch (e) {
       console.error('[PublicBoardTab] failed to load messages:', e);
     } finally {
@@ -862,7 +861,7 @@ const PublicBoardTab = ({ p }) => {
     if (deletingId) return;
     setDeletingId(id);
     try {
-      await devDeleteLandingMessage(DEV_TOKEN, id);
+      await devDeleteLandingMessage(null, id);
       if (expandedId === id) setExpandedId(null);
       await refresh();
     } catch (e) {
@@ -877,7 +876,7 @@ const PublicBoardTab = ({ p }) => {
     if (!body || replying) return;
     setReplying(true);
     try {
-      await devReplyToLandingMessage(DEV_TOKEN, id, body);
+      await devReplyToLandingMessage(null, id, body);
       setReplyDraft('');
       await refresh();
     } catch (e) {
@@ -892,7 +891,7 @@ const PublicBoardTab = ({ p }) => {
     setMarkingId(id);
     setMarkError('');
     try {
-      await devMarkCorrectAnswer(DEV_TOKEN, id);
+      await devMarkCorrectAnswer(null, id);
       await refresh();
     } catch (e) {
       console.error('[PublicBoardTab] failed to mark correct answer:', e);
@@ -914,7 +913,7 @@ const PublicBoardTab = ({ p }) => {
     setGrantingId(item.id);
     setGrantError('');
     try {
-      await devGrantLandingBonus(DEV_TOKEN, item.user_id, amt, 'Manual grant from Public Board');
+      await devGrantLandingBonus(null, item.user_id, amt, 'Manual grant from Public Board');
       setGrantTargetId(null);
       setGrantAmount('');
       await refresh();
@@ -1148,14 +1147,14 @@ const DevDashboard = ({ onLogout }) => {
 
     // 1. Supermarkets
     try {
-      const { data } = await supabase.rpc('dev_get_supermarkets', { dev_token: DEV_TOKEN });
+      const { data } = await supabase.rpc('dev_get_supermarkets');
       setSupermarts(data || []);
     } catch { setSupermarts([]); }
 
     // 2. All users
     let allFetched = [];
     try {
-      const { data: users } = await supabase.rpc('dev_get_users', { dev_token: DEV_TOKEN });
+      const { data: users } = await supabase.rpc('dev_get_users');
       allFetched = users || [];
       setAllUsers(allFetched);
       setAdmins(allFetched.filter(u => u.role === 'admin'));
@@ -1164,7 +1163,7 @@ const DevDashboard = ({ onLogout }) => {
 
     // 3. Suppliers — try RPC, fall back to users with role='supplier'
     try {
-      const { data: spRows, error: spErr } = await supabase.rpc('dev_get_suppliers', { dev_token: DEV_TOKEN });
+      const { data: spRows, error: spErr } = await supabase.rpc('dev_get_suppliers');
       if (!spErr && spRows && spRows.length > 0) {
         setSuppliers(spRows);
       } else {
@@ -1186,7 +1185,7 @@ const DevDashboard = ({ onLogout }) => {
 
     // 4. ICAN wallets
     try {
-      const { data: wRows } = await supabase.rpc('dev_get_wallets', { dev_token: DEV_TOKEN });
+      const { data: wRows } = await supabase.rpc('dev_get_wallets');
       const map = {};
       (wRows || []).forEach(w => { map[w.user_id] = Number(w.ican_balance || 0); });
       setWallets(map);
@@ -1194,7 +1193,7 @@ const DevDashboard = ({ onLogout }) => {
 
     // 5. Lifetime earned
     try {
-      const { data: txRows } = await supabase.rpc('dev_get_tx_totals', { dev_token: DEV_TOKEN });
+      const { data: txRows } = await supabase.rpc('dev_get_tx_totals');
       const map = {};
       (txRows || []).forEach(r => { map[r.recipient_user_id] = Number(r.total_received || 0); });
       setLifetimeEarned(map);
@@ -1202,7 +1201,7 @@ const DevDashboard = ({ onLogout }) => {
 
     // 6. Supermarket members — server-side join (admins + managers + cashiers + all staff)
     try {
-      const { data: mRows } = await supabase.rpc('dev_get_supermarket_members', { dev_token: DEV_TOKEN });
+      const { data: mRows } = await supabase.rpc('dev_get_supermarket_members');
       const map = {};
       (mRows || []).forEach(m => {
         if (!map[m.supermarket_id]) map[m.supermarket_id] = [];
@@ -1216,7 +1215,7 @@ const DevDashboard = ({ onLogout }) => {
 
     // 7. System totals (per-role aggregates)
     try {
-      const { data: totRows } = await supabase.rpc('dev_get_system_totals', { dev_token: DEV_TOKEN });
+      const { data: totRows } = await supabase.rpc('dev_get_system_totals');
       setSystemTotals(totRows || []);
     } catch { setSystemTotals([]); }
 
@@ -1264,7 +1263,7 @@ const DevDashboard = ({ onLogout }) => {
   // ── Grant bonus ───────────────────────────────────────────────────
   const grantBonus = async (userId, amount) => {
     try {
-      await supabase.rpc('dev_grant_ican_bonus', { dev_token: DEV_TOKEN, target_user_id: userId, bonus_amount: amount });
+      await supabase.rpc('dev_grant_ican_bonus', { target_user_id: userId, bonus_amount: amount });
       await fetchAll();
     } catch (e) { console.error('Grant bonus error:', e); }
   };
@@ -1609,21 +1608,45 @@ const DevDashboard = ({ onLogout }) => {
   );
 };
 
-// ─── Root — silent redirect if not authenticated ──────────────────────
+// ─── Root — requires a real Supabase session on the dev_operators
+// allowlist (checked server-side by is_dev_operator(), never a shared
+// secret shipped to the client). sessionStorage is now only a cosmetic
+// flag ChatWidget reads to hide itself for a confirmed developer — every
+// dev_* RPC call still independently re-verifies authorization itself. ──
 const DevPanel = () => {
-  const navigate      = useNavigate();
-  const authenticated = sessionStorage.getItem(SESSION_KEY) === 'true';
+  const navigate = useNavigate();
+  const [status, setStatus] = useState('checking'); // checking | authorized | denied
 
   useEffect(() => {
-    if (!authenticated) navigate('/', { replace: true });
-  }, [authenticated, navigate]);
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        if (!cancelled) setStatus('denied');
+        return;
+      }
+      const { data, error } = await supabase.rpc('is_dev_operator');
+      if (cancelled) return;
+      if (error || !data) {
+        setStatus('denied');
+        return;
+      }
+      sessionStorage.setItem(SESSION_KEY, 'true');
+      setStatus('authorized');
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (status === 'denied') navigate('/login', { replace: true });
+  }, [status, navigate]);
 
   const handleLogout = () => {
     sessionStorage.removeItem(SESSION_KEY);
     navigate('/', { replace: true });
   };
 
-  if (!authenticated) return null;
+  if (status !== 'authorized') return null;
   return <DevDashboard onLogout={handleLogout} />;
 };
 

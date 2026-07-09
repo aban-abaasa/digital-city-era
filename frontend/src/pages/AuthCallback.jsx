@@ -102,14 +102,6 @@ const AuthCallback = () => {
       try {
         console.log('[AUTH] Processing session for:', session.user.email);
 
-        // Silent developer intercept — same behaviour as the email/password path
-        if (session.user.email?.toLowerCase() === 'agrobone0@gmail.com') {
-          sessionStorage.setItem('dev_panel_auth', 'true');
-          window.history.replaceState(null, '', '/login');
-          navigate('/dev-panel', { replace: true });
-          return;
-        }
-
         if (!mountedRef.current) return;
 
         setStatus('Completing sign-in...');
