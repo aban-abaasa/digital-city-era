@@ -11,9 +11,7 @@ import {
   FiHeadphones,
   FiLock,
   FiMail,
-  FiMapPin,
   FiPackage,
-  FiPhone,
   FiMoon,
   FiSend,
   FiSun,
@@ -28,6 +26,7 @@ import {
   FiX,
   FiZap
 } from 'react-icons/fi';
+import { Bike } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getGuestIdentity, resolveChatIdentity, setGuestIdentity } from '../services/chatService';
 import {
@@ -84,12 +83,6 @@ const customerBenefits = [
   'Fast sign-in for shoppers, staff, and managers',
   'Reliable inventory visibility behind the scenes',
   'Simple, affordable software for growing supermarkets'
-];
-
-const contactMethods = [
-  { icon: FiMail, label: 'Email', value: 'hello@supermartkera.com' },
-  { icon: FiPhone, label: 'Phone', value: '+256 700 000 000' },
-  { icon: FiMapPin, label: 'Location', value: 'Kampala, Uganda' }
 ];
 
 const fmtBoardTime = (value) => {
@@ -360,12 +353,17 @@ const SupermartkeraLanding = () => {
     return Array.from({ length: count }, (_, i) => showcaseProducts[(showcaseOffset + i) % showcaseProducts.length]);
   }, [showcaseProducts, showcaseOffset]);
 
-  const handleShopProduct = () => {
+  // Shared by the product showcase and the ride/delivery cards below — the
+  // public teaser is visible to everyone, but actually doing anything with
+  // it (shopping, booking a ride, requesting delivery) opens the real
+  // customer dashboard tab for a signed-in visitor and sends a guest to
+  // sign in first instead.
+  const handleGatedNavigate = (tab, guestMessage) => {
     if (identity) {
-      navigate('/customer-dashboard?tab=shop');
+      navigate(`/customer-dashboard?tab=${tab}`);
       return;
     }
-    toast.info('Sign in to add items to your cart.');
+    toast.info(guestMessage);
     navigate('/login');
   };
 
@@ -384,30 +382,38 @@ const SupermartkeraLanding = () => {
               <FiShoppingBag className="h-6 w-6 text-white" />
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.35em] text-cyan-500/70">Supermarket operating system</p>
-              <h1 className="text-xl font-semibold tracking-wide">Supermartkera</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-500">Supermarket operating system</p>
+              <h1 className="text-xl font-bold tracking-tight">Supermartkera</h1>
             </div>
           </div>
 
-          <button
-            onClick={toggleTheme}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition md:hidden ${palette.outline}`}
-          >
-            {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-            {theme === 'dark' ? 'Light' : 'Dark'}
-          </button>
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              className={`inline-flex items-center justify-center rounded-full border p-2.5 transition ${palette.outline}`}
+            >
+              {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+            </button>
+            <Link
+              to="/login"
+              className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition ${palette.button}`}
+            >
+              Sign in
+            </Link>
+          </div>
 
           <div className="hidden items-center gap-3 md:flex">
             <button
               onClick={toggleTheme}
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition ${palette.outline}`}
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition ${palette.outline}`}
             >
               {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
               {theme === 'dark' ? 'Light mode' : 'Dark mode'}
             </button>
             <button
               onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
-              className={`rounded-full border px-5 py-2.5 text-sm font-medium transition ${palette.outline}`}
+              className={`rounded-full border px-5 py-2.5 text-sm font-semibold transition ${palette.outline}`}
             >
               Contact us
             </button>
@@ -425,14 +431,17 @@ const SupermartkeraLanding = () => {
       <main className="relative z-10 mx-auto max-w-7xl px-6 pb-20 pt-10 lg:px-8 lg:pt-16">
         <section className="grid gap-12 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
           <div className="space-y-8">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-200">
-              <FiStar className="h-4 w-4 text-amber-300" />
+            <div className={`inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-semibold ${theme === 'dark' ? 'text-cyan-200' : 'text-cyan-800'}`}>
+              <FiStar className="h-4 w-4 text-amber-400" />
               Clean UX for customers, staff, and managers
             </div>
 
             <div className="space-y-5">
-              <h2 className={`max-w-3xl text-5xl font-black leading-[0.95] tracking-tight md:text-7xl ${palette.accent}`}>
-                A professional landing page for supermarkets that want to run better.
+              <h2 className={`max-w-2xl text-3xl font-black leading-[1.15] tracking-tight sm:text-4xl md:text-5xl lg:text-6xl ${palette.accent}`}>
+                Automate your retail operations, reduce shrinkage, and{' '}
+                <span className="bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-500 bg-clip-text text-transparent">
+                  boost supermart profitability.
+                </span>
               </h2>
               <p className={`max-w-2xl text-lg leading-8 md:text-xl ${palette.body}`}>
                 Supermartkera helps supermarket teams manage POS, scan-and-pay, inventory, reports,
@@ -530,7 +539,7 @@ const SupermartkeraLanding = () => {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={handleShopProduct}
+                  onClick={() => handleGatedNavigate('shop', 'Sign in to add items to your cart.')}
                   className={`group flex flex-col overflow-hidden rounded-[1.5rem] border text-left transition hover:-translate-y-1 ${palette.softPanel}`}
                 >
                   <div className="flex h-28 w-full items-center justify-center bg-gradient-to-br from-cyan-400/15 to-violet-500/15">
@@ -555,6 +564,78 @@ const SupermartkeraLanding = () => {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="mt-20">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Powered by BodaGo</p>
+              <h3 className={`mt-3 text-3xl font-bold md:text-4xl ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                Rides, delivery, and self-checkout — all connected.
+              </h3>
+            </div>
+            <p className={`max-w-2xl text-sm leading-7 md:text-right ${palette.muted}`}>
+              Supermartkera plugs straight into BodaGo's rider network for real-time ride matching
+              and doorstep delivery.{' '}
+              {identity ? 'Tap a card to get started.' : 'Sign in to get started.'}
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => handleGatedNavigate('book-ride', 'Sign in to book a ride.')}
+              className={`group flex items-center gap-5 rounded-[1.75rem] border p-6 text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+            >
+              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
+                <Bike className="h-7 w-7" />
+              </div>
+              <div className="flex-1">
+                <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Book a ride</h4>
+                <p className={`mt-2 leading-6 ${palette.muted}`}>Get picked up fast, with live matching to a nearby BodaGo rider.</p>
+              </div>
+              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${palette.outline}`}>
+                {identity ? <FiArrowRight className="h-3.5 w-3.5" /> : <FiLock className="h-3.5 w-3.5" />}
+                {identity ? 'Book now' : 'Sign in'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleGatedNavigate('delivery', 'Sign in to request delivery.')}
+              className={`group flex items-center gap-5 rounded-[1.75rem] border p-6 text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+            >
+              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
+                <FiTruck className="h-7 w-7" />
+              </div>
+              <div className="flex-1">
+                <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Delivery</h4>
+                <p className={`mt-2 leading-6 ${palette.muted}`}>Have your order dropped off wherever you are, by a BodaGo rider.</p>
+              </div>
+              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${palette.outline}`}>
+                {identity ? <FiArrowRight className="h-3.5 w-3.5" /> : <FiLock className="h-3.5 w-3.5" />}
+                {identity ? 'Get delivery' : 'Sign in'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleGatedNavigate('shop', 'Sign in for self-checkout.')}
+              className={`group flex items-center gap-5 rounded-[1.75rem] border p-6 text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+            >
+              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
+                <FiShoppingCart className="h-7 w-7" />
+              </div>
+              <div className="flex-1">
+                <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Self-checkout</h4>
+                <p className={`mt-2 leading-6 ${palette.muted}`}>Scan, pay, and skip the queue with BodaGo's self-service checkout.</p>
+              </div>
+              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${palette.outline}`}>
+                {identity ? <FiArrowRight className="h-3.5 w-3.5" /> : <FiLock className="h-3.5 w-3.5" />}
+                {identity ? 'Check out' : 'Sign in'}
+              </span>
+            </button>
+          </div>
         </section>
 
         <section id="services" className="mt-20">
@@ -603,9 +684,9 @@ const SupermartkeraLanding = () => {
 
             <div className="mt-6 space-y-4">
               {customerBenefits.map((point) => (
-                <div key={point} className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div key={point} className={`flex gap-3 rounded-2xl border p-4 ${palette.softPanel}`}>
                   <FiCheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-cyan-300" />
-                  <p className="text-sm leading-6 text-slate-200">{point}</p>
+                  <p className={`text-sm leading-6 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>{point}</p>
                 </div>
               ))}
             </div>
@@ -655,28 +736,11 @@ const SupermartkeraLanding = () => {
           <div className={`rounded-[2rem] border p-6 ${palette.panel}`}>
             <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Contact us</p>
             <h3 className={`mt-3 text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-              {identity ? `Welcome back, ${identity.name}.` : 'Talk to the Supermartkera team.'}
+              Talk to the Supermartkera team.
             </h3>
             <p className={`mt-4 text-sm leading-7 ${palette.muted}`}>
               Ask about setup, pricing, onboarding, POS, inventory, scan-and-pay, or reports.
             </p>
-
-            <div className="mt-8 space-y-4">
-              {contactMethods.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div key={item.label} className={`flex items-center gap-4 rounded-2xl border p-4 ${palette.softPanel}`}>
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-cyan-200">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.25em] text-slate-400">{item.label}</p>
-                      <p className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{item.value}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
 
             {identity && myMessages.length > 0 && (
               <div className="mt-8">
