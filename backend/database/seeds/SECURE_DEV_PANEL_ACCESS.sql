@@ -97,6 +97,7 @@ $$;
 --    a function's signature, so each one is dropped first.
 -- ─────────────────────────────────────────────────────────────────────────────
 DROP FUNCTION IF EXISTS public.dev_get_users(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_users();
 CREATE FUNCTION public.dev_get_users()
 RETURNS TABLE (
   id             UUID,
@@ -128,6 +129,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_users() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_get_supermarkets(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_supermarkets();
 CREATE FUNCTION public.dev_get_supermarkets()
 RETURNS TABLE (
   id         UUID,
@@ -156,6 +158,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_supermarkets() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_get_suppliers(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_suppliers();
 CREATE FUNCTION public.dev_get_suppliers()
 RETURNS TABLE (
   id             UUID,
@@ -189,6 +192,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_suppliers() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_get_wallets(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_wallets();
 CREATE FUNCTION public.dev_get_wallets()
 RETURNS TABLE (
   user_id          UUID,
@@ -214,6 +218,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_wallets() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_get_tx_totals(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_tx_totals();
 CREATE FUNCTION public.dev_get_tx_totals()
 RETURNS TABLE (
   recipient_user_id UUID,
@@ -238,6 +243,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_tx_totals() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_grant_ican_bonus(TEXT, UUID, NUMERIC);
+DROP FUNCTION IF EXISTS public.dev_grant_ican_bonus(UUID, NUMERIC);
 CREATE FUNCTION public.dev_grant_ican_bonus(
   target_user_id UUID,
   bonus_amount   NUMERIC
@@ -273,6 +279,7 @@ GRANT EXECUTE ON FUNCTION public.dev_grant_ican_bonus(UUID, NUMERIC) TO authenti
 
 
 DROP FUNCTION IF EXISTS public.dev_get_staff(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_staff();
 CREATE FUNCTION public.dev_get_staff()
 RETURNS TABLE (supermarket_id UUID, user_id UUID)
 SECURITY DEFINER
@@ -292,6 +299,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_staff() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_get_supermarket_members(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_supermarket_members();
 CREATE FUNCTION public.dev_get_supermarket_members()
 RETURNS TABLE (
   supermarket_id UUID,
@@ -346,6 +354,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_supermarket_members() TO authenticated;
 
 
 DROP FUNCTION IF EXISTS public.dev_get_system_totals(TEXT);
+DROP FUNCTION IF EXISTS public.dev_get_system_totals();
 CREATE FUNCTION public.dev_get_system_totals()
 RETURNS TABLE (
   role              TEXT,
