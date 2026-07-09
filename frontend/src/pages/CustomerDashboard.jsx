@@ -35,7 +35,7 @@ import {
   FiMessageCircle,
   FiChevronDown,
 } from 'react-icons/fi';
-import { getBalance, getTransactions } from '../../../../mybodaguy/frontend/src/mybodaguy/services/icanWalletService';
+import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
@@ -43,8 +43,8 @@ import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
 import { customerService } from '../services/customerService';
-import EnhancedRideRequest from '../../../../mybodaguy/frontend/src/mybodaguy/components/EnhancedRideRequest';
-import CustomerSelfCheckout from '../../../../mybodaguy/frontend/src/mybodaguy/components/CustomerSelfCheckout';
+import EnhancedRideRequest from '../vendor/mybodaguy/components/EnhancedRideRequest';
+import CustomerSelfCheckout from '../vendor/mybodaguy/components/CustomerSelfCheckout';
 import IcanCoinBadge from '../components/IcanCoinBadge';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
