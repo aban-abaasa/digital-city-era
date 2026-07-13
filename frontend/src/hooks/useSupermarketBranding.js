@@ -3,6 +3,16 @@ import { supabase } from '../services/supabase';
 
 const FALLBACK_NAME = 'Your Supermarket';
 
+// Mirrors the business_type CHECK constraint on supermarkets
+// (ADD_BUSINESS_TYPE_TO_SUPERMARKETS.sql) — just display info, every
+// business type otherwise reuses the exact same portal/product plumbing.
+const BUSINESS_TYPE_META = {
+  supermarket:     { emoji: '🏪', label: 'Supermarket',        itemsLabel: 'Products' },
+  hotel:           { emoji: '🏨', label: 'Hotel',               itemsLabel: 'Rooms & Services' },
+  boutique:        { emoji: '👗', label: 'Boutique',            itemsLabel: 'Items' },
+  restaurant_cafe: { emoji: '🍽️', label: 'Restaurant & Café',   itemsLabel: 'Menu' },
+};
+
 /**
  * Every portal (admin, manager, cashier, customer) for a given supermarket
  * should show that supermarket's own name and background — not a generic
@@ -39,7 +49,7 @@ export const useSupermarketBranding = () => {
 
       const { data: supermarketRow, error } = await supabase
         .from('supermarkets')
-        .select('id, name, background_image_url')
+        .select('id, name, background_image_url, business_type')
         .eq('id', userRow.supermarket_id)
         .maybeSingle();
 
@@ -57,10 +67,17 @@ export const useSupermarketBranding = () => {
     load();
   }, [load]);
 
+  const businessType = supermarket?.business_type || 'supermarket';
+  const typeMeta = BUSINESS_TYPE_META[businessType] || BUSINESS_TYPE_META.supermarket;
+
   return {
     name: supermarket?.name || FALLBACK_NAME,
     backgroundUrl: supermarket?.background_image_url || null,
     supermarketId: supermarket?.id || null,
+    businessType,
+    typeEmoji: typeMeta.emoji,
+    typeLabel: typeMeta.label,
+    itemsLabel: typeMeta.itemsLabel,
     loading,
     refresh: load
   };

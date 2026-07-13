@@ -343,7 +343,7 @@ const CustomerDashboard = () => {
     setShowReferModal(true);
   };
 
-  const handleCreateSupermarket = () => {
+  const handleCreateBusiness = () => {
     toast.info('Opening the admin setup flow.');
     navigate('/admin-setup');
   };
@@ -734,7 +734,7 @@ const CustomerDashboard = () => {
               </button>
 
               <button
-                onClick={handleCreateSupermarket}
+                onClick={handleCreateBusiness}
                 className="w-full text-left bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
               >
                 <div className="flex items-start gap-3">
@@ -742,9 +742,9 @@ const CustomerDashboard = () => {
                     <FiBriefcase className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-sm">Create Your Supermarket</h3>
+                    <h3 className="font-bold text-sm">Create Your Business</h3>
                     <p className="text-emerald-100 text-xs mt-0.5">
-                      Open the admin setup flow to create a supermarket and assign managers or cashiers.
+                      Supermarket, hotel, boutique, or restaurant/café — set up your store and assign managers or cashiers.
                     </p>
                   </div>
                   <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
@@ -895,15 +895,15 @@ const CustomerDashboard = () => {
             </button>
 
             <button
-              onClick={handleCreateSupermarket}
+              onClick={handleCreateBusiness}
               className="group text-left bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
             >
               <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
                 <FiBriefcase className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold mb-2">Create Your Supermarket</h3>
+              <h3 className="text-xl font-bold mb-2">Create Your Business</h3>
               <p className="text-emerald-100 text-sm mb-4">
-                Open the admin setup flow to create a supermarket and assign managers or cashiers.
+                Supermarket, hotel, boutique, or restaurant/café — set up your store and assign managers or cashiers.
               </p>
               <span className="inline-flex items-center text-sm font-semibold">
                 Admin Setup

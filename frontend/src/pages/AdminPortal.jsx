@@ -5260,7 +5260,7 @@ const AdminPortal = () => {
             <div className="flex-1">
               <h3 className="text-base md:text-lg lg:text-2xl font-bold flex items-center gap-2 md:gap-3 mb-1 md:mb-2">
                 <span className="bg-white/20 p-2 md:p-3 rounded-lg md:rounded-xl animate-bounce text-lg md:text-2xl lg:text-3xl">📦</span>
-                <span>Complete Product Management</span>
+                <span>Complete {branding.itemsLabel} Management</span>
               </h3>
               <p className="text-emerald-100 text-xs md:text-sm">Full administrative access to all inventory functions</p>
             </div>
@@ -5268,7 +5268,7 @@ const AdminPortal = () => {
               <div className="hidden md:flex items-center gap-2 lg:gap-4">
                 <div className="bg-white/20 backdrop-blur-sm rounded-lg md:rounded-xl px-2 md:px-4 py-2 md:py-3 text-center border border-white/30 hover:bg-white/30 transition-all">
                   <div className="text-lg md:text-2xl font-bold">{dashboardData.inventory?.totalProducts || 0}</div>
-                  <div className="text-emerald-200 text-xs font-medium hidden md:block">Total Products</div>
+                  <div className="text-emerald-200 text-xs font-medium hidden md:block">Total {branding.itemsLabel}</div>
                 </div>
                 <div className="bg-white/20 backdrop-blur-sm rounded-lg md:rounded-xl px-2 md:px-4 py-2 md:py-3 text-center border border-white/30 hover:bg-white/30 transition-all">
                   <div className="text-lg md:text-2xl font-bold">{dashboardData.inventory?.lowStock || 0}</div>
@@ -7715,8 +7715,8 @@ const AdminPortal = () => {
                   <FiShield className="h-6 w-6" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold">{branding.name}</h2>
-                  <p className="text-blue-100 text-sm">System Administrator</p>
+                  <h2 className="text-xl font-bold">{branding.typeEmoji} {branding.name}</h2>
+                  <p className="text-blue-100 text-sm">System Administrator · {branding.typeLabel}</p>
                 </div>
               </div>
             </div>
@@ -7776,7 +7776,7 @@ const AdminPortal = () => {
                 <div className="w-9 h-9 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
                   <FiShield className="h-5 w-5 text-white" />
                 </div>
-                <span className="font-bold text-gray-900 hidden lg:inline">{branding.name}</span>
+                <span className="font-bold text-gray-900 hidden lg:inline">{branding.typeEmoji} {branding.name}</span>
               </div>
               <nav className="flex items-center gap-1 overflow-x-auto">
                 {navItems.map((item) => (

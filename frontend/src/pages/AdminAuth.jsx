@@ -9,7 +9,48 @@ import {
 import { supabase } from '../services/supabase';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-const STEPS = ['Store details', 'Location', 'Review'];
+const STEPS = ['Business type', 'Store details', 'Location', 'Review'];
+
+// Every business type reuses the exact same store/product/staff/delivery
+// plumbing — this map only drives copy, placeholders, and the emoji shown in
+// the UI. Keep in sync with the CHECK constraint on supermarkets.business_type
+// (ADD_BUSINESS_TYPE_TO_SUPERMARKETS.sql).
+const BUSINESS_TYPES = [
+  {
+    value: 'supermarket', emoji: '🏪', label: 'Supermarket',
+    blurb: 'Groceries, electronics, general retail',
+    namePlaceholder: 'e.g. City Fresh Market',
+    nameLabel: 'Supermarket name *',
+    descPlaceholder: 'What do you sell? Fresh produce, electronics, groceries…',
+    itemsLabel: 'products',
+  },
+  {
+    value: 'hotel', emoji: '🏨', label: 'Hotel',
+    blurb: 'Rooms and guest services',
+    namePlaceholder: 'e.g. Lakeview Hotel',
+    nameLabel: 'Hotel name *',
+    descPlaceholder: 'What rooms or services do you offer? Standard rooms, suites, room service…',
+    itemsLabel: 'rooms & services',
+  },
+  {
+    value: 'boutique', emoji: '👗', label: 'Boutique',
+    blurb: 'Fashion, accessories, retail items',
+    namePlaceholder: 'e.g. Kampala Boutique',
+    nameLabel: 'Boutique name *',
+    descPlaceholder: 'What do you sell? Clothing, shoes, accessories…',
+    itemsLabel: 'items',
+  },
+  {
+    value: 'restaurant_cafe', emoji: '🍽️', label: 'Restaurant & Café',
+    blurb: 'Food, drinks, and dine-in or takeaway menus',
+    namePlaceholder: 'e.g. Sunrise Café',
+    nameLabel: 'Restaurant / café name *',
+    descPlaceholder: "What's on your menu? Meals, snacks, drinks…",
+    itemsLabel: 'menu',
+  },
+];
+
+const businessTypeInfo = (value) => BUSINESS_TYPES.find(t => t.value === value) || BUSINESS_TYPES[0];
 
 function Field({ label, icon: Icon, error, ...props }) {
   return (
@@ -59,6 +100,7 @@ export default function AdminAuth() {
   const [session, setSession] = useState(null);
 
   const [form, setForm] = useState({
+    businessType: 'supermarket',
     storeName: '', description: '', storePhone: '', storeEmail: '',
     address: '', city: '', country: 'Uganda',
   });
@@ -66,6 +108,7 @@ export default function AdminAuth() {
   const [errors, setErrors] = useState({});
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
+  const typeInfo = businessTypeInfo(form.businessType);
 
   // ── on mount: check session ────────────────────────────────────────────────
   useEffect(() => {
@@ -167,10 +210,10 @@ export default function AdminAuth() {
   // ── validate per step ─────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
-    if (step === 0) {
+    if (step === 1) {
       if (!form.storeName.trim()) e.storeName = 'Store name is required';
     }
-    if (step === 1) {
+    if (step === 2) {
       if (!form.address.trim()) e.address = 'Street address is required';
       if (!form.city.trim()) e.city = 'City is required';
     }
@@ -194,13 +237,14 @@ export default function AdminAuth() {
 
       // Call onboard_supermarket RPC (wired in MULTI_TENANT_PLATFORM.sql)
       const { data, error } = await supabase.rpc('onboard_supermarket', {
-        p_name:        form.storeName.trim(),
-        p_description: form.description.trim() || null,
-        p_phone:       form.storePhone.trim() || null,
-        p_email:       form.storeEmail.trim() || null,
-        p_address:     form.address.trim(),
-        p_city:        form.city.trim(),
-        p_country:     form.country,
+        p_name:          form.storeName.trim(),
+        p_description:   form.description.trim() || null,
+        p_phone:         form.storePhone.trim() || null,
+        p_email:         form.storeEmail.trim() || null,
+        p_address:       form.address.trim(),
+        p_city:          form.city.trim(),
+        p_country:       form.country,
+        p_business_type: form.businessType,
       });
 
       if (error) throw error;
@@ -255,7 +299,7 @@ export default function AdminAuth() {
           Your store.<br />Your rules.
         </h1>
         <p className="text-slate-300 text-base leading-relaxed max-w-sm">
-          Create your supermarket on the platform, invite your team, and earn ICAN coin on every sale — all from one portal.
+          Set up a supermarket, hotel, boutique, or restaurant/café on the platform, invite your team, and earn ICAN coin on every sale — all from one portal.
         </p>
       </div>
 
@@ -294,13 +338,13 @@ export default function AdminAuth() {
       <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#064e3b,#0f172a_60%,#020617)] flex items-center justify-center px-4 py-10">
         <div className="max-w-md w-full space-y-6 text-center">
           <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-900/40">
-            <span className="text-4xl">🏪</span>
+            <span className="text-4xl">{typeInfo.emoji}</span>
           </div>
 
           <div className="text-white">
             <h1 className="text-3xl font-black mb-2">You're live!</h1>
             <p className="text-slate-300">
-              <span className="text-white font-semibold">{form.storeName}</span> is now on the platform.{' '}
+              <span className="text-white font-semibold">{form.storeName}</span> ({typeInfo.label}) is now on the platform.{' '}
               You earned{' '}
               <span className="text-emerald-400 font-bold">10 ICAN coins</span> for joining.
             </p>
@@ -445,23 +489,52 @@ export default function AdminAuth() {
               ))}
             </div>
 
-            {/* ── step 0: store details ── */}
+            {/* ── step 0: business type ── */}
             {step === 0 && (
               <div className="space-y-4">
                 <div className="mb-2">
-                  <h2 className="text-xl font-black text-slate-900">Create your supermarket</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Tell us about your store.</p>
+                  <h2 className="text-xl font-black text-slate-900">What are you setting up?</h2>
+                  <p className="text-sm text-slate-400 mt-0.5">Pick the kind of business you're launching.</p>
                 </div>
 
-                <Field label="Supermarket name *" icon={FiBriefcase}
-                  placeholder="e.g. City Fresh Market"
+                <div className="grid grid-cols-2 gap-3">
+                  {BUSINESS_TYPES.map(t => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => set('businessType', t.value)}
+                      className={`text-left rounded-2xl border-2 p-4 transition-all ${
+                        form.businessType === t.value
+                          ? 'border-emerald-400 bg-emerald-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1.5">{t.emoji}</div>
+                      <p className="font-bold text-sm text-slate-900">{t.label}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{t.blurb}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── step 1: store details ── */}
+            {step === 1 && (
+              <div className="space-y-4">
+                <div className="mb-2">
+                  <h2 className="text-xl font-black text-slate-900">Create your {typeInfo.label.toLowerCase()}</h2>
+                  <p className="text-sm text-slate-400 mt-0.5">Tell us about your {typeInfo.label.toLowerCase()}.</p>
+                </div>
+
+                <Field label={typeInfo.nameLabel} icon={FiBriefcase}
+                  placeholder={typeInfo.namePlaceholder}
                   value={form.storeName} onChange={e => set('storeName', e.target.value)}
                   error={errors.storeName} />
 
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</label>
                   <textarea
-                    placeholder="What do you sell? Fresh produce, electronics, groceries…"
+                    placeholder={typeInfo.descPlaceholder}
                     value={form.description}
                     onChange={e => set('description', e.target.value)}
                     rows={3}
@@ -480,8 +553,8 @@ export default function AdminAuth() {
               </div>
             )}
 
-            {/* ── step 1: location ── */}
-            {step === 1 && (
+            {/* ── step 2: location ── */}
+            {step === 2 && (
               <div className="space-y-4">
                 <div className="mb-2">
                   <h2 className="text-xl font-black text-slate-900">Where is your store?</h2>
@@ -513,8 +586,8 @@ export default function AdminAuth() {
               </div>
             )}
 
-            {/* ── step 2: review ── */}
-            {step === 2 && (
+            {/* ── step 3: review ── */}
+            {step === 3 && (
               <div className="space-y-4">
                 <div className="mb-2">
                   <h2 className="text-xl font-black text-slate-900">Review & launch</h2>
@@ -522,6 +595,7 @@ export default function AdminAuth() {
                 </div>
 
                 <div className="bg-slate-50 rounded-2xl p-4 divide-y divide-slate-100">
+                  <Row label="Business type" value={`${typeInfo.emoji} ${typeInfo.label}`} />
                   <Row label="Store name"   value={form.storeName} />
                   <Row label="Description"  value={form.description || '—'} />
                   <Row label="Phone"        value={form.storePhone || '—'} />
