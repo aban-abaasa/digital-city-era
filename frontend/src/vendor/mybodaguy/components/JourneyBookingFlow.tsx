@@ -605,6 +605,12 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
             <Loader2 className="animate-spin mx-auto" />
           ) : (
             <div className="space-y-3">
+              {bookingKind === 'ship' && journey.total_fare_ican > 0 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm text-orange-800 flex justify-between">
+                  <span>Charged automatically from your ICAN wallet</span>
+                  <span className="font-semibold">{journey.total_fare_ican.toFixed(4)} ICAN (UGX {journey.total_fare_ugx.toLocaleString()})</span>
+                </div>
+              )}
               {journey.legs.sort((a, b) => a.leg_order - b.leg_order).map((leg) => {
                 const rider = leg.ride?.rider;
                 return (
