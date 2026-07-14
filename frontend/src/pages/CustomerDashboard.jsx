@@ -44,6 +44,7 @@ import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
 import { customerService } from '../services/customerService';
 import EnhancedRideRequest from '../vendor/mybodaguy/components/EnhancedRideRequest';
+import JourneyBookingFlow from '../vendor/mybodaguy/components/JourneyBookingFlow';
 import CustomerSelfCheckout from '../vendor/mybodaguy/components/CustomerSelfCheckout';
 import IcanCoinBadge from '../components/IcanCoinBadge';
 import ICANWalletPage from './ICANWalletPage';
@@ -59,7 +60,7 @@ const CustomerDashboard = () => {
   // Overview — falls back to 'overview' for anything not a real tab id.
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const validTabs = ['overview', 'book-ride', 'shop', 'delivery', 'rewards', 'profile'];
+    const validTabs = ['overview', 'book-ride', 'journey', 'shop', 'delivery', 'rewards', 'profile'];
     return validTabs.includes(requested) ? requested : 'overview';
   });
   // Small phones: collapse the membership/stats/actions blocks behind a
@@ -279,6 +280,7 @@ const CustomerDashboard = () => {
   const ALL_TABS = [
     { id: 'overview', label: 'Overview', emoji: '🏠' },
     { id: 'book-ride', label: 'Book Ride', emoji: '🏍️' },
+    { id: 'journey', label: 'Book a Journey', emoji: '✈️' },
     { id: 'shop', label: 'Shop', emoji: '🛒' },
     { id: 'delivery', label: 'Delivery', emoji: '📦' },
     { id: 'rewards', label: 'Rewards', emoji: '🎁' },
@@ -1041,6 +1043,16 @@ const CustomerDashboard = () => {
             {activeTab === 'book-ride' && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <EnhancedRideRequest customerId={user?.id} fixedServiceType="ride" />
+              </div>
+            )}
+
+            {/* Book a Journey — boda to the airport, a real flight, and a
+                driver waiting at the destination. Calls BodaGo's own Vercel
+                deployment (cross-origin) since the Duffel/ICAN logic lives
+                there, not in this app — see vendor/mybodaguy/services/journeyService.ts */}
+            {activeTab === 'journey' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <JourneyBookingFlow customerId={user?.id} />
               </div>
             )}
 
