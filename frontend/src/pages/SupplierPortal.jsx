@@ -871,18 +871,33 @@ const SupplierPortal = () => {
       const validStatuses = ['sent_to_supplier', 'confirmed', 'approved', 'pending_approval', 'received', 'completed'];
       const filteredOrders = orders?.filter(o => validStatuses.includes(o.status)) || [];
 
+      // Real store name per order (not a generic hardcoded brand) — a
+      // supplier ships to many different stores, so this can't be one
+      // fixed name; batch-fetch the distinct ones this supplier actually
+      // has orders from.
+      const supermarketIds = [...new Set(filteredOrders.map(o => o.supermarket_id).filter(Boolean))];
+      let storeNameById = {};
+      if (supermarketIds.length > 0) {
+        const { data: stores } = await supabase
+          .from('supermarkets')
+          .select('id, name')
+          .in('id', supermarketIds);
+        storeNameById = Object.fromEntries((stores || []).map(s => [s.id, s.name]));
+      }
+
       const formatted = filteredOrders.map(order => {
         return {
           id: order.po_number || order.id,
           orderId: order.id,
+          storeName: storeNameById[order.supermarket_id] || 'Unknown Store',
           date: new Date(order.ordered_at).toLocaleDateString(),
           items: order.items?.length || 0,
           amount: parseFloat(order.total_amount) || 0,
-          status: order.status === 'sent_to_supplier' ? 'processing' : 
+          status: order.status === 'sent_to_supplier' ? 'processing' :
                   order.status === 'confirmed' ? 'confirmed' :
                   order.status === 'received' ? 'received' :
                   order.status === 'completed' ? 'completed' : 'processing',
-          expectedDelivery: order.expected_delivery_date ? 
+          expectedDelivery: order.expected_delivery_date ?
             new Date(order.expected_delivery_date).toLocaleDateString() : 'TBD',
           products: order.items?.map(item => item.product_name).join(', ') || 'Various items',
           priority: order.priority || 'normal',
@@ -2070,7 +2085,7 @@ const SupplierPortal = () => {
       {/* Pending Orders */}
       <div className="bg-white rounded-xl p-6 shadow-lg">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-gray-900">📦 Orders from FAREDEAL Manager Portal</h3>
+          <h3 className="text-xl font-bold text-gray-900">📦 Orders from Store Managers</h3>
           <button
             onClick={loadSupplierData}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-300 flex items-center space-x-2"
@@ -2084,7 +2099,7 @@ const SupplierPortal = () => {
             <div className="text-center py-12 bg-gray-50 rounded-lg">
               <FiPackage className="h-16 w-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-600 font-semibold">No pending orders</p>
-              <p className="text-gray-500 text-sm">Orders from FAREDEAL will appear here</p>
+              <p className="text-gray-500 text-sm">Orders from store managers will appear here</p>
             </div>
           ) : (
             pendingOrders.map((order) => (
@@ -2104,6 +2119,7 @@ const SupplierPortal = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-sm md:text-base text-gray-900">{order.id}</h4>
+                          <p className="text-xs md:text-sm font-semibold text-blue-700 mt-0.5">🏬 {order.storeName}</p>
                           <p className="text-xs md:text-sm text-gray-600 mt-0.5">{order.items} items • {order.date}</p>
                         </div>
                       </div>
@@ -3088,7 +3104,9 @@ const SupplierPortal = () => {
                   <h2 className="text-xl font-bold flex items-center gap-2">
                     <FiTruck className="h-6 w-6" /> Choose a Delivery Vehicle
                   </h2>
-                  <p className="text-green-100 mt-1 text-sm">What fits this shipment best?</p>
+                  <p className="text-green-100 mt-1 text-sm">
+                    For 🏬 {pendingOrders.find(o => o.orderId === vehicleChoiceOrderId)?.storeName || 'this store'} — what fits this shipment best?
+                  </p>
                 </div>
                 <button
                   onClick={() => setVehicleChoiceOrderId(null)}

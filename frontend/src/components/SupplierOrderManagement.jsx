@@ -15,7 +15,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import supplierOrdersService from '../services/supplierOrdersService';
-import { dispatchDeliveryForPurchaseOrder } from '../services/deliveryDispatchService';
+import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
 import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
 import OrderPaymentTracker from './OrderPaymentTracker';
@@ -79,6 +79,12 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
   });
   const [approvalIcanBalance, setApprovalIcanBalance] = useState(null);
   const [approvalIcanBalanceLoading, setApprovalIcanBalanceLoading] = useState(false);
+  // Manager's own vehicle choice at approval time (Car/Van/Truck, or Ship
+  // when the route genuinely needs a sea leg) — overrides whatever the
+  // supplier picked earlier when set. null = leave the supplier's choice
+  // (or full automatic default) untouched.
+  const [approvalVehicleType, setApprovalVehicleType] = useState(null);
+  const [approvalShipOptionAvailable, setApprovalShipOptionAvailable] = useState(false);
 
   // Load the manager's live ICAN balance when they switch to the IcanEra Wallet method
   // in the order-approval modal
@@ -251,6 +257,9 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
       notes: ''
     });
     setApprovalIcanBalance(null);
+    setApprovalVehicleType(null);
+    setApprovalShipOptionAvailable(false);
+    checkRouteNeedsSeaLeg(order).then(setApprovalShipOptionAvailable);
     setShowApprovalModal(true);
   };
   
@@ -307,6 +316,9 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
           approved_by: managerId,
           approved_at: new Date().toISOString(),
           notes: approvalData.notes || selectedOrderData.notes,
+          // Manager's choice at approval wins over whatever the supplier
+          // picked earlier; leaving it null keeps the supplier's choice.
+          ...(approvalVehicleType ? { preferred_vehicle_type: approvalVehicleType } : {}),
         })
         .eq('id', approvalOrderId);
 
@@ -399,6 +411,8 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         notes: ''
       });
       setApprovalIcanBalance(null);
+      setApprovalVehicleType(null);
+      setApprovalShipOptionAvailable(false);
       loadAllData(); // Reload data
     } catch (err) {
       console.error('Error approving order:', err);
@@ -1033,6 +1047,47 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Delivery Vehicle Choice — manager's own choice at approval
+                time, overriding whatever the supplier picked earlier.
+                Ship only appears when this specific route genuinely needs
+                a sea leg (checked via mbg_route_needs_sea_leg). No "Plane"
+                option: Duffel only books passenger flights, there's no
+                credentialed air-freight API in this project, so a cargo
+                Plane choice would be fake. */}
+            <div className="bg-purple-50 rounded-lg p-4 border-2 border-purple-200">
+              <h3 className="font-bold text-gray-800 mb-1">🚚 Delivery Vehicle</h3>
+              <p className="text-xs text-gray-600 mb-3">
+                {selectedOrder.preferred_vehicle_type
+                  ? `Supplier requested: ${selectedOrder.preferred_vehicle_type}. Pick a different one to override it.`
+                  : 'Choose what fits this shipment, or leave unset to let dispatch decide automatically.'}
+              </p>
+              <div className={`grid ${approvalShipOptionAvailable ? 'grid-cols-4' : 'grid-cols-3'} gap-2`}>
+                {[
+                  { value: 'car', label: 'Car', emoji: '🚗' },
+                  { value: 'van', label: 'Van', emoji: '🚐' },
+                  { value: 'truck', label: 'Truck', emoji: '🚚' },
+                  ...(approvalShipOptionAvailable ? [{ value: 'ship', label: 'Ship', emoji: '🚢' }] : []),
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setApprovalVehicleType(approvalVehicleType === opt.value ? null : opt.value)}
+                    className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all ${
+                      approvalVehicleType === opt.value
+                        ? 'border-purple-600 bg-purple-100'
+                        : 'border-gray-200 hover:border-purple-400 hover:bg-purple-50'
+                    }`}
+                  >
+                    <span className="text-2xl">{opt.emoji}</span>
+                    <span className="text-sm font-semibold text-gray-800">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+              {approvalShipOptionAvailable && (
+                <p className="text-xs text-blue-700 mt-2">🌊 This route crosses into a different trade bloc — shipping is available.</p>
+              )}
             </div>
 
             {/* Payment Section */}

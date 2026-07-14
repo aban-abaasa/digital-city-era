@@ -23,7 +23,7 @@ import { supabase } from './supabase';
  * them, same as every ordinary BodaGo ride), so this is a data-completeness
  * gap to close during supplier/store onboarding, not something to fake here.
  */
-const resolvePickupAndDropoff = async (purchaseOrder) => {
+export const resolvePickupAndDropoff = async (purchaseOrder) => {
   const { data: supermarket } = await supabase
     .from('supermarkets')
     .select('name, address, latitude, longitude, country')
@@ -61,6 +61,28 @@ const resolvePickupAndDropoff = async (purchaseOrder) => {
     dropoffLocation: supermarket.address || supermarket.name || 'Store',
     dropoffCountry: supermarket.country || 'Uganda'
   };
+};
+
+/**
+ * Lets the manager's approval screen show a "Ship" vehicle option only when
+ * it's real — i.e. only for a route mbg_route_needs_sea_leg actually
+ * classifies as cross-bloc (same coarse trade-bloc heuristic dispatch
+ * itself uses, so the option shown always matches what dispatch will do).
+ * Returns false (never show Ship) if either side isn't geocoded/known yet.
+ */
+export const checkRouteNeedsSeaLeg = async (purchaseOrder) => {
+  const locations = await resolvePickupAndDropoff(purchaseOrder);
+  if (!locations) return false;
+
+  const { data, error } = await supabase.rpc('mbg_route_needs_sea_leg', {
+    p_origin_country: locations.pickupCountry,
+    p_destination_country: locations.dropoffCountry
+  });
+  if (error) {
+    console.error('checkRouteNeedsSeaLeg: RPC error:', error);
+    return false;
+  }
+  return !!data;
 };
 
 /**
