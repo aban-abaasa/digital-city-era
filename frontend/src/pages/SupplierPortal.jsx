@@ -38,6 +38,10 @@ const SupplierPortal = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  // Order ID pending a vehicle-type choice — shown right after "Confirm
+  // Order" instead of dispatching automatically with no supplier input.
+  const [vehicleChoiceOrderId, setVehicleChoiceOrderId] = useState(null);
+  const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [expandedPaymentId, setExpandedPaymentId] = useState(null);
   const [supplierProfile, setSupplierProfile] = useState({
@@ -1992,17 +1996,19 @@ const SupplierPortal = () => {
     </div>
   );
 
-  // Handle order confirmation
-  const handleConfirmOrder = async (orderId) => {
-    if (!confirm('Confirm this order? This will notify FAREDEAL that you accept the order.')) return;
-
+  // Handle order confirmation — now takes the vehicle type the supplier
+  // picked in the choice modal (see vehicleChoiceOrderId) instead of
+  // leaving vehicle type entirely automatic at dispatch time.
+  const handleConfirmOrder = async (orderId, vehicleType) => {
+    setConfirmingOrder(true);
     try {
-      console.log('🔵 Confirming order with ID:', orderId);
-      
+      console.log('🔵 Confirming order with ID:', orderId, 'vehicle:', vehicleType);
+
       const { data, error } = await supabase
         .from('purchase_orders')
         .update({
           status: 'confirmed',
+          preferred_vehicle_type: vehicleType,
           updated_at: new Date().toISOString()
         })
         .eq('id', orderId)
@@ -2015,11 +2021,14 @@ const SupplierPortal = () => {
       }
 
       console.log('✅ Order confirmed successfully:', data);
-      alert('✅ Order confirmed successfully!');
+      alert(`✅ Order confirmed with ${vehicleType} requested for delivery!`);
+      setVehicleChoiceOrderId(null);
       loadSupplierData(); // Reload data
     } catch (err) {
       console.error('Error confirming order:', err);
       alert('Failed to confirm order: ' + err.message);
+    } finally {
+      setConfirmingOrder(false);
     }
   };
 
@@ -2205,7 +2214,7 @@ const SupplierPortal = () => {
                     {order.status === 'processing' && (
                       <div className="flex items-center space-x-3 pt-4 border-t">
                         <button
-                          onClick={() => handleConfirmOrder(order.orderId)}
+                          onClick={() => setVehicleChoiceOrderId(order.orderId)}
                           className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-all duration-300 font-semibold flex items-center justify-center space-x-2"
                         >
                           <FiCheckCircle className="h-5 w-5" />
@@ -3066,6 +3075,54 @@ const SupplierPortal = () => {
           // brand: supplierProfile.name
         }}
       />
+
+      {/* Vehicle Choice Modal — shown right when confirming an order, so
+          the supplier picks what actually fits the shipment instead of
+          dispatch deciding automatically with no input from them. */}
+      {vehicleChoiceOrderId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-6 text-white rounded-t-2xl">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <FiTruck className="h-6 w-6" /> Choose a Delivery Vehicle
+                  </h2>
+                  <p className="text-green-100 mt-1 text-sm">What fits this shipment best?</p>
+                </div>
+                <button
+                  onClick={() => setVehicleChoiceOrderId(null)}
+                  disabled={confirmingOrder}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <FiX className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 grid grid-cols-3 gap-3">
+              {[
+                { value: 'car', label: 'Car', emoji: '🚗', hint: 'Small / light' },
+                { value: 'van', label: 'Van', emoji: '🚐', hint: 'Medium' },
+                { value: 'truck', label: 'Truck', emoji: '🚚', hint: 'Bulk / heavy' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  disabled={confirmingOrder}
+                  onClick={() => handleConfirmOrder(vehicleChoiceOrderId, opt.value)}
+                  className="flex flex-col items-center gap-1 p-4 rounded-xl border-2 border-gray-200 hover:border-green-500 hover:bg-green-50 transition-all disabled:opacity-50"
+                >
+                  <span className="text-3xl">{opt.emoji}</span>
+                  <span className="font-semibold text-gray-800">{opt.label}</span>
+                  <span className="text-xs text-gray-500">{opt.hint}</span>
+                </button>
+              ))}
+            </div>
+            {confirmingOrder && (
+              <p className="text-center text-sm text-gray-500 pb-4">Confirming order…</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Profile Modal */}
       {isEditingProfile && (

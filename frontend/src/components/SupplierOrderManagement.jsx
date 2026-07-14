@@ -15,6 +15,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import supplierOrdersService from '../services/supplierOrdersService';
+import { dispatchDeliveryForPurchaseOrder } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
 import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
 import OrderPaymentTracker from './OrderPaymentTracker';
@@ -314,6 +315,22 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         alert(`❌ Error: ${approveError.message}`);
         return;
       }
+
+      // Step 2b: Auto-dispatch a delivery vehicle (BodaGo's matching engine,
+      // extended with van/truck/ship vehicle types — see
+      // deliveryDispatchService.js). Best-effort: never blocks the approval
+      // that already succeeded above. A cross-bloc route (e.g. Uganda-
+      // Nigeria) dispatches a 3-leg road->sea->road journey instead of a
+      // single ride, so there's no single fare/rideId to show yet.
+      dispatchDeliveryForPurchaseOrder(approvalOrderId).then((result) => {
+        if (result.dispatched && result.viaSea) {
+          toast.success('🚢 Cross-border shipment dispatched — road leg to the departure port is underway.');
+        } else if (result.dispatched) {
+          toast.success(`🚚 Delivery vehicle dispatched automatically (fare: UGX ${result.fare?.toLocaleString?.() || result.fare})`);
+        } else {
+          console.log('ℹ️ Auto-dispatch skipped:', result.reason);
+        }
+      });
 
       // Step 3: Record any payment made at approval time — "Cash Paid Now"
       // and the legacy "Initial Payment" field both represent money paid
