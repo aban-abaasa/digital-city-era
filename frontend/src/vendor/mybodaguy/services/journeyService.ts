@@ -12,7 +12,7 @@
  */
 import { supabase } from './supabaseClient';
 
-const MBG_API_BASE_URL = import.meta.env.VITE_MBG_API_BASE_URL || 'http://localhost:5177';
+const MBG_API_BASE_URL = import.meta.env.VITE_MBG_API_BASE_URL || 'https://bodagoera.icanera.space';
 
 export interface FlightOffer {
   offerId: string;
