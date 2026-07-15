@@ -9,6 +9,7 @@ import AdminProtectedRoute from '@/components/AdminProtectedRoute';
 import RoleProtectedRoute from '@/components/RoleProtectedRoute';
 import ClockSkewNotification from '@/components/ClockSkewNotification';
 import ChatWidget from '@/components/ChatWidget';
+import CountryGate from '@/components/CountryGate';
 
 // Pages and Components
 import AdminPortal from '@/pages/AdminPortal';
@@ -22,6 +23,7 @@ import SupplierPortal from '@/pages/SupplierPortal';
 import SupplierAuth from '@/pages/SupplierAuth';
 import SupermartkeraLanding from '@/pages/SupermartkeraLanding';
 import AdminAuth from '@/pages/AdminAuth';
+import Register from '@/pages/Register';
 import ApplyPage from '@/pages/ApplyPage';
 import AuthCallback from '@/pages/AuthCallback';
 import PaymentDashboard from '@/components/PaymentDashboard';
@@ -156,6 +158,7 @@ function App() {
           <AppProvider>
             <ClockSkewNotification />
             <div className={`app-container ${isAdmin ? 'admin-mode' : 'standard-mode'}`}>
+              <CountryGate>
               <Routes>
               {/* Main landing with portal selection - but check for OAuth callback first */}
               <Route 
@@ -171,6 +174,7 @@ function App() {
               />
 
               <Route path="/login" element={<CustomerLogin />} />
+              <Route path="/register" element={<Register />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/customer-login" element={<Navigate to="/login" replace />} />
               <Route path="/dashboard" element={<Navigate to="/customer-dashboard" replace />} />
@@ -275,6 +279,7 @@ function App() {
                 } 
               />
               </Routes>
+              </CountryGate>
 
               <ChatWidget />
 

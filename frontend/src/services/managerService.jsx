@@ -43,7 +43,8 @@ export const managerService = {
             data: {
               full_name: managerData.full_name,
               role: 'manager',
-              employee_id: manager.id
+              employee_id: manager.id,
+              country: managerData.country
             },
             emailRedirectTo: window.location.origin
           }

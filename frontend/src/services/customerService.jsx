@@ -12,7 +12,8 @@ export const customerService = {
         options: {
           data: {
             full_name: customerData.full_name,
-            phone: customerData.phone
+            phone: customerData.phone,
+            country: customerData.country
           }
         }
       });

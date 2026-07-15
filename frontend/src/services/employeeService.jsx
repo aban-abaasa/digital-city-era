@@ -40,7 +40,8 @@ export const employeeService = {
         options: {
           data: {
             full_name: employeeData.full_name,
-            role: employeeData.role
+            role: employeeData.role,
+            country: employeeData.country
           }
         }
       });

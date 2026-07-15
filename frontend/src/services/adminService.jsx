@@ -18,7 +18,8 @@ export const adminService = {
             role: 'admin',
             phone: adminData.phone || '',
             admin_id: adminData.admin_id || `ADM-${Date.now()}`,
-            department: 'administration'
+            department: 'administration',
+            country: adminData.country
           },
           // Disable email confirmation for admin accounts
           emailRedirectTo: window.location.origin

@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { employeeService } from '../services/employeeService';
-import { supplierService } from '../services/supplierService';
-import { managerService } from '../services/managerService';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { customerService } from '../services/customerService.jsx';
+import { employeeService } from '../services/employeeService.jsx';
+import { supplierService } from '../services/supplierService.jsx';
+import { managerService } from '../services/managerService.jsx';
+import { adminService } from '../services/adminService.jsx';
+import { COUNTRY_NAMES } from '../data/countries';
 import { toast } from 'react-toastify';
 import './styles/Register.css';
 
 const Register = () => {
-  const [userType, setUserType] = useState('customer');
+  const [searchParams] = useSearchParams();
+  const initialTab = ['customer', 'employee', 'manager', 'supplier', 'admin'].includes(searchParams.get('tab'))
+    ? searchParams.get('tab')
+    : 'customer';
+  const [userType, setUserType] = useState(initialTab);
   const [formData, setFormData] = useState({
     // Common fields
     email: '',
     password: '',
     confirmPassword: '',
     phone: '',
-    
+    country: '',
+
     // Customer fields
     full_name: '',
     date_of_birth: '',
@@ -43,13 +50,11 @@ const Register = () => {
     supplier_code: '',
     tax_id: '',
     bank_account: '',
-    payment_terms: 'Net 30',
-    country: 'Uganda'
+    payment_terms: 'Net 30'
   });
-  
+
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const { register, employeeRegister, supplierRegister, managerRegister, adminRegister } = useAuth();
   const navigate = useNavigate();
 
   // Real-time field validation
@@ -103,7 +108,8 @@ const Register = () => {
         email: prev.email,
         password: prev.password,
         confirmPassword: prev.confirmPassword,
-        phone: prev.phone
+        phone: prev.phone,
+        country: prev.country
       };
       
       // Keep only common fields and reset role-specific fields
@@ -129,8 +135,7 @@ const Register = () => {
         supplier_code: '',
         tax_id: '',
         bank_account: '',
-        payment_terms: 'Net 30',
-        country: 'Uganda'
+        payment_terms: 'Net 30'
       };
     });
   };
@@ -138,7 +143,7 @@ const Register = () => {
   // Role-specific validation schemas
   const validationSchemas = {
     customer: {
-      required: ['email', 'password', 'confirmPassword', 'phone', 'full_name', 'date_of_birth', 'address', 'city'],
+      required: ['email', 'password', 'confirmPassword', 'phone', 'country', 'full_name', 'date_of_birth', 'address', 'city'],
       custom: {
         full_name: (value) => !value ? 'Full name is required' : null,
         date_of_birth: (value) => !value ? 'Date of birth is required' : null,
@@ -147,7 +152,7 @@ const Register = () => {
       }
     },
     employee: {
-      required: ['email', 'password', 'confirmPassword', 'phone', 'full_name', 'employee_id', 'department', 'role'],
+      required: ['email', 'password', 'confirmPassword', 'phone', 'country', 'full_name', 'employee_id', 'department', 'role'],
       custom: {
         full_name: (value) => !value ? 'Full name is required' : null,
         employee_id: (value) => !value ? 'Employee ID is required' : null,
@@ -157,7 +162,7 @@ const Register = () => {
       }
     },
     manager: {
-      required: ['email', 'password', 'confirmPassword', 'phone', 'full_name', 'employee_id', 'department', 'manager_level', 'access_level'],
+      required: ['email', 'password', 'confirmPassword', 'phone', 'country', 'full_name', 'employee_id', 'department', 'manager_level', 'access_level'],
       custom: {
         full_name: (value) => !value ? 'Full name is required' : null,
         employee_id: (value) => !value ? 'Manager ID is required' : null,
@@ -168,7 +173,7 @@ const Register = () => {
       }
     },
     admin: {
-      required: ['email', 'password', 'confirmPassword', 'phone', 'full_name', 'admin_id'],
+      required: ['email', 'password', 'confirmPassword', 'phone', 'country', 'full_name', 'admin_id'],
       custom: {
         full_name: (value) => !value ? 'Full name is required' : null,
         admin_id: (value) => !value ? 'Admin ID is required' : null,
@@ -181,7 +186,7 @@ const Register = () => {
       }
     },
     supplier: {
-      required: ['email', 'password', 'confirmPassword', 'phone', 'company_name', 'contact_person', 'supplier_code', 'address', 'city'],
+      required: ['email', 'password', 'confirmPassword', 'phone', 'country', 'company_name', 'contact_person', 'supplier_code', 'address', 'city'],
       custom: {
         company_name: (value) => !value ? 'Company name is required' : null,
         contact_person: (value) => !value ? 'Contact person is required' : null,
@@ -221,7 +226,8 @@ const Register = () => {
       if (!value) return 'Phone number is required';
       const phoneRegex = /^\+?[\d\s\-\(\)]+$/;
       return !phoneRegex.test(value) ? 'Invalid phone number format' : null;
-    }
+    },
+    country: (value) => !value ? 'Country is required' : null
   };
 
   const validateForm = () => {
@@ -301,19 +307,20 @@ const Register = () => {
     try {
       if (userType === 'customer') {
         // Direct registration for customers
-        await register({
+        await customerService.register({
           email: formData.email,
           password: formData.password,
           phone: formData.phone,
           full_name: formData.full_name,
           date_of_birth: formData.date_of_birth,
           address: formData.address,
-          city: formData.city
+          city: formData.city,
+          country: formData.country
         });
-        
+
         toast.success('Account created successfully! Welcome!');
         navigate('/customer');
-        
+
       } else if (userType === 'employee') {
         // Employee registration requires manager approval
         const result = await employeeService.register({
@@ -324,20 +331,21 @@ const Register = () => {
           employee_id: formData.employee_id,
           department: formData.department,
           role: formData.role,
-          hire_date: formData.hire_date || new Date().toISOString().split('T')[0]
+          hire_date: formData.hire_date || new Date().toISOString().split('T')[0],
+          country: formData.country
         });
-        
+
         toast.success('Employee registration submitted! Please wait for manager approval.');
-        navigate('/login', { 
-          state: { 
+        navigate('/login', {
+          state: {
             message: 'Your registration is pending manager approval. You will be notified once approved.',
             userType: 'employee'
           }
         });
-        
+
       } else if (userType === 'manager') {
         // Manager registration with immediate approval for development
-        const result = await managerRegister({
+        const result = await managerService.register({
           email: formData.email,
           password: formData.password,
           phone: formData.phone,
@@ -347,25 +355,27 @@ const Register = () => {
           manager_level: formData.manager_level,
           access_level: formData.access_level,
           hire_date: formData.hire_date || new Date().toISOString().split('T')[0],
-          salary: formData.salary
+          salary: formData.salary,
+          country: formData.country
         });
-        
+
         if (result.success) {
           toast.success('Manager account created successfully! Welcome to FAREDEAL.');
           navigate('/manager-portal');
         }
-        
+
       } else if (userType === 'admin') {
         // Admin registration with immediate approval for development
-        const result = await adminRegister({
+        const result = await adminService.register({
           email: formData.email,
           password: formData.password,
           phone: formData.phone,
           full_name: formData.full_name,
           admin_id: formData.admin_id,
-          department: formData.admin_department || 'administration'
+          department: formData.admin_department || 'administration',
+          country: formData.country
         });
-        
+
         if (result.success) {
           toast.success('Admin account created successfully! Welcome to FAREDEAL Administration.');
           
@@ -748,36 +758,18 @@ const Register = () => {
         {errors.address && <span className="error-text">{errors.address}</span>}
       </div>
 
-      <div className="form-row">
-        <div className="form-group">
-          <label htmlFor="city">City *</label>
-          <input
-            type="text"
-            id="city"
-            name="city"
-            value={formData.city}
-            onChange={handleInputChange}
-            className={errors.city ? 'error' : ''}
-            placeholder="Enter city"
-          />
-          {errors.city && <span className="error-text">{errors.city}</span>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="country">Country</label>
-          <select
-            id="country"
-            name="country"
-            value={formData.country}
-            onChange={handleInputChange}
-          >
-            <option value="Uganda">Uganda</option>
-            <option value="Kenya">Kenya</option>
-            <option value="Tanzania">Tanzania</option>
-            <option value="Rwanda">Rwanda</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
+      <div className="form-group">
+        <label htmlFor="city">City *</label>
+        <input
+          type="text"
+          id="city"
+          name="city"
+          value={formData.city}
+          onChange={handleInputChange}
+          className={errors.city ? 'error' : ''}
+          placeholder="Enter city"
+        />
+        {errors.city && <span className="error-text">{errors.city}</span>}
       </div>
 
       <div className="verification-notice">
@@ -938,6 +930,25 @@ const Register = () => {
                 placeholder="Enter your phone number"
               />
               {errors.phone && <span className="error-text">{errors.phone}</span>}
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="country">Country *</label>
+              <select
+                id="country"
+                name="country"
+                value={formData.country}
+                onChange={handleInputChange}
+                className={errors.country ? 'error' : ''}
+              >
+                <option value="">Select your country</option>
+                {COUNTRY_NAMES.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              {errors.country && <span className="error-text">{errors.country}</span>}
             </div>
           </div>
 

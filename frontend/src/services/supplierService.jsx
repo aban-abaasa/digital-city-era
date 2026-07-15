@@ -40,7 +40,8 @@ export const supplierService = {
         options: {
           data: {
             company_name: supplierData.company_name,
-            contact_person: supplierData.contact_person
+            contact_person: supplierData.contact_person,
+            country: supplierData.country
           }
         }
       });
