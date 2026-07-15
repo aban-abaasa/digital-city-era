@@ -1141,6 +1141,11 @@ const DevDashboard = ({ onLogout }) => {
   const [subs,           setSubs]           = useState([]);
   const [subsReady,      setSubsReady]      = useState(false);
 
+  // Add-operator control (System tab)
+  const [newOperatorEmail, setNewOperatorEmail] = useState('');
+  const [addingOperator,   setAddingOperator]   = useState(false);
+  const [addOperatorMsg,   setAddOperatorMsg]   = useState(null); // { ok: bool, text: string }
+
   // ── Fetch ─────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -1266,6 +1271,24 @@ const DevDashboard = ({ onLogout }) => {
       await supabase.rpc('dev_grant_ican_bonus', { target_user_id: userId, bonus_amount: amount });
       await fetchAll();
     } catch (e) { console.error('Grant bonus error:', e); }
+  };
+
+  // ── Add dev operator ─────────────────────────────────────────────
+  const addOperator = async () => {
+    const email = newOperatorEmail.trim();
+    if (!email) return;
+    setAddingOperator(true);
+    setAddOperatorMsg(null);
+    try {
+      const { error } = await supabase.rpc('add_dev_operator', { new_email: email });
+      if (error) throw error;
+      setAddOperatorMsg({ ok: true, text: `${email} can now access the dev panel.` });
+      setNewOperatorEmail('');
+    } catch (e) {
+      setAddOperatorMsg({ ok: false, text: e.message || 'Failed to add operator.' });
+    } finally {
+      setAddingOperator(false);
+    }
   };
 
   // ── Computed ──────────────────────────────────────────────────────
@@ -1593,14 +1616,47 @@ const DevDashboard = ({ onLogout }) => {
 
         {/* ── SYSTEM ── */}
         {tab === 'system' && (
-          <SystemTab
-            systemTotals={systemTotals}
-            supermarts={supermarts}
-            smMembersMap={smMembersMap}
-            wallets={wallets}
-            subs={subs}
-            p={p}
-          />
+          <>
+            <SystemTab
+              systemTotals={systemTotals}
+              supermarts={supermarts}
+              smMembersMap={smMembersMap}
+              wallets={wallets}
+              subs={subs}
+              p={p}
+            />
+
+            {/* Dev operators — grant another account dev-panel access */}
+            <div className={`rounded-2xl border p-5 ${p.card}`}>
+              <p className={`mb-3 text-xs font-semibold uppercase tracking-wider ${p.muted}`}>Dev Operators</p>
+              <p className={`mb-4 text-xs ${p.muted}`}>
+                Grant another Supabase account access to this dev panel. They must already have
+                an account (any role) on this project — this only adds them to the allowlist.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="email"
+                  value={newOperatorEmail}
+                  onChange={(e) => setNewOperatorEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addOperator(); }}
+                  placeholder="developer@example.com"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm ${p.card}`}
+                />
+                <button
+                  onClick={addOperator}
+                  disabled={addingOperator || !newOperatorEmail.trim()}
+                  className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-2 text-xs font-semibold text-violet-400 hover:bg-violet-400/20 transition disabled:opacity-40"
+                >
+                  {addingOperator ? 'Adding…' : 'Grant dev access'}
+                </button>
+              </div>
+              {addOperatorMsg && (
+                <p className={`mt-2 text-xs ${addOperatorMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {addOperatorMsg.text}
+                </p>
+              )}
+            </div>
+          </>
         )}
 
       </main>

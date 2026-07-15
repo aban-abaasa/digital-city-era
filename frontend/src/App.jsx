@@ -15,7 +15,6 @@ import CountryGate from '@/components/CountryGate';
 import AdminPortal from '@/pages/AdminPortal';
 import CustomerLogin from '@/pages/CustomerLogin';
 import EmployeeAuth from '@/pages/EmployeeAuth';
-import UnifiedAuth from '@/pages/UnifiedAuth';
 import ManagerPortal from '@/pages/ManagerPortal';
 import CashierPortal from '@/pages/CushierPortal';
 import EmployeePortal from '@/pages/cashier portal';
@@ -179,20 +178,31 @@ function App() {
               <Route path="/customer-login" element={<Navigate to="/login" replace />} />
               <Route path="/dashboard" element={<Navigate to="/customer-dashboard" replace />} />
               
-              {/* Admin authentication routes - always accessible */}
-              <Route path="/admin-login" element={<UnifiedAuth />} />
+              {/* Admin authentication routes - always accessible.
+                  Sign-in is single (one account, one /login) per the
+                  supermarkera account model — role differences come from
+                  the `role` column an admin sets, not a separate login
+                  page per role. UnifiedAuth.jsx duplicated /login's whole
+                  flow (including the same missing-signInWithPassword bug,
+                  fixed 2026-07-15) for no real reason; these routes now
+                  just redirect to the one real sign-in/signup surface. */}
+              <Route path="/admin-login" element={<Navigate to="/login" replace />} />
               <Route path="/admin-auth" element={<AdminAuth />} />
               <Route path="/admin-setup" element={<AdminAuth />} />
-              <Route path="/admin-signup" element={<UnifiedAuth />} />
+              <Route path="/admin-signup" element={<Navigate to="/register?tab=admin" replace />} />
               <Route path="/admin" element={<Navigate to="/admin-login" replace />} />
-              
-              {/* Shared authentication routes */}
-              <Route path="/manager-login" element={<UnifiedAuth />} />
-              <Route path="/manager-auth" element={<UnifiedAuth />} />
-              <Route path="/manager-signup" element={<UnifiedAuth />} />
-              <Route path="/cashier-login" element={<UnifiedAuth />} />
-              <Route path="/cashier-auth" element={<UnifiedAuth />} />
-              <Route path="/cashier-signup" element={<UnifiedAuth />} />
+
+              {/* Shared authentication routes — see note above; managers
+                  and cashiers don't self-register at all (an admin
+                  promotes an existing account), so their old "signup"
+                  routes go to the generic /register rather than a
+                  nonexistent manager/cashier tab. */}
+              <Route path="/manager-login" element={<Navigate to="/login" replace />} />
+              <Route path="/manager-auth" element={<Navigate to="/login" replace />} />
+              <Route path="/manager-signup" element={<Navigate to="/register" replace />} />
+              <Route path="/cashier-login" element={<Navigate to="/login" replace />} />
+              <Route path="/cashier-auth" element={<Navigate to="/login" replace />} />
+              <Route path="/cashier-signup" element={<Navigate to="/register" replace />} />
               <Route path="/employee-login" element={<EmployeeAuth />} />
               <Route path="/employee-auth" element={<EmployeeAuth />} />
               <Route path="/employee-signup" element={<EmployeeAuth />} />

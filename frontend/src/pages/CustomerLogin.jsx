@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { 
@@ -60,7 +60,24 @@ const CustomerLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
 
-  const getSignedInRoute = (signedInUser) => {
+  // Checks dev_operators (is_dev_operator()) before the normal role routing
+  // below — role is unrelated to dev-panel access (see DevPanel.jsx), so a
+  // dev operator with role='customer' would otherwise land on
+  // /customer-dashboard with no way to discover /dev-panel exists.
+  // Race against a timeout, not just try/catch: a REJECTED rpc() call is
+  // caught below, but a HUNG one (e.g. a slow/recursive RLS check) is a
+  // pending promise forever, not a rejection — without the timeout this
+  // would never fall through to the normal role routing at all.
+  const getSignedInRoute = async (signedInUser) => {
+    try {
+      const isDevCheck = supabase.rpc('is_dev_operator');
+      const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: false }), 3000));
+      const { data: isDev } = await Promise.race([isDevCheck, timeout]);
+      if (isDev) return '/dev-panel';
+    } catch {
+      // RPC missing/failed — fall through to normal role routing
+    }
+
     const role = signedInUser?.role?.toLowerCase?.() || signedInUser?.role || 'guest';
 
     if (role === 'admin') return '/admin-portal';
@@ -71,10 +88,24 @@ const CustomerLogin = () => {
     return '/customer-dashboard';
   };
 
+  // `user` here comes from AuthContext, which trusts a localStorage cache
+  // (mockData.jsx) that can go stale and disagree with the real Supabase
+  // session — see RoleProtectedRoute.jsx's circuit-breaker comment. If we
+  // navigate away based on a stale `user` with no real session behind it,
+  // whatever protected route we land on bounces straight back to /login,
+  // which remounts this component and does it again — forever (this is
+  // what caused the "blinking nonstop" bug). Verifying a real session
+  // exists first stops the loop at its source instead of just guarding
+  // against firing navigate() twice within one mount.
+  const hasCheckedRef = useRef(false);
   useEffect(() => {
-    if (!authLoading && user) {
-      navigate(getSignedInRoute(user), { replace: true });
-    }
+    if (authLoading || !user || hasCheckedRef.current) return;
+    hasCheckedRef.current = true;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      navigate(await getSignedInRoute(user), { replace: true });
+    })();
   }, [authLoading, navigate, user]);
 
   useEffect(() => {
@@ -121,7 +152,7 @@ const CustomerLogin = () => {
           const displayName = session.user.user_metadata?.full_name || session.user.email || 'guest';
           const signedInUser = await login(session.user.email || 'guest');
           toast.success(`Welcome, ${displayName}.`);
-          navigate(getSignedInRoute(signedInUser), { replace: true });
+          navigate(await getSignedInRoute(signedInUser), { replace: true });
           return;
         }
 
@@ -173,10 +204,8 @@ const CustomerLogin = () => {
     setIsLoading(true);
 
     try {
-      // Simplified login - just use the email/phone as the login identifier
       const loginIdentifier = loginMethod === 'email' ? loginData.email : loginData.phone;
 
-      // Demo mode - just need any input
       if (!loginIdentifier) {
         toast.info('Enter your email or phone number to sign in.', {
           position: "top-right",
@@ -186,19 +215,40 @@ const CustomerLogin = () => {
         return;
       }
 
-      // Use the simplified login function
+      if (!loginData.password) {
+        toast.info('Enter your password to sign in.', {
+          position: "top-right",
+          autoClose: 5000
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // This never actually verified the password before — it went
+      // straight to login(loginIdentifier), which only reuses whatever
+      // Supabase session already happens to exist (or silently falls back
+      // to fake mock data if none does — see mockData.jsx's login()).
+      // Typing a password did nothing; only a pre-existing session (e.g.
+      // from signup or Google) let sign-in "work" at all.
+      const { error: signInError } = await supabase.auth.signInWithPassword(
+        loginMethod === 'email'
+          ? { email: loginIdentifier, password: loginData.password }
+          : { phone: loginIdentifier, password: loginData.password }
+      );
+      if (signInError) throw signInError;
+
       const signedInUser = await login(loginIdentifier);
-      
+
       toast.success('🎉 Welcome back!', {
         position: "top-right",
         autoClose: 2000
       });
-      
-      navigate(getSignedInRoute(signedInUser), { replace: true });
-      
+
+      navigate(await getSignedInRoute(signedInUser), { replace: true });
+
     } catch (error) {
-      console.info('Login hint:', error);
-      toast.info('Use your account email or phone number to sign in.', {
+      console.error('Login error:', error);
+      toast.error(error.message || 'Could not sign in. Check your email and password.', {
         position: "top-center",
         autoClose: 5000
       });

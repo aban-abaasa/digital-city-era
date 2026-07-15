@@ -4,7 +4,24 @@ import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
-const getSignedInRoute = (signedInUser) => {
+// Checks dev_operators (is_dev_operator()) before the normal role routing
+// below — role is unrelated to dev-panel access (see DevPanel.jsx), so a
+// dev operator with role='customer' would otherwise land on
+// /customer-dashboard with no way to discover /dev-panel exists.
+// Race against a timeout, not just try/catch: a REJECTED rpc() call is
+// caught below, but a HUNG one (e.g. a slow/recursive RLS check) is a
+// pending promise forever, not a rejection — without the timeout this
+// would never fall through to the normal role routing at all.
+const getSignedInRoute = async (signedInUser) => {
+  try {
+    const isDevCheck = supabase.rpc('is_dev_operator');
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: false }), 3000));
+    const { data: isDev } = await Promise.race([isDevCheck, timeout]);
+    if (isDev) return '/dev-panel';
+  } catch {
+    // RPC missing/failed — fall through to normal role routing
+  }
+
   const role = signedInUser?.role?.toLowerCase?.() || signedInUser?.role || 'guest';
 
   if (role === 'admin') return '/admin-portal';
@@ -116,7 +133,7 @@ const AuthCallback = () => {
         window.history.replaceState(null, '', '/login');
         
         toast.success(`Welcome, ${displayName}.`);
-        navigate(getSignedInRoute(signedInUser), { replace: true });
+        navigate(await getSignedInRoute(signedInUser), { replace: true });
       } catch (authError) {
         console.error('[AUTH] Callback error:', authError);
         if (!mountedRef.current) return;
