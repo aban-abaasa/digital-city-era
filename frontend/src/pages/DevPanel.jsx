@@ -1117,7 +1117,7 @@ const PublicBoardTab = ({ p }) => {
 };
 
 // ─── Main dashboard ───────────────────────────────────────────────────
-const DevDashboard = ({ onLogout }) => {
+const DevDashboard = ({ onLogout, permissions }) => {
   const { theme, toggleTheme } = useTheme();
   const p = P[theme] || P.dark;
 
@@ -1145,6 +1145,63 @@ const DevDashboard = ({ onLogout }) => {
   const [newOperatorEmail, setNewOperatorEmail] = useState('');
   const [addingOperator,   setAddingOperator]   = useState(false);
   const [addOperatorMsg,   setAddOperatorMsg]   = useState(null); // { ok: bool, text: string }
+
+  // Main-developer operator management (Developers tab)
+  const [operators,       setOperators]       = useState([]);
+  const [operatorsLoaded, setOperatorsLoaded] = useState(false);
+  const [savingTabsFor,   setSavingTabsFor]   = useState(null); // email currently saving
+
+  // Grant access by picking a real account — reuses allUsers (already
+  // fetched via the proven-working dev_get_users() RPC) instead of a
+  // separate search RPC, so this can't fail for reasons unrelated to
+  // actually granting access.
+  const [accountQuery,  setAccountQuery]  = useState('');
+  const [grantingEmail, setGrantingEmail] = useState(null);
+
+  const ALL_TAB_IDS = ['overview', 'messages', 'public-board', 'supermarts', 'suppliers', 'customers', 'subscriptions', 'rewards', 'system'];
+  const isTabAllowed = (id) =>
+    permissions.isMain || permissions.allowedTabs == null || permissions.allowedTabs.includes(id);
+
+  // If the tabs this operator is allowed to see change (e.g. the main
+  // developer just restricted them) and the currently-open tab is no
+  // longer one of them, fall back to whatever they can still see instead
+  // of showing a blank main area with no highlighted tab.
+  useEffect(() => {
+    const allowed = ALL_TAB_IDS.filter(isTabAllowed);
+    if (!allowed.includes(tab) && allowed.length > 0) {
+      setTab(allowed[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissions.isMain, permissions.allowedTabs]);
+
+  const loadOperators = useCallback(async () => {
+    if (!permissions.isMain) return;
+    const { data } = await supabase.rpc('list_dev_operators');
+    setOperators(data || []);
+    setOperatorsLoaded(true);
+  }, [permissions.isMain]);
+
+  useEffect(() => {
+    if (permissions.isMain) loadOperators();
+  }, [permissions.isMain, loadOperators]);
+
+  const toggleOperatorTab = async (email, tabId, currentlyAllowed) => {
+    const op = operators.find(o => o.email === email);
+    if (!op) return;
+    // null (unrestricted) → start from the full tab list before toggling one off
+    const base = op.allowed_tabs == null ? [...ALL_TAB_IDS] : op.allowed_tabs;
+    const next = currentlyAllowed ? base.filter(t => t !== tabId) : [...base, tabId];
+
+    setSavingTabsFor(email);
+    try {
+      await supabase.rpc('set_dev_operator_tabs', { target_email: email, tabs: next });
+      setOperators(prev => prev.map(o => o.email === email ? { ...o, allowed_tabs: next } : o));
+    } catch (e) {
+      console.error('Failed to update operator tabs:', e);
+    } finally {
+      setSavingTabsFor(null);
+    }
+  };
 
   // ── Fetch ─────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -1291,6 +1348,30 @@ const DevDashboard = ({ onLogout }) => {
     }
   };
 
+  // ── Grant access by picking a real account (Developers tab) ─────────
+  // Filters allUsers client-side — no extra RPC, so it can't fail for
+  // reasons unrelated to actually granting access. Matches by email
+  // (case-insensitive), same identifier add_dev_operator expects.
+  const operatorEmails = new Set(operators.map(o => o.email));
+  const accountResults = accountQuery.trim()
+    ? allUsers
+        .filter(u => u.email && u.email.toLowerCase().includes(accountQuery.trim().toLowerCase()))
+        .slice(0, 25)
+    : [];
+
+  const grantAccessTo = async (email) => {
+    setGrantingEmail(email);
+    try {
+      const { error } = await supabase.rpc('add_dev_operator', { new_email: email });
+      if (error) throw error;
+      await loadOperators();
+    } catch (e) {
+      console.error('Failed to grant access:', e);
+    } finally {
+      setGrantingEmail(null);
+    }
+  };
+
   // ── Computed ──────────────────────────────────────────────────────
   // Ecosystem ICAN for a supermarket = sum of all members' balances from the server join
   const smIcan = (sm) =>
@@ -1316,7 +1397,11 @@ const DevDashboard = ({ onLogout }) => {
     { id: 'subscriptions', label: 'Subscriptions' },
     { id: 'rewards',       label: 'Rewards'       },
     { id: 'system',        label: 'System'        },
-  ];
+  ].filter(t => isTabAllowed(t.id));
+
+  if (permissions.isMain) {
+    TABS.push({ id: 'operators', label: 'Developers' });
+  }
 
   return (
     <div className={`min-h-screen ${p.shell}`}>
@@ -1555,6 +1640,17 @@ const DevDashboard = ({ onLogout }) => {
                           className="mt-1.5 flex items-center gap-1 ml-auto rounded-lg border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-400/20 transition">
                           <FiGift className="h-3 w-3" /> +1 ICAN
                         </button>
+                        {permissions.isMain && u.email && (
+                          operatorEmails.has(u.email.toLowerCase()) ? (
+                            <p className={`mt-1.5 text-[11px] ${p.muted}`}>Already a developer</p>
+                          ) : (
+                            <button onClick={() => grantAccessTo(u.email)}
+                              disabled={grantingEmail === u.email}
+                              className="mt-1.5 flex items-center gap-1 ml-auto rounded-lg border border-violet-400/20 bg-violet-400/10 px-2 py-1 text-[11px] font-medium text-violet-400 hover:bg-violet-400/20 transition disabled:opacity-40">
+                              {grantingEmail === u.email ? 'Granting…' : 'Make Developer'}
+                            </button>
+                          )
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1610,6 +1706,101 @@ const DevDashboard = ({ onLogout }) => {
                 ))
               }
               {customers.length === 0 && <p className={`px-5 py-10 text-center text-sm ${p.muted}`}>No customers yet.</p>}
+            </div>
+          </>
+        )}
+
+        {/* ── DEVELOPERS (main developer only) ── */}
+        {tab === 'operators' && permissions.isMain && (
+          <>
+            <div className={`rounded-2xl border p-5 ${p.card}`}>
+              <p className={`mb-1 text-xs font-semibold uppercase tracking-wider ${p.muted}`}>Grant Access</p>
+              <p className={`mb-4 text-xs ${p.muted}`}>
+                Search users already on this project to grant dev-panel access to.
+              </p>
+              <input
+                type="text"
+                value={accountQuery}
+                onChange={(e) => setAccountQuery(e.target.value)}
+                placeholder="Search by name or email…"
+                className={`w-full rounded-xl border px-3 py-2 text-sm ${p.card}`}
+              />
+              <div className="mt-3 space-y-2">
+                {accountResults.map(acc => {
+                  const alreadyOperator = operatorEmails.has((acc.email || '').toLowerCase());
+                  return (
+                    <div key={acc.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${p.pill}`}>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{acc.full_name || acc.email}</p>
+                        <p className={`truncate text-[11px] ${p.muted}`}>{acc.email}</p>
+                      </div>
+                      <button
+                        onClick={() => grantAccessTo(acc.email)}
+                        disabled={alreadyOperator || grantingEmail === acc.email}
+                        className="flex-shrink-0 rounded-lg border border-violet-400/20 bg-violet-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-violet-400 hover:bg-violet-400/20 transition disabled:opacity-40"
+                      >
+                        {alreadyOperator ? 'Already has access' : grantingEmail === acc.email ? 'Granting…' : 'Grant access'}
+                      </button>
+                    </div>
+                  );
+                })}
+                {accountQuery && accountResults.length === 0 && (
+                  <p className={`text-xs ${p.muted}`}>No matching accounts found.</p>
+                )}
+              </div>
+            </div>
+
+            <div className={`rounded-2xl border p-5 ${p.card}`}>
+              <p className={`mb-1 text-xs font-semibold uppercase tracking-wider ${p.muted}`}>Developer Access</p>
+              <p className={`mb-4 text-xs ${p.muted}`}>
+                Choose which tabs each developer can see. The main developer always sees everything.
+                A developer with no tabs checked sees nothing until you grant some.
+              </p>
+
+              {!operatorsLoaded ? (
+                <p className={`text-sm ${p.muted}`}>Loading…</p>
+              ) : (
+                <div className="space-y-4">
+                  {operators.map(op => (
+                  <div key={op.email} className={`rounded-xl border p-4 ${p.card}`}>
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-semibold">{op.email}</p>
+                      {op.is_main ? (
+                        <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-400">
+                          Main developer
+                        </span>
+                      ) : (
+                        <span className={`text-[11px] ${p.muted}`}>
+                          {op.allowed_tabs == null ? 'All tabs' : `${op.allowed_tabs.length} tab${op.allowed_tabs.length === 1 ? '' : 's'}`}
+                        </span>
+                      )}
+                    </div>
+                    {!op.is_main && (
+                      <div className="flex flex-wrap gap-2">
+                        {ALL_TAB_IDS.map(tabId => {
+                          const allowed = op.allowed_tabs == null || op.allowed_tabs.includes(tabId);
+                          return (
+                            <button
+                              key={tabId}
+                              onClick={() => toggleOperatorTab(op.email, tabId, allowed)}
+                              disabled={savingTabsFor === op.email}
+                              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium capitalize transition disabled:opacity-40 ${
+                                allowed
+                                  ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-400'
+                                  : `${p.pill}`
+                              }`}
+                            >
+                              {tabId.replace('-', ' ')}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {operators.length === 0 && <p className={`text-sm ${p.muted}`}>No developers yet.</p>}
+              </div>
+            )}
             </div>
           </>
         )}
@@ -1672,6 +1863,10 @@ const DevDashboard = ({ onLogout }) => {
 const DevPanel = () => {
   const navigate = useNavigate();
   const [status, setStatus] = useState('checking'); // checking | authorized | denied
+  // null allowedTabs = unrestricted (all tabs) — matches dev_operators'
+  // "NULL means everything" convention so pre-existing operators never
+  // silently lose access from this feature shipping.
+  const [permissions, setPermissions] = useState({ isMain: false, allowedTabs: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -1687,6 +1882,13 @@ const DevPanel = () => {
         setStatus('denied');
         return;
       }
+
+      const { data: selfRows } = await supabase.rpc('dev_operator_self');
+      const self = selfRows?.[0];
+      if (!cancelled && self) {
+        setPermissions({ isMain: !!self.is_main, allowedTabs: self.allowed_tabs });
+      }
+
       sessionStorage.setItem(SESSION_KEY, 'true');
       setStatus('authorized');
     })();
@@ -1703,7 +1905,7 @@ const DevPanel = () => {
   };
 
   if (status !== 'authorized') return null;
-  return <DevDashboard onLogout={handleLogout} />;
+  return <DevDashboard onLogout={handleLogout} permissions={permissions} />;
 };
 
 export default DevPanel;
