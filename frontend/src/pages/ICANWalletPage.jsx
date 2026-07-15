@@ -12,6 +12,7 @@ import {
   ICAN_TO_UGX,
 } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
+import BuyIcanModal from '@/components/BuyIcanModal';
 
 const ICANERA_APP_URL = 'https://icanera.space/';
 
@@ -375,7 +376,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
           {[
             { label: 'Send', icon: '↑', color: 'from-violet-700 to-violet-900', action: () => setModal('send') },
             { label: 'Receive', icon: '↓', color: 'from-emerald-700 to-emerald-900', action: () => setModal('receive') },
-            { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => window.open(ICANERA_APP_URL, '_blank', 'noopener,noreferrer') },
+            { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => setModal('buy') },
             { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => window.open(ICANERA_APP_URL, '_blank', 'noopener,noreferrer') },
             { label: 'History', icon: '≡', color: 'from-blue-700 to-blue-900', action: () => document.getElementById('tx-section')?.scrollIntoView({ behavior: 'smooth' }) },
           ].map(btn => (
@@ -482,6 +483,9 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
       )}
       {modal === 'receive' && balance.address && (
         <ReceiveModal walletAddress={balance.address} onClose={() => setModal(null)} />
+      )}
+      {modal === 'buy' && (
+        <BuyIcanModal userId={userId} onClose={() => setModal(null)} onSuccess={loadWallet} />
       )}
     </div>
   );
