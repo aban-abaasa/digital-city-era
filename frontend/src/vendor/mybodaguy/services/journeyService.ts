@@ -12,7 +12,9 @@
  */
 import { supabase } from './supabaseClient';
 
-const MBG_API_BASE_URL = import.meta.env.VITE_MBG_API_BASE_URL || 'https://bodagoera.icanera.space';
+// Always the live, already-deployed mybodaguy backend on Vercel — no env
+// override, so this can never accidentally resolve to a local dev server.
+const MBG_API_BASE_URL = 'https://bodagoera.icanera.space';
 
 export interface FlightOffer {
   offerId: string;
@@ -21,6 +23,9 @@ export interface FlightOffer {
   totalCurrency: string;
   slices: any[];
   expiresAt: string;
+  // Duffel-assigned passenger ids from the offer — order creation must
+  // reference these exactly, one per passenger booked on this offer.
+  passengers: Array<{ id: string; type: string }>;
 }
 
 export interface JourneyPickup {
@@ -106,7 +111,7 @@ export async function getJourneyQuote(params: {
 export async function confirmJourney(params: {
   customerUserId: string;
   quote: JourneyQuote;
-  passengers: Array<{ type: 'adult'; given_name: string; family_name: string; born_on: string; gender: 'm' | 'f'; email: string; phone_number: string; title?: string }>;
+  passengers: Array<{ id: string; type: 'adult'; given_name: string; family_name: string; born_on: string; gender: 'm' | 'f'; email: string; phone_number: string; title?: string }>;
 }): Promise<{ journeyId: string; pnr: string }> {
   return postJson('/api/journeys/confirm', params);
 }

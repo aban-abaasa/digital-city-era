@@ -12,7 +12,8 @@ export function generateTxRef(prefix) {
 
 /**
  * @param {{amount:number, currency?:string, customerEmail?:string, customerName?:string,
- *   customerPhone?:string, title?:string, description?:string, txRef:string}} params
+ *   customerPhone?:string, title?:string, description?:string, txRef:string,
+ *   paymentOptions?:string}} params
  * @returns {Promise<{status:'successful'|'cancelled'|'failed', transaction_id?:string, tx_ref:string}>}
  */
 export function payWithFlutterwave(params) {
@@ -36,7 +37,9 @@ export function payWithFlutterwave(params) {
       // (Flutterwave routes by the number's network automatically), 'account'
       // is bank-account/direct-debit. Tokens like 'bank_transfer'/'barter'
       // aren't valid Flutterwave option strings and were silently ignored.
-      payment_options: 'card,mobilemoneyuganda,account',
+      // Callers can narrow this (e.g. just 'card' or just 'mobilemoneyuganda')
+      // via paymentOptions when the user already picked a method in-app.
+      payment_options: params.paymentOptions || 'card,mobilemoneyuganda,account',
       customer: {
         email: params.customerEmail || 'customer@supermartkera.app',
         phone_number: params.customerPhone || '',

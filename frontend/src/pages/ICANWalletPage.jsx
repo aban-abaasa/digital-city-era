@@ -6,6 +6,7 @@ import {
   getUserWalletDisplay,
   getTransactions,
   sendICAN,
+  requestIcanPayout,
   formatICAN,
   icanToUGX,
   ugxToICAN,
@@ -13,8 +14,9 @@ import {
 } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
 import BuyIcanModal from '@/components/BuyIcanModal';
-
-const ICANERA_APP_URL = 'https://icanera.space/';
+import SendIcanOutModal from '@/components/SendIcanOutModal';
+import SetPinPrompt from '@/components/SetPinPrompt';
+import { hasPinSet } from '@/services/pinService';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -140,31 +142,72 @@ function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded =
   );
 }
 
-function SendModal({ userId, walletAddress, onClose, onDone }) {
+const SEND_DESTINATIONS = [
+  { key: 'wallet', label: '💎 ICAN Wallet' },
+  { key: 'mobilemoneyuganda', label: '📱 Mobile Money' },
+  { key: 'bank', label: '🏦 Bank Account' },
+];
+
+function SendModal({ userId, walletAddress, balance, onClose, onDone }) {
+  const [destination, setDestination] = useState('wallet');
+
+  // ICAN-to-ICAN fields
   const [recipientAddress, setRecipientAddress] = useState('');
-  const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+
+  // Real-money payout fields (mobile money / bank)
+  const [network, setNetwork] = useState('MTN');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [beneficiaryName, setBeneficiaryName] = useState('');
+
+  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const amountNum = parseFloat(amount) || 0;
+  const isPayout = destination !== 'wallet';
+  const feePercent = 3; // flat 3% cash-out fee (mobile money / bank) — sending to another ICAN wallet is 0%
+  const ugxGross = amountNum * ICAN_TO_UGX;
+  const ugxNet = ugxGross - Math.round((ugxGross * feePercent) / 100);
+
+  const canSend = isPayout
+    ? amountNum > 0 && amountNum <= (balance?.ican ?? 0) &&
+      (destination === 'mobilemoneyuganda' ? !!phoneNumber : !!accountNumber && !!bankCode && !!beneficiaryName)
+    : !!recipientAddress && amountNum > 0;
+
   const handleSend = async () => {
-    if (!recipientAddress || !amount) { toast.error('Fill in all fields'); return; }
+    if (!canSend) { toast.error('Fill in all fields'); return; }
     setLoading(true);
     try {
-      // Resolve wallet address → user_id
-      const { data: recipientWallet, error } = await supabase
-        .from('ican_user_wallets')
-        .select('user_id')
-        .eq('wallet_address', recipientAddress.trim())
-        .single();
-      if (error || !recipientWallet) { toast.error('Wallet address not found'); return; }
+      if (destination === 'wallet') {
+        // Resolve wallet address → user_id
+        const { data: recipientWallet, error } = await supabase
+          .from('ican_user_wallets')
+          .select('user_id')
+          .eq('wallet_address', recipientAddress.trim())
+          .single();
+        if (error || !recipientWallet) { toast.error('Wallet address not found'); return; }
 
-      await sendICAN({
-        fromUserId: userId,
-        toUserId: recipientWallet.user_id,
-        amount: parseFloat(amount),
-        note,
-      });
-      toast.success(`Sent ${amount} ICAN`);
+        await sendICAN({
+          fromUserId: userId,
+          toUserId: recipientWallet.user_id,
+          amount: amountNum,
+          note,
+        });
+        toast.success(`Sent ${amount} ICAN`);
+      } else {
+        const data = await requestIcanPayout({
+          icanAmount: amountNum,
+          channel: destination,
+          phoneNumber: destination === 'mobilemoneyuganda' ? phoneNumber : undefined,
+          network: destination === 'mobilemoneyuganda' ? network : undefined,
+          accountNumber: destination === 'bank' ? accountNumber : undefined,
+          bankCode: destination === 'bank' ? bankCode : undefined,
+          beneficiaryName: destination === 'bank' ? beneficiaryName : undefined,
+        });
+        toast.success(`${data.message} You'll receive UGX ${Number(data.ugx_net).toLocaleString()}.`);
+      }
       onDone();
       onClose();
     } catch (e) {
@@ -175,50 +218,143 @@ function SendModal({ userId, walletAddress, onClose, onDone }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl my-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-bold text-lg">Send ICAN</h2>
+          <h2 className="text-white font-bold text-lg">Send</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="text-gray-400 text-sm mb-1 block">Recipient Wallet Address</label>
-            <input
-              value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)}
-              placeholder="ICA-XXXXXXXXXXXXXXXX"
-              className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-            />
+        <div className="mb-4">
+          <label className="text-gray-400 text-sm mb-1 block">Send To</label>
+          <div className="flex gap-2">
+            {SEND_DESTINATIONS.map((d) => (
+              <button
+                key={d.key}
+                type="button"
+                onClick={() => setDestination(d.key)}
+                disabled={loading}
+                className={`flex-1 py-2 rounded-lg text-xs sm:text-sm font-medium border ${
+                  destination === d.key ? 'bg-violet-600 border-violet-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-300'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
           </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Cards can only receive top-ups, not payouts — send to a card isn't supported by any provider we integrate with.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {destination === 'wallet' && (
+            <div>
+              <label className="text-gray-400 text-sm mb-1 block">Recipient Wallet Address</label>
+              <input
+                value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)}
+                placeholder="ICA-XXXXXXXXXXXXXXXX"
+                className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+              />
+            </div>
+          )}
+
+          {destination === 'mobilemoneyuganda' && (
+            <>
+              <div className="flex gap-2">
+                {['MTN', 'AIRTEL'].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setNetwork(n)}
+                    disabled={loading}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                      network === n ? 'bg-violet-600 border-violet-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Mobile Money Number</label>
+                <input
+                  value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
+                  placeholder="e.g. 0770123456"
+                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+                />
+              </div>
+            </>
+          )}
+
+          {destination === 'bank' && (
+            <>
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Bank Code</label>
+                <input
+                  value={bankCode} onChange={e => setBankCode(e.target.value)}
+                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Account Number</label>
+                <input
+                  value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
+                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Account Holder Name</label>
+                <input
+                  value={beneficiaryName} onChange={e => setBeneficiaryName(e.target.value)}
+                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+                />
+              </div>
+            </>
+          )}
+
           <div>
             <label className="text-gray-400 text-sm mb-1 block">Amount (ICAN)</label>
             <input
-              type="number" min="0.0001" step="0.0001"
+              type="number" min="0.0001" step="0.0001" max={isPayout ? (balance?.ican ?? undefined) : undefined}
               value={amount} onChange={e => setAmount(e.target.value)}
               placeholder="0.0000"
               className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
             />
-            {amount && <p className="text-gray-500 text-xs mt-1">≈ UGX {(parseFloat(amount || 0) * ICAN_TO_UGX).toLocaleString()}</p>}
+            {amount && !isPayout && <p className="text-gray-500 text-xs mt-1">≈ UGX {(parseFloat(amount || 0) * ICAN_TO_UGX).toLocaleString()}</p>}
           </div>
-          <div>
-            <label className="text-gray-400 text-sm mb-1 block">Note (optional)</label>
-            <input
-              value={note} onChange={e => setNote(e.target.value)}
-              placeholder="What's this for?"
-              className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-            />
-          </div>
+
+          {destination === 'wallet' && (
+            <div>
+              <label className="text-gray-400 text-sm mb-1 block">Note (optional)</label>
+              <input
+                value={note} onChange={e => setNote(e.target.value)}
+                placeholder="What's this for?"
+                className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+              />
+            </div>
+          )}
+
+          {isPayout && amountNum > 0 && (
+            <div className="bg-gray-800 rounded-lg p-4 text-sm space-y-1">
+              <div className="flex justify-between text-gray-300"><span>Gross</span><span>UGX {ugxGross.toLocaleString()}</span></div>
+              <div className="flex justify-between text-gray-400"><span>Fee ({feePercent}%)</span><span>-UGX {(ugxGross - ugxNet).toLocaleString()}</span></div>
+              <div className="flex justify-between text-white font-semibold"><span>Recipient gets</span><span>UGX {ugxNet.toLocaleString()}</span></div>
+            </div>
+          )}
+
           <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-xs">
-            10% tithe is automatically deducted from the recipient's earnings.
+            {isPayout
+              ? 'Sent via Flutterwave. A 3% cash-out fee applies. ICAN leaves your wallet immediately; if the transfer fails, it is refunded automatically.'
+              : 'No fee — the recipient receives the full amount you send.'}
           </div>
         </div>
 
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-gray-800 text-gray-300 font-medium text-sm">Cancel</button>
-          <button onClick={handleSend} disabled={loading}
+          <button onClick={handleSend} disabled={!canSend || loading}
             className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm disabled:opacity-60">
-            {loading ? 'Sending…' : 'Send ICAN'}
+            {loading ? 'Sending…' : 'Send'}
           </button>
         </div>
       </div>
@@ -263,6 +399,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
   const [refreshing, setRefreshing] = useState(false);
   const [modal, setModal] = useState(null); // 'send' | 'receive' | null
   const [activeTab, setActiveTab] = useState('all');
+  const [needsPin, setNeedsPin] = useState(false);
 
   useEffect(() => {
     if (!propUserId) {
@@ -284,6 +421,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
       setBalance(bal);
       setTransactions(txs);
       setDisplay(disp);
+      hasPinSet(userId).then((has) => setNeedsPin(!has)).catch(() => {});
     } catch (e) {
       toast.error('Could not load wallet: ' + e.message);
     }
@@ -377,7 +515,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
             { label: 'Send', icon: '↑', color: 'from-violet-700 to-violet-900', action: () => setModal('send') },
             { label: 'Receive', icon: '↓', color: 'from-emerald-700 to-emerald-900', action: () => setModal('receive') },
             { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => setModal('buy') },
-            { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => window.open(ICANERA_APP_URL, '_blank', 'noopener,noreferrer') },
+            { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => setModal('sell') },
             { label: 'History', icon: '≡', color: 'from-blue-700 to-blue-900', action: () => document.getElementById('tx-section')?.scrollIntoView({ behavior: 'smooth' }) },
           ].map(btn => (
             <button key={btn.label} onClick={btn.action}
@@ -477,6 +615,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
         <SendModal
           userId={userId}
           walletAddress={balance.address}
+          balance={balance}
           onClose={() => setModal(null)}
           onDone={loadWallet}
         />
@@ -486,6 +625,12 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
       )}
       {modal === 'buy' && (
         <BuyIcanModal userId={userId} onClose={() => setModal(null)} onSuccess={loadWallet} />
+      )}
+      {modal === 'sell' && (
+        <SendIcanOutModal userId={userId} balance={balance} onClose={() => setModal(null)} onSuccess={loadWallet} />
+      )}
+      {needsPin && (
+        <SetPinPrompt userId={userId} onDone={() => setNeedsPin(false)} />
       )}
     </div>
   );

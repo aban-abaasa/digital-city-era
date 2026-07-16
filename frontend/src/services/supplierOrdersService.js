@@ -334,9 +334,8 @@ export const recordPayment = async ({ orderId, amountPaid, paymentMethod, paymen
 // sendICAN() already validates the manager's balance and moves the coins —
 // so this records the payment as confirmed immediately instead of waiting
 // on a separate supplier confirmation step.
-// Note: like every ICAN transfer platform-wide, a 10% tithe is deducted on
-// the recipient side (see transfer_ican) — the supplier nets 90% of the
-// ICAN sent, same as a customer paying a cashier with ICAN elsewhere in the app.
+// Note: like every ICAN transfer platform-wide, there is no fee on sends
+// (see transfer_ican) — the supplier receives the full ICAN amount sent.
 export const payOrderWithICAN = async ({ orderId, supplierUserId, icanAmount, ugxAmount, notes }) => {
   try {
     if (!supplierUserId) throw new Error('This order has no supplier assigned — cannot pay with ICAN.');
