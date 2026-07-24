@@ -12,7 +12,7 @@ import {
   searchFlights, searchAirports, getJourneyQuote, confirmJourney, pollJourney, requestShipCargoJourney,
   type FlightOffer, type Journey, type JourneyQuote, type AirportSuggestion,
 } from '../services/journeyService';
-import { geocodeAddress, reverseGeocodeCountry, searchCities, type CountryLookup, type CitySuggestion } from '../services/geocodeService';
+import { geocodeAddress, reverseGeocodeCountry, searchCities, type CountryLookup, type CitySuggestion, type GeocodeResult } from '../services/geocodeService';
 import { printFlightTicket, printShipTicket } from '../services/printTicket';
 import { getBalance, ICAN_TO_UGX, formatICAN, SOURCE_APP } from '../services/icanWalletService';
 import { payWithFlutterwave, generateTxRef } from '@/services/flutterwaveClient';
@@ -27,8 +27,22 @@ interface JourneyBookingFlowProps {
 interface CustomerArea {
   id: string;
   name: string;
-  latitude: number;
-  longitude: number;
+  address?: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+}
+
+function coordinate(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= -180 && parsed <= 180 ? parsed : null;
+}
+
+function validAreaCoordinates(area: CustomerArea): { lat: number; lng: number } | null {
+  const lat = coordinate(area.latitude);
+  const lng = coordinate(area.longitude);
+  if (lat === null || lng === null || lat < -90 || lat > 90) return null;
+  return { lat, lng };
 }
 
 type BookingKind = 'fly' | 'ship';
@@ -101,6 +115,8 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const [selectedAreaId, setSelectedAreaId] = useState('');
   const [manualAddress, setManualAddress] = useState('');
   const [manualPickup, setManualPickup] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [pickupSearchResult, setPickupSearchResult] = useState<GeocodeResult | null>(null);
+  const [searchingPickup, setSearchingPickup] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [pickupVehicleType, setPickupVehicleType] = useState<'motorcycle' | 'car'>('motorcycle');
   // Which country the journey actually STARTS in — was hardcoded to
@@ -236,9 +252,21 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     if (!customerId) return;
     supabase
       .from('mbg_customer_areas')
-      .select('id, name, latitude, longitude')
+      .select('id, name, address, latitude, longitude')
       .eq('customer_user_id', customerId)
-      .then(({ data }) => setAreas((data ?? []) as CustomerArea[]));
+      .then(({ data }) => {
+        // Old saved areas may have been created without coordinates. Do not
+        // let those records reach Leaflet, which requires finite lat/lng.
+        const validAreas = (data ?? []).map((area: CustomerArea) => {
+          const coords = validAreaCoordinates(area);
+          return coords ? {
+          ...area,
+          latitude: coords.lat,
+          longitude: coords.lng,
+          } : null;
+        }).filter((area): area is CustomerArea => area !== null);
+        setAreas(validAreas);
+      });
   }, [customerId]);
 
   useEffect(() => {
@@ -299,6 +327,38 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     setSelectedAreaId('');
     setManualAddress(location.fullAddress);
     setManualPickup({ lat: location.coordinates.lat, lng: location.coordinates.lng, address: location.fullAddress });
+    setPickupSearchResult({ lat: location.coordinates.lat, lng: location.coordinates.lng, displayName: location.fullAddress });
+  };
+
+  const searchPickupOnMap = async () => {
+    const query = manualAddress.trim();
+    if (!query) return;
+    setError(null);
+    setSearchingPickup(true);
+    setPickupSearchResult(null);
+    try {
+      const result = await geocodeAddress(query, pickupCountry.name);
+      if (!result) {
+        setError(`Couldn't find “${query}” in ${pickupCountry.name}. Try adding a neighborhood, city, or landmark.`);
+        return;
+      }
+      setPickupSearchResult(result);
+    } catch (err: any) {
+      setError(err.message || 'Could not search that pickup location');
+    } finally {
+      setSearchingPickup(false);
+    }
+  };
+
+  const usePickupSearchResult = () => {
+    if (!pickupSearchResult) return;
+    setSelectedAreaId('');
+    setManualAddress(pickupSearchResult.displayName);
+    setManualPickup({
+      lat: pickupSearchResult.lat,
+      lng: pickupSearchResult.lng,
+      address: pickupSearchResult.displayName,
+    });
   };
 
   const findDestinationOnMap = async () => {
@@ -311,7 +371,11 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         setError("Couldn't find that address on the map — you can still continue without it, or add more detail and try again.");
         return;
       }
-      setDestPin({ lat: result.lat, lng: result.lng, address: result.displayName });
+      if (!Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
+        setError("That address did not return a usable map location — add more detail and try again.");
+        return;
+      }
+      setDestPin({ lat: Number(result.lat), lng: Number(result.lng), address: result.displayName });
     } catch (err: any) {
       setError(err.message || 'Could not look up that address');
     } finally {
@@ -338,7 +402,11 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         setError("Couldn't find that address — try adding more detail (e.g. neighborhood, city).");
         return;
       }
-      setManualPickup({ lat: result.lat, lng: result.lng, address: manualAddress });
+       if (!Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
+         setError("That pickup address did not return a usable map location — add more detail and try again.");
+         return;
+       }
+       setManualPickup({ lat: Number(result.lat), lng: Number(result.lng), address: manualAddress });
       setStep('flight');
     } catch (err: any) {
       setError(err.message || 'Could not look up that address');
@@ -565,7 +633,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
               </p>
               <input
                 className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-                placeholder="e.g. Ntinda, Kampala"
+                placeholder={`Search an area, landmark, or address in ${pickupCountry.name}`}
                 value={manualAddress}
                 onChange={(e) => {
                   // Typing invalidates whatever pin/geocode result was
@@ -573,14 +641,39 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
                   // silently get used for the new address.
                   setManualAddress(e.target.value);
                   setManualPickup(null);
+                  setPickupSearchResult(null);
                 }}
               />
+              <button
+                type="button"
+                onClick={searchPickupOnMap}
+                disabled={!manualAddress.trim() || searchingPickup}
+                className="w-full border-2 border-blue-200 text-blue-700 rounded-lg py-2.5 font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {searchingPickup ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                {searchingPickup ? 'Searching the map…' : 'Search this pickup on the map'}
+              </button>
+              {pickupSearchResult && (
+                <button
+                  type="button"
+                  onClick={usePickupSearchResult}
+                  className={`w-full text-left rounded-lg border-2 p-3 transition-colors ${manualPickup?.lat === pickupSearchResult.lat && manualPickup?.lng === pickupSearchResult.lng ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-white hover:border-blue-400'}`}
+                >
+                  <div className="flex items-start gap-2">
+                    <MapPin size={17} className="text-green-600 mt-0.5 shrink-0" />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800">{manualPickup ? 'Pickup selected' : 'Use this map result'}</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">{pickupSearchResult.displayName}</span>
+                    </span>
+                  </div>
+                </button>
+              )}
             </div>
           )}
           <p className="text-xs text-slate-500">Or drop a pin — same map picker as booking a ride:</p>
           <LocationPickerMap
             pickup={
-              pickup
+              pickup && coordinate(pickup.lat) !== null && coordinate(pickup.lng) !== null
                 ? { id: 'journey_pickup', name: pickup.address, area: pickup.address, fullAddress: pickup.address, coordinates: { lat: pickup.lat, lng: pickup.lng } }
                 : null
             }
@@ -637,16 +730,34 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
           {offers.length > 0 && (
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {offers.map((offer) => (
-                <button
-                  key={offer.offerId}
-                  onClick={() => setSelectedOffer(offer)}
-                  className={`w-full text-left border rounded-lg p-3 ${selectedOffer?.offerId === offer.offerId ? 'border-orange-500 bg-orange-50' : 'border-slate-200'}`}
-                >
-                  <div className="flex justify-between">
-                    <span className="font-medium">{offer.carrier}</span>
-                    <span className="font-semibold">{offer.totalAmount} {offer.totalCurrency}</span>
-                  </div>
-                </button>
+                (() => {
+                  const firstSegment = offer.slices?.[0]?.segments?.[0];
+                  const lastSegment = offer.slices?.[0]?.segments?.at?.(-1) || firstSegment;
+                  return (
+                    <button
+                      key={offer.offerId}
+                      type="button"
+                      onClick={() => setSelectedOffer(offer)}
+                      className={`w-full text-left border rounded-lg p-3 text-slate-900 bg-white hover:bg-orange-50 transition-colors ${selectedOffer?.offerId === offer.offerId ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-300' : 'border-slate-200'}`}
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <div>
+                          <span className="block font-semibold text-slate-900">{offer.carrier || 'Available airline'}</span>
+                          <span className="block text-xs text-slate-600 mt-1">
+                            {firstSegment?.origin?.iata_code || originIata} → {lastSegment?.destination?.iata_code || destinationIata}
+                            {offer.slices?.length > 1 ? ` · ${offer.slices.length} legs` : ''}
+                          </span>
+                        </div>
+                        <span className="font-bold text-slate-900 whitespace-nowrap">{offer.totalAmount} {offer.totalCurrency}</span>
+                      </div>
+                      {firstSegment?.departing_at && (
+                        <span className="block text-xs text-slate-500 mt-2">
+                          Departs {new Date(firstSegment.departing_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()
               ))}
             </div>
           )}
@@ -934,6 +1045,19 @@ function AirportPicker({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!defaultCountryIso2 || defaultCountryIso2 === countryIso2) return;
+    const nextCountry = COUNTRIES.find((c) => c.iso2 === defaultCountryIso2);
+    setCountryIso2(defaultCountryIso2);
+    setQuery(nextCountry?.name || '');
+    setSuggestions([]);
+    setShowSuggestions(true);
+    onSelect('', '');
+    // The parent callback is intentionally excluded: this sync is driven by
+    // the actual country prop, not by the parent's render identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultCountryIso2]);
+
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.trim().length < 2) {
       setSuggestions([]);
@@ -963,7 +1087,16 @@ function AirportPicker({
         <select
           className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
           value={countryIso2}
-          onChange={(e) => setCountryIso2(e.target.value)}
+          onChange={(e) => {
+            const nextCountry = COUNTRIES.find((c) => c.iso2 === e.target.value);
+            setCountryIso2(e.target.value);
+            // Search the selected country immediately and clear any airport
+            // code from the previous country so a stale route cannot be used.
+            setQuery(nextCountry?.name || '');
+            setSuggestions([]);
+            setShowSuggestions(true);
+            onSelect('', '');
+          }}
         >
           {COUNTRIES.map((c) => (
             <option key={c.iso2 || c.name} value={c.iso2}>{c.name}</option>
@@ -973,7 +1106,7 @@ function AirportPicker({
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
           <input
             className="w-full border rounded-lg p-2.5 pl-8 bg-white text-slate-900 placeholder-slate-400 text-sm"
-            placeholder="City or airport"
+            placeholder="Search airport or city"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => query.trim().length >= 2 && setShowSuggestions(true)}
@@ -985,7 +1118,7 @@ function AirportPicker({
         <p className="text-xs text-emerald-600 font-medium">✓ {selectedLabel}</p>
       )}
       {showSuggestions && (
-        <div className="border rounded-lg bg-white shadow-md max-h-48 overflow-y-auto">
+        <div className="relative z-[60] border border-slate-300 rounded-lg bg-white text-slate-900 shadow-xl max-h-56 overflow-y-auto">
           {loading && <div className="p-2.5 text-xs text-slate-400">Searching…</div>}
           {!loading && suggestions.length === 0 && query.trim().length >= 2 && (
             <div className="p-2.5 text-xs text-slate-400">No airports found</div>
@@ -1000,7 +1133,7 @@ function AirportPicker({
                 setQuery('');
                 setShowSuggestions(false);
               }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-slate-100 last:border-b-0"
+              className="w-full text-left px-3 py-2 text-sm text-slate-900 bg-white hover:bg-orange-50 border-b border-slate-200 last:border-b-0"
             >
               <div className="font-medium text-slate-800">{a.name} ({a.iataCode})</div>
               {a.cityName && <div className="text-xs text-slate-500">{a.cityName}</div>}

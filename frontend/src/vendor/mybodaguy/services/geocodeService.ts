@@ -13,6 +13,28 @@ export interface GeocodeResult {
   displayName: string;
 }
 
+// Google is used when a browser-restricted key is configured. Keeping this
+// optional means development and deployments without a Google key still have
+// a worldwide OpenStreetMap fallback.
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+async function geocodeWithGoogle(query: string): Promise<GeocodeResult | null> {
+  if (!GOOGLE_MAPS_API_KEY) return null;
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const result = data?.results?.[0];
+    const lat = Number(result?.geometry?.location?.lat);
+    const lng = Number(result?.geometry?.location?.lng);
+    if (data?.status !== 'OK' || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng, displayName: result.formatted_address || query };
+  } catch {
+    return null;
+  }
+}
+
 // Nominatim's usage policy caps free public use at 1 request/second per
 // client. This booking flow can fire several geocode calls close together
 // (pickup address, city autocomplete, a dropped map pin's reverse lookup,
@@ -55,6 +77,11 @@ export async function geocodeAddress(query: string, countryHint?: string): Promi
   const attempts = countryHint && !trimmed.toLowerCase().includes(countryHint.toLowerCase())
     ? [`${trimmed}, ${countryHint}`, trimmed]
     : [trimmed];
+
+  for (const attempt of attempts) {
+    const googleResult = await geocodeWithGoogle(attempt);
+    if (googleResult) return googleResult;
+  }
 
   for (const attempt of attempts) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(attempt)}`;

@@ -11,6 +11,18 @@ import { reverseGeocode } from '../services/geocodeService';
 // Kampala city center — used only as a fallback when GPS is denied/unavailable.
 const DEFAULT_CENTER: [number, number] = [0.3157, 32.5756];
 
+function getLatLng(location: Location | null): [number, number] | null {
+  const rawLat = location?.coordinates?.lat;
+  const rawLng = location?.coordinates?.lng;
+  // Number(null) and Number('') are both 0; reject those before coercion so
+  // incomplete database rows can never become a fake [0, 0] Leaflet pin.
+  if (rawLat === null || rawLat === undefined || rawLat === '' || rawLng === null || rawLng === undefined || rawLng === '') return null;
+  const lat = Number(rawLat);
+  const lng = Number(rawLng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return [lat, lng];
+}
+
 // Self-contained colored pin (no external icon assets to fetch/bundle).
 function pinIcon(color: string) {
   return L.divIcon({
@@ -111,8 +123,8 @@ export default function LocationPickerMap({
   // drag on this same map.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !pickup) return;
-    const latlng: [number, number] = [pickup.coordinates.lat, pickup.coordinates.lng];
+    const latlng = getLatLng(pickup);
+    if (!map || !pickup || !latlng) return;
     if (!pickupMarkerRef.current) {
       pickupMarkerRef.current = L.marker(latlng, { icon: PICKUP_ICON, draggable: !pickupLocked })
         .addTo(map)
@@ -134,12 +146,12 @@ export default function LocationPickerMap({
     // ("Cannot read properties of undefined (reading '_leaflet_pos')").
     if (!dropoff) map.setView(latlng, 14, { animate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickup?.coordinates.lat, pickup?.coordinates.lng, pickupLocked]);
+  }, [pickup?.coordinates?.lat, pickup?.coordinates?.lng, pickupLocked]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !dropoff) return;
-    const latlng: [number, number] = [dropoff.coordinates.lat, dropoff.coordinates.lng];
+    const latlng = getLatLng(dropoff);
+    if (!map || !dropoff || !latlng) return;
     if (!dropoffMarkerRef.current) {
       dropoffMarkerRef.current = L.marker(latlng, { icon: DROPOFF_ICON, draggable: true }).addTo(map);
       dropoffMarkerRef.current.on('dragend', async () => {
@@ -153,18 +165,20 @@ export default function LocationPickerMap({
     dropoffMarkerRef.current.setPopupContent(`<b>Drop-off</b><br>${dropoff.fullAddress}`);
     if (!pickup) map.setView(latlng, 14, { animate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dropoff?.coordinates.lat, dropoff?.coordinates.lng]);
+  }, [dropoff?.coordinates?.lat, dropoff?.coordinates?.lng]);
 
   // Real road route (OSRM's public demo server — fine for low volume, not
   // production-scale; self-host OSRM or use a paid routing API at scale).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !pickup || !dropoff) return;
+    const pickupLatLng = getLatLng(pickup);
+    const dropoffLatLng = getLatLng(dropoff);
+    if (!map || !pickupLatLng || !dropoffLatLng) return;
 
     let cancelled = false;
     (async () => {
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${pickup.coordinates.lng},${pickup.coordinates.lat};${dropoff.coordinates.lng},${dropoff.coordinates.lat}?overview=full&geometries=geojson`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${pickupLatLng[1]},${pickupLatLng[0]};${dropoffLatLng[1]},${dropoffLatLng[0]}?overview=full&geometries=geojson`;
         const res = await fetch(url);
         const data = await res.json();
         if (cancelled || data.code !== 'Ok') return;
@@ -187,7 +201,7 @@ export default function LocationPickerMap({
     return () => {
       cancelled = true;
     };
-  }, [pickup?.coordinates.lat, pickup?.coordinates.lng, dropoff?.coordinates.lat, dropoff?.coordinates.lng, onRouteInfo]);
+  }, [pickup?.coordinates?.lat, pickup?.coordinates?.lng, dropoff?.coordinates?.lat, dropoff?.coordinates?.lng, onRouteInfo]);
 
   const useMyLocation = () => {
     if (!navigator.geolocation || pickupLocked) return;
