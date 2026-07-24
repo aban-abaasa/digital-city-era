@@ -112,61 +112,29 @@ const CashierPortal = () => {
   // Sample products removed - using real products from Supabase
   const [sampleProducts] = useState([]);
 
-  // Payment methods available in Uganda
+  // Payment methods - IcanEra Wallet primary with full transaction control
   const paymentMethods = [
     {
-      id: 'mtn_momo',
-      name: 'MTN Mobile Money',
-      icon: '📱',
-      color: 'bg-yellow-600 hover:bg-yellow-700',
-      description: 'Pay with MTN MoMo',
-      fee: 0.015, // 1.5% fee
-      limit: 10000000 // UGX 10M daily limit
-    },
-    {
-      id: 'airtel_money',
-      name: 'Airtel Money',
-      icon: '📲',
-      color: 'bg-red-600 hover:bg-red-700',
-      description: 'Pay with Airtel Money',
-      fee: 0.02, // 2% fee
-      limit: 5000000 // UGX 5M daily limit
-    },
-    {
-      id: 'card_payment',
-      name: 'Card Payment',
-      icon: '💳',
-      color: 'bg-blue-600 hover:bg-blue-700',
-      description: 'Visa/Mastercard',
-      fee: 0.025, // 2.5% fee
-      limit: 50000000 // UGX 50M
+      id: 'icanera_wallet',
+      name: 'IcanEra Wallet',
+      icon: '💎',
+      color: 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700',
+      description: 'Digital Payment - Send & Receive with Full Control',
+      fee: 0,
+      limit: Infinity,
+      features: ['send', 'receive', 'track', 'verify'],
+      primary: true
     },
     {
       id: 'cash_ugx',
       name: 'Cash (UGX)',
       icon: '💵',
       color: 'bg-green-600 hover:bg-green-700',
-      description: 'Uganda Shillings',
-      fee: 0, // No fee
-      limit: Infinity
-    },
-    {
-      id: 'utl_money',
-      name: 'UTL Money',
-      icon: '📞',
-      color: 'bg-purple-600 hover:bg-purple-700',
-      description: 'UTL Mobile Money',
-      fee: 0.018,
-      limit: 3000000
-    },
-    {
-      id: 'm_sente',
-      name: 'M-Sente',
-      icon: '💰',
-      color: 'bg-orange-600 hover:bg-orange-700',
-      description: 'Uganda Telecom',
-      fee: 0.02,
-      limit: 2000000
+      description: 'Physical Cash Payment',
+      fee: 0,
+      limit: Infinity,
+      features: ['receive'],
+      primary: false
     }
   ];
 
@@ -1492,31 +1460,32 @@ const CashierPortal = () => {
     const paymentMethod = paymentMethods.find(pm => pm.id === paymentMethodId);
     
     try {
-      // Simulate payment processing delay
-      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+      const fee = 0;
+      const finalAmount = currentTransaction.total;
       
-      // Calculate fees
-      const fee = currentTransaction.total * paymentMethod.fee;
-      const finalAmount = currentTransaction.total + fee;
-      
-      // Check limits
-      if (finalAmount > paymentMethod.limit) {
-        throw new Error(`Amount exceeds ${paymentMethod.name} limit of ${formatUGX(paymentMethod.limit)}`);
+      // IcanEra Wallet - open the embedded wallet UI (it already has full functionality)
+      if (paymentMethodId === 'icanera_wallet') {
+        console.log('💎 Opening IcanEra Wallet view...');
+        setPaymentModal(false);
+        setActiveTab('ican-wallet');
+        toast.info('💎 Opened IcanEra Wallet — complete the payment in the Wallet view');
+        setPaymentProcessing(false);
+        return;
       }
       
-      // Simulate different payment scenarios
-      const successRate = paymentMethodId === 'cash_ugx' ? 1 : 0.95; // Cash always succeeds
-      const isSuccessful = Math.random() < successRate;
+      // Cash - Simple validation
+      if (paymentMethodId === 'cash_ugx' && cashReceived) {
+        const cashAmount = parseFloat(cashReceived);
+        if (cashAmount < currentTransaction.total) {
+          throw new Error('Insufficient cash received. Please enter the correct amount.');
+        }
+      }
+      
+      // Both payments succeed - record real transactions
+      const isSuccessful = true;
       
       if (!isSuccessful) {
-        const errors = [
-          'Insufficient funds',
-          'Network timeout',
-          'Invalid PIN',
-          'Transaction declined by bank',
-          'Service temporarily unavailable'
-        ];
-        throw new Error(errors[Math.floor(Math.random() * errors.length)]);
+        throw new Error('Payment failed - please try again');
       }
       
       const saleId = `SALE_${Date.now()}`;
