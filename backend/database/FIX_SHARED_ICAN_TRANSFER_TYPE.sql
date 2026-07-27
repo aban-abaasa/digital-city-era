@@ -45,15 +45,15 @@ BEGIN
   WHERE user_id = p_to_user;
 
   INSERT INTO public.ican_coin_transactions
-    (user_id, sender_user_id, recipient_user_id, ican_amount, type, notes, status)
+    (user_id, sender_user_id, recipient_user_id, ican_amount, local_amount, type, status)
   VALUES
-    (p_from_user, p_from_user, p_to_user, p_amount, 'transfer_out', COALESCE(p_note, ''), 'completed')
+    (p_from_user, p_from_user, p_to_user, p_amount, p_amount * 5000, 'transfer_out', 'completed')
   RETURNING id INTO v_out_tx_id;
 
   INSERT INTO public.ican_coin_transactions
-    (user_id, sender_user_id, recipient_user_id, ican_amount, type, notes, status)
+    (user_id, sender_user_id, recipient_user_id, ican_amount, local_amount, type, status)
   VALUES
-    (p_to_user, p_from_user, p_to_user, p_amount, 'transfer_in', COALESCE(p_note, ''), 'completed')
+    (p_to_user, p_from_user, p_to_user, p_amount, p_amount * 5000, 'transfer_in', 'completed')
   RETURNING id INTO v_in_tx_id;
 
   RETURN jsonb_build_object(

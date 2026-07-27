@@ -1572,6 +1572,13 @@ const CashierPortal = () => {
       let savedReceiptNumber = null;
       
       try {
+        console.log('💾 Attempting to save transaction:', {
+          items: currentTransaction.items.length,
+          total: currentTransaction.total,
+          supermarket_id: cashierProfile?.supermarket_id,
+          cashier: cashierProfile?.name
+        });
+        
         const saveResult = await transactionService.saveTransaction({
           items: currentTransaction.items,
           subtotal: currentTransaction.subtotal,
@@ -1585,11 +1592,15 @@ const CashierPortal = () => {
           customer: currentTransaction.customer || { name: 'Walk-in Customer' },
           cashier: cashierProfile,
           register: cashierProfile.register,
-          location: cashierProfile.location || 'Kampala Main Branch'
+          location: cashierProfile.location || 'Kampala Main Branch',
+          supermarket_id: cashierProfile.supermarket_id // Add supermarket_id for proper isolation
         });
         
         if (saveResult && saveResult.success) {
-          console.log('✅ Transaction saved:', saveResult.receiptNumber);
+          console.log('✅ Transaction saved successfully:', {
+            receiptNumber: saveResult.receiptNumber,
+            transactionId: saveResult.transactionId
+          });
           receiptSaved = true;
           savedReceiptNumber = saveResult.receiptNumber || `RCP-${Date.now()}`;
           
@@ -3526,6 +3537,7 @@ const CashierPortal = () => {
         <Receipt
           transaction={{}}
           receiptData={receiptData}
+          supermarketBranding={branding}
           onClose={() => {
             setShowReceiptModal(false);
             setReceiptData(null);
@@ -3601,7 +3613,8 @@ const CashierPortal = () => {
                 customer: currentTransaction.customer || { name: 'Walk-in Customer' },
                 cashier: cashierProfile,
                 register: cashierProfile.register,
-                location: cashierProfile.location || 'Kampala Main Branch'
+                location: cashierProfile.location || 'Kampala Main Branch',
+                supermarket_id: cashierProfile.supermarket_id // Add supermarket_id
               });
 
               if (saveResult.success) {

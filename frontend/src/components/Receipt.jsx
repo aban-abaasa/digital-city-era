@@ -8,8 +8,14 @@ import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy }
 import { toast } from 'react-toastify';
 import transactionService from '../services/transactionService';
 
-const Receipt = ({ transaction, receiptData, onClose }) => {
+const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => {
   const receiptRef = useRef();
+
+  // Use branding or fallback to defaults
+  const storeName = supermarketBranding?.name || 'FAREDEAL';
+  const storeLocation = receiptData?.receipt?.location || 'Kampala Main Branch';
+  const storeEmoji = supermarketBranding?.typeEmoji || '🏪';
+  const storeType = supermarketBranding?.typeLabel || 'Supermarket';
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -162,9 +168,9 @@ const Receipt = ({ transaction, receiptData, onClose }) => {
   // EMAIL RECEIPT
   // ===================================================
   const handleEmail = () => {
-    const subject = `Receipt ${receiptData.receiptNumber} - FAREDEAL Uganda`;
+    const subject = `Receipt ${receiptData.receiptNumber} - ${storeName}`;
     const body = `
-Thank you for shopping at FAREDEAL Uganda! 🇺🇬
+Thank you for shopping at ${storeName}! 🇺🇬
 
 Receipt Number: ${receiptData.receiptNumber}
 Date: ${formatDate(receiptData.timestamp)}
@@ -182,7 +188,7 @@ Total: ${formatCurrency(receiptData.receipt.total)}
 Payment Method: ${receiptData.paymentMethod}
 
 Webale nyo! (Thank you!)
-Visit us again at FAREDEAL Uganda
+Visit us again at ${storeName}
     `.trim();
 
     const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -194,7 +200,7 @@ Visit us again at FAREDEAL Uganda
   // SMS RECEIPT
   // ===================================================
   const handleSMS = () => {
-    const smsText = `FAREDEAL Uganda 🇺🇬\nReceipt: ${receiptData.receiptNumber}\nTotal: ${formatCurrency(receiptData.receipt.total)}\nDate: ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\nWebale nyo!`;
+    const smsText = `${storeName} 🇺🇬\nReceipt: ${receiptData.receiptNumber}\nTotal: ${formatCurrency(receiptData.receipt.total)}\nDate: ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\nWebale nyo!`;
     
     // For mobile devices
     if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
@@ -210,7 +216,7 @@ Visit us again at FAREDEAL Uganda
   // SHARE VIA WHATSAPP
   // ===================================================
   const handleWhatsApp = () => {
-    const whatsappText = `🇺🇬 *FAREDEAL UGANDA - RECEIPT*\n\n📄 *Receipt:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item => 
+    const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - RECEIPT*\n\n📄 *Receipt:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item => 
       `• ${item.name} x${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
     ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *VAT (18%):* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}\n\n💳 *Payment:* ${receiptData.paymentMethod}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
     
@@ -340,12 +346,12 @@ www.faredeal.ug
           <div ref={receiptRef} className="max-w-md mx-auto bg-white text-xs md:text-sm">
             {/* Receipt Header */}
             <div className="receipt-header text-center border-b-2 border-dashed border-gray-300 pb-3 md:pb-4 mb-3 md:mb-4">
-              <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">🏪 FAREDEAL</div>
-              <div className="text-base md:text-xl font-semibold text-gray-700">Uganda Supermarket 🇺🇬</div>
+              <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">{storeEmoji} {storeName}</div>
+              <div className="text-base md:text-xl font-semibold text-gray-700">{storeType} 🇺🇬</div>
               <div className="text-xs md:text-sm text-gray-600 mt-2 space-y-1">
-                <p>Kampala Main Branch</p>
-                <p>Plot 123, Kampala Road</p>
-                <p>Tel: +256-700-123456</p>
+                <p>{storeLocation}</p>
+                <p>{receiptData?.receipt?.address || 'Plot 123, Kampala Road'}</p>
+                <p>Tel: {receiptData?.receipt?.phone || '+256-700-123456'}</p>
                 <p>TIN: 1234567890</p>
               </div>
             </div>
@@ -438,7 +444,7 @@ www.faredeal.ug
             <div className="receipt-footer text-center border-t-2 border-dashed border-gray-300 pt-3 md:pt-4 mt-4 md:mt-6 text-xs md:text-sm">
               <p className="font-bold text-base md:text-lg mb-1 md:mb-2">Webale nyo! 🙏</p>
               <p className="text-gray-600 text-xs md:text-sm">Thank you for shopping with us!</p>
-              <p className="text-gray-600 text-xs md:text-sm mt-2">Visit us again at FAREDEAL Uganda</p>
+              <p className="text-gray-600 text-xs md:text-sm mt-2">Visit us again at {storeName}</p>
               <p className="text-xs text-gray-500 mt-2 md:mt-3">
                 VAT Inclusive • All prices in UGX
               </p>
@@ -446,8 +452,8 @@ www.faredeal.ug
                 Exchange & Return within 7 days with receipt
               </p>
               <div className="mt-3 md:mt-4 text-xs text-gray-400 space-y-1">
-                <p>www.faredeal.ug</p>
-                <p>support@faredeal.ug</p>
+                <p>{receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}</p>
+                <p>{receiptData?.receipt?.supportEmail || 'support@' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}</p>
               </div>
               <div className="mt-3 md:mt-4 text-xl md:text-2xl">
                 🇺🇬

@@ -25,7 +25,8 @@ class TransactionService {
         customer,
         cashier,
         register,
-        location
+        location,
+        supermarket_id  // Add supermarket_id
       } = transactionData;
 
       // Generate transaction ID and receipt number
@@ -40,6 +41,9 @@ class TransactionService {
       const transactionRecord = {
         transaction_id: transactionId,
         receipt_number: receiptNumber,
+        
+        // Supermarket isolation
+        supermarket_id: supermarket_id || cashier?.supermarket_id || null,
         
         // Cashier info
         cashier_id: cashierId,
