@@ -1513,11 +1513,11 @@ const CashierPortal = () => {
       const icanAmount = (currentTransaction.total / 5000).toFixed(4); // Convert UGX to ICAN
       
       setPaymentModal(false);
-      setActiveTab('ican-wallet');
+      setShowIcanReceiveModal(true);
       
       // Store the receive amount for the wallet to use
-      sessionStorage.setItem('ican_receive_amount', icanAmount);
-      sessionStorage.setItem('ican_receive_description', `Supermarket purchase - ${currentTransaction.items.length} items`);
+      sessionStorage.removeItem('ican_receive_amount');
+      sessionStorage.removeItem('ican_receive_description');
       
       toast.info('💎 Opening IcanEra Wallet Receive...');
       return;

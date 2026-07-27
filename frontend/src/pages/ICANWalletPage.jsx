@@ -407,6 +407,7 @@ export default function ICANWalletPage({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | null
+  const [paymentReceipt, setPaymentReceipt] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [needsPin, setNeedsPin] = useState(false);
 
@@ -474,12 +475,35 @@ export default function ICANWalletPage({
 
       console.log('[ICAN PAY] Starting real transfer:', { paymentCode, payerUserId: userId });
       const paymentResult = await payIcanRequest({ paymentCode, payerUserId: userId });
+      setPaymentReceipt(paymentResult.payerReceipt);
       toast.success(`Payment sent and recorded. Receipt: ${paymentResult.payerReceipt?.receiptNumber || 'available in transaction history'}`);
       setModal(null);
       await loadWallet();
     } catch (e) {
       toast.error(e.message || 'Payment failed');
     }
+  };
+
+  const downloadPaymentReceipt = () => {
+    if (!paymentReceipt) return;
+    const receiptText = [
+      'ICANERA WALLET PAYMENT RECEIPT',
+      '--------------------------------',
+      `Receipt: ${paymentReceipt.receiptNumber}`,
+      `Transaction: ${paymentReceipt.transactionId || 'N/A'}`,
+      `Amount: ${formatICAN(paymentReceipt.amount)} ${paymentReceipt.currency || 'ICAN'}`,
+      `Description: ${paymentReceipt.description || 'ICAN payment'}`,
+      `Payment code: ${paymentReceipt.paymentCode}`,
+      `Date: ${new Date(paymentReceipt.issuedAt).toLocaleString('en-UG')}`,
+      '',
+      'Payment successful.'
+    ].join('\n');
+    const url = URL.createObjectURL(new Blob([receiptText], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${paymentReceipt.receiptNumber}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const filteredTx = transactions.filter(tx => {
@@ -682,6 +706,26 @@ export default function ICANWalletPage({
       )}
       {modal === 'sell' && (
         <SendIcanOutModal userId={userId} balance={balance} onClose={() => setModal(null)} onSuccess={loadWallet} />
+      )}
+      {paymentReceipt && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-gray-900">
+            <div className="text-center">
+              <div className="text-5xl mb-3">✅</div>
+              <h2 className="text-xl font-bold text-emerald-700">Payment successful</h2>
+              <p className="text-sm text-gray-600 mt-1">Your ICAN payment has been sent and recorded.</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 mt-5 space-y-2 text-sm">
+              <div className="flex justify-between gap-4"><span>Receipt</span><strong>{paymentReceipt.receiptNumber}</strong></div>
+              <div className="flex justify-between gap-4"><span>Amount</span><strong>{formatICAN(paymentReceipt.amount)} {paymentReceipt.currency || 'ICAN'}</strong></div>
+              <div className="flex justify-between gap-4"><span>Transaction</span><strong className="truncate">{paymentReceipt.transactionId || 'N/A'}</strong></div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={downloadPaymentReceipt} className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold">Download receipt</button>
+              <button onClick={() => setPaymentReceipt(null)} className="px-5 py-3 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold">Close</button>
+            </div>
+          </div>
+        </div>
       )}
       {needsPin && (
         <SetPinPrompt userId={userId} onDone={() => setNeedsPin(false)} />
