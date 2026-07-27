@@ -473,8 +473,8 @@ export default function ICANWalletPage({
       }
 
       console.log('[ICAN PAY] Starting real transfer:', { paymentCode, payerUserId: userId });
-      await payIcanRequest({ paymentCode, payerUserId: userId });
-      toast.success('Payment sent successfully and recorded on the ICAN ledger');
+      const paymentResult = await payIcanRequest({ paymentCode, payerUserId: userId });
+      toast.success(`Payment sent and recorded. Receipt: ${paymentResult.payerReceipt?.receiptNumber || 'available in transaction history'}`);
       setModal(null);
       await loadWallet();
     } catch (e) {

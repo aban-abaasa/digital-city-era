@@ -119,6 +119,17 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
     note: request.description || 'QR payment',
     referenceId: request.id,
   });
+  const payerReceipt = {
+    receiptNumber: `ICAN-RCP-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+    paymentCode,
+    transactionId: transfer.out_tx_id || transfer.transaction_id || null,
+    amount: Number(request.amount),
+    currency: request.currency || 'ICAN',
+    payerUserId,
+    recipientUserId: request.user_id,
+    issuedAt: new Date().toISOString(),
+    description: request.description || 'ICAN QR payment',
+  };
 
   const completion = {
     status: 'completed',
@@ -144,7 +155,14 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
     throw new Error(`Payment transferred, but the request could not be closed: ${completionError.message}`);
   }
 
-  return { request, transfer };
+  try {
+    const stored = JSON.parse(localStorage.getItem('ican_payment_receipts') || '[]');
+    localStorage.setItem('ican_payment_receipts', JSON.stringify([payerReceipt, ...stored].slice(0, 100)));
+  } catch (_) {
+    // The durable ICAN transaction remains the source of truth if storage is unavailable.
+  }
+
+  return { request, transfer, payerReceipt };
 }
 
 export async function getActiveIcanPaymentRequests(userId) {

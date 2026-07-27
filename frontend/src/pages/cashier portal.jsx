@@ -3620,6 +3620,29 @@ const CashierPortal = () => {
               if (saveResult.success) {
                 console.log('✅ Transaction saved:', saveResult.receiptNumber);
                 
+                // Persist the cashier-side receipt as proof of the completed ICAN payment.
+                const cashierReceipt = await receiptService.saveReceipt({
+                  receiptNumber: saveResult.receiptNumber,
+                  transactionId: saveResult.transactionId || result.transactionId,
+                  cashierId: user?.id,
+                  cashierName: cashierProfile.name,
+                  customerName: currentTransaction.customer?.name || 'Walk-in Customer',
+                  totalAmount: currentTransaction.total,
+                  paymentMethod: 'IcanEra Wallet',
+                  paymentReference: result.transactionId,
+                  itemsJson: currentTransaction.items,
+                  subtotal: currentTransaction.subtotal,
+                  taxAmount: currentTransaction.tax,
+                  amountPaid: currentTransaction.total,
+                  changeGiven: 0,
+                  registerNumber: cashierProfile.register || 'POS-001',
+                  storeLocation: cashierProfile.location || 'Kampala Main Branch',
+                  notes: `ICAN payment code: ${paymentData.paymentCode}`
+                });
+                if (!cashierReceipt.success) {
+                  console.warn('Cashier receipt was not persisted:', cashierReceipt.error);
+                }
+
                 // Set receipt data for display
                 setReceiptData({
                   ...result,
