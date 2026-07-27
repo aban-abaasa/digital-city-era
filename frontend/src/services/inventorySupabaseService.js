@@ -520,16 +520,22 @@ class InventorySupabaseService {
    * @param {string} saleId - Sale reference ID
    * @returns {Promise<boolean>} Success status
    */
-  async adjustStockAfterSale(items, saleId) {
+  async adjustStockAfterSale(items, saleId, supermarketId = null) {
     try {
+      const exactSupermarketId = supermarketId || await this.getCurrentSupermarketId();
+      if (!exactSupermarketId) throw new Error('Cannot adjust stock without the cashier supermarket ID');
+
       for (const item of items) {
-        const { product_id, quantity } = item;
+        const product_id = item.product_id || item.id;
+        const quantity = Number(item.quantity);
+        if (!product_id || !(quantity > 0)) throw new Error('Invalid product or quantity in sale');
 
         // Get current inventory
         const { data: inventory, error: fetchError } = await supabase
           .from('inventory')
           .select('current_stock')
           .eq('product_id', product_id)
+          .eq('supermarket_id', exactSupermarketId)
           .single();
 
         if (fetchError) throw fetchError;
@@ -541,17 +547,20 @@ class InventorySupabaseService {
           continue;
         }
 
-        // Update inventory
-        const { error: updateError } = await supabase
+        // Update only the exact cashier store's inventory row.
+        const scopedUpdate = supabase
           .from('inventory')
           .update({ current_stock: newStock })
-          .eq('product_id', product_id);
+          .eq('product_id', product_id)
+          .eq('supermarket_id', exactSupermarketId);
+        const { error: scopedUpdateError } = await scopedUpdate;
 
-        if (updateError) throw updateError;
+        if (scopedUpdateError) throw scopedUpdateError;
 
         // Log the movement
         await this.logInventoryMovement({
           product_id,
+          supermarket_id: exactSupermarketId,
           movement_type: 'sale',
           quantity: -quantity,
           previous_stock: inventory.current_stock,

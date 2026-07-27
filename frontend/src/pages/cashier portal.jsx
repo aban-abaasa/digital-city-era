@@ -3658,7 +3658,14 @@ const CashierPortal = () => {
                   quantity: item.quantity
                 }));
                 
-                await inventoryService.adjustStockAfterSale(itemsForStockUpdate, `SALE_${Date.now()}`);
+                const stockUpdated = await inventoryService.adjustStockAfterSale(
+                  itemsForStockUpdate,
+                  `SALE_${Date.now()}`,
+                  cashierProfile.supermarket_id
+                );
+                if (!stockUpdated) {
+                  toast.error('Payment completed, but store inventory could not be updated. Please refresh and retry stock adjustment.');
+                }
                 
                 // Show receipt modal
                 setTimeout(() => {
