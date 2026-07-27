@@ -17,11 +17,13 @@ const ReceiveMoneyModal = ({
   onClose, 
   userId,
   selectedCurrency = 'ICAN',
-  onSuccess = null 
+  onSuccess = null,
+  prefilledAmount = null,
+  prefilledDescription = ''
 }) => {
   const initialFormData = {
-    amount: '',
-    description: ''
+    amount: prefilledAmount || '',
+    description: prefilledDescription || ''
   };
 
   const [step, setStep] = useState('form'); // 'form', 'qrcode', 'active' - REMOVED 'choice', 'pay', 'scanner'

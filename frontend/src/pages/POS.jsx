@@ -87,6 +87,17 @@ const POS = () => {
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
   
+  // Search Tab State
+  const [showSearchTab, setShowSearchTab] = useState(false);
+  const [searchFilters, setSearchFilters] = useState({
+    name: '',
+    category: '',
+    minPrice: '',
+    maxPrice: '',
+    stockStatus: 'all' // all, in-stock, low-stock, out-of-stock
+  });
+  const [searchResults, setSearchResults] = useState([]);
+  
   // Refs
   const audioRef = useRef(null);
   const barcodeRef = useRef(null);
@@ -113,6 +124,58 @@ const POS = () => {
   useEffect(() => {
     // DualScannerInterface handles its own focus management
   }, []);
+
+  // Dynamic mood changes based on sales performance
+  useEffect(() => {
+    const progress = (todaysSales / dailyTarget) * 100;
+    if (progress >= 100) setCashierMood('energetic');
+    else if (progress >= 70) setCashierMood('happy');
+    else setCashierMood('focused');
+  }, [todaysSales, dailyTarget]);
+
+  // Handle advanced product search
+  useEffect(() => {
+    if (!showSearchTab) return;
+    
+    let results = [...products];
+    
+    // Filter by name
+    if (searchFilters.name.trim()) {
+      results = results.filter(p =>
+        p.name.toLowerCase().includes(searchFilters.name.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(searchFilters.name.toLowerCase())
+      );
+    }
+    
+    // Filter by category
+    if (searchFilters.category) {
+      results = results.filter(p => p.category_id === searchFilters.category);
+    }
+    
+    // Filter by price range
+    if (searchFilters.minPrice) {
+      results = results.filter(p => p.price >= parseFloat(searchFilters.minPrice));
+    }
+    if (searchFilters.maxPrice) {
+      results = results.filter(p => p.price <= parseFloat(searchFilters.maxPrice));
+    }
+    
+    // Filter by stock status
+    if (searchFilters.stockStatus !== 'all') {
+      results = results.filter(p => {
+        const stock = p.stock || 0;
+        if (searchFilters.stockStatus === 'in-stock') return stock > 10;
+        if (searchFilters.stockStatus === 'low-stock') return stock > 0 && stock <= 10;
+        if (searchFilters.stockStatus === 'out-of-stock') return stock === 0;
+        return true;
+      });
+    }
+    
+    // Filter to active products only
+    results = results.filter(p => p.isActive);
+    
+    setSearchResults(results);
+  }, [showSearchTab, searchFilters, products]);
 
   // Dynamic mood changes based on sales performance
   useEffect(() => {
@@ -498,6 +561,16 @@ const POS = () => {
     return moods[cashierMood] || '😊';
   };
 
+  const resetSearchFilters = () => {
+    setSearchFilters({
+      name: '',
+      category: '',
+      minPrice: '',
+      maxPrice: '',
+      stockStatus: 'all'
+    });
+  };
+
   const processSale = async () => {
     if ((cart || []).length === 0) {
       playSound('error');
@@ -677,6 +750,21 @@ const POS = () => {
                 <span className="text-xs opacity-80">Mobile • USB • Bluetooth</span>
               </div>
               <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 to-orange-400/20 rounded-xl animate-pulse"></div>
+            </button>
+
+            {/* Product Search Tab */}
+            <button
+              onClick={() => setShowSearchTab(!showSearchTab)}
+              className="relative px-6 py-3 rounded-xl font-bold transition-all flex items-center space-x-2 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white shadow-xl transform hover:scale-105 hover:shadow-2xl"
+            >
+              <FiSearch className="h-6 w-6" />
+              <div className="flex flex-col items-start">
+                <span className="text-sm font-bold">🔍 Search Products</span>
+                <span className="text-xs opacity-80">Advanced Filter</span>
+              </div>
+              {showSearchTab && (
+                <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 to-orange-400/20 rounded-xl"></div>
+              )}
             </button>
 
             {/* Receipt History */}
@@ -1018,6 +1106,231 @@ const POS = () => {
                   });
                 }
               }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Advanced Product Search Modal */}
+      {showSearchTab && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white p-6 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <FiSearch className="h-8 w-8" />
+                <div>
+                  <h2 className="text-2xl font-bold">🔍 Advanced Product Search</h2>
+                  <p className="text-blue-100 text-sm">Find products by name, price, category, or stock status</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSearchTab(false)}
+                className="p-2 hover:bg-white/20 rounded-lg transition-all"
+              >
+                <FiX className="h-8 w-8" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="overflow-y-auto flex-1 bg-gray-50">
+              {/* Search Filters */}
+              <div className="bg-white border-b border-gray-200 p-6 sticky top-0 z-10">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  {/* Product Name/SKU Search */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Product Name / SKU
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter product name..."
+                      value={searchFilters.name}
+                      onChange={(e) => setSearchFilters({...searchFilters, name: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Category Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category
+                    </label>
+                    <select
+                      value={searchFilters.category}
+                      onChange={(e) => setSearchFilters({...searchFilters, category: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">All Categories</option>
+                      {(categories || []).map(category => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Min Price */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Min Price
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="Min..."
+                      value={searchFilters.minPrice}
+                      onChange={(e) => setSearchFilters({...searchFilters, minPrice: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Max Price */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Max Price
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="Max..."
+                      value={searchFilters.maxPrice}
+                      onChange={(e) => setSearchFilters({...searchFilters, maxPrice: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Stock Status */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Stock Status
+                    </label>
+                    <select
+                      value={searchFilters.stockStatus}
+                      onChange={(e) => setSearchFilters({...searchFilters, stockStatus: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="all">All Stock</option>
+                      <option value="in-stock">In Stock (>10)</option>
+                      <option value="low-stock">Low Stock (1-10)</option>
+                      <option value="out-of-stock">Out of Stock</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Filter Results Count */}
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold text-indigo-600">{searchResults.length}</span> products found
+                  </p>
+                  <button
+                    onClick={() => setSearchFilters({name: '', category: '', minPrice: '', maxPrice: '', stockStatus: 'all'})}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              </div>
+
+              {/* Search Results Grid */}
+              <div className="p-6">
+                {searchResults.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {searchResults.map(product => (
+                      <div
+                        key={product.id}
+                        className="bg-white rounded-xl border-2 border-gray-200 hover:border-indigo-500 transition-all shadow-sm hover:shadow-lg overflow-hidden group"
+                      >
+                        {/* Product Header */}
+                        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 border-b border-gray-200">
+                          <h3 className="font-bold text-gray-900 text-sm line-clamp-2 group-hover:text-indigo-600">
+                            {product.name}
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-1">SKU: {product.sku || 'N/A'}</p>
+                        </div>
+
+                        {/* Product Details */}
+                        <div className="p-4 space-y-3">
+                          {/* Price */}
+                          <div>
+                            <p className="text-xs text-gray-500">Price</p>
+                            <p className="text-xl font-bold text-gray-900">
+                              {formatCurrency(product.price)}
+                            </p>
+                          </div>
+
+                          {/* Stock Status */}
+                          <div>
+                            <p className="text-xs text-gray-500">Stock Available</p>
+                            <div className="flex items-center justify-between">
+                              <p className="text-lg font-bold text-gray-900">{product.stock || 0} units</p>
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                (product.stock || 0) > 10 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : (product.stock || 0) > 0 
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}>
+                                {(product.stock || 0) > 10 ? '✅ In Stock' : (product.stock || 0) > 0 ? '⚠️ Low' : '❌ Out'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Category */}
+                          {product.category_id && (
+                            <div>
+                              <p className="text-xs text-gray-500">Category</p>
+                              <p className="text-sm text-gray-700 font-medium">{product.category_id}</p>
+                            </div>
+                          )}
+
+                          {/* Add to Cart Button */}
+                          <button
+                            onClick={() => {
+                              if (product.stock > 0) {
+                                addToCart(product);
+                                toast.success(`✅ ${product.name} added to cart!`);
+                              } else {
+                                toast.error('❌ Product out of stock');
+                              }
+                            }}
+                            disabled={product.stock <= 0}
+                            className={`w-full py-2 rounded-lg font-bold transition-all flex items-center justify-center space-x-2 ${
+                              product.stock > 0
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600'
+                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <FiPlus className="h-4 w-4" />
+                            <span>Add to Cart</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20">
+                    <div className="h-32 w-32 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <FiSearch className="h-16 w-16 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-600 mb-2">No products found</h3>
+                    <p className="text-gray-400 max-w-md mx-auto">
+                      Try adjusting your search filters or clear them to see all available products.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-white border-t border-gray-200 p-6 flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                💡 Tip: Click any product card to add it to your cart
+              </p>
+              <button
+                onClick={() => setShowSearchTab(false)}
+                className="px-6 py-2 bg-gray-200 text-gray-800 font-bold rounded-lg hover:bg-gray-300 transition-all"
+              >
+                Close Search
+              </button>
             </div>
           </div>
         </div>

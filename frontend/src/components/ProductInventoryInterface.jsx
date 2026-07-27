@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
-import { FiPackage, FiShoppingCart, FiSettings, FiTrendingUp, FiAlertTriangle, FiPlus, FiTruck, FiZap, FiUpload, FiEdit2 } from 'react-icons/fi';
+import { FiPackage, FiShoppingCart, FiSettings, FiTrendingUp, FiAlertTriangle, FiPlus, FiTruck, FiZap, FiUpload, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import AddProductModal from './AddProductModal';
 import inventoryService from '../services/inventorySupabaseService';
@@ -50,9 +50,12 @@ const ProductInventoryInterface = () => {
         .select('*')
         .order('created_at', { ascending: false });
 
-      productsQuery = supermarketId
-        ? productsQuery.or(`supermarket_id.eq.${supermarketId},supermarket_id.is.null`)
-        : productsQuery;
+      if (!supermarketId) {
+        setProducts([]);
+        toast.error('No supermarket is assigned to this admin account.');
+        return;
+      }
+      productsQuery = productsQuery.eq('supermarket_id', supermarketId);
 
       const { data: productsData, error: productsError } = await productsQuery;
 
@@ -67,7 +70,8 @@ const ProductInventoryInterface = () => {
       // Fetch inventory data separately
       const { data: inventoryData, error: inventoryError } = await supabase
         .from('inventory')
-        .select('product_id, current_stock, minimum_stock, reorder_point');
+        .select('product_id, current_stock, minimum_stock, reorder_point, supermarket_id')
+        .eq('supermarket_id', supermarketId);
 
       if (inventoryError) {
         console.warn('⚠️ Could not load inventory data:', inventoryError);
@@ -113,6 +117,56 @@ const ProductInventoryInterface = () => {
   };
 
   const downloadTemplate = (format) => downloadProductTemplate(format);
+
+  const clearAllProducts = async () => {
+    const supermarketId = await inventoryService.getCurrentSupermarketId();
+    if (!supermarketId) {
+      toast.error('No supermarket is assigned to this admin account.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `This will permanently delete all products for this supermarket (${products.length} currently loaded). Continue?`
+    );
+    if (!confirmed) return;
+
+    const typedConfirmation = window.prompt(
+      'Type CLEAR INVENTORY to permanently delete this supermarket inventory:'
+    );
+    if (typedConfirmation !== 'CLEAR INVENTORY') {
+      toast.info('Inventory clear cancelled.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error: productsError } = await supabase
+        .from('products')
+        .delete()
+        .eq('supermarket_id', supermarketId);
+
+      if (productsError) throw productsError;
+
+      // Remove any inventory rows left behind by deployments without a
+      // cascade relationship. This remains scoped to the exact store ID.
+      const { error: inventoryError } = await supabase
+        .from('inventory')
+        .delete()
+        .eq('supermarket_id', supermarketId);
+
+      if (inventoryError) console.warn('Inventory cleanup warning:', inventoryError);
+
+      setProducts([]);
+      toast.success('All products for this supermarket were deleted.');
+      await loadProducts();
+    } catch (error) {
+      console.error('Failed to clear supermarket inventory:', error);
+      toast.error(`Could not clear inventory: ${error.message || 'Unknown error'}`);
+      await loadProducts();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Exports the currently loaded product list so it can be edited and re-imported
   const exportProducts = (format) => {
@@ -493,9 +547,19 @@ const ProductInventoryInterface = () => {
               <span className="hidden md:inline">Add Product</span>
               <span className="md:hidden">Add</span>
             </button>
+            <button
+              onClick={clearAllProducts}
+              disabled={loading || products.length === 0}
+              title="Permanently delete all products for this supermarket"
+              className="col-span-1 px-3 md:px-4 py-2 md:py-2.5 bg-red-600 text-white text-xs md:text-sm rounded-lg hover:bg-red-700 transition-colors font-medium shadow-md flex items-center justify-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FiTrash2 className="h-4 w-4" />
+              <span className="hidden md:inline">Delete All</span>
+              <span className="md:hidden">Delete</span>
+            </button>
             <input
               type="file"
-              accept=".csv,.xlsx,.xls,.pdf"
+              accept=".csv,.xlsx,.xls,.xlsm,.pdf"
               ref={fileInputRef}
               onChange={handleFileUpload}
               className="hidden"

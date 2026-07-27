@@ -18,6 +18,7 @@ const PayMoneyModal = ({
   const [scannedData, setScannedData] = useState('');
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [processingPayment, setProcessingPayment] = useState(false);
   const [scanBuffer, setScanBuffer] = useState('');
   
   // Refs for scanner
@@ -31,6 +32,7 @@ const PayMoneyModal = ({
     setScannedData('');
     setError(null);
     setSuccessMessage(null);
+    setProcessingPayment(false);
     setScanBuffer('');
     
     // Stop camera if active
@@ -254,7 +256,7 @@ const PayMoneyModal = ({
     detectFrame();
   };
 
-  const handleScannedCode = (code) => {
+  const handleScannedCode = async (code) => {
     console.log('📱 Processing scanned code:', code);
     setScannedData(code);
     setSuccessMessage('✅ QR Code scanned!');
@@ -266,9 +268,15 @@ const PayMoneyModal = ({
     }
     setCameraActive(false);
     
-    // Notify parent
+    setProcessingPayment(true);
+
+    // Notify parent and wait for the real wallet transfer to finish.
     if (onPaymentScanned) {
-      onPaymentScanned(code);
+      try {
+        await onPaymentScanned(code);
+      } finally {
+        setProcessingPayment(false);
+      }
     }
   };
 
@@ -393,7 +401,7 @@ const PayMoneyModal = ({
             >
               ✕
             </button>
-            {scannedData.trim() && (
+            {scannedData.trim() && !processingPayment && (
               <button
                 onClick={() => {
                   handleScannedCode(scannedData.trim());
@@ -402,6 +410,12 @@ const PayMoneyModal = ({
               >
                 Pay
               </button>
+            )}
+            {processingPayment && (
+              <div className="flex-1 px-4 py-2 bg-orange-500/80 text-white rounded-lg text-center font-semibold">
+                <Loader className="inline-block w-4 h-4 mr-2 animate-spin" />
+                Processing transfer...
+              </div>
             )}
           </div>
         </div>

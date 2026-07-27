@@ -83,6 +83,9 @@ export async function getTransactions(userId, limit = 30) {
 
 /** Send ICAN from one user to another (0% fee — recipient gets the full amount). */
 export async function sendICAN({ fromUserId, toUserId, amount, note = '', referenceId = null }) {
+  if (!fromUserId || !toUserId) throw new Error('Both payer and recipient wallets are required');
+  if (!(Number(amount) > 0)) throw new Error('Transfer amount must be greater than zero');
+
   const { data, error } = await supabase.rpc('transfer_ican', {
     p_from_user: fromUserId,
     p_to_user: toUserId,
@@ -92,7 +95,7 @@ export async function sendICAN({ fromUserId, toUserId, amount, note = '', refere
     p_reference_id: referenceId,
   });
   if (error) throw error;
-  if (!data.success) throw new Error(data.error);
+  if (!data?.success) throw new Error(data?.error || 'The ICAN transfer was not recorded');
   return data;
 }
 

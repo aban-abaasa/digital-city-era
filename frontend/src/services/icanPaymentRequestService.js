@@ -1,15 +1,14 @@
 /**
- * ICAN Payment Request Service
+ * ICAN Payment Request Service - digital-city-era (SupermartKera POS)
  * Real, working "Receive" requests denominated in icaneracoin — reuses the
  * same shared payment_requests table ICAN app already uses for local
- * currency requests (see ALLOW_ICAN_PAYMENT_REQUESTS.sql, which adds 'ICAN'
- * as a valid currency). A request generates a real scannable QR value
+ * currency requests. A request generates a real scannable QR value
  * (`ICANPAY:<code>`); paying it calls sendICAN() (0% fee, same as any
  * wallet-to-wallet send) and marks the request completed.
  */
 
 import { supabase } from './supabase';
-import { sendICAN } from './icanWalletService';
+import { sendICAN, ICAN_TO_UGX, getUserWalletDisplay } from './icanWalletService';
 
 const TABLE = 'payment_requests';
 
@@ -23,31 +22,73 @@ function generatePaymentCode() {
 export async function createIcanPaymentRequest({ userId, icanAmount, description = '' }) {
   if (!(icanAmount > 0)) throw new Error('Enter a valid ICAN amount');
   const paymentCode = generatePaymentCode();
+  const display = await getUserWalletDisplay(userId);
+  const localCurrency = display?.currency_code || 'UGX';
+  const localPrice = Number(display?.price_local) > 0 ? Number(display.price_local) : ICAN_TO_UGX;
 
-  const { data, error } = await supabase
+  const requestFields = {
+    user_id: userId,
+    payment_code: paymentCode,
+    amount: icanAmount,
+    currency: 'ICAN',
+    description,
+    status: 'pending',
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  };
+
+  let { data, error } = await supabase
     .from(TABLE)
-    .insert({
-      user_id: userId,
-      payment_code: paymentCode,
-      amount: icanAmount,
-      currency: 'ICAN',
-      description,
-      status: 'pending',
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    })
+    .insert(requestFields)
     .select()
     .single();
+
+  // Older deployments reject ICAN in valid_currency. Keep the QR flow
+  // working by storing the equivalent UGX amount and marking the request in
+  // its description; all reads below convert it back to ICAN before transfer.
+  if (error?.code === '23514' && /valid_currency/i.test(error.message || '')) {
+    ({ data, error } = await supabase
+      .from(TABLE)
+      .insert({
+        ...requestFields,
+        amount: icanAmount * localPrice,
+        currency: localCurrency,
+        description: `ICAN_REQUEST:${icanAmount}|${localCurrency}|${localPrice}|${description}`,
+      })
+      .select()
+      .single());
+
+    // If a deployment has a narrower currency allow-list, retain the safe
+    // UGX fallback while preserving the user's local conversion in the QR
+    // request whenever the schema permits it.
+    if (error?.code === '23514' && localCurrency !== 'UGX') {
+      ({ data, error } = await supabase
+        .from(TABLE)
+        .insert({
+          ...requestFields,
+          amount: icanAmount * ICAN_TO_UGX,
+          currency: 'UGX',
+          description: `ICAN_REQUEST:${icanAmount}|UGX|${ICAN_TO_UGX}|${description}`,
+        })
+        .select()
+        .single());
+    }
+  }
 
   if (error) throw error;
   return { ...data, qrValue: `ICANPAY:${paymentCode}` };
 }
+
+const getRequestIcanAmount = (request) => {
+  if (request.currency === 'ICAN') return Number(request.amount);
+  const match = /^ICAN_REQUEST:([\d.]+)\|/.exec(request.description || '');
+  return match ? Number(match[1]) : Number(request.amount) / ICAN_TO_UGX;
+};
 
 export async function getIcanPaymentRequest(paymentCode) {
   const { data, error } = await supabase
     .from(TABLE)
     .select('*')
     .eq('payment_code', paymentCode)
-    .eq('currency', 'ICAN')
     .single();
 
   if (error || !data) throw new Error('Payment request not found');
@@ -58,8 +99,13 @@ export async function getIcanPaymentRequest(paymentCode) {
 
 /** Parses a scanned QR value; returns the payment code, or null if not an ICAN payment request. */
 export function parseIcanPayCode(scannedText) {
-  const match = /^ICANPAY:(.+)$/.exec((scannedText || '').trim());
-  return match ? match[1] : null;
+  const value = (scannedText || '').trim();
+  const qrMatch = /^ICANPAY:(.+)$/i.exec(value);
+  if (qrMatch) return qrMatch[1].trim();
+
+  // Manual entry often uses the displayed payment code directly
+  // (`ICANPAY_ABC123`) rather than the QR payload (`ICANPAY:ICANPAY_ABC123`).
+  return /^ICANPAY_[A-Z0-9]+$/i.test(value) ? value : null;
 }
 
 export async function payIcanRequest({ paymentCode, payerUserId }) {
@@ -69,14 +115,11 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
   const transfer = await sendICAN({
     fromUserId: payerUserId,
     toUserId: request.user_id,
-    amount: parseFloat(request.amount),
+    amount: getRequestIcanAmount(request),
     note: request.description || 'QR payment',
     referenceId: request.id,
   });
 
-  // Best-effort close-out — the transfer itself already succeeded above;
-  // if another payer's update races this one, the request just ends up
-  // marked completed by whichever update lands first.
   const { error: completionError } = await supabase
     .from(TABLE)
     .update({
@@ -100,13 +143,14 @@ export async function getActiveIcanPaymentRequests(userId) {
     .from(TABLE)
     .select('*')
     .eq('user_id', userId)
-    .eq('currency', 'ICAN')
     .eq('status', 'pending')
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  return (data || []).filter(request =>
+    request.currency === 'ICAN' || request.description?.startsWith('ICAN_REQUEST:')
+  );
 }
 
 export async function deleteIcanPaymentRequest(paymentCode) {

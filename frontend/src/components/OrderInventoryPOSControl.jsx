@@ -238,6 +238,13 @@ const OrderInventoryPOSControl = () => {
       const generatedSKU = `SKU-${trimmedBarcode.substring(0, 8)}`;
       const supermarketId = await inventoryService.getCurrentSupermarketId();
 
+      if (!supermarketId) {
+        setProducts([]);
+        setFilteredProducts([]);
+        toast.error('No supermarket is assigned to this admin account.');
+        return;
+      }
+
       const { data: newProduct, error: createError } = await supabase
         .from('products')
         .insert([{
@@ -392,9 +399,7 @@ const OrderInventoryPOSControl = () => {
         .eq('is_active', true)
         .order('name');
 
-      productsQuery = supermarketId
-        ? productsQuery.or(`supermarket_id.eq.${supermarketId},supermarket_id.is.null`)
-        : productsQuery;
+      productsQuery = productsQuery.eq('supermarket_id', supermarketId);
 
       const { data: productsData, error: productsError } = await productsQuery;
 
@@ -403,7 +408,8 @@ const OrderInventoryPOSControl = () => {
       // Load inventory separately
       const { data: inventoryData, error: inventoryError } = await supabase
         .from('inventory')
-        .select('product_id, current_stock');
+        .select('product_id, current_stock')
+        .eq('supermarket_id', supermarketId);
 
       if (inventoryError) {
         console.warn('⚠️ Could not load inventory data:', inventoryError);
@@ -826,6 +832,53 @@ const OrderInventoryPOSControl = () => {
     }
   };
 
+  const deleteAllProducts = async () => {
+    if (!isAdmin) {
+      toast.error('❌ Only Admins can delete inventory');
+      return;
+    }
+
+    const supermarketId = await inventoryService.getCurrentSupermarketId();
+    if (!supermarketId) {
+      toast.error('No supermarket is assigned to this admin account.');
+      return;
+    }
+
+    if (!window.confirm(`Permanently delete all ${products.length} products for this supermarket?`)) {
+      return;
+    }
+
+    if (window.prompt('Type CLEAR INVENTORY to confirm:') !== 'CLEAR INVENTORY') {
+      toast.info('Inventory deletion cancelled.');
+      return;
+    }
+
+    setRefreshing(true);
+    try {
+      const { error: productError } = await supabase
+        .from('products')
+        .delete()
+        .eq('supermarket_id', supermarketId);
+      if (productError) throw productError;
+
+      await supabase
+        .from('inventory')
+        .delete()
+        .eq('supermarket_id', supermarketId);
+
+      setProducts([]);
+      setFilteredProducts([]);
+      toast.success('All products for this supermarket were deleted.');
+      await loadData();
+    } catch (error) {
+      console.error('Failed to delete all products:', error);
+      toast.error(`Could not delete inventory: ${error.message || 'Unknown error'}`);
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const exportInventory = (format = 'csv') => {
     if (filteredProducts.length === 0) {
       toast.info('No products to export yet');
@@ -982,7 +1035,7 @@ const OrderInventoryPOSControl = () => {
             </button>
             <input
               type="file"
-              accept=".csv,.xlsx,.xls,.pdf"
+              accept=".csv,.xlsx,.xls,.xlsm,.pdf"
               ref={fileInputRef}
               onChange={handleFileUpload}
               className="hidden"
@@ -1028,6 +1081,17 @@ const OrderInventoryPOSControl = () => {
             >
               <FiRefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? 'Syncing...' : 'Refresh'}
+            </button>
+            <button
+              onClick={deleteAllProducts}
+              disabled={!isAdmin || refreshing || products.length === 0}
+              title="Permanently delete all products for this supermarket"
+              className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-colors flex items-center justify-center gap-1 font-semibold whitespace-nowrap ${
+                isAdmin ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+              }`}
+            >
+              <FiTrash2 className="h-4 w-4" />
+              Delete All
             </button>
             <select
               value=""

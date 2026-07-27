@@ -2,7 +2,7 @@
 // features (Admin Inventory panel, Order Inventory - POS control, etc).
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { autoTable } from 'jspdf-autotable';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import inventoryService from '../services/inventorySupabaseService';
 
@@ -11,9 +11,13 @@ import inventoryService from '../services/inventorySupabaseService';
 // worker resolution in both dev and production builds.
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
 
-export const SUPPORTED_IMPORT_EXTENSIONS = ['csv', 'xlsx', 'xls', 'pdf'];
+export const SUPPORTED_IMPORT_EXTENSIONS = ['csv', 'xlsx', 'xls', 'xlsm', 'pdf'];
 
-const normalizeKey = (key) => String(key).toLowerCase().trim().replace(/\s+/g, '_');
+const normalizeKey = (key) => String(key)
+  .toLowerCase()
+  .trim()
+  .replace(/[^a-z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '');
 
 // Parses a CSV file (handles quoted fields) into an array of lowercase-keyed row objects
 const parseCSV = (text) => {
@@ -53,7 +57,13 @@ const parseCSV = (text) => {
 const parseExcel = async (file) => {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  // Some store exports leave a blank cover sheet before the actual data.
+  // Select the first worksheet that contains usable rows.
+  const sheetName = workbook.SheetNames.find(name => {
+    const candidate = XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: '' });
+    return candidate.length > 0;
+  }) || workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
   const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
   return json.map(row => {
     const normalized = {};
@@ -185,6 +195,39 @@ const parseAsStockReport = (lines) => {
   return { rows, unmatchedSample };
 };
 
+// The app's own PDF export is rendered as a plain text row by pdf.js rather
+// than tab-separated cells. Its columns are stable, so parse from the right:
+// name, sku, category, cost, selling price, margin, stock, status.
+const parseExportedInventoryTable = (lines) => {
+  const headerIndex = lines.findIndex(line => {
+    const normalized = line.toLowerCase().replace(/[_\s]+/g, ' ');
+    return normalized.includes('name') && normalized.includes('sku') &&
+      normalized.includes('current stock') && normalized.includes('status');
+  });
+  if (headerIndex === -1) return [];
+
+  const rows = [];
+  for (const line of lines.slice(headerIndex + 1)) {
+    const match = line.match(
+      /^(.+?)\s+(\S+)\s+(\S+)\s+(-?[\d,.]+)\s+(-?[\d,.]+)\s+(-?[\d,.]+)\s+(-?[\d,.]+)\s+(\S+)$/
+    );
+    if (!match) continue;
+
+    const [, name, sku, category, costPrice, sellingPrice, marginPercent, stock, status] = match;
+    rows.push({
+      name: name.trim(),
+      sku: sku.trim(),
+      category: category.trim(),
+      cost_price: costPrice.replace(/,/g, ''),
+      selling_price: sellingPrice.replace(/,/g, ''),
+      margin_percent: marginPercent.replace(/,/g, ''),
+      initial_stock: stock.replace(/,/g, ''),
+      status: status.trim()
+    });
+  }
+  return rows;
+};
+
 // Words that plausibly appear in a real column header, used to find the
 // actual header row rather than assuming it's line 1 — reports commonly lead
 // with a title, company letterhead, or print date before the data table.
@@ -212,6 +255,12 @@ const parsePDF = (file) => withTimeout((async () => {
   console.log(`[parsePDF] extracted ${lines.length} line(s); first 15:`, lines.slice(0, 15));
 
   if (lines.length === 0) return [];
+
+  const exportedInventoryRows = parseExportedInventoryTable(lines);
+  if (exportedInventoryRows.length > 0) {
+    console.log(`[parsePDF] parsed ${exportedInventoryRows.length} exported inventory row(s)`);
+    return exportedInventoryRows;
+  }
 
   const { rows: stockReportRows, unmatchedSample } = parseAsStockReport(lines);
   const matchRatio = stockReportRows.length / lines.length;
@@ -261,7 +310,7 @@ const parsePDF = (file) => withTimeout((async () => {
 export const parseProductFile = async (file) => {
   const ext = file.name.toLowerCase().split('.').pop();
   if (ext === 'csv') return parseCSV(await file.text());
-  if (ext === 'xlsx' || ext === 'xls') return parseExcel(file);
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm') return parseExcel(file);
   if (ext === 'pdf') return parsePDF(file);
   throw new Error(`Unsupported file type ".${ext}". Please upload a .csv, .xlsx, .xls, or .pdf file`);
 };
@@ -269,23 +318,80 @@ export const parseProductFile = async (file) => {
 // Header names that plausibly hold the product name/description, checked in
 // order. Real-world documents (especially PDFs this app didn't generate)
 // often label this column "Item" or "Description" rather than "Name".
-const NAME_KEYS = ['name', 'product_name', 'product', 'item', 'item_name', 'description', 'title'];
+const NAME_KEYS = ['name', 'product_name', 'product', 'item', 'item_name', 'description', 'title', 'product_description', 'item_description'];
+const PRICE_KEYS = ['selling_price', 'sell_price', 'retail_price', 'sale_price', 'unit_price', 'price', 'amount', 'rate', 'unit_cost'];
+const COST_KEYS = ['cost_price', 'cost', 'buying_price', 'purchase_price', 'wholesale_price'];
+const QUANTITY_KEYS = ['initial_stock', 'stock', 'current_stock', 'quantity', 'qty', 'on_hand', 'onhand', 'available_stock', 'balance', 'count', 'inventory'];
+const firstRowValue = (row, keys) => {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+      return row[key];
+    }
+  }
+  // Accept decorated headers such as `unit_price_ugx` or
+  // `quantity_available` from different POS exports.
+  for (const key of keys) {
+    const matchingKey = Object.keys(row).find(rowKey =>
+      rowKey !== key && (rowKey.startsWith(`${key}_`) || rowKey.endsWith(`_${key}`))
+    );
+    if (matchingKey && String(row[matchingKey] ?? '').trim() !== '') return row[matchingKey];
+  }
+  return '';
+};
+
+const normalizeNumber = (value) => {
+  if (value === undefined || value === null || value === '') return '';
+  const cleaned = String(value).replace(/[^0-9,.-]/g, '').replace(/,/g, '');
+  return cleaned;
+};
+
+const normalizeImportRow = (row) => {
+  const normalized = {};
+  Object.entries(row || {}).forEach(([key, value]) => {
+    normalized[normalizeKey(key)] = typeof value === 'string' ? value.trim() : value;
+  });
+
+  const name = firstRowValue(normalized, NAME_KEYS);
+  const price = normalizeNumber(firstRowValue(normalized, PRICE_KEYS));
+  const cost = normalizeNumber(firstRowValue(normalized, COST_KEYS));
+  const quantity = normalizeNumber(firstRowValue(normalized, QUANTITY_KEYS));
+
+  return {
+    ...normalized,
+    name,
+    sku: firstRowValue(normalized, ['sku', 'product_code', 'item_code', 'code', 'barcode']) || '',
+    barcode: firstRowValue(normalized, ['barcode', 'ean', 'upc', 'gtin']) || '',
+    category: firstRowValue(normalized, ['category', 'department', 'group', 'type']) || '',
+    cost_price: cost,
+    selling_price: price,
+    initial_stock: quantity
+  };
+};
+
 const resolveRowName = (row) => {
   for (const key of NAME_KEYS) {
     if (row[key]) return row[key];
   }
+  // Last-resort support for exports with no recognizable name header: choose
+  // the first non-numeric text value, which is usually the product label.
+  const fallback = Object.values(row).find(value => {
+    const text = String(value ?? '').trim();
+    return text.length > 1 && !/^[-+]?\d[\d,.]*$/.test(text);
+  });
+  if (fallback) return String(fallback).trim();
   return null;
 };
 
 // Bulk-creates products via inventoryService.createProduct (same path the
 // single "Add Product" form uses), resolving/creating categories by name.
 export const bulkImportProductRows = async (rows) => {
+  const normalizedRows = rows.map(normalizeImportRow);
   if (rows.length > 0) {
     // Diagnostic breadcrumb: if a lot of rows fail, check the console for
     // this to see exactly what the parser extracted as headers/first row —
     // it usually reveals a header-name mismatch or a bad file structure.
     console.log('[bulkImportProductRows] detected headers:', Object.keys(rows[0]));
-    console.log('[bulkImportProductRows] sample row:', rows[0]);
+    console.log('[bulkImportProductRows] sample row:', normalizedRows[0]);
   }
 
   const categories = await inventoryService.getCategories();
@@ -294,7 +400,7 @@ export const bulkImportProductRows = async (rows) => {
   let created = 0;
   let failed = 0;
 
-  for (const row of rows) {
+  for (const row of normalizedRows) {
     const name = resolveRowName(row);
     if (!name) { failed++; continue; }
 
@@ -389,7 +495,7 @@ export const exportRowsToFile = (rows, format, baseFilename = 'inventory_export'
     const doc = new jsPDF({ orientation: headers.length > 6 ? 'landscape' : 'portrait' });
     doc.setFontSize(14);
     doc.text('Inventory Export', 14, 15);
-    doc.autoTable({
+    autoTable(doc, {
       startY: 20,
       head: [headers.map(h => h.replace(/_/g, ' '))],
       body: rows.map(row => headers.map(h => row[h] ?? '')),

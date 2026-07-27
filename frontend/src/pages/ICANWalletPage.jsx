@@ -18,7 +18,7 @@ import SendIcanOutModal from '@/components/SendIcanOutModal';
 import PayMoneyModal from '@/components/PayMoneyModal';
 import ReceiveMoneyModal from '@/components/ReceiveMoneyModal';
 import SetPinPrompt from '@/components/SetPinPrompt';
-import { hasPinSet } from '@/services/pinService';
+import { hasPinSet, verifyPin } from '@/services/pinService';
 import { parseIcanPayCode, payIcanRequest } from '@/services/icanPaymentRequestService';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -392,7 +392,13 @@ function ReceiveModal({ walletAddress, onClose }) {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
-export default function ICANWalletPage({ embedded = false, userId: propUserId = null }) {
+export default function ICANWalletPage({ 
+  embedded = false, 
+  userId: propUserId = null,
+  initialModal = null,
+  receiveAmount = null,
+  receiveDescription = ''
+}) {
   const [userId, setUserId] = useState(propUserId);
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState({ ican: 0, ugx: 0, address: null });
@@ -400,7 +406,7 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [modal, setModal] = useState(null); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | null
+  const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | null
   const [activeTab, setActiveTab] = useState('all');
   const [needsPin, setNeedsPin] = useState(false);
 
@@ -443,6 +449,10 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
   };
 
   const handlePaymentScanned = async (scannedValue) => {
+    if (!userId) {
+      toast.error('Wallet is still loading. Please try again.');
+      return;
+    }
     const paymentCode = parseIcanPayCode(scannedValue);
     if (!paymentCode) {
       toast.error('This QR code is not an ICAN payment request');
@@ -450,8 +460,21 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
     }
 
     try {
+      const pin = window.prompt('Enter your transaction PIN to authorize this payment:');
+      if (pin === null) {
+        toast.info('Payment cancelled.');
+        return;
+      }
+
+      const pinCheck = await verifyPin(userId, pin);
+      if (!pinCheck.success) {
+        toast.error(pinCheck.error || 'PIN verification failed. Payment was not sent.');
+        return;
+      }
+
+      console.log('[ICAN PAY] Starting real transfer:', { paymentCode, payerUserId: userId });
       await payIcanRequest({ paymentCode, payerUserId: userId });
-      toast.success('Payment sent successfully');
+      toast.success('Payment sent successfully and recorded on the ICAN ledger');
       setModal(null);
       await loadWallet();
     } catch (e) {
@@ -642,7 +665,14 @@ export default function ICANWalletPage({ embedded = false, userId: propUserId = 
         />
       )}
       {modal === 'receive' && balance.address && (
-        <ReceiveMoneyModal isOpen userId={userId} onClose={() => setModal(null)} onSuccess={loadWallet} />
+        <ReceiveMoneyModal 
+          isOpen 
+          userId={userId} 
+          onClose={() => setModal(null)} 
+          onSuccess={loadWallet}
+          prefilledAmount={receiveAmount}
+          prefilledDescription={receiveDescription}
+        />
       )}
       {modal === 'pay' && (
         <PayMoneyModal isOpen onClose={() => setModal(null)} onPaymentScanned={handlePaymentScanned} />

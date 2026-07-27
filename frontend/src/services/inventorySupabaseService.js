@@ -39,9 +39,31 @@ class InventorySupabaseService {
 
       const { data: userRow } = await supabase
         .from('users')
-        .select('supermarket_id')
+        .select('id, supermarket_id')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
+
+      // An admin's owned store is the canonical context when that admin opens
+      // another role portal.
+      const { data: ownedSupermarket } = await supabase
+        .from('supermarkets')
+        .select('id')
+        .eq('owner_user_id', user.id)
+        .maybeSingle();
+      if (ownedSupermarket?.id) return ownedSupermarket.id;
+
+      // Staff assignment is authoritative for cashiers/managers. Support both
+      // user ID conventions used by older and newer signup flows.
+      const staffUserIds = [user.id, userRow?.id].filter(Boolean);
+      if (staffUserIds.length) {
+        const { data: staffRows } = await supabase
+          .from('supermarket_staff')
+          .select('supermarket_id, status')
+          .in('user_id', staffUserIds)
+          .eq('status', 'active')
+          .limit(1);
+        if (staffRows?.[0]?.supermarket_id) return staffRows[0].supermarket_id;
+      }
 
       return userRow?.supermarket_id || null;
     })();

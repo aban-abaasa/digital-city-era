@@ -35,6 +35,7 @@ import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
+import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
 
 const CashierPortal = () => {
   const navigate = useNavigate();
@@ -63,6 +64,7 @@ const CashierPortal = () => {
     customer: null
   });
   const [paymentModal, setPaymentModal] = useState(false);
+  const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentResult, setPaymentResult] = useState(null);
@@ -112,17 +114,17 @@ const CashierPortal = () => {
   // Sample products removed - using real products from Supabase
   const [sampleProducts] = useState([]);
 
-  // Payment methods - IcanEra Wallet primary with full transaction control
+  // Payment methods - IcanEra Wallet primary with receive functionality
   const paymentMethods = [
     {
       id: 'icanera_wallet',
       name: 'IcanEra Wallet',
       icon: '💎',
       color: 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700',
-      description: 'Digital Payment - Send & Receive with Full Control',
+      description: 'Receive Payment - Customer Scans QR Code',
       fee: 0,
       limit: Infinity,
-      features: ['send', 'receive', 'track', 'verify'],
+      features: ['receive'],
       primary: true
     },
     {
@@ -253,15 +255,50 @@ const CashierPortal = () => {
       setProductsLoading(true);
       setRefreshingProducts(true);
       
-      // Load products and inventory separately (like Admin does)
-      const { data: productsData } = await supabase
-        .from('products')
-        .select('id, name, price, selling_price, cost_price, category, barcode, sku, is_active')
-        .eq('is_active', true);
+      console.log('📦 Loading products for supermarket:', cashierProfile?.supermarket_id);
+      
+      // The initial load can happen before the profile request completes.
+      // Resolve the signed-in user's supermarket directly so the cashier gets
+      // the same catalog created by that supermarket's admin.
+      // Always use the canonical store assignment. This prevents an admin
+      // opening the cashier role from inheriting a stale profile ID.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
 
-      const { data: inventoryData } = await supabase
+      if (!supermarketId) {
+        setProducts([]);
+        toast.info('No supermarket is assigned to this cashier account.');
+        return;
+      }
+
+      // Build query for products
+      let productsQuery = supabase
+        .from('products')
+        .select('id, name, price, selling_price, cost_price, category, barcode, sku, is_active, supermarket_id')
+        .eq('is_active', true);
+      
+      // Strict tenant isolation: only this exact supermarket's products.
+      productsQuery = productsQuery.eq('supermarket_id', supermarketId);
+      
+      const { data: productsData, error: productsError } = await productsQuery;
+      
+      if (productsError) {
+        console.error('❌ Error loading products:', productsError);
+        throw productsError;
+      }
+
+      // Build query for inventory
+      let inventoryQuery = supabase
         .from('inventory')
-        .select('product_id, current_stock, reserved_stock, minimum_stock, reorder_point');
+        .select('product_id, current_stock, reserved_stock, minimum_stock, reorder_point, supermarket_id');
+      
+      // Strict tenant isolation: only this exact supermarket's inventory.
+      inventoryQuery = inventoryQuery.eq('supermarket_id', supermarketId);
+      
+      const { data: inventoryData, error: inventoryError } = await inventoryQuery;
+      
+      if (inventoryError) {
+        console.warn('⚠️ Error loading inventory:', inventoryError);
+      }
 
       // Create inventory lookup map
       const inventoryMap = {};
@@ -294,15 +331,20 @@ const CashierPortal = () => {
       });
 
       console.log('📊 Loaded products and inventory:', allProducts.length);
-      console.log('📦 Books product:', allProducts.find(p => p.name === 'Books'));
+      console.log('🏪 Supermarket ID:', cashierProfile?.supermarket_id);
+      console.log('📦 Sample product:', allProducts[0]);
       
       if (allProducts.length > 0) {
         setProducts(allProducts);
         const inStock = allProducts.filter(p => p.stock > 0).length;
-        toast.success(`✅ Loaded ${allProducts.length} products (${inStock} in stock)`);
+        const supermarketInfo = cashierProfile?.supermarket_id ? ` for supermarket ${cashierProfile.supermarket_id}` : '';
+        toast.success(`✅ Loaded ${allProducts.length} products (${inStock} in stock)${supermarketInfo}`);
       } else {
         setProducts([]);
-        toast.info('No products found. Admin needs to create products.');
+        const msg = cashierProfile?.supermarket_id 
+          ? 'No products found for your supermarket. Manager needs to add products.' 
+          : 'No products found. You may not be assigned to a supermarket.';
+        toast.info(msg);
       }
     } catch (error) {
       console.error('❌ Error loading products:', error);
@@ -372,6 +414,8 @@ const CashierPortal = () => {
         
         const profileData = {
           id: cashierData.id,
+          user_id: user.id, // Auth user ID for wallet operations
+          supermarket_id: cashierData.supermarket_id, // CRITICAL: Supermarket ID for RLS filtering
           name: cashierData.full_name && cashierData.full_name.trim() ? cashierData.full_name : 'Cashier',
           phone: cashierData.phone && cashierData.phone.trim() ? cashierData.phone : '+256 XXX XXX XXX',
           email: cashierData.email || user.email || 'your.email@example.com',
@@ -415,6 +459,8 @@ const CashierPortal = () => {
         // Use fallback profile if no data exists
         const fallbackProfile = {
           id: user.id,
+          user_id: user.id,
+          supermarket_id: null, // No supermarket assigned
           name: 'Cashier',
           phone: '+256 XXX XXX XXX',
           email: user.email || 'your.email@example.com',
@@ -451,6 +497,7 @@ const CashierPortal = () => {
       if (user) {
         setCashierProfile({
           id: user.id,
+          user_id: user.id, // Auth user ID for wallet operations
           name: 'Cashier',
           phone: '+256 XXX XXX XXX',
           email: user.email || 'your.email@example.com',
@@ -1456,22 +1503,32 @@ const CashierPortal = () => {
   };
 
   const processPayment = async (paymentMethodId) => {
+    console.log('🔔 processPayment called with:', paymentMethodId);
+    
+    // IcanEra Wallet - Open wallet page with receive modal pre-filled
+    if (paymentMethodId === 'icanera_wallet') {
+      console.log('💎 Opening IcanEra Wallet with receive tab...');
+      console.log('💎 Transaction total:', currentTransaction.total);
+      
+      const icanAmount = (currentTransaction.total / 5000).toFixed(4); // Convert UGX to ICAN
+      
+      setPaymentModal(false);
+      setActiveTab('ican-wallet');
+      
+      // Store the receive amount for the wallet to use
+      sessionStorage.setItem('ican_receive_amount', icanAmount);
+      sessionStorage.setItem('ican_receive_description', `Supermarket purchase - ${currentTransaction.items.length} items`);
+      
+      toast.info('💎 Opening IcanEra Wallet Receive...');
+      return;
+    }
+    
     setPaymentProcessing(true);
     const paymentMethod = paymentMethods.find(pm => pm.id === paymentMethodId);
     
     try {
       const fee = 0;
       const finalAmount = currentTransaction.total;
-      
-      // IcanEra Wallet - open the embedded wallet UI (it already has full functionality)
-      if (paymentMethodId === 'icanera_wallet') {
-        console.log('💎 Opening IcanEra Wallet view...');
-        setPaymentModal(false);
-        setActiveTab('ican-wallet');
-        toast.info('💎 Opened IcanEra Wallet — complete the payment in the Wallet view');
-        setPaymentProcessing(false);
-        return;
-      }
       
       // Cash - Simple validation
       if (paymentMethodId === 'cash_ugx' && cashReceived) {
@@ -1913,6 +1970,37 @@ const CashierPortal = () => {
             </div>
           </div>
           
+          {/* Search Bar */}
+          <div className="mb-4">
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <input
+                type="text"
+                placeholder="Search products by name, SKU, or barcode..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-10 py-2 md:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm md:text-base"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+            {searchTerm && (
+              <p className="text-xs text-gray-500 mt-2">
+                Found {products.filter(p => 
+                  p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
+                ).length} products
+              </p>
+            )}
+          </div>
+          
           {/* 🔥 SUPABASE PRODUCTS GRID - Real-time inventory */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 max-h-72 md:max-h-96 overflow-y-auto">
             {productsLoading ? (
@@ -1932,7 +2020,30 @@ const CashierPortal = () => {
                 </button>
               </div>
             ) : (
-              products.map((product) => {
+              (() => {
+                const filteredProducts = products.filter(p => 
+                  !searchTerm || 
+                  p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.category?.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+
+                if (filteredProducts.length === 0) {
+                  return (
+                    <div className="col-span-2 md:col-span-3 text-center py-8">
+                      <p className="text-gray-500 text-sm">No products found for "{searchTerm}"</p>
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        Clear Search
+                      </button>
+                    </div>
+                  );
+                }
+
+                return filteredProducts.map((product) => {
                 const productPrice = product.selling_price || product.price || 0;
                 const productStock = product.stock || product.available_stock || 0;
                 const categoryName = product.categoryName || product.category || 'General';
@@ -1974,7 +2085,8 @@ const CashierPortal = () => {
                     </div>
                   </div>
                 );
-              })
+              });
+            })()
             )}
           </div>
         </div>
@@ -3141,7 +3253,7 @@ const CashierPortal = () => {
             
             <div className="flex items-center space-x-2">
               <span className="text-2xl">🛒</span>
-              <h1 className="text-lg font-bold text-white">Cashier Portal</h1>
+              <h1 className="text-lg font-bold text-white">{branding.name} Cashier Portal</h1>
             </div>
             
             <div className="w-10"></div>
@@ -3219,8 +3331,8 @@ const CashierPortal = () => {
                   <span className="text-white font-bold text-lg">🛒</span>
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Cashier Portal 🇺🇬</h1>
-                  <p className="text-gray-600">Uganda Supermarket Cashier Workspace</p>
+                  <h1 className="text-2xl font-bold text-gray-900">{branding.name} Cashier Portal 🇺🇬</h1>
+                  <p className="text-gray-600">{branding.typeLabel} Cashier Workspace</p>
                 </div>
               </div>
               <div className="flex items-center space-x-4">
@@ -3296,7 +3408,12 @@ const CashierPortal = () => {
         {activeTab === 'notifications' && renderNotifications()}
         {activeTab === 'ican-wallet' && (
           <div className="mt-0 -mx-4 sm:-mx-0">
-            <ICANWalletPage embedded={true} />
+            <ICANWalletPage 
+              embedded={true}
+              initialModal={sessionStorage.getItem('ican_receive_amount') ? 'receive' : null}
+              receiveAmount={sessionStorage.getItem('ican_receive_amount')}
+              receiveDescription={sessionStorage.getItem('ican_receive_description') || ''}
+            />
           </div>
         )}
       </div>
@@ -3431,6 +3548,96 @@ const CashierPortal = () => {
             setPaymentResult(null);
             
             toast.success('🎉 Transaction completed! Ready for next customer.');
+          }}
+        />
+      )}
+
+      {/* 💎 IcanEra Receive Payment Modal */}
+      {showIcanReceiveModal && (
+        <CashierReceiveIcanModal
+          isOpen={showIcanReceiveModal}
+          onClose={() => setShowIcanReceiveModal(false)}
+          userId={cashierProfile?.user_id}
+          amountUGX={currentTransaction.total}
+          orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
+          onPaymentReceived={async (paymentData) => {
+            // Payment received successfully!
+            console.log('💎 IcanEra payment received:', paymentData);
+            
+            // Close the receive modal
+            setShowIcanReceiveModal(false);
+            
+            // Create receipt data
+            const result = {
+              success: true,
+              transactionId: paymentData.transactionId || `ICAN_${Date.now()}`,
+              amount: currentTransaction.total,
+              fee: 0,
+              finalAmount: currentTransaction.total,
+              paymentMethod: 'IcanEra Wallet',
+              timestamp: new Date().toISOString(),
+              receipt: {
+                items: currentTransaction.items,
+                subtotal: currentTransaction.subtotal,
+                tax: currentTransaction.tax,
+                total: currentTransaction.total,
+                cashier: cashierProfile.name,
+                register: cashierProfile.register
+              }
+            };
+
+            // Save transaction to database
+            try {
+              const saveResult = await transactionService.saveTransaction({
+                items: currentTransaction.items,
+                subtotal: currentTransaction.subtotal,
+                tax: currentTransaction.tax,
+                total: currentTransaction.total,
+                paymentMethod: { id: 'icanera_wallet', name: 'IcanEra Wallet' },
+                paymentReference: result.transactionId,
+                paymentFee: 0,
+                amountPaid: currentTransaction.total,
+                changeGiven: 0,
+                customer: currentTransaction.customer || { name: 'Walk-in Customer' },
+                cashier: cashierProfile,
+                register: cashierProfile.register,
+                location: cashierProfile.location || 'Kampala Main Branch'
+              });
+
+              if (saveResult.success) {
+                console.log('✅ Transaction saved:', saveResult.receiptNumber);
+                
+                // Set receipt data for display
+                setReceiptData({
+                  ...result,
+                  receiptNumber: saveResult.receiptNumber,
+                  transactionId: saveResult.transactionId,
+                  amountPaid: currentTransaction.total,
+                  changeGiven: 0
+                });
+                
+                // Update stock
+                const itemsForStockUpdate = currentTransaction.items.map(item => ({
+                  product_id: item.id,
+                  quantity: item.quantity
+                }));
+                
+                await inventoryService.adjustStockAfterSale(itemsForStockUpdate, `SALE_${Date.now()}`);
+                
+                // Show receipt modal
+                setTimeout(() => {
+                  setShowReceiptModal(true);
+                }, 500);
+                
+                toast.success(`✅ IcanEra payment received! Receipt: ${saveResult.receiptNumber}`);
+              } else {
+                console.error('❌ Failed to save transaction:', saveResult.error);
+                toast.warning('⚠️ Payment successful but receipt not saved');
+              }
+            } catch (saveError) {
+              console.error('❌ Error saving transaction:', saveError);
+              toast.warning('⚠️ Payment successful but receipt not saved');
+            }
           }}
         />
       )}

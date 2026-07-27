@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
+import inventoryService from '../services/inventorySupabaseService';
 
 const FALLBACK_NAME = 'Your Supermarket';
 
@@ -36,13 +37,9 @@ export const useSupermarketBranding = () => {
       // supermarket_id lives directly on users — rows link to auth either
       // via auth_id (older trigger) or by using auth.users.id as users.id
       // directly (newer trigger), so match either.
-      const { data: userRow } = await supabase
-        .from('users')
-        .select('supermarket_id')
-        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
-        .maybeSingle();
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
 
-      if (!userRow?.supermarket_id) {
+      if (!supermarketId) {
         setSupermarket(null);
         return;
       }
@@ -50,7 +47,7 @@ export const useSupermarketBranding = () => {
       const { data: supermarketRow, error } = await supabase
         .from('supermarkets')
         .select('id, name, background_image_url, business_type')
-        .eq('id', userRow.supermarket_id)
+        .eq('id', supermarketId)
         .maybeSingle();
 
       if (error) throw error;

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"c:/Users/Aban/Desktop/icaneracoin\" -iname \"CustomerSelfCheckout*\" 2>/dev/null)",
+      "Read(//c/Users/Aban/Desktop/icaneracoin/**)",
+      "Bash(awk -F: '$1 > 6514')",
+      "Bash(node -e ' *)",
+      "Bash(npx esbuild *)",
+      "Bash(npm run *)",
+      "Bash(awk 'NR==12305,NR==12312' src/pages/ManagerPortal.jsx)",
+      "Bash(grep -rl \"ican_get_user_wallet_display\" --include=*.sql --include=*.js --include=*.jsx .)",
+      "Bash(grep -rl \"ican_get_user_wallet_display\" .)",
+      "Bash(node -e \"require\\('@babel/core'\\)\")",
+      "Bash(npx --no-install vite build --mode development)",
+      "Bash(find c:/Users/Aban/Desktop/icaneracoin/digital-city-era -maxdepth 4 -path */.claude/skills/*/SKILL.md)",
+      "Bash(where chromium-cli *)",
+      "Read(//c/Users/Aban/AppData/Local/Temp/claude/bundled-skills/2.1.201/**)",
+      "Bash(npm ls *)"
+    ]
+  }
+}

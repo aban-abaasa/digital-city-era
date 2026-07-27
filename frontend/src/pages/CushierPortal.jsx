@@ -33,6 +33,7 @@ import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
+import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
 
 const CashierPortal = () => {
   const navigate = useNavigate();
@@ -51,6 +52,7 @@ const CashierPortal = () => {
     customer: null
   });
   const [paymentModal, setPaymentModal] = useState(false);
+  const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentResult, setPaymentResult] = useState(null);
@@ -93,10 +95,10 @@ const CashierPortal = () => {
       name: 'IcanEra Wallet',
       icon: '💎',
       color: 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700',
-      description: 'Digital Payment - Send & Receive with Full Control',
+      description: 'Receive Payment - Customer Scans QR Code',
       fee: 0,
       limit: Infinity,
-      features: ['send', 'receive', 'track', 'verify'],
+      features: ['receive'],
       primary: true
     },
     {
@@ -114,6 +116,9 @@ const CashierPortal = () => {
 
   // Cashier Profile - Load from Supabase (no mock data)
   const [cashierProfile, setCashierProfile] = useState({
+    id: null,
+    user_id: null,
+    supermarket_id: null,
     name: 'Cashier',
     role: 'Cashier',
     department: 'Front End Operations',
@@ -228,6 +233,19 @@ const CashierPortal = () => {
       setProductsLoading(true);
       console.log('🛒 Loading products from Supabase...');
       
+      // The first product load can run before the profile request completes.
+      // Resolve the authenticated user's supermarket directly so this query
+      // always reads the catalog created by that supermarket's admin.
+      const supermarketId = cashierProfile?.supermarket_id ||
+        await inventoryService.getCurrentSupermarketId();
+      console.log('Loading products for supermarket:', supermarketId);
+
+      if (!supermarketId) {
+        setProducts([]);
+        toast.info('No supermarket is assigned to this cashier account.');
+        return;
+      }
+
       // OPTIMIZED: Load products and inventory in parallel with timeouts
       const [productsResult, inventoryResult] = await Promise.all([
         // Load products
@@ -236,6 +254,7 @@ const CashierPortal = () => {
             .from('products')
             .select('id, name, price, selling_price, cost_price, barcode, sku, is_active')
             .eq('is_active', true)
+            .eq('supermarket_id', supermarketId)
             .limit(100),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Timeout')), 2000)
@@ -246,7 +265,8 @@ const CashierPortal = () => {
         Promise.race([
           supabase
             .from('inventory')
-            .select('product_id, current_stock'),
+            .select('product_id, current_stock, reserved_stock, minimum_stock, reorder_point')
+            .eq('supermarket_id', supermarketId),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Timeout')), 2000)
           )
@@ -260,7 +280,7 @@ const CashierPortal = () => {
       const stockMap = {};
       if (inventoryResult.data) {
         (inventoryResult.data || []).forEach(inv => {
-          stockMap[inv.product_id] = inv.current_stock;
+          stockMap[inv.product_id] = inv;
         });
       }
 
@@ -271,8 +291,8 @@ const CashierPortal = () => {
         sku: p.sku || `SKU-${p.id.substring(0, 8)}`,
         selling_price: parseFloat(p.selling_price) || 0,
         price: parseFloat(p.selling_price) || 0,
-        stock: stockMap[p.id] || 0,  // 0 if no inventory record
-        available_stock: stockMap[p.id] || 0,
+        stock: stockMap[p.id]?.current_stock || 0,  // 0 if no inventory record
+        available_stock: (stockMap[p.id]?.current_stock || 0) - (stockMap[p.id]?.reserved_stock || 0),
         barcode: p.barcode,
         category: 'General',
         categoryName: 'General'
@@ -334,6 +354,8 @@ const CashierPortal = () => {
         
         setCashierProfile({
           id: cashierData.id,
+          user_id: user.id, // Auth user ID for wallet operations
+          supermarket_id: cashierData.supermarket_id,
           name: cashierData.full_name || 'Cashier',
           phone: cashierData.phone || '+256 XXX XXX XXX',
           email: cashierData.email || user.email || 'your.email@example.com',
@@ -1230,50 +1252,25 @@ const CashierPortal = () => {
   };
 
   const processPayment = async (paymentMethodId) => {
+    console.log('🔔 processPayment called with:', paymentMethodId);
+    
+    // IcanEra Wallet - Open receive modal instead of processing directly
+    if (paymentMethodId === 'icanera_wallet') {
+      console.log('💎 Opening IcanEra Wallet receive modal...');
+      console.log('💎 Current user_id:', cashierProfile?.user_id);
+      console.log('💎 Transaction total:', currentTransaction.total);
+      setPaymentModal(false); // Close payment selection modal
+      setShowIcanReceiveModal(true); // Open IcanEra receive modal
+      console.log('💎 Modal state set to true');
+      return;
+    }
+    
     setPaymentProcessing(true);
     const paymentMethod = paymentMethods.find(pm => pm.id === paymentMethodId);
     
     try {
       const fee = 0;
       const finalAmount = currentTransaction.total;
-      
-      // IcanEra Wallet - Use existing wallet service for receiving payment
-      if (paymentMethodId === 'icanera_wallet') {
-        console.log('💎 Processing IcanEra Wallet payment...');
-        
-        // Import wallet service
-        const { payWithICAN, ugxToICAN, getBalance } = await import('../services/icanWalletService');
-        
-        // Get current user (cashier/supermarket)
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          throw new Error('Cashier not authenticated');
-        }
-        
-        // Convert UGX amount to ICAN
-        const icanAmount = ugxToICAN(finalAmount);
-        console.log(`💎 Converting UGX ${finalAmount} to ${icanAmount} ICAN`);
-        
-        // TODO: In production, get customer's user_id from their wallet/phone
-        // For now, we're documenting the flow:
-        // 1. Customer enters phone number or wallet address
-        // 2. System looks up customer's user_id
-        // 3. payWithICAN transfers from customer to cashier
-        // 4. Customer gets 1% cashback automatically
-        
-        // Note: Customer would need to be authenticated or identified
-        // This is where you'd call:
-        // await payWithICAN({
-        //   customerUserId: customer.user_id,
-        //   cashierUserId: user.id,
-        //   icanAmount: icanAmount,
-        //   orderId: `ORDER-${Date.now()}`,
-        //   note: `Purchase at ${cashierProfile.location || 'Supermarket'}`
-        // });
-        
-        console.log('💎 IcanEra Wallet payment ready - waiting for customer confirmation');
-        toast.success(`💎 Payment of ${icanAmount.toFixed(4)} ICAN requested from customer`);
-      }
       
       // Cash - Simple validation
       if (paymentMethodId === 'cash_ugx' && cashReceived) {
@@ -2967,6 +2964,96 @@ const CashierPortal = () => {
             setPaymentResult(null);
             
             toast.success('🎉 Transaction completed! Ready for next customer.');
+          }}
+        />
+      )}
+
+      {/* 💎 IcanEra Receive Payment Modal */}
+      {showIcanReceiveModal && (
+        <CashierReceiveIcanModal
+          isOpen={showIcanReceiveModal}
+          onClose={() => setShowIcanReceiveModal(false)}
+          userId={cashierProfile?.user_id}
+          amountUGX={currentTransaction.total}
+          orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
+          onPaymentReceived={async (paymentData) => {
+            // Payment received successfully!
+            console.log('💎 IcanEra payment received:', paymentData);
+            
+            // Close the receive modal
+            setShowIcanReceiveModal(false);
+            
+            // Create receipt data
+            const result = {
+              success: true,
+              transactionId: paymentData.transactionId || `ICAN_${Date.now()}`,
+              amount: currentTransaction.total,
+              fee: 0,
+              finalAmount: currentTransaction.total,
+              paymentMethod: 'IcanEra Wallet',
+              timestamp: new Date().toISOString(),
+              receipt: {
+                items: currentTransaction.items,
+                subtotal: currentTransaction.subtotal,
+                tax: currentTransaction.tax,
+                total: currentTransaction.total,
+                cashier: cashierProfile.name,
+                register: cashierProfile.register
+              }
+            };
+
+            // Save transaction to database
+            try {
+              const saveResult = await transactionService.saveTransaction({
+                items: currentTransaction.items,
+                subtotal: currentTransaction.subtotal,
+                tax: currentTransaction.tax,
+                total: currentTransaction.total,
+                paymentMethod: { id: 'icanera_wallet', name: 'IcanEra Wallet' },
+                paymentReference: result.transactionId,
+                paymentFee: 0,
+                amountPaid: currentTransaction.total,
+                changeGiven: 0,
+                customer: currentTransaction.customer || { name: 'Walk-in Customer' },
+                cashier: cashierProfile,
+                register: cashierProfile.register,
+                location: cashierProfile.location || 'Kampala Main Branch'
+              });
+
+              if (saveResult.success) {
+                console.log('✅ Transaction saved:', saveResult.receiptNumber);
+                
+                // Set receipt data for display
+                setReceiptData({
+                  ...result,
+                  receiptNumber: saveResult.receiptNumber,
+                  transactionId: saveResult.transactionId,
+                  amountPaid: currentTransaction.total,
+                  changeGiven: 0
+                });
+                
+                // Update stock
+                const itemsForStockUpdate = currentTransaction.items.map(item => ({
+                  product_id: item.id,
+                  quantity: item.quantity
+                }));
+                
+                await inventoryService.adjustStockAfterSale(itemsForStockUpdate, `SALE_${Date.now()}`);
+                
+                // Show receipt modal
+                setTimeout(() => {
+                  setShowReceiptModal(true);
+                }, 500);
+                
+                toast.success(`✅ IcanEra payment received! Receipt: ${saveResult.receiptNumber}`);
+              } else {
+                console.error('❌ Failed to save transaction:', saveResult.error);
+                toast.warning('⚠️ Payment successful but receipt not saved');
+              }
+            } catch (saveError) {
+              console.error('❌ Error saving transaction:', saveError);
+              toast.warning('⚠️ Payment successful but receipt not saved');
+            }
           }}
         />
       )}

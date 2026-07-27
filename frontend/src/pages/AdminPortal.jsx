@@ -4,6 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
 import { portalConfigService } from '../services/portalConfigService';
 import { supabase } from '../services/supabase';
+import inventoryService from '../services/inventorySupabaseService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
@@ -1717,6 +1718,22 @@ const AdminPortal = () => {
   // Fetch inventory data from Supabase
   const fetchInventoryData = async () => {
     try {
+      // Claim legacy unassigned records for this admin's owned supermarket.
+      // Admin Portal historically displayed these globally, while cashier
+      // portals correctly require an exact supermarket_id.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (supermarketId) {
+        await supabase
+          .from('products')
+          .update({ supermarket_id: supermarketId })
+          .is('supermarket_id', null);
+
+        await supabase
+          .from('inventory')
+          .update({ supermarket_id: supermarketId })
+          .is('supermarket_id', null);
+      }
+
       // OPTIMIZED: Load products and inventory in parallel with timeouts
       const [productsResult, inventoryResult] = await Promise.all([
         // Load products with specific columns
