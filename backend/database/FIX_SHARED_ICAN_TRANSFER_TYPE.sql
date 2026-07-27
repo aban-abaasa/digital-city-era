@@ -16,6 +16,7 @@ DECLARE
   v_from_balance DECIMAL;
   v_out_tx_id UUID;
   v_in_tx_id UUID;
+  v_legacy_balance DECIMAL := 0;
   v_country_code TEXT := 'UG';
   v_currency TEXT := 'UGX';
   v_price_local DECIMAL := 5000;
@@ -28,6 +29,30 @@ BEGIN
   FROM public.ican_user_wallets
   WHERE user_id = p_from_user
   FOR UPDATE;
+
+  -- Older ICAN screens stored balances in user_accounts.ican_coin_balance.
+  -- Move that balance into the shared wallet once when the shared wallet is
+  -- empty, so users can spend coins earned or bought in either app generation.
+  IF COALESCE(v_from_balance, 0) = 0 THEN
+    BEGIN
+      SELECT COALESCE(ican_coin_balance, 0) INTO v_legacy_balance
+      FROM public.user_accounts
+      WHERE user_id = p_from_user
+      FOR UPDATE;
+      IF v_legacy_balance > 0 THEN
+        UPDATE public.ican_user_wallets
+        SET ican_balance = v_legacy_balance,
+            updated_at = NOW()
+        WHERE user_id = p_from_user;
+        UPDATE public.user_accounts
+        SET ican_coin_balance = 0
+        WHERE user_id = p_from_user;
+        v_from_balance := v_legacy_balance;
+      END IF;
+    EXCEPTION WHEN undefined_table OR undefined_column THEN
+      v_legacy_balance := 0;
+    END;
+  END IF;
 
   IF v_from_balance IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'Sender wallet not found');
