@@ -120,16 +120,25 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
     referenceId: request.id,
   });
 
-  const { error: completionError } = await supabase
-    .from(TABLE)
-    .update({
-      status: 'completed',
-      payer_user_id: payerUserId,
-      ican_tx_id: transfer.out_tx_id,
-      completed_at: new Date().toISOString(),
-    })
-    .eq('payment_code', paymentCode)
-    .eq('status', 'pending');
+  const completion = {
+    status: 'completed',
+    payer_user_id: payerUserId,
+    ican_tx_id: transfer.out_tx_id,
+    completed_at: new Date().toISOString(),
+  };
+  let { error: completionError } = await supabase
+    .from(TABLE).update(completion).eq('payment_code', paymentCode).eq('status', 'pending');
+
+  // Older shared databases do not have the optional linkage column yet.
+  // The transfer is already committed, so close the request without that
+  // metadata rather than reporting a false payment failure.
+  if (completionError?.message?.includes('ican_tx_id')) {
+    ({ error: completionError } = await supabase
+      .from(TABLE)
+      .update({ status: 'completed', payer_user_id: payerUserId, completed_at: completion.completed_at })
+      .eq('payment_code', paymentCode)
+      .eq('status', 'pending'));
+  }
 
   if (completionError) {
     throw new Error(`Payment transferred, but the request could not be closed: ${completionError.message}`);
