@@ -50,16 +50,15 @@ const CashierReceiveIcanModal = ({
             setSuccessMessage('✅ Payment received successfully!');
             clearInterval(interval);
             
-            // Notify parent component
+            // Notify parent immediately so the cashier receipt opens as soon as
+            // the shared ledger marks the request completed.
             if (onPaymentReceived) {
-              setTimeout(() => {
-                onPaymentReceived({
-                  paymentCode: qrData.payment_code,
-                  icanAmount,
-                  amountUGX,
-                  transactionId: request.ican_tx_id
-                });
-              }, 2000);
+              onPaymentReceived({
+                paymentCode: qrData.payment_code,
+                icanAmount,
+                amountUGX,
+                transactionId: request.ican_tx_id
+              });
             }
           }
         } catch (err) {
