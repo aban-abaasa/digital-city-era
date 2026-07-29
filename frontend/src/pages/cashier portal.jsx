@@ -1527,6 +1527,8 @@ const CashierPortal = () => {
           throw new Error('Products could not be deducted from inventory. Payment was not started.');
         }
         setIcanInventoryPrepared(true);
+        // Reflect the deduction immediately in the cashier's product list.
+        await loadProductsFromSupabase();
       } catch (error) {
         console.error('IcanEra inventory preparation failed:', error);
         setIcanInventoryPrepared(false);
@@ -3676,8 +3678,24 @@ const CashierPortal = () => {
                   changeGiven: 0
                 });
                 
-                // Inventory was deducted before the QR/PIN flow opened.
-                inventoryUpdated = icanInventoryPrepared;
+                // Inventory is normally deducted before the QR/PIN flow opens.
+                // Reconcile older/in-flight payments that reached this callback
+                // without that preparation marker.
+                if (icanInventoryPrepared) {
+                  inventoryUpdated = true;
+                } else {
+                  inventoryUpdated = await inventoryService.adjustStockAfterSale(
+                    currentTransaction.items.map(item => ({
+                      product_id: item.id,
+                      quantity: item.quantity
+                    })),
+                    `SALE_${Date.now()}`,
+                    cashierProfile.supermarket_id
+                  );
+                }
+                if (inventoryUpdated) {
+                  await loadProductsFromSupabase();
+                }
                 
                 // Show receipt modal
                 setTimeout(() => {
