@@ -1,6 +1,11 @@
 -- Securely finalize an ICAN payment request after the payer's wallet transfer.
 -- The old direct UPDATE was blocked by RLS because the request belongs to the
 -- cashier/request owner. This also repairs already-paid stuck requests.
+
+-- Required by the completion RPC and safe to run on older deployments.
+ALTER TABLE public.payment_requests
+  ADD COLUMN IF NOT EXISTS ican_tx_id UUID;
+
 CREATE OR REPLACE FUNCTION public.complete_ican_payment_request(
   p_payment_code TEXT,
   p_payer_user_id UUID,
