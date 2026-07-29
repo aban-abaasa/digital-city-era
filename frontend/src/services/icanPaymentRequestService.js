@@ -116,13 +116,27 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
   const request = await getIcanPaymentRequest(paymentCode);
   if (request.user_id === payerUserId) throw new Error('You cannot pay your own request');
 
-  const transfer = await sendICAN({
-    fromUserId: payerUserId,
-    toUserId: request.user_id,
-    amount: getRequestIcanAmount(request),
-    note: request.description || 'QR payment',
-    referenceId: request.id,
-  });
+  // Repair a previous wallet transfer whose old RLS-blocked completion update
+  // left the request pending; never charge the payer twice.
+  const { data: existingCompletion, error: preflightError } = await supabase.rpc(
+    'complete_ican_payment_request',
+    { p_payment_code: paymentCode, p_payer_user_id: payerUserId },
+  );
+  if (preflightError) throw preflightError;
+  let transfer;
+  if (existingCompletion?.success) {
+    transfer = { out_tx_id: existingCompletion.ican_tx_id };
+  } else if (existingCompletion?.error === 'Payment transfer not found') {
+    transfer = await sendICAN({
+      fromUserId: payerUserId,
+      toUserId: request.user_id,
+      amount: getRequestIcanAmount(request),
+      note: request.description || 'QR payment',
+      referenceId: request.id,
+    });
+  } else {
+    throw new Error(existingCompletion?.error || 'Payment request could not be prepared');
+  }
   const payerReceipt = {
     receiptNumber: `ICAN-RCP-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
     paymentCode,
@@ -135,29 +149,16 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
     description: request.description || 'ICAN QR payment',
   };
 
-  const completion = {
-    status: 'completed',
-    payer_user_id: payerUserId,
-    ican_tx_id: transfer.out_tx_id,
-    completed_at: new Date().toISOString(),
-  };
-  let { error: completionError } = await supabase
-    .from(TABLE).update(completion).eq('payment_code', paymentCode).eq('status', 'pending');
-
-  // Older shared databases do not have the optional linkage column yet.
-  // The transfer is already committed, so close the request without that
-  // metadata rather than reporting a false payment failure.
-  if (completionError?.message?.includes('ican_tx_id')) {
-    ({ error: completionError } = await supabase
-      .from(TABLE)
-      .update({ status: 'completed', payer_user_id: payerUserId, completed_at: completion.completed_at })
-      .eq('payment_code', paymentCode)
-      .eq('status', 'pending'));
-  }
-
-  if (completionError) {
-    throw new Error(`Payment transferred, but the request could not be closed: ${completionError.message}`);
-  }
+  const { data: completion, error: completionError } = await supabase.rpc(
+    'complete_ican_payment_request',
+    {
+      p_payment_code: paymentCode,
+      p_payer_user_id: payerUserId,
+      p_ican_tx_id: transfer.out_tx_id,
+    },
+  );
+  if (completionError) throw completionError;
+  if (!completion?.success) throw new Error(completion?.error || 'Payment request could not be completed');
 
   try {
     const stored = JSON.parse(localStorage.getItem('ican_payment_receipts') || '[]');
