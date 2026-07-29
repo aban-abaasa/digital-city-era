@@ -3434,7 +3434,10 @@ const CashierPortal = () => {
               </h2>
               <p className="text-gray-600">View and reprint your receipts (includes unsaved receipts)</p>
             </div>
-            <TransactionHistory savedReceipts={savedReceipts} />
+            <TransactionHistory
+              cashierId={cashierProfile?.user_id || cashierProfile?.id}
+              savedReceipts={savedReceipts}
+            />
           </div>
         )}
         {activeTab === 'profile' && renderProfile()}
@@ -3622,6 +3625,41 @@ const CashierPortal = () => {
               }
             };
 
+            // A wallet transfer is already final even if the POS transaction
+            // insert fails because of a legacy schema column. Preserve a
+            // cashier/admin receipt for the completed wallet payment.
+            const saveWalletFallbackReceipt = async () => {
+              const receiptNumber = `ICAN-RCP-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+              const transactionId = paymentData.transactionId || result.transactionId;
+              await receiptService.saveReceipt({
+                receiptNumber,
+                transactionId,
+                cashierId: cashierProfile?.user_id || cashierProfile?.id,
+                cashierName: cashierProfile.name,
+                customerName: currentTransaction.customer?.name || 'Walk-in Customer',
+                totalAmount: currentTransaction.total,
+                paymentMethod: 'IcanEra Wallet',
+                paymentReference: result.transactionId,
+                itemsJson: currentTransaction.items,
+                subtotal: currentTransaction.subtotal,
+                taxAmount: currentTransaction.tax,
+                amountPaid: currentTransaction.total,
+                changeGiven: 0,
+                registerNumber: cashierProfile.register || 'POS-001',
+                storeLocation: cashierProfile.location || 'Kampala Main Branch',
+                notes: `ICAN payment code: ${paymentData.paymentCode}`
+              });
+              setReceiptData({
+                ...result,
+                receiptNumber,
+                transactionId,
+                amountPaid: currentTransaction.total,
+                changeGiven: 0
+              });
+              setTimeout(() => setShowReceiptModal(true), 500);
+              return receiptNumber;
+            };
+
             // Save transaction to database. Inventory is finalized separately
             // below so a receipt/RLS failure cannot leave a paid sale in stock.
             let inventoryUpdated = false;
@@ -3705,11 +3743,13 @@ const CashierPortal = () => {
                 toast.success(`✅ IcanEra payment received! Receipt: ${saveResult.receiptNumber}`);
               } else {
                 console.error('❌ Failed to save transaction:', saveResult.error);
-                toast.warning('⚠️ Payment successful but receipt not saved');
+                const fallbackReceipt = await saveWalletFallbackReceipt();
+                toast.warning(`⚠️ Wallet payment saved with receipt ${fallbackReceipt}`);
               }
             } catch (saveError) {
               console.error('❌ Error saving transaction:', saveError);
-              toast.warning('⚠️ Payment successful but receipt not saved');
+              const fallbackReceipt = await saveWalletFallbackReceipt();
+              toast.warning(`⚠️ Wallet payment saved with receipt ${fallbackReceipt}`);
             }
 
             if (!inventoryUpdated) {

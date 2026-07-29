@@ -171,7 +171,16 @@ const TransactionHistory = ({ cashierId = null, viewMode = 'cashier', savedRecei
 
     // Payment method filter
     if (paymentFilter !== 'all') {
-      filtered = filtered.filter(t => t.payment_method === paymentFilter);
+      filtered = filtered.filter(t => {
+        const method = String(t.payment_method || '').toLowerCase();
+        const provider = String(t.payment_provider || '').toLowerCase();
+        if (paymentFilter === 'cash') return method === 'cash' || provider === 'cash';
+        if (paymentFilter === 'icanera_wallet') {
+          return method === 'icanera_wallet' || method === 'ican_wallet' ||
+            provider.includes('icanera') || provider.includes('ican wallet');
+        }
+        return method === paymentFilter;
+      });
     }
 
     setFilteredTransactions(filtered);
@@ -186,7 +195,7 @@ const TransactionHistory = ({ cashierId = null, viewMode = 'cashier', savedRecei
         const receiptData = {
           receiptNumber: transaction.receipt_number,
           transactionId: transaction.transaction_id,
-          timestamp: transaction.transaction_date,
+          timestamp: transaction.transaction_date || transaction.created_at,
           amount: transaction.total_amount,
           paymentMethod: transaction.payment_provider,
           receipt: {
@@ -456,6 +465,7 @@ www.faredeal.ug
             >
               <option value="all">All Payments</option>
               <option value="cash">Cash</option>
+              <option value="icanera_wallet">IcanEra Wallet</option>
               <option value="momo">MTN Mobile Money</option>
               <option value="airtel">Airtel Money</option>
               <option value="card">Card</option>
