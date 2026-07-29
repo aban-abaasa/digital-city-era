@@ -525,6 +525,7 @@ class InventorySupabaseService {
       const exactSupermarketId = supermarketId || await this.getCurrentSupermarketId();
       if (!exactSupermarketId) throw new Error('Cannot adjust stock without the cashier supermarket ID');
 
+      const inventoryRows = [];
       for (const item of items) {
         const product_id = item.product_id || item.id;
         const quantity = Number(item.quantity);
@@ -544,9 +545,15 @@ class InventorySupabaseService {
 
         if (newStock < 0) {
           toast.error(`⚠️ Insufficient stock for product ${product_id}`);
-          continue;
+          throw new Error(`Insufficient stock for product ${product_id}`);
         }
 
+        inventoryRows.push({ product_id, quantity, inventory, newStock });
+      }
+
+      // Only mutate stock after every line has passed validation. This is
+      // important when stock is deducted before an IcanEra PIN is accepted.
+      for (const { product_id, quantity, inventory, newStock } of inventoryRows) {
         // Update only the exact cashier store's inventory row.
         const scopedUpdate = supabase
           .from('inventory')

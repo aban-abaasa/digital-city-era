@@ -68,6 +68,7 @@ const CashierPortal = () => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentResult, setPaymentResult] = useState(null);
+  const [icanInventoryPrepared, setIcanInventoryPrepared] = useState(false);
   
   // 💰 CASH HANDLING - Track cash received and change
   const [cashReceived, setCashReceived] = useState('');
@@ -1507,6 +1508,33 @@ const CashierPortal = () => {
     
     // IcanEra Wallet - Open wallet page with receive modal pre-filled
     if (paymentMethodId === 'icanera_wallet') {
+      if (!currentTransaction.items.length) {
+        toast.error('Add products before accepting an IcanEra payment.');
+        return;
+      }
+
+      setPaymentProcessing(true);
+      try {
+        const stockUpdated = await inventoryService.adjustStockAfterSale(
+          currentTransaction.items.map(item => ({
+            product_id: item.id,
+            quantity: item.quantity
+          })),
+          `PREPAY_${Date.now()}`,
+          cashierProfile.supermarket_id
+        );
+        if (!stockUpdated) {
+          throw new Error('Products could not be deducted from inventory. Payment was not started.');
+        }
+        setIcanInventoryPrepared(true);
+      } catch (error) {
+        console.error('IcanEra inventory preparation failed:', error);
+        setIcanInventoryPrepared(false);
+        toast.error(error.message || 'Inventory check failed. Payment was not started.');
+        setPaymentProcessing(false);
+        return;
+      }
+      setPaymentProcessing(false);
       console.log('💎 Opening IcanEra Wallet with receive tab...');
       console.log('💎 Transaction total:', currentTransaction.total);
       
@@ -3648,22 +3676,8 @@ const CashierPortal = () => {
                   changeGiven: 0
                 });
                 
-                // Update stock
-                const itemsForStockUpdate = currentTransaction.items.map(item => ({
-                  product_id: item.id,
-                  quantity: item.quantity
-                }));
-                
-                const stockUpdated = await inventoryService.adjustStockAfterSale(
-                  itemsForStockUpdate,
-                  `SALE_${Date.now()}`,
-                  cashierProfile.supermarket_id
-                );
-                if (!stockUpdated) {
-                  toast.error('Payment completed, but store inventory could not be updated. Please refresh and retry stock adjustment.');
-                } else {
-                  inventoryUpdated = true;
-                }
+                // Inventory was deducted before the QR/PIN flow opened.
+                inventoryUpdated = icanInventoryPrepared;
                 
                 // Show receipt modal
                 setTimeout(() => {
@@ -3680,24 +3694,10 @@ const CashierPortal = () => {
               toast.warning('⚠️ Payment successful but receipt not saved');
             }
 
-            // The wallet transfer is already complete even when transaction or
-            // receipt persistence fails. Reconcile stock once in that case.
             if (!inventoryUpdated) {
-              const stockUpdated = await inventoryService.adjustStockAfterSale(
-                currentTransaction.items.map(item => ({
-                  product_id: item.id,
-                  quantity: item.quantity
-                })),
-                `SALE_${Date.now()}`,
-                cashierProfile.supermarket_id
-              );
-              if (stockUpdated) {
-                inventoryUpdated = true;
-                toast.info('Inventory updated after payment reconciliation.');
-              } else {
-                toast.error('Payment completed, but inventory update failed. Please retry reconciliation.');
-              }
+              toast.error('Payment received without a prepared inventory deduction. Please reconcile this sale.');
             }
+            setIcanInventoryPrepared(false);
           }}
         />
       )}
