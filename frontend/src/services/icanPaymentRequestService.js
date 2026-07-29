@@ -84,7 +84,7 @@ const getRequestIcanAmount = (request) => {
   return match ? Number(match[1]) : Number(request.amount) / ICAN_TO_UGX;
 };
 
-export async function getIcanPaymentRequest(paymentCode) {
+export async function getIcanPaymentRequest(paymentCode, { allowCompleted = false } = {}) {
   const { data, error } = await supabase
     .from(TABLE)
     .select('*')
@@ -92,7 +92,9 @@ export async function getIcanPaymentRequest(paymentCode) {
     .single();
 
   if (error || !data) throw new Error('Payment request not found');
-  if (data.status !== 'pending') throw new Error(`This payment request was already ${data.status}`);
+  if (data.status !== 'pending' && !(allowCompleted && data.status === 'completed')) {
+    throw new Error(`This payment request was already ${data.status}`);
+  }
   if (new Date(data.expires_at) < new Date()) throw new Error('This payment request has expired');
   return data;
 }
@@ -158,7 +160,7 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
   try {
     const stored = JSON.parse(localStorage.getItem('ican_payment_receipts') || '[]');
     localStorage.setItem('ican_payment_receipts', JSON.stringify([payerReceipt, ...stored].slice(0, 100)));
-  } catch (_) {
+  } catch {
     // The durable ICAN transaction remains the source of truth if storage is unavailable.
   }
 

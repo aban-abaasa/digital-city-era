@@ -44,7 +44,7 @@ const CashierReceiveIcanModal = ({
     if (qrData && !paymentReceived) {
       const interval = setInterval(async () => {
         try {
-          const request = await getIcanPaymentRequest(qrData.payment_code);
+          const request = await getIcanPaymentRequest(qrData.payment_code, { allowCompleted: true });
           if (request.status === 'completed') {
             setPaymentReceived(true);
             setSuccessMessage('✅ Payment received successfully!');
