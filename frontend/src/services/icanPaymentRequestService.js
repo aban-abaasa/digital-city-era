@@ -92,10 +92,12 @@ export async function getIcanPaymentRequest(paymentCode, { allowCompleted = fals
     .single();
 
   if (error || !data) throw new Error('Payment request not found');
-  if (data.status !== 'pending' && !(allowCompleted && data.status === 'completed')) {
+  if (data.status !== 'pending' && !allowCompleted) {
     throw new Error(`This payment request was already ${data.status}`);
   }
-  if (new Date(data.expires_at) < new Date()) throw new Error('This payment request has expired');
+  if (data.status === 'pending' && new Date(data.expires_at) < new Date()) {
+    throw new Error('This payment request has expired');
+  }
   return data;
 }
 

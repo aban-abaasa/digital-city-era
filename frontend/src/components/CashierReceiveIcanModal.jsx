@@ -42,13 +42,13 @@ const CashierReceiveIcanModal = ({
   // Poll for payment completion
   useEffect(() => {
     if (qrData && !paymentReceived) {
-      const interval = setInterval(async () => {
+      const checkPayment = async () => {
         try {
           const request = await getIcanPaymentRequest(qrData.payment_code, { allowCompleted: true });
-          if (request.status === 'completed') {
+          console.log('Cashier payment status:', request.status, qrData.payment_code);
+          if (['completed', 'paid', 'success'].includes(String(request.status).toLowerCase())) {
             setPaymentReceived(true);
             setSuccessMessage('✅ Payment received successfully!');
-            clearInterval(interval);
             
             // Notify parent immediately so the cashier receipt opens as soon as
             // the shared ledger marks the request completed.
@@ -62,10 +62,13 @@ const CashierReceiveIcanModal = ({
             }
           }
         } catch (err) {
-          // Request might be expired or deleted, ignore
-          console.log('Polling error:', err.message);
+          console.warn('Cashier payment polling error:', err?.message || err);
         }
-      }, 3000); // Check every 3 seconds
+      };
+
+      // Check immediately, then continue polling every three seconds.
+      checkPayment();
+      const interval = setInterval(checkPayment, 3000);
 
       setPollingInterval(interval);
       return () => clearInterval(interval);
