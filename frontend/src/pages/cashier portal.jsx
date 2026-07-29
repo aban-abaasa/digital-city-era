@@ -1510,14 +1510,8 @@ const CashierPortal = () => {
       console.log('💎 Opening IcanEra Wallet with receive tab...');
       console.log('💎 Transaction total:', currentTransaction.total);
       
-      const icanAmount = (currentTransaction.total / 5000).toFixed(4); // Convert UGX to ICAN
-      
       setPaymentModal(false);
       setShowIcanReceiveModal(true);
-      
-      // Store the receive amount for the wallet to use
-      sessionStorage.removeItem('ican_receive_amount');
-      sessionStorage.removeItem('ican_receive_description');
       
       toast.info('💎 Opening IcanEra Wallet Receive...');
       return;
@@ -1633,7 +1627,7 @@ const CashierPortal = () => {
             const receiptSaveResult = await receiptService.saveReceipt({
               receiptNumber: savedReceiptNumber,
               transactionId: saveResult.transactionId || result.transactionId,
-              cashierId: user?.id,
+              cashierId: cashierProfile?.user_id || cashierProfile?.id,
               cashierName: cashierProfile.name,
               customerName: result.customer?.name || 'Walk-in Customer',
               totalAmount: currentTransaction.total,
@@ -3598,7 +3592,9 @@ const CashierPortal = () => {
               }
             };
 
-            // Save transaction to database
+            // Save transaction to database. Inventory is finalized separately
+            // below so a receipt/RLS failure cannot leave a paid sale in stock.
+            let inventoryUpdated = false;
             try {
               const saveResult = await transactionService.saveTransaction({
                 items: currentTransaction.items,
@@ -3624,7 +3620,7 @@ const CashierPortal = () => {
                 const cashierReceipt = await receiptService.saveReceipt({
                   receiptNumber: saveResult.receiptNumber,
                   transactionId: saveResult.transactionId || result.transactionId,
-                  cashierId: user?.id,
+                  cashierId: cashierProfile?.user_id || cashierProfile?.id,
                   cashierName: cashierProfile.name,
                   customerName: currentTransaction.customer?.name || 'Walk-in Customer',
                   totalAmount: currentTransaction.total,
@@ -3665,6 +3661,8 @@ const CashierPortal = () => {
                 );
                 if (!stockUpdated) {
                   toast.error('Payment completed, but store inventory could not be updated. Please refresh and retry stock adjustment.');
+                } else {
+                  inventoryUpdated = true;
                 }
                 
                 // Show receipt modal
@@ -3680,6 +3678,25 @@ const CashierPortal = () => {
             } catch (saveError) {
               console.error('❌ Error saving transaction:', saveError);
               toast.warning('⚠️ Payment successful but receipt not saved');
+            }
+
+            // The wallet transfer is already complete even when transaction or
+            // receipt persistence fails. Reconcile stock once in that case.
+            if (!inventoryUpdated) {
+              const stockUpdated = await inventoryService.adjustStockAfterSale(
+                currentTransaction.items.map(item => ({
+                  product_id: item.id,
+                  quantity: item.quantity
+                })),
+                `SALE_${Date.now()}`,
+                cashierProfile.supermarket_id
+              );
+              if (stockUpdated) {
+                inventoryUpdated = true;
+                toast.info('Inventory updated after payment reconciliation.');
+              } else {
+                toast.error('Payment completed, but inventory update failed. Please retry reconciliation.');
+              }
             }
           }}
         />
