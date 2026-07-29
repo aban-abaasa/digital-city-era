@@ -84,6 +84,24 @@ const getRequestIcanAmount = (request) => {
   return match ? Number(match[1]) : Number(request.amount) / ICAN_TO_UGX;
 };
 
+async function findRecentIcanTransfer({ payerUserId, recipientUserId, amount }) {
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('ican_coin_transactions')
+    .select('id')
+    .eq('sender_user_id', payerUserId)
+    .eq('recipient_user_id', recipientUserId)
+    .eq('ican_amount', amount)
+    .eq('transaction_type', 'transfer_out')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return null;
+  return data?.id || null;
+}
+
 export async function getIcanPaymentRequest(paymentCode, { allowCompleted = false } = {}) {
   const { data, error } = await supabase
     .from(TABLE)
@@ -127,13 +145,21 @@ export async function payIcanRequest({ paymentCode, payerUserId }) {
   if (existingCompletion?.success) {
     transfer = { out_tx_id: existingCompletion.ican_tx_id };
   } else if (existingCompletion?.error === 'Payment transfer not found') {
-    transfer = await sendICAN({
-      fromUserId: payerUserId,
-      toUserId: request.user_id,
-      amount: getRequestIcanAmount(request),
-      note: request.description || 'QR payment',
-      referenceId: request.id,
+    const amount = getRequestIcanAmount(request);
+    const recentTransferId = await findRecentIcanTransfer({
+      payerUserId,
+      recipientUserId: request.user_id,
+      amount,
     });
+    transfer = recentTransferId
+      ? { out_tx_id: recentTransferId }
+      : await sendICAN({
+          fromUserId: payerUserId,
+          toUserId: request.user_id,
+          amount,
+          note: request.description || 'QR payment',
+          referenceId: request.id,
+        });
   } else {
     throw new Error(existingCompletion?.error || 'Payment request could not be prepared');
   }
