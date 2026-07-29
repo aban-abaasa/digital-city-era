@@ -26,8 +26,9 @@ BEGIN
     ORDER BY created_at DESC LIMIT 1;
   IF v_tx_id IS NULL AND p_ican_tx_id IS NOT NULL THEN
     SELECT id INTO v_tx_id FROM public.ican_coin_transactions
-      WHERE id = p_ican_tx_id AND reference_id = v_request.id::TEXT
-        AND sender_user_id = p_payer_user_id AND transaction_type = 'transfer_out';
+      WHERE id = p_ican_tx_id
+        AND sender_user_id = p_payer_user_id
+        AND transaction_type = 'transfer_out';
   END IF;
   IF v_tx_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'Payment transfer not found'); END IF;
 
