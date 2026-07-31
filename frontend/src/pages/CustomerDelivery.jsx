@@ -13,6 +13,7 @@ import ProductCard from '../components/ProductCard';
 import productService from '../services/productService';
 import orderService from '../services/orderService';
 import cartService from '../services/cartService';
+import { supabase } from '../services/supabase';
 
 const CustomerDelivery = () => {
   // State management
@@ -351,7 +352,7 @@ const CustomerDelivery = () => {
         }
         
         // Load cart from localStorage
-        const savedCart = cartService.getCart();
+        const savedCart = await cartService.getCart();
         setCart(savedCart);
         
       } catch (err) {
@@ -694,8 +695,8 @@ const CustomerDelivery = () => {
   }, [filteredProductsMemo]);
 
   // Cart management with useCallback for performance
-  const addToCart = useCallback((product) => {
-    const updatedCart = cartService.addItem(product, 1);
+  const addToCart = useCallback(async (product) => {
+    const updatedCart = await cartService.addItem(product, 1);
     setCart(updatedCart);
     
     toast.success(`✅ ${product.name} added to cart!`, {
@@ -704,14 +705,14 @@ const CustomerDelivery = () => {
     });
   }, []);
 
-  const removeFromCart = useCallback((productId) => {
-    const updatedCart = cartService.removeItem(productId);
+  const removeFromCart = useCallback(async (productId) => {
+    const updatedCart = await cartService.removeItem(productId);
     setCart(updatedCart);
     toast.info('Item removed from cart');
   }, []);
 
-  const updateCartQuantity = useCallback((productId, newQuantity) => {
-    const updatedCart = cartService.updateQuantity(productId, newQuantity);
+  const updateCartQuantity = useCallback(async (productId, newQuantity) => {
+    const updatedCart = await cartService.updateQuantity(productId, newQuantity);
     setCart(updatedCart);
   }, []);
 
@@ -752,36 +753,64 @@ const CustomerDelivery = () => {
 
   // Handle order submission
   const handleOrderSubmit = async (orderData) => {
+    let createdOrder = null;
+    let checkoutCompleted = false;
     try {
       setLoading(true);
-      
+      if (!cart.length) throw new Error('Your cart is empty');
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Please sign in before placing a delivery order');
+      const totals = getCartTotals();
+      const orderNumber = `DEL-${Date.now()}`;
       const orderPayload = {
-        items: cart,
-        customerInfo: {
-          name: orderData.name,
-          email: orderData.email,
-          phone: orderData.phone
+        customer_id: user.id,
+        order_number: orderNumber,
+        source: 'online_delivery',
+        items: cart.map(item => ({
+          product_id: item.id,
+          quantity: Number(item.quantity),
+          unit_price: Number(item.price) / (1 + Number(item.tax_rate ?? 18) / 100),
+          tax_rate: Number(item.tax_rate ?? 18)
+        })),
+        total_amount: totals.total,
+        subtotal: totals.subtotal,
+        tax_amount: totals.tax,
+        shipping_amount: totals.deliveryFee,
+        delivery_address: {
+          street: orderData.deliveryInfo.address,
+          city: orderData.deliveryInfo.city,
+          postalCode: orderData.deliveryInfo.postalCode,
+          phone: orderData.deliveryInfo.phone,
+          email: orderData.deliveryInfo.email,
+          country: 'UG'
         },
-        deliveryAddress: {
-          street: orderData.address,
-          city: orderData.city,
-          state: orderData.state || 'CA',
-          postalCode: orderData.postalCode,
-          country: 'USA'
-        },
-        paymentMethod: 'online_payment',
-        specialInstructions: orderData.specialInstructions,
-        deliveryDate: orderData.deliveryDate,
-        deliveryTime: orderData.deliveryTime
+        delivery_instructions: orderData.deliveryInfo.specialInstructions,
+        expected_delivery_date: orderData.deliveryInfo.deliveryDate || null,
+        notes: `Payment method: ${orderData.paymentMethod}`
       };
       
-      const response = await orderService.createOrder(orderPayload);
+      createdOrder = await orderService.createOrder(orderPayload);
+      const { data: checkout, error: checkoutError } = await supabase.rpc('customer_self_checkout', {
+        p_cart: orderPayload.items,
+        p_payment_method: orderData.paymentMethod,
+        p_pay_with_ican: orderData.paymentMethod === 'ican'
+      });
+      if (checkoutError || !checkout?.success) {
+        throw new Error(checkoutError?.message || checkout?.error || 'Payment or inventory update failed');
+      }
+      checkoutCompleted = true;
+      await orderService.processPayment(createdOrder.id, {
+        payment_method: orderData.paymentMethod,
+        amount: totals.total,
+        transaction_id: checkout.transaction_id,
+        payment_details: { receipt_number: checkout.receipt_number }
+      });
       
-      if (response.success) {
-        toast.success('🎉 Delivery order placed successfully! Order #' + response.order.orderNumber);
+      if (createdOrder?.id && !checkoutCompleted) {
+        toast.success('Delivery order placed successfully! Order #' + (createdOrder.order_number || orderNumber));
         
         // Clear cart and close modal
-        cartService.clearCart();
+        await cartService.clearCart();
         setCart([]);
         setShowOrderModal(false);
         
@@ -798,11 +827,18 @@ const CustomerDelivery = () => {
         });
         
         // Optionally redirect to order tracking
-        // window.location.href = `/track/${response.order.orderNumber}`;
+        // window.location.href = `/track/${createdOrder.order_number || orderNumber}`;
       } else {
-        throw new Error(response.message || 'Failed to create order');
+        throw new Error('Failed to create delivery order');
       }
     } catch (error) {
+      if (createdOrder?.id) {
+        try {
+          await orderService.cancelOrder(createdOrder.id, error.message || 'Payment or inventory update failed');
+        } catch (cancelError) {
+          console.error('Could not cancel failed delivery order:', cancelError);
+        }
+      }
       console.error('Error creating order:', error);
       toast.error(error.message || 'Failed to place order. Please try again.');
     } finally {

@@ -82,7 +82,19 @@ export async function getTransactions(userId, limit = 30) {
 // ─── Transfers ─────────────────────────────────────────────────────────────
 
 /** Send ICAN from one user to another (0% fee — recipient gets the full amount). */
-export async function sendICAN({ fromUserId, toUserId, amount, note = '', referenceId = null }) {
+export async function sendICAN({
+  fromUserId,
+  toUserId,
+  amount,
+  note = '',
+  referenceId = null,
+  localAmount = null,
+  localCurrency = 'UGX',
+  merchantName = null,
+  counterpartyType = null,
+  expenseClassification = null,
+  businessProfileId = null,
+}) {
   if (!fromUserId || !toUserId) throw new Error('Both payer and recipient wallets are required');
   if (!(Number(amount) > 0)) throw new Error('Transfer amount must be greater than zero');
 
@@ -93,6 +105,12 @@ export async function sendICAN({ fromUserId, toUserId, amount, note = '', refere
     p_note: note,
     p_source_app: SOURCE_APP,
     p_reference_id: referenceId,
+    p_local_amount: localAmount ?? Number(amount) * ICAN_TO_UGX,
+    p_local_currency: localCurrency,
+    p_merchant_name: merchantName,
+    p_counterparty_type: counterpartyType,
+    p_expense_classification: expenseClassification,
+    p_business_profile_id: businessProfileId,
   });
   if (error) throw error;
   if (!data?.success) throw new Error(data?.error || 'The ICAN transfer was not recorded');

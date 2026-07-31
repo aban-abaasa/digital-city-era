@@ -449,7 +449,7 @@ export default function ICANWalletPage({
     setRefreshing(false);
   };
 
-  const handlePaymentScanned = async (scannedValue) => {
+  const handlePaymentScanned = async (scannedValue, paymentPurpose = 'personal', businessProfileId = null) => {
     if (!userId) {
       toast.error('Wallet is still loading. Please try again.');
       return;
@@ -474,7 +474,13 @@ export default function ICANWalletPage({
       }
 
       console.log('[ICAN PAY] Starting real transfer:', { paymentCode, payerUserId: userId });
-      const paymentResult = await payIcanRequest({ paymentCode, payerUserId: userId });
+      const paymentResult = await payIcanRequest({
+        paymentCode,
+        payerUserId: userId,
+        expenseClassification: paymentPurpose === 'business' ? 'business_expense' : 'personal_expense',
+        counterpartyType: 'business',
+        businessProfileId,
+      });
       setPaymentReceipt(paymentResult.payerReceipt);
       toast.success(`Payment sent and recorded. Receipt: ${paymentResult.payerReceipt?.receiptNumber || 'available in transaction history'}`);
       setModal(null);
@@ -699,7 +705,7 @@ export default function ICANWalletPage({
         />
       )}
       {modal === 'pay' && (
-        <PayMoneyModal isOpen onClose={() => setModal(null)} onPaymentScanned={handlePaymentScanned} />
+        <PayMoneyModal isOpen userId={userId} onClose={() => setModal(null)} onPaymentScanned={handlePaymentScanned} />
       )}
       {modal === 'buy' && (
         <BuyIcanModal userId={userId} onClose={() => setModal(null)} onSuccess={loadWallet} />

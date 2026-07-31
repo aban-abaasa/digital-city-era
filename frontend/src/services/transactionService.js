@@ -26,7 +26,16 @@ class TransactionService {
         cashier,
         register,
         location,
-        supermarket_id  // Add supermarket_id
+        supermarket_id,  // Add supermarket_id
+        currencyCode = 'UGX',  // Local currency
+        icanAmount = 0,  // Amount in ICAN
+        exchangeRate = 1000,  // ICAN to local currency rate
+        merchantName = null,  // Store/business name
+        merchantType = 'supermarket',  // Type of merchant
+        walletTransactionId = null,  // Link to wallet transaction
+        customerWalletAddress = null,  // Customer's wallet address
+        expenditureType = null,  // business or personal
+        expenditureCategory = null  // Category classification
       } = transactionData;
 
       // Generate transaction ID and receipt number
@@ -36,6 +45,20 @@ class TransactionService {
       // Get current user ID (cashier)
       const { data: { user } } = await supabase.auth.getUser();
       const cashierId = user?.id || cashier?.id || null;
+
+      // Get merchant name from supermarket data if available
+      let resolvedMerchantName = merchantName;
+      if (!resolvedMerchantName && (supermarket_id || cashier?.supermarket_id)) {
+        const { data: supermarket } = await supabase
+          .from('supermarkets')
+          .select('name')
+          .eq('id', supermarket_id || cashier?.supermarket_id)
+          .single();
+        resolvedMerchantName = supermarket?.name || location || 'Supermarket';
+      }
+
+      // Auto-classify expenditure based on purchase details
+      const classification = this.classifyExpenditure(items, parseFloat(total), customer?.name);
 
       // Prepare transaction record
       const transactionRecord = {
@@ -67,6 +90,24 @@ class TransactionService {
         // Customer
         customer_name: customer?.name || 'Walk-in Customer',
         customer_phone: customer?.phone || null,
+        customer_wallet_address: customerWalletAddress,
+        
+        // Currency & Amount tracking
+        currency_code: currencyCode,
+        amount_in_local_currency: parseFloat(total),
+        ican_amount: parseFloat(icanAmount) || (parseFloat(total) / exchangeRate),
+        exchange_rate: parseFloat(exchangeRate),
+        
+        // Merchant details
+        merchant_name: resolvedMerchantName || location || 'Supermarket',
+        merchant_type: merchantType,
+        
+        // Expenditure classification
+        expenditure_type: expenditureType || classification.type,
+        expenditure_category: expenditureCategory || classification.category,
+        
+        // Wallet integration
+        wallet_transaction_id: walletTransactionId,
         
         // Items
         items_count: items.length,
@@ -212,7 +253,19 @@ class TransactionService {
         .select('*')
         .eq('transaction_id', transactionId);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        // Older deployments may not have the child table yet. The main
+        // transaction stores its items as JSON, so keep receipts viewable
+        // while the database migration is being applied.
+        console.warn('Transaction items table unavailable; using transaction JSON items:', itemsError.message);
+        return {
+          success: true,
+          transaction: {
+            ...transaction,
+            items: Array.isArray(transaction.items) ? transaction.items : []
+          }
+        };
+      }
 
       return {
         success: true,
@@ -248,7 +301,16 @@ class TransactionService {
         .select('*')
         .eq('transaction_id', transaction.id);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.warn('Transaction items table unavailable; using transaction JSON items:', itemsError.message);
+        return {
+          success: true,
+          transaction: {
+            ...transaction,
+            items: Array.isArray(transaction.items) ? transaction.items : []
+          }
+        };
+      }
 
       return {
         success: true,
@@ -486,6 +548,65 @@ class TransactionService {
         error: error.message,
         transactions: [],
         count: 0
+      };
+    }
+  }
+
+  // ===================================================
+  // CLASSIFY EXPENDITURE TYPE
+  // Smart classification of business vs personal purchases
+  // ===================================================
+  classifyExpenditure(items, totalAmount, customerName = '') {
+    // Business indicators
+    const businessKeywords = ['company', 'ltd', 'limited', 'business', 'enterprise', 'corp', 'inc'];
+    const hasBusinessKeyword = businessKeywords.some(keyword => 
+      customerName.toLowerCase().includes(keyword)
+    );
+    
+    // Large bulk purchase indicator (> 500,000 UGX)
+    const isLargePurchase = totalAmount > 500000;
+    
+    // Many items indicator (> 20 items suggests bulk/inventory purchase)
+    const isBulkPurchase = items.length > 20;
+    
+    // Business item categories
+    const businessCategories = ['office', 'supplies', 'equipment', 'wholesale'];
+    const hasBusinessItems = items.some(item => 
+      businessCategories.some(cat => 
+        (item.category || item.categoryName || '').toLowerCase().includes(cat)
+      )
+    );
+    
+    // Classification logic
+    if (hasBusinessKeyword) {
+      return {
+        type: 'business',
+        category: 'business_supplies',
+        isBusiness: true
+      };
+    } else if (isLargePurchase && isBulkPurchase) {
+      return {
+        type: 'business',
+        category: 'bulk_purchase',
+        isBusiness: true
+      };
+    } else if (isBulkPurchase) {
+      return {
+        type: 'business',
+        category: 'inventory',
+        isBusiness: true
+      };
+    } else if (hasBusinessItems) {
+      return {
+        type: 'business',
+        category: 'office_supplies',
+        isBusiness: true
+      };
+    } else {
+      return {
+        type: 'personal',
+        category: 'groceries',
+        isBusiness: false
       };
     }
   }

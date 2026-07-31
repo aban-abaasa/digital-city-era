@@ -43,7 +43,11 @@ export const orderService = {
           .from('order_items')
           .insert(orderItems);
 
-        if (itemsError) throw handleSupabaseError(itemsError);
+        if (itemsError) {
+          // Do not leave a header-only order behind when its line items fail.
+          await supabase.from('orders').delete().eq('id', order.id);
+          throw handleSupabaseError(itemsError);
+        }
       }
 
       return order;

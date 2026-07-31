@@ -875,12 +875,22 @@ const AdminPortal = () => {
       // Load recent sales transactions
       let transactions = [];
       try {
-        const result = await supabase
+        let transactionQuery = supabase
           .from('transactions')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(50);
-        transactions = result.data || [];
+        if (currentAdmin?.supermarket_id) {
+          transactionQuery = transactionQuery.eq('supermarket_id', currentAdmin.supermarket_id);
+        }
+        const result = await transactionQuery;
+        // Admin sales are product records only. Wallet ledger rows, payment
+        // requests, refunds, and empty/manual placeholders do not belong in
+        // the store's product-purchase report.
+        transactions = (result.data || []).filter((t) => {
+          const products = Array.isArray(t.items) ? t.items : [];
+          return products.length > 0 || Number(t.items_count) > 0;
+        });
         if (result.error) {
           console.error('❌ Error loading transactions:', result.error);
         } else {
@@ -892,11 +902,15 @@ const AdminPortal = () => {
       }
 
       // Load purchase orders
-      const { data: purchaseOrders, error: poError } = await supabase
+      let purchaseOrderQuery = supabase
         .from('purchase_orders')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
+      if (currentAdmin?.supermarket_id) {
+        purchaseOrderQuery = purchaseOrderQuery.eq('supermarket_id', currentAdmin.supermarket_id);
+      }
+      const { data: purchaseOrders, error: poError } = await purchaseOrderQuery;
 
       if (poError) {
         console.error('❌ Error loading purchase orders:', poError);
@@ -912,8 +926,13 @@ const AdminPortal = () => {
           status: t.status || 'completed',
           amount: t.amount || t.total_amount || 0,
           created_at: t.created_at,
-          items: t.items_count || 1,
-          customer: t.customer_name || 'Customer'
+          items: Array.isArray(t.items) ? t.items.length : (t.items_count || 0),
+          products: (Array.isArray(t.items) ? t.items : [])
+            .map(item => `${item.name || item.product_name || 'Product'} ×${item.quantity || 1}`)
+            .join(', '),
+          customer: t.customer_name || 'Customer',
+          paymentMethod: t.payment_provider || t.payment_method || 'Recorded sale',
+          merchantName: t.merchant_name || 'SupermartKera'
         })),
         ...(purchaseOrders || []).map(po => ({
           id: po.id,
@@ -933,7 +952,7 @@ const AdminPortal = () => {
     } finally {
       setLoadingDetailedOrders(false);
     }
-  }, []);
+  }, [currentAdmin?.supermarket_id]);
 
   // Load users when accessing user management or approvals
   useEffect(() => {
@@ -5707,6 +5726,10 @@ const AdminPortal = () => {
                       <span className="text-gray-600">Customer/Supplier</span>
                       <span className="font-semibold truncate ml-2">{order.customer || order.supplier || 'N/A'}</span>
                     </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-gray-600">Products</span>
+                      <span className="font-medium text-right truncate ml-2" title={order.products}>{order.products || `${order.items} product(s)`}</span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Amount</span>
                       <span className="font-bold text-gray-900">UGX {(order.amount || 0).toLocaleString()}</span>
@@ -5772,7 +5795,8 @@ const AdminPortal = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        {order.customer || order.supplier || 'N/A'}
+                        <div>{order.customer || order.supplier || 'N/A'}</div>
+                        {order.products && <div className="text-xs text-gray-500 max-w-xs truncate" title={order.products}>{order.products}</div>}
                       </td>
                       <td className="px-4 py-3 font-bold text-gray-900">
                         UGX {(order.amount || 0).toLocaleString()}

@@ -18,7 +18,7 @@ const DeliveryOrderModal = ({
   onSubmit
 }) => {
   const [currentStep, setCurrentStep] = useState('delivery-info'); // delivery-info, review, payment, confirmation
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('ican');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
@@ -429,41 +429,22 @@ const DeliveryOrderModal = ({
                 <p className="text-gray-600">Select how you'd like to pay for your delivery order</p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <button
-                  onClick={() => setPaymentMethod('card')}
+                  onClick={() => setPaymentMethod('ican')}
                   className={`p-4 border-2 rounded-lg transition-all duration-200 ${
-                    paymentMethod === 'card'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center">
-                    <FiCreditCard className={`h-6 w-6 mr-3 ${
-                      paymentMethod === 'card' ? 'text-blue-600' : 'text-gray-400'
-                    }`} />
-                    <div className="text-left">
-                      <p className="font-medium text-gray-900">Credit/Debit Card</p>
-                      <p className="text-sm text-gray-500">Pay securely with your card</p>
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setPaymentMethod('cash')}
-                  className={`p-4 border-2 rounded-lg transition-all duration-200 ${
-                    paymentMethod === 'cash'
-                      ? 'border-blue-500 bg-blue-50'
+                    paymentMethod === 'ican'
+                      ? 'border-orange-500 bg-orange-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <div className="flex items-center">
                     <FiShield className={`h-6 w-6 mr-3 ${
-                      paymentMethod === 'cash' ? 'text-blue-600' : 'text-gray-400'
+                      paymentMethod === 'ican' ? 'text-orange-600' : 'text-gray-400'
                     }`} />
                     <div className="text-left">
-                      <p className="font-medium text-gray-900">Cash on Delivery</p>
-                      <p className="text-sm text-gray-500">Pay when you receive your order</p>
+                      <p className="font-medium text-gray-900">IcanEra Wallet</p>
+                      <p className="text-sm text-gray-500">Pay from your ICAN balance</p>
                     </div>
                   </div>
                 </button>

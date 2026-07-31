@@ -2974,6 +2974,8 @@ const CashierPortal = () => {
           isOpen={showIcanReceiveModal}
           onClose={() => setShowIcanReceiveModal(false)}
           userId={cashierProfile?.user_id}
+          supermarketId={cashierProfile?.supermarket_id}
+          merchantName="SupermartKera"
           amountUGX={currentTransaction.total}
           orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
           onPaymentReceived={async (paymentData) => {
@@ -3017,7 +3019,13 @@ const CashierPortal = () => {
                 customer: currentTransaction.customer || { name: 'Walk-in Customer' },
                 cashier: cashierProfile,
                 register: cashierProfile.register,
-                location: cashierProfile.location || 'Kampala Main Branch'
+                location: cashierProfile.location || 'Kampala Main Branch',
+                supermarket_id: cashierProfile.supermarket_id,
+                icanAmount: paymentData.icanAmount,
+                merchantName: 'SupermartKera',
+                walletTransactionId: paymentData.transactionId,
+                expenditureType: 'business',
+                expenditureCategory: 'business_expense'
               });
 
               if (saveResult.success) {

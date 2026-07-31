@@ -16,6 +16,8 @@ const CashierReceiveIcanModal = ({
   isOpen, 
   onClose, 
   userId,
+  supermarketId = null,
+  merchantName = 'SupermartKera',
   amountUGX,
   orderDescription = '',
   onPaymentReceived = null 
@@ -83,6 +85,10 @@ const CashierReceiveIcanModal = ({
       const request = await createIcanPaymentRequest({
         userId,
         icanAmount,
+        supermarketId,
+        merchantName,
+        counterpartyType: 'business',
+        expenseClassification: 'business_expense',
         description: orderDescription || `Supermarket purchase - UGX ${amountUGX.toLocaleString()}`,
       });
       

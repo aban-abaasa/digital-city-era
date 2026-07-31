@@ -11,9 +11,11 @@ import {
   ugxToICAN,
   formatICAN,
   ICAN_TO_UGX,
+  sendICAN,
   type ICANBalance,
 } from '../services/icanWalletService';
 import ProductPicker, { CartLine } from './ProductPicker';
+import { verifyPin } from '../../../services/pinService';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,15 @@ interface CheckoutReceipt {
   total_ugx: number;
   tax_ugx: number;
   items_count: number;
+  items: Array<{
+    product_id: string;
+    product_name: string;
+    product_sku?: string | null;
+    quantity: number;
+    unit_price: number;
+    tax_rate: number;
+    line_total: number;
+  }>;
   ican_cashback: {
     success: boolean;
     net_credited?: number;
@@ -58,6 +69,7 @@ interface SupermarketRow {
   name: string;
   location: string | null;
   business_type: string;
+  owner_user_id: string | null;
 }
 
 // Store type filter — supermarkets, hotels, boutiques, and restaurants/cafés
@@ -90,11 +102,13 @@ function formatUGX(n: number) {
 
 function cartTotals(cart: CartItem[]) {
   const subtotal = cart.reduce((s, i) => s + i.product.selling_price * i.quantity, 0);
-  const tax = cart.reduce(
-    (s, i) => s + (i.product.selling_price * i.quantity * (i.product.tax_rate / 100)),
-    0,
-  );
-  return { subtotal: Math.round(subtotal), tax: Math.round(tax), total: Math.round(subtotal + tax) };
+  const includedTax = cart.reduce((s, i) => {
+    const rate = Number(i.product.tax_rate ?? 18);
+    const gross = i.product.selling_price * i.quantity;
+    return s + (rate > 0 ? gross - (gross / (1 + rate / 100)) : 0);
+  }, 0);
+  // Selling prices already include tax. Tax is shown for transparency only.
+  return { subtotal: Math.round(subtotal), tax: Math.round(includedTax), total: Math.round(subtotal) };
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -106,11 +120,49 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
   const [scanError, setScanError] = useState('');
   const [manualBarcode, setManualBarcode] = useState('');
   const [looking, setLooking] = useState(false);
-  const [payment, setPayment] = useState<PaymentMethod>('cash');
+  const [payment, setPayment] = useState<PaymentMethod>('ican');
+  const [paymentPurpose, setPaymentPurpose] = useState<'personal' | 'business'>('personal');
+  const [businessProfiles, setBusinessProfiles] = useState<Array<{ id: string; business_name: string }>>([]);
+  const [businessProfileId, setBusinessProfileId] = useState('');
+  const [loadingBusinesses, setLoadingBusinesses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinValue, setPinValue] = useState('');
+  const [pinError, setPinError] = useState('');
   const [receipt, setReceipt] = useState<CheckoutReceipt | null>(null);
   const [icanBalance, setIcanBalance] = useState<ICANBalance | null>(null);
   const [detectorSupported, setDetectorSupported] = useState(false);
+
+  useEffect(() => {
+    if (paymentPurpose !== 'business' || !user?.id) return undefined;
+    let cancelled = false;
+    setLoadingBusinesses(true);
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const [owned, memberships, coOwned] = await Promise.all([
+          supabase.from('business_profiles').select('id, business_name').eq('user_id', user.id),
+          supabase.from('business_team_members').select('business_profile_id').eq('user_id', user.id).eq('status', 'active'),
+          supabase.from('business_co_owners').select('business_profile_id').or(`user_id.eq.${user.id},owner_email.eq.${auth.user?.email || ''}`),
+        ]);
+        const ids = [...new Set([
+          ...(owned.data || []).map(profile => profile.id),
+          ...(memberships.data || []).map(member => member.business_profile_id),
+          ...(coOwned.data || []).map(member => member.business_profile_id),
+        ])];
+        const profiles = ids.length ? (await supabase.from('business_profiles').select('id, business_name').in('id', ids)).data || [] : [];
+        if (!cancelled) {
+          setBusinessProfiles(profiles);
+          setBusinessProfileId(prev => prev || (profiles.length === 1 ? profiles[0].id : ''));
+        }
+      } catch (error) {
+        console.error('Unable to load businesses for checkout payment:', error);
+      } finally {
+        if (!cancelled) setLoadingBusinesses(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [paymentPurpose, user?.id]);
 
   // Browse-a-store mode — real inventory picker as an alternative to scanning
   const [shopMode, setShopMode] = useState<ShopMode>('scan');
@@ -149,7 +201,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
   useEffect(() => {
     supabase
       .from('supermarkets')
-      .select('id, name, location, business_type')
+       .select('id, name, location, business_type, owner_user_id')
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setSupermarkets(data || []));
@@ -369,42 +421,132 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
 
   async function submitCheckout() {
     if (cart.length === 0) return;
-    setSubmitting(true);
-
-    const cartPayload = cart.map(i => ({
-      product_id: i.product.product_id,
-      quantity: i.quantity,
-      unit_price: i.product.selling_price,
-      tax_rate: i.product.tax_rate,
-    }));
-
-    const { data, error } = await supabase.rpc('customer_self_checkout', {
-      p_cart: cartPayload,
-      p_payment_method: payment,
-      p_pay_with_ican: payment === 'ican',
-    });
-
-    setSubmitting(false);
-
-    if (error || !data?.success) {
-      toast.error(error?.message ?? data?.error ?? 'Checkout failed');
+    if (!user?.id) {
+      toast.error('Please sign in to pay with IcanEra Wallet.');
       return;
     }
 
-    setReceipt({
-      transaction_id: data.transaction_id,
-      receipt_number: data.receipt_number,
-      total_ugx: data.total_ugx,
-      tax_ugx: data.tax_ugx,
-      items_count: data.items_count,
-      ican_cashback: data.ican_cashback,
-    });
+    setPinValue('');
+    setPinError('');
+    setPinDialogOpen(true);
+  }
 
-    // Refresh ICAN balance
-    if (user?.id) getBalance(user.id).then(setIcanBalance).catch(() => {});
+  async function confirmPinPayment() {
+    if (paymentPurpose === 'business' && businessProfiles.length > 1 && !businessProfileId) {
+      setPinError('Select which business this payment belongs to.');
+      return;
+    }
+    if (!/^\d{4,6}$/.test(pinValue)) {
+      setPinError('Enter your 4–6 digit IcanEra Wallet PIN.');
+      return;
+    }
 
-    setCart([]);
-    setState('complete');
+    setSubmitting(true);
+    setPinError('');
+    let completedTransfer: any = null;
+    let saleFinalized = false;
+
+    try {
+      const pinCheck = await verifyPin(user.id, pinValue);
+      if (!pinCheck.success) {
+        setPinError(pinCheck.error || 'PIN verification failed. Payment was not sent.');
+        return;
+      }
+
+      const cartPayload = cart.map(i => ({
+        product_id: i.product.product_id,
+        quantity: i.quantity,
+        // The RPC expects a pre-tax unit price and adds the store/product tax.
+        // Convert the tax-inclusive shelf price back to its net price so the
+        // final charged amount remains exactly the displayed price.
+        unit_price: i.product.selling_price / (1 + Number(i.product.tax_rate ?? 18) / 100),
+        tax_rate: Number(i.product.tax_rate ?? 18),
+      }));
+
+      const storeUserId = selectedSupermarket?.owner_user_id;
+      if (!storeUserId) {
+        setPinError('This store has no active wallet recipient configured. Please choose another store.');
+        return;
+      }
+
+      // The customer wallet is the payer and the selected store owner is the
+      // recipient. This is the same real wallet send operation used by IcanEra.
+      completedTransfer = await sendICAN({
+        fromUserId: user.id,
+        toUserId: storeUserId,
+        amount: ugxToICAN(totals.total),
+        note: `Store purchase at ${selectedSupermarket?.name || 'store'}`,
+        referenceId: `SHOP-${Date.now()}`,
+        localAmount: totals.total,
+        localCurrency: 'UGX',
+        merchantName: selectedSupermarket?.name || 'SupermartKera',
+        counterpartyType: 'business',
+        expenseClassification: paymentPurpose === 'business' ? 'business_expense' : 'personal_expense',
+        businessProfileId: businessProfileId || null,
+      });
+
+      // The wallet transfer above is already complete. The checkout RPC now
+      // records the sale and updates inventory without debiting the wallet a
+      // second time.
+      const { data, error } = await supabase.rpc('customer_self_checkout', {
+        p_cart: cartPayload,
+        p_payment_method: 'ican',
+        p_pay_with_ican: false,
+      });
+
+      if (error || !data?.success) {
+        throw new Error(error?.message ?? data?.error ?? 'Checkout failed');
+      }
+      saleFinalized = true;
+
+      setReceipt({
+        transaction_id: data.transaction_id || completedTransfer?.transaction_id,
+        receipt_number: data.receipt_number,
+        total_ugx: data.total_ugx,
+        tax_ugx: data.tax_ugx,
+        items_count: data.items_count,
+        items: data.items?.length ? data.items : cart.map(i => ({
+          product_id: i.product.product_id,
+          product_name: i.product.name,
+          product_sku: i.product.sku,
+          quantity: i.quantity,
+          unit_price: i.product.selling_price,
+          tax_rate: i.product.tax_rate,
+          line_total: i.line_total,
+        })),
+        ican_cashback: data.ican_cashback,
+      });
+
+      // Refresh ICAN balance after the real wallet debit.
+      getBalance(user.id).then(setIcanBalance).catch(() => {});
+
+      setPinDialogOpen(false);
+      setPinValue('');
+      setCart([]);
+      setState('complete');
+    } catch (error: any) {
+      // If the real wallet transfer succeeded but sale/inventory finalization
+      // failed, return the funds to the customer so payment and stock cannot
+      // become inconsistent.
+      if (completedTransfer && !saleFinalized && selectedSupermarket?.owner_user_id) {
+        try {
+          await sendICAN({
+            fromUserId: selectedSupermarket.owner_user_id,
+            toUserId: user.id,
+            amount: ugxToICAN(totals.total),
+            note: 'Automatic refund for failed store checkout',
+            referenceId: `REFUND-${Date.now()}`,
+          });
+        } catch (refundError: any) {
+          console.error('Automatic ICAN refund failed:', refundError);
+          setPinError(`${error?.message || 'Checkout failed'} Funds were sent, but automatic refund failed. Contact support.`);
+          return;
+        }
+      }
+      setPinError(error?.message || 'Payment failed. No inventory was deducted.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   // ── Reset ─────────────────────────────────────────────────────────────────
@@ -416,7 +558,10 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
     setScanError('');
     setManualBarcode('');
     setReceipt(null);
-    setPayment('cash');
+    setPayment('ican');
+    setPaymentPurpose('personal');
+    setBusinessProfiles([]);
+    setBusinessProfileId('');
     setState('idle');
   }
 
@@ -458,19 +603,29 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           <div className="bg-slate-50 rounded-xl p-4 text-left space-y-2 mb-4">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Transaction #</span>
-              <span className="font-mono font-semibold text-xs">{receipt.transaction_id?.slice(-12)}</span>
+              <span className="font-mono font-semibold text-xs text-slate-900">{receipt.transaction_id?.slice(-12)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Receipt #</span>
-              <span className="font-mono font-semibold">{receipt.receipt_number}</span>
+              <span className="font-mono font-semibold text-slate-900">{receipt.receipt_number}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Items</span>
-              <span className="font-semibold">{receipt.items_count}</span>
+              <span className="font-semibold text-slate-900">{receipt.items_count}</span>
             </div>
+            {receipt.items?.map((item, index) => (
+              <div key={`${item.product_id}-${index}`} className="flex justify-between gap-3 text-sm border-t border-slate-200 pt-2">
+                <span className="text-slate-900">
+                  {item.product_name || 'Product'} × {item.quantity}
+                </span>
+                <span className="font-semibold text-slate-900 whitespace-nowrap">
+                  {formatUGX(item.line_total)}
+                </span>
+              </div>
+            ))}
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Tax</span>
-              <span>{formatUGX(receipt.tax_ugx)}</span>
+              <span className="text-slate-900">{formatUGX(receipt.tax_ugx)}</span>
             </div>
             <div className="flex justify-between font-bold text-base border-t pt-2">
               <span>Total Paid</span>
@@ -773,7 +928,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
                 {formatUGX(foundProduct.selling_price)}
               </p>
               <p className="text-xs text-slate-400">
-                {foundProduct.available_stock} in stock · +{foundProduct.tax_rate}% tax
+                {foundProduct.available_stock} in stock · {foundProduct.tax_rate}% tax included
               </p>
             </div>
           </div>
@@ -847,8 +1002,8 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
             <div className="flex justify-between text-sm text-slate-500">
               <span>Subtotal</span><span>{formatUGX(totals.subtotal)}</span>
             </div>
-            <div className="flex justify-between text-sm text-slate-500">
-              <span>Tax</span><span>{formatUGX(totals.tax)}</span>
+              <div className="flex justify-between text-sm text-slate-500">
+                <span>Tax included</span><span>{formatUGX(totals.tax)}</span>
             </div>
             <div className="flex justify-between font-bold text-slate-800 text-base border-t border-slate-200 pt-2">
               <span>Total</span>
@@ -869,20 +1024,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           {/* Payment method */}
           <div className="px-5 pb-3">
             <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Pay with</p>
-            <div className="grid grid-cols-2 gap-2">
-              {(['cash', 'card', 'mobile_money'] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setPayment(m)}
-                  className={`py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                    payment === m
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {m === 'mobile_money' ? 'Mobile Money' : m.charAt(0).toUpperCase() + m.slice(1)}
-                </button>
-              ))}
+            <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => canPayICAN && setPayment('ican')}
                 disabled={!canPayICAN}
@@ -895,7 +1037,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
                 }`}
               >
                 <Coins size={14} />
-                ICAN Coins
+                IcanEra Wallet
                 {!canPayICAN && (
                   <span className="text-xs opacity-70 block">
                     (need ₡{formatICAN(icanNeeded)})
@@ -938,6 +1080,80 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           <p className="text-sm text-slate-500">
             {shopMode === 'browse' ? 'Tap a product above to add it' : 'Scan a barcode to add items'}
           </p>
+        </div>
+      )}
+
+      {pinDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form
+            onSubmit={e => { e.preventDefault(); if (!submitting) confirmPinPayment(); }}
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
+          >
+            <div className="mb-5 text-center">
+              <h3 className="text-xl font-bold text-slate-800">Authorize IcanEra Payment</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Enter your wallet PIN to pay {formatUGX(totals.total)}.
+              </p>
+            </div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="checkout-pin">
+              Wallet PIN
+            </label>
+            <input
+              id="checkout-pin"
+              autoFocus
+              type="password"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={pinValue}
+              onChange={e => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="••••••"
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-2xl tracking-[0.5em] outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+            />
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Report this payment as</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([{ value: 'business', label: '💼 Business' }, { value: 'personal', label: '👤 Personal' }] as const).map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPaymentPurpose(option.value)}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${paymentPurpose === option.value ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {paymentPurpose === 'business' && (
+                <div className="mt-3">
+                  {loadingBusinesses ? <p className="text-xs text-slate-500">Loading your businesses…</p> : businessProfiles.length > 1 ? (
+                    <select value={businessProfileId} onChange={e => setBusinessProfileId(e.target.value)} className="w-full rounded-xl border border-blue-300 px-3 py-2 text-sm text-slate-700">
+                      <option value="">Select which business this belongs to…</option>
+                      {businessProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.business_name}</option>)}
+                    </select>
+                  ) : businessProfiles.length === 1 ? <p className="text-xs text-blue-700">Tagged to {businessProfiles[0].business_name}</p> : null}
+                </div>
+              )}
+            </div>
+            {pinError && <p className="mt-2 text-sm text-red-600">{pinError}</p>}
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setPinDialogOpen(false); setPinValue(''); setPinError(''); }}
+                disabled={submitting}
+                className="flex-1 rounded-xl bg-slate-100 px-4 py-3 font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || pinValue.length < 4}
+                className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-yellow-500 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? 'Verifying…' : 'Authorize Payment'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

@@ -151,7 +151,9 @@ export const cartService = {
   addItem: async (product, quantity = 1) => {
     try {
       const cart = await cartService.getCart();
-      const existingItemIndex = cart.findIndex(item => item.id === product.id);
+      const productId = product.id || product._id;
+      const productPrice = product.selling_price ?? product.price;
+      const existingItemIndex = cart.findIndex(item => item.id === productId);
       
       if (existingItemIndex >= 0) {
         // Update existing item quantity
@@ -159,9 +161,10 @@ export const cartService = {
       } else {
         // Add new item
         cart.push({
-          id: product.id,
+          id: productId,
           name: product.name,
-          price: product.selling_price,
+               price: productPrice,
+               tax_rate: product.tax_rate ?? 18,
           image: product.product_images?.[0]?.image_url || null,
           sku: product.sku,
           quantity,
@@ -257,10 +260,14 @@ export const cartService = {
   // Get cart totals with Uganda-specific calculations
   getCartTotals: (cart) => {
     const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-    const taxRate = 0.18; // 18% VAT in Uganda
-    const tax = subtotal * taxRate;
+    const tax = cart.reduce((total, item) => {
+      const rate = Number(item.tax_rate ?? 18);
+      const gross = item.price * item.quantity;
+      return total + (rate > 0 ? gross - (gross / (1 + rate / 100)) : 0);
+    }, 0);
     const deliveryFee = subtotal >= 100000 ? 0 : 5000; // Free delivery over 100K UGX
-    const total = subtotal + tax + deliveryFee;
+    // Cart prices are tax-inclusive; only delivery is added to the amount due.
+    const total = subtotal + deliveryFee;
     
     return {
       subtotal: Math.round(subtotal),

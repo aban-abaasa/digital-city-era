@@ -7,15 +7,17 @@ import React, { useRef } from 'react';
 import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import transactionService from '../services/transactionService';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => {
   const receiptRef = useRef();
+  const loadedBranding = useSupermarketBranding();
 
   // Use branding or fallback to defaults
-  const storeName = supermarketBranding?.name || 'FAREDEAL';
+  const branding = supermarketBranding || loadedBranding;
+  const storeName = branding?.name || 'Your Supermarket';
   const storeLocation = receiptData?.receipt?.location || 'Kampala Main Branch';
-  const storeEmoji = supermarketBranding?.typeEmoji || '🏪';
-  const storeType = supermarketBranding?.typeLabel || 'Supermarket';
+  const storeType = branding?.typeLabel || 'Store';
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -231,7 +233,7 @@ Visit us again at ${storeName}
   const handleCopyText = () => {
     const receiptText = `
 ════════════════════════════════
-  FAREDEAL UGANDA SUPERMARKET 🇺🇬
+  ${storeName.toUpperCase()} ${storeType.toUpperCase()}
 ════════════════════════════════
 
 Receipt: ${receiptData.receiptNumber}
@@ -346,8 +348,7 @@ www.faredeal.ug
           <div ref={receiptRef} className="max-w-md mx-auto bg-white text-xs md:text-sm">
             {/* Receipt Header */}
             <div className="receipt-header text-center border-b-2 border-dashed border-gray-300 pb-3 md:pb-4 mb-3 md:mb-4">
-              <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">{storeEmoji} {storeName}</div>
-              <div className="text-base md:text-xl font-semibold text-gray-700">{storeType} 🇺🇬</div>
+              <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">{storeName}</div>
               <div className="text-xs md:text-sm text-gray-600 mt-2 space-y-1">
                 <p>{storeLocation}</p>
                 <p>{receiptData?.receipt?.address || 'Plot 123, Kampala Road'}</p>
