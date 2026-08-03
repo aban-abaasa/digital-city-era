@@ -41,7 +41,27 @@ const OrderItemsSelector = ({
 
   const loadProducts = async () => {
     try {
-      const { data, error } = await supabase
+      // Get the current supermarket ID from localStorage (custom auth system)
+      const storedUser = localStorage.getItem('supermarket_user');
+      let supermarketId = null;
+
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        supermarketId = parsedUser.supermarket_id;
+        console.log('🏪 Loading products for supermarket:', supermarketId);
+        console.log('👤 User role:', parsedUser.role);
+      }
+
+      // ⚠️ CRITICAL SECURITY: Always require supermarket_id
+      // Without this, admins/managers could see ALL products from ALL stores
+      if (!supermarketId) {
+        console.error('❌ No supermarket_id found! User must be assigned to a store.');
+        toast.error('You must be assigned to a supermarket to view products. Please contact support.');
+        setProducts([]);
+        return;
+      }
+
+      let query = supabase
         .from('products')
         .select(`
           id,
@@ -50,13 +70,32 @@ const OrderItemsSelector = ({
           barcode,
           selling_price,
           cost_price,
-          category_id
+          category_id,
+          supermarket_id,
+          inventory!inner(current_stock,supermarket_id)
         `)
         .eq('is_active', true)
+        .eq('supermarket_id', supermarketId)           // ✅ ALWAYS filter by supermarket
+        .eq('inventory.supermarket_id', supermarketId) // ✅ ALWAYS filter inventory by supermarket
         .order('name');
 
+      const { data, error } = await query;
+
       if (error) throw error;
-      setProducts(data || []);
+      
+      // Transform data to flatten inventory.current_stock
+      const transformedData = (data || []).map(product => ({
+        ...product,
+        current_stock: product.inventory?.[0]?.current_stock || 0,
+        inventory: undefined // Remove nested inventory object
+      }));
+      
+      console.log(`✅ Loaded ${transformedData?.length || 0} products for this supermarket`);
+      setProducts(transformedData);
+
+      if (!transformedData || transformedData.length === 0) {
+        toast.info('ℹ️ No products found for your store. Add products in the POS or Inventory section first.');
+      }
     } catch (error) {
       console.error('❌ Error loading products:', error);
       toast.error('Failed to load products');
@@ -246,15 +285,30 @@ const OrderItemsSelector = ({
     }
 
     try {
-      // Check if product already exists
+      // Get the current supermarket ID from localStorage
+      const storedUser = localStorage.getItem('supermarket_user');
+      let supermarketId = null;
+
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        supermarketId = parsedUser.supermarket_id;
+      }
+
+      if (!supermarketId) {
+        toast.error('❌ Cannot add product: Supermarket ID not found');
+        return;
+      }
+
+      // Check if product already exists IN THIS SUPERMARKET
       const { data: existing } = await supabase
         .from('products')
         .select('id')
+        .eq('supermarket_id', supermarketId)
         .ilike('name', searchQuery.trim())
         .single();
 
       if (existing) {
-        toast.info('ℹ️ Product already exists in catalog');
+        toast.info('ℹ️ Product already exists in your store catalog');
         selectProduct(existing);
         return;
       }
@@ -262,7 +316,7 @@ const OrderItemsSelector = ({
       // Generate SKU from name
       const sku = searchQuery.trim().replace(/\s+/g, '-').toUpperCase().substring(0, 20);
       
-      // Insert new product
+      // Insert new product FOR THIS SUPERMARKET
       const { data: newProduct, error } = await supabase
         .from('products')
         .insert([{
@@ -272,7 +326,8 @@ const OrderItemsSelector = ({
           selling_price: 0,
           price: 0,
           tax_rate: 18,
-          is_active: true
+          is_active: true,
+          supermarket_id: supermarketId  // ✅ Associate with manager's supermarket
         }])
         .select()
         .single();
@@ -280,11 +335,11 @@ const OrderItemsSelector = ({
       if (error) throw error;
 
       // Notify admin
-      const adminMessage = `🆕 NEW PRODUCT ADDED BY MANAGER\n📦 ${searchQuery.trim()}\n⏰ ${new Date().toLocaleString('en-UG')}`;
+      const adminMessage = `🆕 NEW PRODUCT ADDED BY MANAGER\n📦 ${searchQuery.trim()}\n🏪 Supermarket ID: ${supermarketId}\n⏰ ${new Date().toLocaleString('en-UG')}`;
       console.log('Admin notification:', adminMessage);
       
       // Optional: Send notification to admin via email/push
-      toast.success('✅ Product added to catalog! Admin notified.');
+      toast.success('✅ Product added to your store catalog! Admin notified.');
       
       // Load updated products
       await loadProducts();

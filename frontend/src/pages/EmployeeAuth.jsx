@@ -617,6 +617,7 @@ const EmployeeAuth = () => {
         name: userData.full_name,
         role: 'employee',
         email: userData.email,
+        supermarket_id: userData.supermarket_id,  // ✅ CRITICAL: Include supermarket_id
         department: userData.department,
         timestamp: Date.now()
       }));

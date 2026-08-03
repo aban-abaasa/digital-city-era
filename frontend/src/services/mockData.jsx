@@ -227,6 +227,7 @@ export const mockService = {
             full_name: userRow.full_name || userRow.email?.split('@')[0] || 'User',
             role: primaryRole,
             email: userRow.email,
+            supermarket_id: userRow.supermarket_id || null,  // ✅ CRITICAL FIX: Include supermarket_id
             avatar: userRow.avatar_url || `https://picsum.photos/200/200?random=${userRow.id}`,
             phone: userRow.phone || '',
             created_at: userRow.created_at || null
