@@ -8,6 +8,7 @@ import inventoryService from '../services/inventorySupabaseService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
+import BusinessOperationsHub from '../components/BusinessOperationsHub';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
@@ -144,7 +145,8 @@ const AdminPortal = () => {
     full_name: 'Administrator',
     role: 'admin',
     phone: null,
-    supermarket_id: null
+    supermarket_id: null,
+    pichin_business_profile_id: null
   });
   
   // Supermarket Profile Completion
@@ -212,11 +214,89 @@ const AdminPortal = () => {
         let userIsAdmin = (userData?.role === 'admin') || metaRole === 'admin';
 
         // Always query supermarkets table — it is the source of truth for ownership
-        const { data: ownedSm } = await supabase
+        let { data: ownedSm } = await supabase
           .from('supermarkets')
-          .select('id, name')
+          .select('id, name, pichin_business_profile_id')
           .eq('owner_user_id', user.id)
           .maybeSingle();
+
+        // Admin rows created by older onboarding may have supermarket_id set
+        // without owner_user_id being populated. Resolve that legacy shape as
+        // well so it does not lose the linked Pichin profile.
+        if (!ownedSm && userData?.supermarket_id) {
+          const { data: assignedSupermarket } = await supabase
+            .from('supermarkets')
+            .select('id, name, pichin_business_profile_id')
+            .eq('id', userData.supermarket_id)
+            .maybeSingle();
+          ownedSm = assignedSupermarket || null;
+        }
+
+        // A Pichin profile can pre-date the Supermarketa account link. In
+        // addition, older schemas store business_profiles.user_id as the
+        // public.users.id while newer flows use the auth user id. Resolve
+        // both identities before deciding that the administrator has no
+        // Pichin business account.
+        let pichinBusinessProfileId = ownedSm?.pichin_business_profile_id || null;
+        const possibleProfileOwners = [userData?.id, user.id].filter(Boolean);
+
+        if (!pichinBusinessProfileId && possibleProfileOwners.length > 0) {
+          const { data: ownedBusiness } = await supabase
+            .from('business_profiles')
+            .select('id')
+            .in('user_id', possibleProfileOwners)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          pichinBusinessProfileId = ownedBusiness?.id || null;
+        }
+
+        // Gmail-based shareholder/admin records are also valid Pichin
+        // authority. This covers profiles where the signed-in account is an
+        // approved co-owner rather than the original profile creator.
+        if (!pichinBusinessProfileId && user.email) {
+          const { data: coOwnerBusiness } = await supabase
+            .from('business_co_owners')
+            .select('business_profile_id')
+            .ilike('owner_email', user.email)
+            .in('status', ['active', 'approved'])
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          pichinBusinessProfileId = coOwnerBusiness?.business_profile_id || null;
+        }
+
+        // If the shared app-link migration has already run, use it as the
+        // authoritative fallback for an existing link that was not copied to
+        // supermarkets yet.
+        if (!pichinBusinessProfileId && ownedSm?.id) {
+          const { data: appLink } = await supabase
+            .from('business_app_links')
+            .select('business_profile_id')
+            .eq('app_key', 'supermarketa')
+            .eq('source_entity_id', ownedSm.id)
+            .eq('status', 'active')
+            .maybeSingle();
+          pichinBusinessProfileId = appLink?.business_profile_id || null;
+        }
+
+        // Match CMMS authority exactly. The shared database function grants
+        // administration to a sole-proprietorship owner, or to an approved
+        // limited/organisation owner with >=50% or the highest share. A
+        // minority shareholder must not receive employee/payroll authority.
+        if (pichinBusinessProfileId) {
+          const { data: isPichinAdmin, error: authorityError } = await supabase.rpc('ican_business_admin', {
+            p_business_profile_id: pichinBusinessProfileId
+          });
+
+          if (authorityError) {
+            console.warn('Could not verify Pichin administrator authority:', authorityError.message);
+            pichinBusinessProfileId = null;
+          } else if (!isPichinAdmin) {
+            console.warn('Signed-in user is not the Pichin business administrator for the resolved profile.');
+            pichinBusinessProfileId = null;
+          }
+        }
 
         if (ownedSm) {
           userIsAdmin = true;
@@ -227,10 +307,20 @@ const AdminPortal = () => {
             supermarket_id: ownedSm.id,
             updated_at: new Date().toISOString()
           }).eq('id', user.id).then(() => {});
+          if (pichinBusinessProfileId && pichinBusinessProfileId !== ownedSm.pichin_business_profile_id) {
+            // Best-effort repair. The UI still works from the resolved ID if
+            // an older RLS policy does not allow this update.
+            supabase.from('supermarkets')
+              .update({ pichin_business_profile_id: pichinBusinessProfileId, updated_at: new Date().toISOString() })
+              .eq('id', ownedSm.id)
+              .then(({ error }) => {
+                if (error) console.warn('Could not persist Pichin link:', error.message);
+              });
+          }
           supabase.auth.updateUser({ data: { role: 'admin' } }).catch(() => {});
         }
 
-        console.log('👤 User role check:', { role: userData?.role, isAdmin: userIsAdmin, ownedSm });
+        console.log('👤 User role check:', { role: userData?.role, isAdmin: userIsAdmin, ownedSm, pichinBusinessProfileId });
         setIsAdmin(userIsAdmin);
 
         // Set current admin data
@@ -240,7 +330,8 @@ const AdminPortal = () => {
           full_name: userData?.full_name,
           role: userData?.role,
           phone: userData?.phone,
-          supermarket_id: userData?.supermarket_id || ownedSm?.id
+          supermarket_id: userData?.supermarket_id || ownedSm?.id,
+          pichin_business_profile_id: pichinBusinessProfileId
         });
 
         // Only show the supermarket profile form if they have NO supermarket at all
@@ -644,6 +735,12 @@ const AdminPortal = () => {
   // Filter locally — no network call needed after initial load
   const searchUsersForStaff = (query) => {
     setStaffSearchQuery(query);
+  };
+
+  const requirePichinBusinessAdmin = () => {
+    if (currentAdmin.pichin_business_profile_id) return true;
+    window.alert('Create or complete your Pichin business account first. It is the administrator profile used to manage Supermarketa employees, roles, and payroll.');
+    return false;
   };
 
   // Assign role — blockchain-verified via assign_staff_with_blockchain RPC
@@ -4093,7 +4190,7 @@ const AdminPortal = () => {
                     <span className="hidden sm:inline">Users</span>
                     <span className="bg-blue-400 text-blue-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{allUsers.length}</span>
                   </button>
-                  <button onClick={() => setViewMode('staff')}
+                  <button onClick={() => requirePichinBusinessAdmin() && setViewMode('staff')}
                     className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'staff' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
                     <FiUserPlus className="h-3 w-3 md:h-4 md:w-4" />
                     <span className="hidden sm:inline">Assign Role</span>
@@ -7569,6 +7666,7 @@ const AdminPortal = () => {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
+    { id: 'business-operations', label: 'Payroll & Transport', icon: FiBriefcase },
     { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
     { id: 'users', label: 'User Management', icon: FiUsers },
@@ -7992,6 +8090,13 @@ const AdminPortal = () => {
 
           <div className="animate-fadeInUp">
             {activeSection === 'dashboard' && renderDashboard()}
+            {activeSection === 'business-operations' && (
+              <BusinessOperationsHub
+                supermarketId={currentAdmin.supermarket_id}
+                businessProfileId={currentAdmin.pichin_business_profile_id}
+                businessName={branding.name}
+              />
+            )}
             {activeSection === 'approvals' && renderPendingApprovals()}
             {activeSection === 'inventory' && renderInventoryControl()}
             {activeSection === 'orders' && renderOrderManagement()}

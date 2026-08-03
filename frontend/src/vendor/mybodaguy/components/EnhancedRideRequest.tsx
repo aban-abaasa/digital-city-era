@@ -53,11 +53,12 @@ interface Supermarket {
 // delivery_mode value stays 'supermarket' regardless of the target's actual
 // business_type (see mbg_request_ride / mbg_rides CHECK constraint) — it
 // just means "structured store delivery scoped to a supermarket_id".
-type BusinessTypeFilter = 'all' | 'supermarket' | 'hotel' | 'boutique' | 'restaurant_cafe';
+type BusinessTypeFilter = 'all' | 'supermarket' | 'pharmacy' | 'hotel' | 'boutique' | 'restaurant_cafe';
 
 const BUSINESS_TYPE_FILTERS: { value: BusinessTypeFilter; label: string; emoji: string }[] = [
   { value: 'all', label: 'All', emoji: '🏬' },
   { value: 'supermarket', label: 'Supermarkets', emoji: '🏪' },
+  { value: 'pharmacy', label: 'Pharmacies', emoji: '💊' },
   { value: 'hotel', label: 'Hotels', emoji: '🏨' },
   { value: 'boutique', label: 'Boutiques', emoji: '👗' },
   { value: 'restaurant_cafe', label: 'Restaurants', emoji: '🍽️' },

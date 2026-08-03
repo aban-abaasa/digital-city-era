@@ -35,6 +35,7 @@ import { supabase } from '../services/supabase';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
+import BusinessOperationsHub from '../components/BusinessOperationsHub';
 
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
@@ -12025,6 +12026,7 @@ FAREDEAL Uganda Management Team
                 { id: 'overview', icon: '📊', label: 'Dashboard', desc: 'Business overview', gradient: 'from-blue-500 to-blue-600' },
                 { id: 'analytics', icon: '📈', label: 'Analytics', desc: 'Data insights', gradient: 'from-green-500 to-green-600' },
                 { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' },
+                { id: 'business-operations', icon: '🏢', label: 'Payroll & Transport', desc: 'Workforce operations', gradient: 'from-indigo-500 to-blue-600' },
                 { id: 'ican-wallet', icon: '₡', label: 'IcanEra Wallet', desc: 'Wallet & rewards', gradient: 'from-violet-500 to-fuchsia-600' }
               ].map((item) => (
                 <button
@@ -12304,7 +12306,7 @@ FAREDEAL Uganda Management Team
           </div>
         }>
           {/* Enhanced Overview Dashboard with Uganda Context */}
-          {activeTab === 'overview' && (
+            {activeTab === 'overview' && (
             <>
             <div className="mb-4 flex justify-end">
               <div className="w-48"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
@@ -12326,7 +12328,14 @@ FAREDEAL Uganda Management Team
               openEditModal={openEditModal}
             />
             </>
-          )}
+            )}
+            {activeTab === 'business-operations' && (
+              <BusinessOperationsHub
+                supermarketId={branding.supermarketId}
+                businessProfileId={branding.pichinBusinessProfileId}
+                businessName={branding.name}
+              />
+            )}
 
           {/* 🚀 Real-Time Portal Control Dashboard */}
           {activeTab === 'portal-control' && (

@@ -46,7 +46,7 @@ const ProductInventoryInterface = () => {
       const supermarketId = await inventoryService.getCurrentSupermarketId();
 
       let productsQuery = supabase
-        .from('products')
+          .from('products')
         .select('*')
         .order('created_at', { ascending: false });
 
@@ -90,14 +90,17 @@ const ProductInventoryInterface = () => {
           id: p.id,
           name: p.name,
           sku: p.sku,
+          inventoryMode: p.inventory_mode || (p.is_service ? 'service_item' : 'stock_controlled'),
           price: parseFloat(p.selling_price || p.price || 0),
           stock: inv.current_stock || 0,
           minStock: inv.minimum_stock || p.low_stock_threshold || 10,
           maxStock: p.maximum_stock || p.max_stock || 100,
-          status: calculateStatus(
-            inv.current_stock || 0,
-            inv.minimum_stock || p.low_stock_threshold || 10
-          ),
+          status: ['listing_only', 'service_item'].includes(p.inventory_mode)
+            ? 'Available for listing'
+            : calculateStatus(
+              inv.current_stock || 0,
+              inv.minimum_stock || p.low_stock_threshold || 10
+            ),
           location: p.location || 'Not assigned',
           supplier: p.supplier_name || p.supplier || 'No supplier',
           productId: p.id,
@@ -244,6 +247,8 @@ const ProductInventoryInterface = () => {
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'Out of Stock':
         return 'bg-red-100 text-red-800 border-red-200';
+      case 'Available for listing':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
@@ -354,7 +359,7 @@ const ProductInventoryInterface = () => {
       
       if (!supplierId) {
         // Try to find any active supplier
-        const { data: supplierData, error: supplierError } = await supabase
+        const { data: supplierData } = await supabase
           .from('users')
           .select('id')
           .eq('role', 'supplier')

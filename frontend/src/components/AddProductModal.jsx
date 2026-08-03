@@ -59,6 +59,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     cost_price: '',
     selling_price: '',
     tax_rate: '18', // Uganda VAT
+    inventory_mode: 'stock_controlled',
+    generic_name: '',
+    medicine_category: '',
+    strength: '',
+    dosage_form: '',
+    manufacturer: '',
+    prescription_required: false,
+    controlled_medicine: false,
+    expiry_date: '',
+    batch_number: '',
     initial_stock: '0',
     minimum_stock: '10',
     maximum_stock: '1000',
@@ -334,6 +344,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         cost_price: parseFloat(formData.cost_price) || 0,
         selling_price: parseFloat(formData.selling_price) || 0,
         tax_rate: parseFloat(formData.tax_rate) || 18,
+        inventory_mode: formData.inventory_mode || 'stock_controlled',
+        generic_name: formData.generic_name?.trim() || null,
+        medicine_category: formData.medicine_category?.trim() || null,
+        strength: formData.strength?.trim() || null,
+        dosage_form: formData.dosage_form?.trim() || null,
+        manufacturer: formData.manufacturer?.trim() || null,
+        prescription_required: Boolean(formData.prescription_required),
+        controlled_medicine: Boolean(formData.controlled_medicine),
+        expiry_date: formData.expiry_date || null,
+        batch_number: formData.batch_number?.trim() || null,
         initial_stock: parseInt(formData.initial_stock) || 0,
         minimum_stock: parseInt(formData.minimum_stock) || 10,
         maximum_stock: parseInt(formData.maximum_stock) || 1000,
@@ -358,6 +378,15 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           cost_price: productData.cost_price,
           selling_price: productData.selling_price,
           tax_rate: productData.tax_rate,
+          inventory_mode: productData.inventory_mode,
+          generic_name: productData.generic_name,
+          medicine_category: productData.medicine_category,
+          strength: productData.strength,
+          dosage_form: productData.dosage_form,
+          manufacturer: productData.manufacturer,
+          prescription_required: productData.prescription_required,
+          controlled_medicine: productData.controlled_medicine,
+          expiry_date: productData.expiry_date,
         };
         const updated = await inventoryService.updateProduct(editingProductId, productFields);
         productId = updated.id;
@@ -408,6 +437,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       cost_price: '',
       selling_price: '',
       tax_rate: '18',
+      inventory_mode: 'stock_controlled',
+      generic_name: '',
+      medicine_category: '',
+      strength: '',
+      dosage_form: '',
+      manufacturer: '',
+      prescription_required: false,
+      controlled_medicine: false,
+      expiry_date: '',
+      batch_number: '',
       initial_stock: '0',
       minimum_stock: '10',
       maximum_stock: '1000',
@@ -661,6 +700,27 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     </select>
                   </div>
 
+                  {/* POS inventory behavior */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      POS inventory mode
+                    </label>
+                    <select
+                      name="inventory_mode"
+                      value={formData.inventory_mode}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="stock_controlled">Stock controlled</option>
+                      <option value="listing_only">Listing only (restaurant/café)</option>
+                      <option value="batch_controlled">Batch controlled (pharmacy)</option>
+                      <option value="service_item">Service item</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Listing-only products remain sellable without fixed quantities.
+                    </p>
+                  </div>
+
                   {/* Supplier */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -695,6 +755,29 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Product description..."
                     />
+                  </div>
+
+                  {/* Optional pharmacy fields. The database applies these only
+                      to pharmacy products and keeps other business types safe. */}
+                  <div className="md:col-span-2 border-t pt-4">
+                    <h3 className="text-sm font-bold text-gray-800 mb-3">Pharmacy details (optional)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" name="generic_name" value={formData.generic_name} onChange={handleChange} placeholder="Generic name" />
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" name="medicine_category" value={formData.medicine_category} onChange={handleChange} placeholder="Medicine category" />
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" name="strength" value={formData.strength} onChange={handleChange} placeholder="Strength (e.g. 500mg)" />
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" name="dosage_form" value={formData.dosage_form} onChange={handleChange} placeholder="Dosage form" />
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" name="manufacturer" value={formData.manufacturer} onChange={handleChange} placeholder="Manufacturer" />
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" type="date" name="expiry_date" value={formData.expiry_date} onChange={handleChange} />
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg" name="batch_number" value={formData.batch_number} onChange={handleChange} placeholder="Batch / lot number" />
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" name="prescription_required" checked={formData.prescription_required} onChange={e => setFormData(prev => ({ ...prev, prescription_required: e.target.checked }))} />
+                        Prescription required
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" name="controlled_medicine" checked={formData.controlled_medicine} onChange={e => setFormData(prev => ({ ...prev, controlled_medicine: e.target.checked }))} />
+                        Controlled medicine
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>

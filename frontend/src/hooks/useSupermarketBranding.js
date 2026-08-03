@@ -9,6 +9,7 @@ const FALLBACK_NAME = 'Your Supermarket';
 // business type otherwise reuses the exact same portal/product plumbing.
 const BUSINESS_TYPE_META = {
   supermarket:     { emoji: '🏪', label: 'Supermarket',        itemsLabel: 'Products' },
+  pharmacy:        { emoji: '💊', label: 'Pharmacy',           itemsLabel: 'Medicines & Products' },
   hotel:           { emoji: '🏨', label: 'Hotel',               itemsLabel: 'Rooms & Services' },
   boutique:        { emoji: '👗', label: 'Boutique',            itemsLabel: 'Items' },
   restaurant_cafe: { emoji: '🍽️', label: 'Restaurant & Café',   itemsLabel: 'Menu' },
@@ -46,7 +47,7 @@ export const useSupermarketBranding = () => {
 
       const { data: supermarketRow, error } = await supabase
         .from('supermarkets')
-        .select('id, name, background_image_url, business_type')
+        .select('id, name, background_image_url, business_type, pichin_business_profile_id')
         .eq('id', supermarketId)
         .maybeSingle();
 
@@ -71,6 +72,7 @@ export const useSupermarketBranding = () => {
     name: supermarket?.name || FALLBACK_NAME,
     backgroundUrl: supermarket?.background_image_url || null,
     supermarketId: supermarket?.id || null,
+    pichinBusinessProfileId: supermarket?.pichin_business_profile_id || null,
     businessType,
     typeEmoji: typeMeta.emoji,
     typeLabel: typeMeta.label,

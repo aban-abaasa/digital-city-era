@@ -25,6 +25,14 @@ const BUSINESS_TYPES = [
     itemsLabel: 'products',
   },
   {
+    value: 'pharmacy', emoji: '💊', label: 'Pharmacy',
+    blurb: 'Medicines, health, and wellness products',
+    namePlaceholder: 'e.g. Sunrise Pharmacy',
+    nameLabel: 'Pharmacy name *',
+    descPlaceholder: 'What do you offer? Prescription medicines, wellness products, medical supplies…',
+    itemsLabel: 'medicines & products',
+  },
+  {
     value: 'hotel', emoji: '🏨', label: 'Hotel',
     blurb: 'Rooms and guest services',
     namePlaceholder: 'e.g. Lakeview Hotel',
@@ -299,7 +307,7 @@ export default function AdminAuth() {
           Your store.<br />Your rules.
         </h1>
         <p className="text-slate-300 text-base leading-relaxed max-w-sm">
-          Set up a supermarket, hotel, boutique, or restaurant/café on the platform, invite your team, and earn ICAN coin on every sale — all from one portal.
+          Set up a supermarket, pharmacy, hotel, boutique, or restaurant/café on the platform, invite your team, and earn ICAN coin on every sale — all from one portal.
         </p>
       </div>
 
@@ -308,10 +316,10 @@ export default function AdminAuth() {
           { icon: FiBriefcase, title: 'Launch your store', body: 'Go live in minutes. No technical setup needed.' },
           { icon: FiUsers, title: 'Invite managers & cashiers', body: 'Share an invite link — they join instantly.' },
           { icon: FiPackage, title: 'Earn ICAN on every sale', body: '10 ICAN for joining + rewards on every order.' },
-        ].map(({ icon: Icon, title, body }) => (
+        ].map(({ icon, title, body }) => (
           <div key={title} className="flex items-start gap-4 rounded-2xl border border-white/8 bg-white/4 p-4 backdrop-blur">
             <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
-              <Icon size={16} className="text-emerald-300" />
+              {React.createElement(icon, { size: 16, className: 'text-emerald-300' })}
             </div>
             <div>
               <p className="font-semibold text-sm mb-0.5">{title}</p>

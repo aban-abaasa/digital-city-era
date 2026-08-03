@@ -75,11 +75,12 @@ interface SupermarketRow {
 // Store type filter — supermarkets, hotels, boutiques, and restaurants/cafés
 // all live in the same `supermarkets` table (business_type column), so this
 // is purely a client-side filter over the one list already loaded.
-type BusinessTypeFilter = 'all' | 'supermarket' | 'hotel' | 'boutique' | 'restaurant_cafe';
+type BusinessTypeFilter = 'all' | 'supermarket' | 'pharmacy' | 'hotel' | 'boutique' | 'restaurant_cafe';
 
 const BUSINESS_TYPE_FILTERS: { value: BusinessTypeFilter; label: string; emoji: string }[] = [
   { value: 'all', label: 'All', emoji: '🏬' },
   { value: 'supermarket', label: 'Supermarkets', emoji: '🏪' },
+  { value: 'pharmacy', label: 'Pharmacies', emoji: '💊' },
   { value: 'hotel', label: 'Hotels', emoji: '🏨' },
   { value: 'boutique', label: 'Boutiques', emoji: '👗' },
   { value: 'restaurant_cafe', label: 'Restaurants', emoji: '🍽️' },

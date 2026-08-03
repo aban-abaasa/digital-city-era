@@ -10,7 +10,7 @@
  * This service ensures all portals work with the same real-time inventory data
  */
 
-import { supabase, db, utils } from './supabase';
+import { supabase, utils } from './supabase';
 import { toast } from 'react-toastify';
 
 class InventorySupabaseService {
@@ -85,8 +85,6 @@ class InventorySupabaseService {
       const {
         search = '',
         category = '',
-        supplier = '',
-        status = '',
         sortBy = 'name',
         sortOrder = 'asc',
         limit = 100,
@@ -246,6 +244,7 @@ class InventorySupabaseService {
 
     } catch (error) {
       console.error('❌ Product not found:', code);
+      console.error(error);
       return null;
     }
   }
@@ -270,10 +269,19 @@ class InventorySupabaseService {
         tax_rate = 18, // Uganda VAT
         initial_stock = 0,
         minimum_stock = 10,
-        maximum_stock = 1000,
         reorder_point = 20,
         location = 'Main Storage',
-        warehouse = 'Main Warehouse'
+        warehouse = 'Main Warehouse',
+        inventory_mode,
+        generic_name,
+        medicine_category,
+        strength,
+        dosage_form,
+        manufacturer,
+        prescription_required = false,
+        controlled_medicine = false,
+        expiry_date,
+        batch_number
       } = productData;
 
       // Ensure selling_price is a valid number
@@ -332,6 +340,21 @@ class InventorySupabaseService {
       // rejected by RLS unless supermarket_id matches the signed-in user's.
       const supermarketId = await this.getCurrentSupermarketId();
 
+      let businessType = 'supermarket';
+      if (supermarketId) {
+        const { data: store } = await supabase
+          .from('supermarkets')
+          .select('business_type')
+          .eq('id', supermarketId)
+          .maybeSingle();
+        businessType = store?.business_type || businessType;
+      }
+
+      const effectiveInventoryMode = inventory_mode || (
+        businessType === 'restaurant_cafe' ? 'listing_only' :
+        businessType === 'pharmacy' ? 'stock_controlled' : 'stock_controlled'
+      );
+
       // Insert product with required fields - price/selling_price default to 0
       // (never null) rather than a fabricated placeholder amount.
       const productInsert = {
@@ -341,7 +364,10 @@ class InventorySupabaseService {
         price: finalSellingPrice,
         selling_price: finalSellingPrice,
         cost_price: finalCostPrice > 0 ? finalCostPrice : undefined,
-        supermarket_id: supermarketId || undefined
+        supermarket_id: supermarketId || undefined,
+        inventory_mode: effectiveInventoryMode,
+        track_inventory: !['listing_only', 'service_item'].includes(effectiveInventoryMode),
+        is_service: effectiveInventoryMode === 'service_item'
       };
 
       console.log('📦 Inserting product:', productInsert);
@@ -352,6 +378,14 @@ class InventorySupabaseService {
       if (brand && String(brand).trim()) productInsert.brand = String(brand).trim();
       if (tax_rate) productInsert.tax_rate = parseFloat(tax_rate) || 18;
       if (markup_percentage) productInsert.markup_percentage = parseFloat(markup_percentage);
+      if (generic_name) productInsert.generic_name = generic_name;
+      if (medicine_category) productInsert.medicine_category = medicine_category;
+      if (strength) productInsert.strength = strength;
+      if (dosage_form) productInsert.dosage_form = dosage_form;
+      if (manufacturer) productInsert.manufacturer = manufacturer;
+      productInsert.prescription_required = Boolean(prescription_required);
+      productInsert.controlled_medicine = Boolean(controlled_medicine);
+      if (expiry_date) productInsert.expiry_date = expiry_date;
 
       const { data: product, error: productError } = await supabase
         .from('products')
@@ -361,15 +395,20 @@ class InventorySupabaseService {
 
       if (productError) throw productError;
 
-      // Create inventory record with only basic fields (skip if RLS blocks it)
+      // Listing-only and service products deliberately have no POS inventory
+      // row. Their availability is controlled by products.is_active.
       let inventory = null;
-      try {
+      if (!['listing_only', 'service_item'].includes(effectiveInventoryMode)) try {
         const { data: inv, error: inventoryError } = await supabase
           .from('inventory')
           .insert({
             product_id: product.id,
             supermarket_id: supermarketId || undefined,
-            current_stock: initial_stock || 0
+            current_stock: initial_stock || 0,
+            minimum_stock: minimum_stock || 0,
+            reorder_point: reorder_point || 0,
+            storage_location: location,
+            warehouse
           })
           .select()
           .single();
@@ -379,8 +418,25 @@ class InventorySupabaseService {
         } else {
           console.error('❌ Inventory row creation failed for product', product.id, ':', inventoryError);
         }
-      } catch (invError) {
+      } catch (inventoryCreationError) {
         // Inventory creation failed, continue anyway
+        console.error('❌ Inventory row creation failed:', inventoryCreationError);
+      }
+
+      if (effectiveInventoryMode === 'batch_controlled' && batch_number && expiry_date) {
+        const { error: batchError } = await supabase
+          .from('product_inventory_batches')
+          .insert({
+            product_id: product.id,
+            supermarket_id: supermarketId,
+            batch_number,
+            expiry_date,
+            current_stock: initial_stock || 0,
+            purchase_price: finalCostPrice,
+            selling_price: finalSellingPrice,
+            supplier_id: supplier_id || null
+          });
+        if (batchError) console.error('Pharmacy batch creation failed:', batchError);
       }
 
       toast.success(`✅ Product "${name}" created successfully!`);

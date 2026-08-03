@@ -13,6 +13,7 @@ export default function SupermarketOnboarding() {
 
   const [form, setForm] = useState({
     ownerName: '', ownerEmail: '', ownerPhone: '',
+    businessType: 'supermarket',
     storeName: '', description: '',
     storePhone: '', storeEmail: '',
     address: '', city: '', country: 'Uganda',
@@ -42,6 +43,7 @@ export default function SupermarketOnboarding() {
         p_address:     form.address,
         p_city:        form.city,
         p_country:     form.country,
+        p_business_type: form.businessType,
       });
 
       if (error) throw error;
@@ -115,8 +117,8 @@ export default function SupermarketOnboarding() {
           <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
             <span className="text-2xl">🏪</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">List Your Supermarket</h1>
-          <p className="text-sm text-slate-500 mt-1">Join thousands of stores on the platform. Earn ICAN on every sale.</p>
+           <h1 className="text-2xl font-bold text-slate-800">List Your Business</h1>
+          <p className="text-sm text-slate-500 mt-1">Join the platform with the right tools for your business.</p>
         </div>
 
         {/* Step indicators */}
@@ -154,6 +156,13 @@ export default function SupermarketOnboarding() {
         {step === 1 && (
           <div className="space-y-4">
             <h2 className="font-semibold text-slate-700">Store details</h2>
+            <select className="input-field" value={form.businessType} onChange={e => set('businessType', e.target.value)}>
+              <option value="supermarket">Supermarket</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="hotel">Hotel</option>
+              <option value="boutique">Boutique</option>
+              <option value="restaurant_cafe">Restaurant &amp; Café</option>
+            </select>
             <input className="input-field" placeholder="Supermarket name *" value={form.storeName}
               onChange={e => set('storeName', e.target.value)} />
             <textarea className="input-field resize-none h-24" placeholder="Brief description (what do you sell?)"
@@ -189,6 +198,7 @@ export default function SupermarketOnboarding() {
             <h2 className="font-semibold text-slate-700">Confirm & submit</h2>
             <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm">
               <Row label="Store name"   value={form.storeName} />
+              <Row label="Business type" value={form.businessType.replace('_', ' ')} />
               <Row label="Owner"        value={form.ownerName} />
               <Row label="Email"        value={form.storeEmail || form.ownerEmail} />
               <Row label="Phone"        value={form.storePhone || form.ownerPhone} />
@@ -227,7 +237,7 @@ export default function SupermarketOnboarding() {
               disabled={loading}
               className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-semibold rounded-xl hover:opacity-90 disabled:opacity-40"
             >
-              {loading ? 'Registering…' : 'Register Supermarket'}
+               {loading ? 'Registering…' : 'Register Business'}
             </button>
           )}
         </div>
