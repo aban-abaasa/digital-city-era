@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { FiArrowRight, FiBriefcase, FiExternalLink, FiTruck, FiUsers } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 
-const ICANERA_CMMS_URL = import.meta.env.VITE_ICANERA_CMMS_URL || 'https://icanera.com/#cmms';
+const ICANERA_CMMS_URL = import.meta.env.VITE_ICANERA_CMMS_URL || 'https://icanera.space/#cmms';
 
 /**
  * Supermarketa entry point for workforce operations.

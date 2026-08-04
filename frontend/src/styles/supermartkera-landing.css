@@ -1,0 +1,188 @@
+/* Supermartkera landing — green/white theme animations & utilities */
+
+@keyframes skFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes skFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes skFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes skPulseGreen {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
+  50% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+}
+
+@keyframes skShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes skSlideShowcase {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes skBlob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(12px, -18px) scale(1.04); }
+  66% { transform: translate(-8px, 10px) scale(0.97); }
+}
+
+.sk-animate-fade-up {
+  animation: skFadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sk-animate-fade-in {
+  animation: skFadeIn 0.5s ease both;
+}
+
+.sk-animate-float {
+  animation: skFloat 4s ease-in-out infinite;
+}
+
+.sk-animate-pulse-green {
+  animation: skPulseGreen 2.5s ease-in-out infinite;
+}
+
+.sk-animate-showcase {
+  animation: skSlideShowcase 0.45s ease both;
+}
+
+.sk-delay-1 { animation-delay: 0.1s; }
+.sk-delay-2 { animation-delay: 0.2s; }
+.sk-delay-3 { animation-delay: 0.3s; }
+.sk-delay-4 { animation-delay: 0.4s; }
+.sk-delay-5 { animation-delay: 0.5s; }
+.sk-delay-6 { animation-delay: 0.6s; }
+
+.sk-blob {
+  animation: skBlob 12s ease-in-out infinite;
+}
+
+.sk-blob-delay {
+  animation: skBlob 14s ease-in-out infinite;
+  animation-delay: -4s;
+}
+
+.sk-shimmer-text {
+  background: linear-gradient(90deg, #10b981, #34d399, #059669, #10b981);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: skShimmer 4s linear infinite;
+}
+
+.sk-card-lift {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.3s ease,
+              border-color 0.3s ease;
+}
+
+.sk-card-lift:hover {
+  transform: translateY(-4px);
+}
+
+.sk-card-lift:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+.sk-btn-primary {
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  background-size: 200% 200%;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-position 0.4s ease;
+}
+
+.sk-btn-primary:hover {
+  background-position: 100% 0;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(16, 185, 129, 0.35);
+}
+
+.sk-btn-primary:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.sk-hero-image {
+  mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+}
+
+.sk-scroll-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sk-scroll-reveal.sk-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.sk-mobile-nav {
+  transform: translateX(100%);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sk-mobile-nav.sk-open {
+  transform: translateX(0);
+}
+
+.sk-mobile-overlay {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.sk-mobile-overlay.sk-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sk-stat-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.sk-stat-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-animate-fade-up,
+  .sk-animate-fade-in,
+  .sk-animate-float,
+  .sk-animate-pulse-green,
+  .sk-animate-showcase,
+  .sk-blob,
+  .sk-blob-delay,
+  .sk-shimmer-text,
+  .sk-scroll-reveal {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .sk-hero-title {
+    font-size: 1.75rem !important;
+    line-height: 1.2 !important;
+  }
+}

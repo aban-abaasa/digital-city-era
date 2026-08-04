@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -11,6 +11,7 @@ import {
   FiHeadphones,
   FiLock,
   FiMail,
+  FiMenu,
   FiPackage,
   FiMoon,
   FiSend,
@@ -26,6 +27,7 @@ import {
   FiX,
   FiZap
 } from 'react-icons/fi';
+import '../styles/supermartkera-landing.css';
 import { Bike } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getGuestIdentity, resolveChatIdentity, setGuestIdentity } from '../services/chatService';
@@ -98,29 +100,67 @@ const fmtBoardTime = (value) => {
 
 const themeStyles = {
   dark: {
-    shell: 'bg-[#07111f] text-white',
-    header: 'bg-white/5 border-white/10',
-    panel: 'bg-slate-950/60 border-white/10',
-    softPanel: 'bg-white/8 border-white/10',
-    muted: 'text-slate-300',
-    body: 'text-slate-300',
-    accent: 'text-cyan-100',
-    button: 'bg-white text-slate-950',
-    outline: 'border-white/15 bg-white/8 text-white hover:bg-white/12',
-    input: 'bg-slate-950/50 border-white/10 text-white placeholder:text-slate-500'
+    shell: 'bg-[#061510] text-white',
+    header: 'bg-emerald-950/50 border-emerald-800/25',
+    panel: 'bg-emerald-950/55 border-emerald-800/20',
+    softPanel: 'bg-emerald-900/15 border-emerald-700/20',
+    muted: 'text-emerald-100/65',
+    body: 'text-emerald-50/75',
+    accent: 'text-white',
+    button: 'bg-emerald-400 text-emerald-950',
+    outline: 'border-emerald-700/25 bg-emerald-900/20 text-white hover:bg-emerald-800/25',
+    input: 'bg-emerald-950/55 border-emerald-700/25 text-white placeholder:text-emerald-700',
+    featureItem: 'border-emerald-800/25 bg-emerald-950/60',
+    blob1: 'bg-emerald-500/12',
+    blob2: 'bg-green-400/10',
+    blob3: 'bg-teal-400/8',
+    badge: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
+    iconBg: 'from-emerald-400/20 to-green-500/15 text-emerald-300',
+    price: 'text-emerald-300',
+    sectionLabel: 'text-emerald-400/75',
+    logo: 'from-emerald-400 via-green-500 to-teal-600 shadow-emerald-500/20',
+    check: 'text-emerald-400',
+    divider: 'border-emerald-800/25'
   },
   light: {
-    shell: 'bg-[linear-gradient(180deg,#f8fafc_0%,#eff6ff_45%,#ffffff_100%)] text-slate-900',
-    header: 'bg-white/80 border-slate-200',
-    panel: 'bg-white border-slate-200 shadow-xl shadow-slate-200/40',
-    softPanel: 'bg-slate-50 border-slate-200',
+    shell: 'bg-[linear-gradient(180deg,#ffffff_0%,#f0fdf4_45%,#ecfdf5_100%)] text-slate-900',
+    header: 'bg-white/92 border-emerald-100 shadow-sm shadow-emerald-100/40',
+    panel: 'bg-white border-emerald-100 shadow-xl shadow-emerald-100/35',
+    softPanel: 'bg-white border-emerald-100/90 hover:border-emerald-200',
     muted: 'text-slate-600',
     body: 'text-slate-600',
-    accent: 'text-slate-700',
-    button: 'bg-slate-950 text-white',
-    outline: 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50',
-    input: 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'
+    accent: 'text-slate-900',
+    button: 'bg-emerald-600 text-white hover:bg-emerald-700',
+    outline: 'border-emerald-200 bg-white text-slate-900 hover:bg-emerald-50',
+    input: 'bg-white border-emerald-200 text-slate-900 placeholder:text-slate-400',
+    featureItem: 'border-emerald-100 bg-emerald-50/70',
+    blob1: 'bg-emerald-200/55',
+    blob2: 'bg-green-100/65',
+    blob3: 'bg-teal-100/45',
+    badge: 'border-emerald-300/40 bg-emerald-50 text-emerald-800',
+    iconBg: 'from-emerald-100 to-green-100 text-emerald-600',
+    price: 'text-emerald-600',
+    sectionLabel: 'text-emerald-600',
+    logo: 'from-emerald-500 via-green-600 to-teal-600 shadow-emerald-400/20',
+    check: 'text-emerald-500',
+    divider: 'border-emerald-100'
   }
+};
+
+const useScrollReveal = () => {
+  const ref = useRef(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const items = node.querySelectorAll('.sk-scroll-reveal');
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add('sk-visible'); }),
+      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+    );
+    items.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+  return ref;
 };
 
 const SupermartkeraLanding = () => {
@@ -150,6 +190,22 @@ const SupermartkeraLanding = () => {
   const [selectedContributor, setSelectedContributor] = useState(null);
   const [contributorBalance, setContributorBalance] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mainRef = useScrollReveal();
+
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') closeMobileMenu(); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [mobileMenuOpen, closeMobileMenu]);
 
   // Real posters shown individually (name + message count); every guest
   // post (no user_id) folds into one aggregate "Guests" entry instead of
@@ -368,26 +424,28 @@ const SupermartkeraLanding = () => {
   };
 
   return (
-    <div className={`min-h-screen ${palette.shell}`}>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className={`absolute -top-20 left-10 h-72 w-72 rounded-full blur-3xl ${theme === 'dark' ? 'bg-cyan-400/20' : 'bg-cyan-200/50'}`} />
-        <div className={`absolute top-44 right-0 h-80 w-80 rounded-full blur-3xl ${theme === 'dark' ? 'bg-violet-500/20' : 'bg-violet-200/50'}`} />
-        <div className={`absolute bottom-10 left-1/3 h-96 w-96 rounded-full blur-3xl ${theme === 'dark' ? 'bg-amber-400/10' : 'bg-amber-100/70'}`} />
+    <div className={`min-h-screen overflow-x-hidden ${palette.shell}`}>
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className={`sk-blob absolute -top-24 -left-16 h-80 w-80 rounded-full blur-3xl ${palette.blob1}`} />
+        <div className={`sk-blob-delay absolute top-1/3 -right-20 h-96 w-96 rounded-full blur-3xl ${palette.blob2}`} />
+        <div className={`sk-blob absolute bottom-0 left-1/4 h-72 w-72 rounded-full blur-3xl ${palette.blob3}`} />
       </div>
 
-      <header className={`relative z-10 border-b backdrop-blur-xl ${palette.header}`}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-600 shadow-lg shadow-cyan-500/20">
-              <FiShoppingBag className="h-6 w-6 text-white" />
+      <header className={`sticky top-0 z-40 border-b backdrop-blur-xl ${palette.header}`}>
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 sm:py-4 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-12 sm:w-12 ${palette.logo}`}>
+              <FiShoppingBag className="h-5 w-5 text-white sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-500">Supermarket operating system</p>
-              <h1 className="text-xl font-bold tracking-tight">Supermartkera</h1>
+            <div className="min-w-0">
+              <p className={`truncate text-[10px] font-semibold uppercase tracking-[0.18em] sm:text-xs sm:tracking-[0.2em] ${palette.sectionLabel}`}>
+                Supermarket OS
+              </p>
+              <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">Supermartkera</h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 md:hidden">
+          <div className="flex items-center gap-1.5 sm:gap-2 md:hidden">
             <button
               onClick={toggleTheme}
               aria-label="Toggle theme"
@@ -395,120 +453,167 @@ const SupermartkeraLanding = () => {
             >
               {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
             </button>
-            <Link
-              to="/login"
-              className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition ${palette.button}`}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open menu"
+              className={`inline-flex items-center justify-center rounded-full border p-2.5 transition ${palette.outline}`}
             >
-              Sign in
-            </Link>
+              <FiMenu className="h-4 w-4" />
+            </button>
           </div>
 
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-2 md:flex lg:gap-3">
             <button
               onClick={toggleTheme}
               className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition ${palette.outline}`}
             >
               {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
             <button
               onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
-              className={`rounded-full border px-5 py-2.5 text-sm font-semibold transition ${palette.outline}`}
+              className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition lg:px-5 ${palette.outline}`}
             >
-              Contact us
+              Contact
             </button>
-              <Link
-                to="/login"
-                className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition hover:scale-[1.02] ${palette.button}`}
-              >
-                Open sign in
-                <FiArrowRight className="h-4 w-4" />
-              </Link>
+            <Link
+              to="/login"
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition hover:scale-[1.02] lg:px-5 ${palette.button}`}
+            >
+              Sign in
+              <FiArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-7xl px-6 pb-20 pt-10 lg:px-8 lg:pt-16">
-        <section className="grid gap-12 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
-          <div className="space-y-8">
-            <div className={`inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-semibold ${theme === 'dark' ? 'text-cyan-200' : 'text-cyan-800'}`}>
-              <FiStar className="h-4 w-4 text-amber-400" />
-              Clean UX for customers, staff, and managers
+      {/* Mobile nav drawer */}
+      <div
+        className={`sk-mobile-overlay fixed inset-0 z-50 bg-black/50 md:hidden ${mobileMenuOpen ? 'sk-open' : ''}`}
+        onClick={closeMobileMenu}
+        aria-hidden={!mobileMenuOpen}
+      />
+      <nav
+        className={`sk-mobile-nav fixed right-0 top-0 z-50 flex h-full w-[min(88vw,320px)] flex-col border-l p-5 md:hidden ${palette.panel} ${mobileMenuOpen ? 'sk-open' : ''}`}
+        aria-hidden={!mobileMenuOpen}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-lg font-bold">Menu</span>
+          <button onClick={closeMobileMenu} aria-label="Close menu" className={`rounded-full p-2 ${palette.outline}`}>
+            <FiX className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-8 flex flex-col gap-3">
+          <button
+            onClick={() => { document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' }); closeMobileMenu(); }}
+            className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
+          >
+            Services
+          </button>
+          <button
+            onClick={() => { document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }); closeMobileMenu(); }}
+            className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
+          >
+            Contact us
+          </button>
+          <Link
+            to="/login"
+            onClick={closeMobileMenu}
+            className="sk-btn-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white"
+          >
+            Sign in <FiArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </nav>
+
+      <main ref={mainRef} className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10 lg:px-8 lg:pt-16">
+        <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12">
+          <div className="sk-animate-fade-up space-y-6 sm:space-y-8">
+            <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold sm:px-4 sm:py-2 sm:text-sm ${palette.badge}`}>
+              <FiStar className="h-3.5 w-3.5 text-amber-400 sm:h-4 sm:w-4" />
+              Clean UX for customers, staff & managers
             </div>
 
-            <div className="space-y-5">
-              <h2 className={`max-w-2xl text-3xl font-black leading-[1.15] tracking-tight sm:text-4xl md:text-5xl lg:text-6xl ${palette.accent}`}>
-                Automate your retail operations, reduce shrinkage, and{' '}
-                <span className="bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-500 bg-clip-text text-transparent">
-                  boost supermart profitability.
-                </span>
+            <div className="space-y-4 sm:space-y-5">
+              <h2 className={`sk-hero-title max-w-2xl text-[1.85rem] font-black leading-[1.12] tracking-tight xs:text-3xl sm:text-4xl md:text-5xl lg:text-6xl ${palette.accent}`}>
+                Automate retail, reduce shrinkage &{' '}
+                <span className="sk-shimmer-text">boost supermarket profit.</span>
               </h2>
-              <p className={`max-w-2xl text-lg leading-8 md:text-xl ${palette.body}`}>
+              <p className={`max-w-2xl text-base leading-7 sm:text-lg sm:leading-8 md:text-xl ${palette.body}`}>
                 Supermartkera helps supermarket teams manage POS, scan-and-pay, inventory, reports,
                 and supplier activity in one clean, affordable place.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-col gap-3 xs:flex-row xs:flex-wrap sm:gap-4">
               <Link
                 to="/login"
-                className="inline-flex items-center gap-3 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-500 to-violet-600 px-6 py-4 font-semibold text-slate-950 shadow-2xl shadow-cyan-500/20 transition hover:scale-[1.02]"
+                className="sk-btn-primary inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-semibold text-white sm:gap-3 sm:px-6 sm:py-4 sm:text-base"
               >
                 Open sign in
-                <FiArrowRight className="h-5 w-5" />
+                <FiArrowRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </Link>
               <button
                 onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })}
-                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 font-semibold backdrop-blur-md transition hover:scale-[1.01] ${palette.outline}`}
+                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-5 py-3.5 text-sm font-semibold backdrop-blur-md transition hover:scale-[1.01] sm:gap-3 sm:px-6 sm:py-4 sm:text-base ${palette.outline}`}
               >
                 Explore services
-                <FiArrowRight className="h-5 w-5" />
+                <FiArrowRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="sk-stat-scroll flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-4">
               {[
                 { value: 'POS', label: 'Checkout ready' },
                 { value: 'Scan', label: 'Barcode friendly' },
                 { value: 'Stock', label: 'Inventory control' },
                 { value: 'Reports', label: 'Decision support' }
-              ].map((item) => (
-                <div key={item.label} className={`rounded-2xl border p-4 backdrop-blur-md ${palette.softPanel}`}>
-                  <p className="text-2xl font-black">{item.value}</p>
-                  <p className={`mt-1 text-xs uppercase tracking-[0.25em] ${palette.muted}`}>{item.label}</p>
+              ].map((item, i) => (
+                <div
+                  key={item.label}
+                  className={`sk-card-lift min-w-[7.5rem] shrink-0 rounded-2xl border p-3.5 backdrop-blur-md sm:min-w-0 sm:p-4 sk-animate-fade-up sk-delay-${i + 1} ${palette.softPanel}`}
+                >
+                  <p className="text-xl font-black sm:text-2xl">{item.value}</p>
+                  <p className={`mt-0.5 text-[10px] uppercase tracking-[0.2em] sm:mt-1 sm:text-xs sm:tracking-[0.25em] ${palette.muted}`}>{item.label}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="relative">
-            <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-cyan-400/20 via-transparent to-fuchsia-400/20 blur-2xl" />
-            <div className={`relative rounded-[2rem] border p-6 ${palette.panel}`}>
-              <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
-                <div className="flex items-center justify-between">
+          <div className="sk-animate-fade-up sk-delay-2 relative">
+            <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-tr from-emerald-400/15 via-transparent to-green-400/15 blur-2xl sm:-inset-4" />
+            <div className={`relative overflow-hidden rounded-[1.75rem] border sm:rounded-[2rem] ${palette.panel}`}>
+              <img
+                src="/images/landing/hero-supermarket.png"
+                alt="Modern supermarket with fresh produce and digital checkout"
+                className="sk-hero-image h-44 w-full object-cover sm:h-52 lg:h-56"
+                loading="eager"
+              />
+              <div className="p-4 sm:p-5 lg:p-6">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className={`text-sm uppercase tracking-[0.3em] ${theme === 'dark' ? 'text-cyan-200/70' : 'text-slate-500'}`}>
+                    <p className={`text-xs uppercase tracking-[0.25em] sm:tracking-[0.3em] ${palette.sectionLabel}`}>
                       What Supermartkera does
                     </p>
-                    <h3 className={`mt-2 text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                    <h3 className={`mt-1.5 text-xl font-semibold sm:mt-2 sm:text-2xl ${palette.accent}`}>
                       One system. Clear control. Better service.
                     </h3>
                   </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300">
-                    <FiZap className="h-6 w-6" />
+                  <div className="sk-animate-pulse-green flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-400 sm:h-12 sm:w-12">
+                    <FiZap className="h-5 w-5 sm:h-6 sm:w-6" />
                   </div>
                 </div>
 
-                <div className="mt-6 space-y-4">
+                <div className="mt-4 space-y-2.5 sm:mt-6 sm:space-y-3">
                   {[
                     'A smoother shopping experience for customers',
                     'Faster checkout with POS and scan-and-pay',
                     'Easy inventory management for supermarkets',
                     'Clear reports for better business decisions'
                   ].map((feature) => (
-                    <div key={feature} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                      <FiCheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-300" />
-                      <p className="text-sm leading-6 text-slate-200">{feature}</p>
+                    <div key={feature} className={`flex items-start gap-2.5 rounded-xl border p-3 sm:gap-3 sm:rounded-2xl sm:p-3.5 ${palette.featureItem}`}>
+                      <FiCheckCircle className={`mt-0.5 h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${palette.check}`} />
+                      <p className={`text-xs leading-5 sm:text-sm sm:leading-6 ${theme === 'dark' ? 'text-emerald-50/85' : 'text-slate-700'}`}>{feature}</p>
                     </div>
                   ))}
                 </div>
@@ -517,45 +622,45 @@ const SupermartkeraLanding = () => {
           </div>
         </section>
 
-        <section className="mt-20">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <section className="sk-scroll-reveal mt-14 sm:mt-20">
+          <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Live from the shelves</p>
-              <h3 className={`mt-3 text-3xl font-bold md:text-4xl ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+              <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Live from the shelves</p>
+              <h3 className={`mt-2 text-2xl font-bold sm:mt-3 sm:text-3xl md:text-4xl ${palette.accent}`}>
                 Real products from real Supermartkera stores.
               </h3>
             </div>
-            <p className={`max-w-2xl text-sm leading-7 md:text-right ${palette.muted}`}>
+            <p className={`max-w-2xl text-xs leading-6 sm:text-sm sm:leading-7 md:text-right ${palette.muted}`}>
               A rotating look at what's in stock right now.{' '}
               {identity ? 'Tap a product to shop.' : 'Sign in to add items to your cart.'}
             </p>
           </div>
 
           {visibleShowcaseProducts.length === 0 ? (
-            <p className={`mt-8 text-sm ${palette.muted}`}>No products in stock yet — check back soon.</p>
+            <p className={`mt-6 text-sm sm:mt-8 ${palette.muted}`}>No products in stock yet — check back soon.</p>
           ) : (
-            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6">
               {visibleShowcaseProducts.map((p) => (
                 <button
-                  key={p.id}
+                  key={`${p.id}-${showcaseOffset}`}
                   type="button"
                   onClick={() => handleGatedNavigate('shop', 'Sign in to add items to your cart.')}
-                  className={`group flex flex-col overflow-hidden rounded-[1.5rem] border text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+                  className={`sk-animate-showcase sk-card-lift group flex flex-col overflow-hidden rounded-2xl border text-left sm:rounded-[1.5rem] ${palette.softPanel}`}
                 >
-                  <div className="flex h-28 w-full items-center justify-center bg-gradient-to-br from-cyan-400/15 to-violet-500/15">
+                  <div className="flex h-20 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover" />
+                      <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                     ) : (
-                      <FiShoppingBag className="h-8 w-8 text-cyan-300/70" />
+                      <FiShoppingBag className="h-7 w-7 text-emerald-400/60 sm:h-8 sm:w-8" />
                     )}
                   </div>
-                  <div className="flex flex-1 flex-col gap-1 p-4">
-                    <p className={`text-xs uppercase tracking-wide ${palette.muted}`}>{p.storeName}</p>
-                    <p className={`text-sm font-semibold leading-5 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{p.name}</p>
-                    <div className="mt-auto flex items-center justify-between pt-2">
-                      <span className="text-sm font-bold text-cyan-300">UGX {p.priceUgx.toLocaleString()}</span>
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${palette.outline}`}>
-                        {identity ? <FiShoppingCart className="h-3 w-3" /> : <FiLock className="h-3 w-3" />}
+                  <div className="flex flex-1 flex-col gap-0.5 p-2.5 sm:gap-1 sm:p-4">
+                    <p className={`truncate text-[10px] uppercase tracking-wide sm:text-xs ${palette.muted}`}>{p.storeName}</p>
+                    <p className={`line-clamp-2 text-xs font-semibold leading-4 sm:text-sm sm:leading-5 ${palette.accent}`}>{p.name}</p>
+                    <div className="mt-auto flex items-center justify-between gap-1 pt-1.5 sm:pt-2">
+                      <span className={`text-xs font-bold sm:text-sm ${palette.price}`}>UGX {p.priceUgx.toLocaleString()}</span>
+                      <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:gap-1 sm:px-2 sm:py-1 sm:text-[10px] ${palette.outline}`}>
+                        {identity ? <FiShoppingCart className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> : <FiLock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
                         {identity ? 'Shop' : 'Sign in'}
                       </span>
                     </div>
@@ -566,36 +671,44 @@ const SupermartkeraLanding = () => {
           )}
         </section>
 
-        <section className="mt-20">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <section className="sk-scroll-reveal mt-14 sm:mt-20">
+          <div className="overflow-hidden rounded-[1.75rem] border sm:rounded-[2rem]">
+            <img
+              src="/images/landing/delivery-ride.png"
+              alt="Grocery delivery by BodaGo rider"
+              className="h-36 w-full object-cover sm:h-48 lg:h-56"
+              loading="lazy"
+            />
+          </div>
+          <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Powered by BodaGo</p>
-              <h3 className={`mt-3 text-3xl font-bold md:text-4xl ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-                Rides, delivery, and self-checkout — all connected.
+              <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Powered by BodaGo</p>
+              <h3 className={`mt-2 text-2xl font-bold sm:mt-3 sm:text-3xl md:text-4xl ${palette.accent}`}>
+                Rides, delivery & self-checkout — connected.
               </h3>
             </div>
-            <p className={`max-w-2xl text-sm leading-7 md:text-right ${palette.muted}`}>
-              Supermartkera plugs straight into BodaGo's rider network for real-time ride matching
+            <p className={`max-w-2xl text-xs leading-6 sm:text-sm sm:leading-7 md:text-right ${palette.muted}`}>
+              Supermartkera plugs into BodaGo's rider network for real-time ride matching
               and doorstep delivery.{' '}
               {identity ? 'Tap a card to get started.' : 'Sign in to get started.'}
             </p>
           </div>
 
-          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <button
               type="button"
               onClick={() => handleGatedNavigate('book-ride', 'Sign in to book a ride.')}
-              className={`group flex items-center gap-5 rounded-[1.75rem] border p-6 text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+              className={`sk-card-lift group flex flex-col gap-4 rounded-2xl border p-4 text-left sm:flex-row sm:items-center sm:rounded-[1.75rem] sm:p-6 ${palette.softPanel}`}
             >
-              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
-                <Bike className="h-7 w-7" />
+              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-14 sm:w-14 ${palette.iconBg}`}>
+                <Bike className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
-              <div className="flex-1">
-                <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Book a ride</h4>
-                <p className={`mt-2 leading-6 ${palette.muted}`}>Get picked up fast, with live matching to a nearby BodaGo rider.</p>
+              <div className="min-w-0 flex-1">
+                <h4 className={`text-lg font-semibold sm:text-xl ${palette.accent}`}>Book a ride</h4>
+                <p className={`mt-1 text-sm leading-6 ${palette.muted}`}>Get picked up fast with live matching to a nearby BodaGo rider.</p>
               </div>
-              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${palette.outline}`}>
-                {identity ? <FiArrowRight className="h-3.5 w-3.5" /> : <FiLock className="h-3.5 w-3.5" />}
+              <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium sm:px-3 sm:py-1.5 sm:text-xs ${palette.outline}`}>
+                {identity ? <FiArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <FiLock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
                 {identity ? 'Book now' : 'Sign in'}
               </span>
             </button>
@@ -603,17 +716,17 @@ const SupermartkeraLanding = () => {
             <button
               type="button"
               onClick={() => handleGatedNavigate('delivery', 'Sign in to request delivery.')}
-              className={`group flex items-center gap-5 rounded-[1.75rem] border p-6 text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+              className={`sk-card-lift group flex flex-col gap-4 rounded-2xl border p-4 text-left sm:flex-row sm:items-center sm:rounded-[1.75rem] sm:p-6 ${palette.softPanel}`}
             >
-              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
-                <FiTruck className="h-7 w-7" />
+              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-14 sm:w-14 ${palette.iconBg}`}>
+                <FiTruck className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
-              <div className="flex-1">
-                <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Delivery</h4>
-                <p className={`mt-2 leading-6 ${palette.muted}`}>Have your order dropped off wherever you are, by a BodaGo rider.</p>
+              <div className="min-w-0 flex-1">
+                <h4 className={`text-lg font-semibold sm:text-xl ${palette.accent}`}>Delivery</h4>
+                <p className={`mt-1 text-sm leading-6 ${palette.muted}`}>Have your order dropped off wherever you are, by a BodaGo rider.</p>
               </div>
-              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${palette.outline}`}>
-                {identity ? <FiArrowRight className="h-3.5 w-3.5" /> : <FiLock className="h-3.5 w-3.5" />}
+              <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium sm:px-3 sm:py-1.5 sm:text-xs ${palette.outline}`}>
+                {identity ? <FiArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <FiLock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
                 {identity ? 'Get delivery' : 'Sign in'}
               </span>
             </button>
@@ -621,124 +734,110 @@ const SupermartkeraLanding = () => {
             <button
               type="button"
               onClick={() => handleGatedNavigate('shop', 'Sign in for self-checkout.')}
-              className={`group flex items-center gap-5 rounded-[1.75rem] border p-6 text-left transition hover:-translate-y-1 ${palette.softPanel}`}
+              className={`sk-card-lift group flex flex-col gap-4 rounded-2xl border p-4 text-left sm:col-span-2 sm:flex-row sm:items-center sm:rounded-[1.75rem] sm:p-6 lg:col-span-1 ${palette.softPanel}`}
             >
-              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
-                <FiShoppingCart className="h-7 w-7" />
+              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-14 sm:w-14 ${palette.iconBg}`}>
+                <FiShoppingCart className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
-              <div className="flex-1">
-                <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Self-checkout</h4>
-                <p className={`mt-2 leading-6 ${palette.muted}`}>Scan, pay, and skip the queue with BodaGo's self-service checkout.</p>
+              <div className="min-w-0 flex-1">
+                <h4 className={`text-lg font-semibold sm:text-xl ${palette.accent}`}>Self-checkout</h4>
+                <p className={`mt-1 text-sm leading-6 ${palette.muted}`}>Scan, pay, and skip the queue with BodaGo's self-service checkout.</p>
               </div>
-              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${palette.outline}`}>
-                {identity ? <FiArrowRight className="h-3.5 w-3.5" /> : <FiLock className="h-3.5 w-3.5" />}
+              <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium sm:px-3 sm:py-1.5 sm:text-xs ${palette.outline}`}>
+                {identity ? <FiArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <FiLock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
                 {identity ? 'Check out' : 'Sign in'}
               </span>
             </button>
           </div>
         </section>
 
-        <section id="services" className="mt-20">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <section id="services" className="sk-scroll-reveal mt-14 sm:mt-20">
+          <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center lg:gap-12">
             <div>
-              <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Services</p>
-              <h3 className={`mt-3 text-3xl font-bold md:text-4xl ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+              <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Services</p>
+              <h3 className={`mt-2 text-2xl font-bold sm:mt-3 sm:text-3xl md:text-4xl ${palette.accent}`}>
                 Built around how supermarkets actually work.
               </h3>
+              <p className={`mt-3 max-w-xl text-sm leading-7 ${palette.muted}`}>
+                From billing to stock movement, the platform keeps the workflow simple for staff and
+                clear for management.
+              </p>
+              <div className="mt-6 hidden overflow-hidden rounded-2xl border lg:block">
+                <img
+                  src="/images/landing/pos-dashboard.png"
+                  alt="Supermartkera POS and inventory dashboard"
+                  className="sk-animate-float h-56 w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
             </div>
-            <p className={`max-w-2xl text-sm leading-7 md:text-right ${palette.muted}`}>
-              From billing to stock movement, the platform keeps the workflow simple for staff and
-              clear for management.
-            </p>
-          </div>
 
-          <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {serviceCards.map((service) => {
-              const Icon = service.icon;
-              return (
-                <article key={service.title} className={`rounded-[1.75rem] border p-6 transition hover:-translate-y-1 ${palette.softPanel}`}>
-                  <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
-                    <Icon className="h-7 w-7" />
-                  </div>
-                  <h4 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{service.title}</h4>
-                  <p className={`mt-3 leading-7 ${palette.muted}`}>{service.copy}</p>
-                </article>
-              );
-            })}
+            <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
+              {serviceCards.map((service) => {
+                const Icon = service.icon;
+                return (
+                  <article key={service.title} className={`sk-card-lift rounded-2xl border p-4 sm:rounded-[1.75rem] sm:p-5 ${palette.softPanel}`}>
+                    <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br sm:mb-4 sm:h-12 sm:w-12 sm:rounded-2xl ${palette.iconBg}`}>
+                      <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
+                    </div>
+                    <h4 className={`text-base font-semibold sm:text-lg ${palette.accent}`}>{service.title}</h4>
+                    <p className={`mt-2 text-xs leading-6 sm:text-sm sm:leading-7 ${palette.muted}`}>{service.copy}</p>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         </section>
 
-        <section className="mt-20 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className={`rounded-[2rem] border p-6 ${palette.panel}`}>
+        <section className="sk-scroll-reveal mt-14 grid gap-4 sm:mt-20 sm:gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <div className={`rounded-2xl border p-4 sm:rounded-[2rem] sm:p-6 ${palette.panel}`}>
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300">
-                <FiShield className="h-6 w-6" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-400/15 text-emerald-400 sm:h-12 sm:w-12 sm:rounded-2xl">
+                <FiShield className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-emerald-200/70">Why it feels good</p>
-                <h3 className={`text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                <p className={`text-xs uppercase tracking-[0.25em] sm:text-sm sm:tracking-[0.3em] ${palette.sectionLabel}`}>Why it feels good</p>
+                <h3 className={`text-xl font-semibold sm:text-2xl ${palette.accent}`}>
                   Simple for daily use, professional for business.
                 </h3>
               </div>
             </div>
 
-            <div className="mt-6 space-y-4">
+            <div className="mt-4 space-y-2.5 sm:mt-6 sm:space-y-3">
               {customerBenefits.map((point) => (
-                <div key={point} className={`flex gap-3 rounded-2xl border p-4 ${palette.softPanel}`}>
-                  <FiCheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-cyan-300" />
-                  <p className={`text-sm leading-6 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>{point}</p>
+                <div key={point} className={`flex gap-2.5 rounded-xl border p-3 sm:gap-3 sm:rounded-2xl sm:p-4 ${palette.softPanel}`}>
+                  <FiCheckCircle className={`mt-0.5 h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${palette.check}`} />
+                  <p className={`text-xs leading-5 sm:text-sm sm:leading-6 ${theme === 'dark' ? 'text-emerald-50/85' : 'text-slate-700'}`}>{point}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className={`rounded-[1.5rem] border p-6 ${palette.softPanel}`}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-200">
-                <FiUsers className="h-6 w-6" />
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            {[
+              { icon: FiUsers, title: 'Customer-friendly', copy: 'Designed so shoppers enjoy a smoother experience without extra friction.', color: 'emerald' },
+              { icon: FiHeadphones, title: 'Affordable support', copy: 'A budget-friendly system that still feels polished, fast, and modern.', color: 'green' },
+              { icon: FiTruck, title: 'Supplier-ready', copy: 'Keep deliveries and replenishment aligned with store demand.', color: 'teal' },
+              { icon: FiStar, title: 'Reports-first', copy: 'Turn everyday data into useful store decisions.', color: 'lime' }
+            ].map(({ icon: Icon, title, copy }) => (
+              <div key={title} className={`sk-card-lift rounded-xl border p-3 sm:rounded-[1.5rem] sm:p-5 ${palette.softPanel}`}>
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br sm:h-11 sm:w-11 sm:rounded-2xl ${palette.iconBg}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h4 className={`mt-3 text-sm font-semibold sm:mt-4 sm:text-lg ${palette.accent}`}>{title}</h4>
+                <p className={`mt-1.5 text-[11px] leading-5 sm:mt-2 sm:text-xs sm:leading-6 ${palette.muted}`}>{copy}</p>
               </div>
-              <h4 className={`mt-4 text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Customer-friendly</h4>
-              <p className={`mt-3 text-sm leading-7 ${palette.muted}`}>
-                Designed so shoppers enjoy a smoother experience without extra friction.
-              </p>
-            </div>
-            <div className={`rounded-[1.5rem] border p-6 ${palette.softPanel}`}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-400/15 text-violet-200">
-                <FiHeadphones className="h-6 w-6" />
-              </div>
-              <h4 className={`mt-4 text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Affordable support</h4>
-              <p className={`mt-3 text-sm leading-7 ${palette.muted}`}>
-                A budget-friendly system that still feels polished, fast, and modern.
-              </p>
-            </div>
-            <div className={`rounded-[1.5rem] border p-6 ${palette.softPanel}`}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/15 text-amber-200">
-                <FiTruck className="h-6 w-6" />
-              </div>
-              <h4 className={`mt-4 text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Supplier-ready</h4>
-              <p className={`mt-3 text-sm leading-7 ${palette.muted}`}>
-                Keep deliveries and replenishment aligned with store demand.
-              </p>
-            </div>
-            <div className={`rounded-[1.5rem] border p-6 ${palette.softPanel}`}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-400/15 text-rose-200">
-                <FiStar className="h-6 w-6" />
-              </div>
-              <h4 className={`mt-4 text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Reports-first</h4>
-              <p className={`mt-3 text-sm leading-7 ${palette.muted}`}>
-                Turn everyday data into useful store decisions.
-              </p>
-            </div>
+            ))}
           </div>
         </section>
 
-        <section id="contact" className="mt-20 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className={`rounded-[2rem] border p-6 ${palette.panel}`}>
-            <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Contact us</p>
-            <h3 className={`mt-3 text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+        <section id="contact" className="sk-scroll-reveal mt-14 grid gap-4 sm:mt-20 sm:gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className={`rounded-2xl border p-4 sm:rounded-[2rem] sm:p-6 ${palette.panel}`}>
+            <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Contact us</p>
+            <h3 className={`mt-2 text-2xl font-bold sm:mt-3 sm:text-3xl ${palette.accent}`}>
               Talk to the Supermartkera team.
             </h3>
-            <p className={`mt-4 text-sm leading-7 ${palette.muted}`}>
+            <p className={`mt-3 text-sm leading-7 ${palette.muted}`}>
               Ask about setup, pricing, onboarding, POS, inventory, scan-and-pay, or reports.
             </p>
 
@@ -751,7 +850,7 @@ const SupermartkeraLanding = () => {
                       <div className="flex items-center justify-between gap-2">
                         <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
                           m.is_public
-                            ? 'border-cyan-300/30 bg-cyan-300/10 text-cyan-200'
+                            ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
                             : 'border-amber-300/30 bg-amber-300/10 text-amber-200'
                         }`}>
                           {m.is_public ? <FiGlobe className="h-3 w-3" /> : <FiLock className="h-3 w-3" />}
@@ -767,58 +866,58 @@ const SupermartkeraLanding = () => {
             )}
           </div>
 
-          <form onSubmit={handleContactSubmit} className={`rounded-[2rem] border p-6 ${palette.panel}`}>
-            <div className="grid gap-4 md:grid-cols-2">
+          <form onSubmit={handleContactSubmit} className={`rounded-2xl border p-4 sm:rounded-[2rem] sm:p-6 ${palette.panel}`}>
+            <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
               <div>
-                <label className={`mb-2 block text-sm font-medium ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>Your name</label>
+                <label className={`mb-1.5 block text-xs font-medium sm:mb-2 sm:text-sm ${theme === 'dark' ? 'text-emerald-100' : 'text-slate-700'}`}>Your name</label>
                 <input
                   name="name"
                   value={contactForm.name}
                   onChange={handleContactChange}
-                  className={`w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-300/60 ${palette.input}`}
+                  className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-emerald-400/60 sm:rounded-2xl sm:px-4 sm:py-3 ${palette.input}`}
                   placeholder="Jane Doe"
                 />
               </div>
               <div>
-                <label className={`mb-2 block text-sm font-medium ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>Email address</label>
+                <label className={`mb-1.5 block text-xs font-medium sm:mb-2 sm:text-sm ${theme === 'dark' ? 'text-emerald-100' : 'text-slate-700'}`}>Email address</label>
                 <input
                   type="email"
                   name="email"
                   value={contactForm.email}
                   onChange={handleContactChange}
-                  className={`w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-300/60 ${palette.input}`}
+                  className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-emerald-400/60 sm:rounded-2xl sm:px-4 sm:py-3 ${palette.input}`}
                   placeholder="jane@store.com"
                 />
               </div>
             </div>
 
-            <div className="mt-4">
-              <label className={`mb-2 block text-sm font-medium ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>Company or store</label>
+            <div className="mt-3 sm:mt-4">
+              <label className={`mb-1.5 block text-xs font-medium sm:mb-2 sm:text-sm ${theme === 'dark' ? 'text-emerald-100' : 'text-slate-700'}`}>Company or store</label>
               <input
                 name="company"
                 value={contactForm.company}
                 onChange={handleContactChange}
-                className={`w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-300/60 ${palette.input}`}
+                className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-emerald-400/60 sm:rounded-2xl sm:px-4 sm:py-3 ${palette.input}`}
                 placeholder="Your supermarket name"
               />
             </div>
 
-            <div className="mt-4">
-              <label className={`mb-2 block text-sm font-medium ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>Message</label>
+            <div className="mt-3 sm:mt-4">
+              <label className={`mb-1.5 block text-xs font-medium sm:mb-2 sm:text-sm ${theme === 'dark' ? 'text-emerald-100' : 'text-slate-700'}`}>Message</label>
               <textarea
                 name="message"
                 value={contactForm.message}
                 onChange={handleContactChange}
-                rows="5"
-                className={`w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-300/60 ${palette.input}`}
+                rows="4"
+                className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-emerald-400/60 sm:rounded-2xl sm:px-4 sm:py-3 ${palette.input}`}
                 placeholder="Tell us what you need: POS, scan and pay, inventory, reports, or full supermarket management."
               />
             </div>
 
             {identity && hasWallet ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
-                  contactForm.isPublic ? 'border-cyan-300/50 bg-cyan-300/10' : palette.softPanel
+                <label className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition sm:gap-3 sm:rounded-2xl sm:p-4 ${
+                  contactForm.isPublic ? 'border-emerald-400/40 bg-emerald-400/10' : palette.softPanel
                 }`}>
                   <input
                     type="radio"
@@ -834,8 +933,8 @@ const SupermartkeraLanding = () => {
                     <span className={`mt-1 block text-xs leading-5 ${palette.muted}`}>Everyone can see this on the community board.</span>
                   </span>
                 </label>
-                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
-                  !contactForm.isPublic ? 'border-amber-300/50 bg-amber-300/10' : palette.softPanel
+                <label className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition sm:gap-3 sm:rounded-2xl sm:p-4 ${
+                  !contactForm.isPublic ? 'border-amber-400/40 bg-amber-400/10' : palette.softPanel
                 }`}>
                   <input
                     type="radio"
@@ -867,9 +966,9 @@ const SupermartkeraLanding = () => {
             <button
               type="submit"
               disabled={submitState === 'sending' || !contactForm.message.trim()}
-              className="mt-5 inline-flex items-center gap-3 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-500 to-violet-600 px-6 py-4 font-semibold text-slate-950 shadow-xl shadow-cyan-500/15 transition hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+              className="sk-btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-50 sm:mt-5 sm:w-auto sm:rounded-2xl sm:px-6 sm:py-4 sm:text-base"
             >
-              <FiMail className="h-5 w-5" />
+              <FiMail className="h-4 w-4 sm:h-5 sm:w-5" />
               {submitState === 'sending' ? 'Posting…' : 'Contact us now'}
             </button>
             {submitState === 'sent' && (
@@ -881,36 +980,36 @@ const SupermartkeraLanding = () => {
           </form>
         </section>
 
-        <section className="mt-20">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <section className="sk-scroll-reveal mt-14 sm:mt-20">
+          <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Community board</p>
-              <h3 className={`mt-3 text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+              <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Community board</p>
+              <h3 className={`mt-2 text-2xl font-bold sm:mt-3 sm:text-3xl ${palette.accent}`}>
                 Public questions from the Supermartkera community.
               </h3>
             </div>
-            <p className={`max-w-2xl text-sm leading-7 md:text-right ${palette.muted}`}>
+            <p className={`max-w-2xl text-xs leading-6 sm:text-sm sm:leading-7 md:text-right ${palette.muted}`}>
               Anyone can read these. The Supermartkera team can remove any message.
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
             {threads.map((m) => {
               const isExpanded = expandedId === m.id;
               const canReply = !!(identity || guestIdentity?.name);
               return (
                 <article
                   key={m.id}
-                  className={`rounded-[1.75rem] border p-6 transition ${palette.softPanel} ${isExpanded ? 'md:col-span-2 xl:col-span-3' : ''}`}
+                  className={`sk-card-lift rounded-2xl border p-4 transition sm:rounded-[1.75rem] sm:p-6 ${palette.softPanel} ${isExpanded ? 'md:col-span-2 xl:col-span-3' : ''}`}
                 >
                   <div role="button" tabIndex={0} onClick={() => handleToggleThread(m.id)} className="w-full cursor-pointer text-left">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-cyan-200">
-                        <FiUser className="h-5 w-5" />
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br sm:h-10 sm:w-10 ${palette.iconBg}`}>
+                        <FiUser className="h-4 w-4 sm:h-5 sm:w-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{m.name || 'Website visitor'}</p>
-                        <p className={`text-xs ${palette.muted}`}>{fmtBoardTime(m.created_at)}</p>
+                        <p className={`truncate text-sm font-semibold ${palette.accent}`}>{m.name || 'Website visitor'}</p>
+                        <p className={`text-[11px] sm:text-xs ${palette.muted}`}>{fmtBoardTime(m.created_at)}</p>
                       </div>
                       {m.reward_reason && (
                         <span className="flex-shrink-0 rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
@@ -930,25 +1029,25 @@ const SupermartkeraLanding = () => {
                     type="button"
                     onClick={() => handleLike(m.id)}
                     disabled={m.likedByMe}
-                    className={`mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition disabled:cursor-default ${
-                      m.likedByMe ? 'border-cyan-300/50 bg-cyan-300/10 text-cyan-300' : `${palette.outline} disabled:opacity-100`
+                    className={`mt-2.5 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:cursor-default sm:mt-3 sm:px-3 sm:text-xs ${
+                      m.likedByMe ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-400' : `${palette.outline} disabled:opacity-100`
                     }`}
                   >
                     <FiThumbsUp className="h-3.5 w-3.5" /> {m.likeCount || 0}
                   </button>
 
                   {isExpanded && (
-                    <div className="mt-5 space-y-3 border-t border-white/10 pt-4">
+                    <div className={`mt-4 space-y-2.5 border-t pt-3 sm:mt-5 sm:space-y-3 sm:pt-4 ${palette.divider}`}>
                       {m.replies.map((r) => (
                         <div
                           key={r.id}
-                          className={`rounded-2xl border p-3 ${
-                            r.sender_role === 'dev' ? 'border-cyan-300/40 bg-cyan-300/10' : palette.softPanel
+                          className={`rounded-xl border p-2.5 sm:rounded-2xl sm:p-3 ${
+                            r.sender_role === 'dev' ? 'border-emerald-400/30 bg-emerald-400/10' : palette.softPanel
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <p className={`text-xs font-semibold ${
-                              r.sender_role === 'dev' ? 'text-cyan-300' : theme === 'dark' ? 'text-white' : 'text-slate-900'
+                            <p className={`text-[11px] font-semibold sm:text-xs ${
+                              r.sender_role === 'dev' ? 'text-emerald-400' : palette.accent
                             }`}>
                               {r.sender_role === 'dev' ? 'Supermartkera Team' : (r.name || 'Website visitor')}
                             </p>
@@ -966,8 +1065,8 @@ const SupermartkeraLanding = () => {
                             type="button"
                             onClick={() => handleLike(r.id)}
                             disabled={r.likedByMe}
-                            className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition disabled:cursor-default ${
-                              r.likedByMe ? 'border-cyan-300/50 bg-cyan-300/10 text-cyan-300' : `${palette.outline} disabled:opacity-100`
+                            className={`mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition disabled:cursor-default sm:mt-2 sm:px-2.5 sm:text-[11px] ${
+                              r.likedByMe ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-400' : `${palette.outline} disabled:opacity-100`
                             }`}
                           >
                             <FiThumbsUp className="h-3 w-3" /> {r.likeCount || 0}
@@ -984,14 +1083,14 @@ const SupermartkeraLanding = () => {
                             value={guestReplyForm.name}
                             onChange={(e) => setGuestReplyForm((p) => ({ ...p, name: e.target.value }))}
                             placeholder="Your name"
-                            className={`rounded-xl border px-3 py-2 text-sm outline-none focus:border-cyan-300/60 ${palette.input}`}
+                            className={`rounded-xl border px-3 py-2 text-sm outline-none focus:border-emerald-400/60 ${palette.input}`}
                           />
                           <input
                             value={guestReplyForm.email}
                             onChange={(e) => setGuestReplyForm((p) => ({ ...p, email: e.target.value }))}
                             placeholder="Your email"
                             type="email"
-                            className={`rounded-xl border px-3 py-2 text-sm outline-none focus:border-cyan-300/60 ${palette.input}`}
+                            className={`rounded-xl border px-3 py-2 text-sm outline-none focus:border-emerald-400/60 ${palette.input}`}
                           />
                           <button
                             type="button"
@@ -1011,13 +1110,13 @@ const SupermartkeraLanding = () => {
                             onChange={(e) => setReplyDraft(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') handleSendReply(m.id); }}
                             placeholder={`Reply as ${identity?.name || guestIdentity?.name}…`}
-                            className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-cyan-300/60 ${palette.input}`}
+                            className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-emerald-400/60 ${palette.input}`}
                           />
                           <button
                             type="button"
                             onClick={() => handleSendReply(m.id)}
                             disabled={replyState === 'sending' || !replyDraft.trim()}
-                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-violet-600 text-white transition disabled:opacity-40"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white transition disabled:opacity-40"
                           >
                             <FiSend className="h-4 w-4" />
                           </button>
@@ -1036,8 +1135,8 @@ const SupermartkeraLanding = () => {
         </section>
 
         {contributors.length > 0 && (
-          <section className="mt-10">
-            <p className="text-sm uppercase tracking-[0.35em] text-cyan-500/70">Community members</p>
+          <section className="sk-scroll-reveal mt-8 sm:mt-10">
+            <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Community members</p>
             <div className="mt-4 flex flex-wrap gap-2">
               {contributors.map((c) => (
                 <button
@@ -1077,9 +1176,9 @@ const SupermartkeraLanding = () => {
               {selectedContributor.count} {selectedContributor.count === 1 ? 'message' : 'messages'} on the community board
             </p>
             {identity?.authId === selectedContributor.authId && (
-              <div className="mt-4 rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-3">
-                <p className="text-xs uppercase tracking-wide text-cyan-300">Your ICAN balance</p>
-                <p className="mt-1 text-xl font-bold text-cyan-200">
+              <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3">
+                <p className="text-xs uppercase tracking-wide text-emerald-400">Your ICAN balance</p>
+                <p className="mt-1 text-xl font-bold text-emerald-300">
                   {balanceLoading ? '…' : `${(contributorBalance ?? 0).toFixed(2)} ICAN`}
                 </p>
               </div>
@@ -1088,8 +1187,7 @@ const SupermartkeraLanding = () => {
         </div>
       )}
 
-      {/* Minimal footer */}
-      <footer className={`relative z-10 border-t py-6 px-6 text-center text-xs ${palette.muted} ${palette.header}`}>
+      <footer className={`relative z-10 border-t px-4 py-5 text-center text-[11px] sm:px-6 sm:py-6 sm:text-xs ${palette.muted} ${palette.header}`}>
         <p>© {new Date().getFullYear()} Supermartkera · Built on the ICAN ecosystem</p>
       </footer>
     </div>

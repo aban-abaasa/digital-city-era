@@ -1,24 +1,24 @@
-/* Admin Portal Styles */
+/* Admin Portal Styles - SupermartKera Emerald/Green Theme */
 .admin-portal {
   display: flex;
   min-height: 100vh;
-  background: #f5f7fa;
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 45%, #ecfdf5 100%);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 /* Sidebar Styles */
 .admin-sidebar {
   width: 280px;
-  background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
   color: white;
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+  box-shadow: 4px 0 20px rgba(16, 185, 129, 0.25);
 }
 
 .admin-logo {
   padding: 30px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.2);
   text-align: center;
 }
 
@@ -26,7 +26,7 @@
   margin: 0;
   font-size: 24px;
   font-weight: 700;
-  background: linear-gradient(45deg, #3498db, #e74c3c);
+  background: linear-gradient(45deg, #10b981, #34d399, #14b8a6);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -50,18 +50,20 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  border-left: 4px solid transparent;
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(16, 185, 129, 0.15);
   color: white;
   padding-left: 30px;
+  border-left-color: #34d399;
 }
 
 .nav-item.active {
-  background: linear-gradient(90deg, #3498db, #2980b9);
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.25), transparent);
   color: white;
-  border-right: 4px solid #e74c3c;
+  border-left-color: #10b981;
 }
 
 .nav-item i {
@@ -71,7 +73,7 @@
 
 .admin-user-info {
   padding: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(16, 185, 129, 0.2);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -80,12 +82,13 @@
 .admin-avatar {
   width: 50px;
   height: 50px;
-  background: linear-gradient(45deg, #3498db, #e74c3c);
+  background: linear-gradient(135deg, #10b981, #059669, #14b8a6);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 20px;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
 }
 
 .admin-details .admin-name {
