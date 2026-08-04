@@ -377,49 +377,50 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
 
   return (
     <div className={`bg-gradient-to-br from-blue-50 via-white to-purple-50 ${onClose ? 'rounded-2xl' : 'min-h-screen'}`}>
-      {/* Header with Back Button */}
+      {/* Header with Back Button - Mobile Optimized */}
       <div className={`bg-white shadow-sm border-b sticky top-0 z-10 ${onClose ? 'rounded-t-2xl' : ''}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
               <button
                 onClick={() => (onClose ? onClose() : navigate(getPortalLink()))}
-                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition flex-shrink-0"
               >
-                <FiX className="h-6 w-6 text-gray-600" />
+                <FiX className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" />
               </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
-                <p className="text-sm text-gray-500">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">My Profile</h1>
+                <p className="text-xs sm:text-sm text-gray-500 truncate">
                   {profile.role} • {profile.status}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 flex-shrink-0">
               {!editing ? (
                 <button
                   onClick={() => setEditing(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                  className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm sm:text-base"
                 >
-                  <FiEdit2 className="h-4 w-4" />
-                  <span>Edit Profile</span>
+                  <FiEdit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Edit</span>
+                  <span className="xs:hidden">✏️</span>
                 </button>
               ) : (
                 <>
                   <button
                     onClick={handleCancel}
-                    className="flex items-center space-x-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                    className="flex items-center space-x-1 px-2 sm:px-4 py-1.5 sm:py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm sm:text-base"
                   >
-                    <FiX className="h-4 w-4" />
-                    <span>Cancel</span>
+                    <FiX className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden xs:inline">Cancel</span>
                   </button>
                   <button
                     onClick={handleSave}
-                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                    className="flex items-center space-x-1 px-2 sm:px-4 py-1.5 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm sm:text-base"
                   >
-                    <FiSave className="h-4 w-4" />
-                    <span>Save Changes</span>
+                    <FiSave className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden xs:inline">Save</span>
                   </button>
                 </>
               )}
@@ -428,15 +429,15 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Sidebar */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-8 pb-20 sm:pb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
+          {/* Sidebar - Mobile Horizontal Scroll on Small Devices */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-lg p-6 sticky top-24">
-              {/* Avatar */}
-              <div className="text-center mb-6">
+            <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 lg:sticky lg:top-24">
+              {/* Avatar - Responsive Size */}
+              <div className="text-center mb-4 sm:mb-6">
                 <div className="relative inline-block">
-                  <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-5xl overflow-hidden">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-4xl sm:text-5xl overflow-hidden">
                     {profile.avatar_url ? (
                       <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                     ) : (
@@ -456,26 +457,26 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                         type="button"
                         onClick={() => avatarInputRef.current?.click()}
                         disabled={uploadingAvatar}
-                        className="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-lg hover:bg-gray-50 disabled:opacity-50"
+                        className="absolute bottom-0 right-0 p-1.5 sm:p-2 bg-white rounded-full shadow-lg hover:bg-gray-50 disabled:opacity-50"
                       >
                         {uploadingAvatar ? (
-                          <div className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                          <div className="h-3.5 w-3.5 sm:h-4 sm:w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <FiCamera className="h-4 w-4 text-gray-600" />
+                          <FiCamera className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-600" />
                         )}
                       </button>
                     </>
                   )}
                 </div>
-                <h3 className="mt-4 text-xl font-bold text-gray-900">{profile.full_name}</h3>
-                <p className="text-sm text-gray-500">{profile.email}</p>
+                <h3 className="mt-3 sm:mt-4 text-lg sm:text-xl font-bold text-gray-900 break-words px-2">{profile.full_name}</h3>
+                <p className="text-xs sm:text-sm text-gray-500 break-all px-2">{profile.email}</p>
               </div>
 
               {/* Profile Completion */}
-              <div className="mb-6">
+              <div className="mb-4 sm:mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Profile Completion</span>
-                  <span className="text-sm font-bold text-blue-600">{profileCompletion}%</span>
+                  <span className="text-xs sm:text-sm font-medium text-gray-700">Profile Completion</span>
+                  <span className="text-xs sm:text-sm font-bold text-blue-600">{profileCompletion}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
@@ -484,97 +485,97 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                   ></div>
                 </div>
                 {profileCompletion < 100 && (
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-[10px] sm:text-xs text-gray-500 mt-2">
                     Complete your profile to unlock all features!
                   </p>
                 )}
               </div>
 
-              {/* Navigation Tabs */}
-              <nav className="space-y-2">
+              {/* Navigation Tabs - Horizontal Scroll on Mobile */}
+              <nav className="space-y-1 sm:space-y-2 overflow-x-auto lg:overflow-x-visible">
                 <button
                   onClick={() => setActiveTab('basic')}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                  className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
                     activeTab === 'basic'
                       ? 'bg-blue-50 text-blue-600'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  <FiUser className="h-5 w-5" />
-                  <span className="font-medium">Basic Info</span>
+                  <FiUser className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Basic Info</span>
                 </button>
 
                 {(isManager || isCashier) && (
                   <button
                     onClick={() => setActiveTab('work')}
-                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
                       activeTab === 'work'
                         ? 'bg-blue-50 text-blue-600'
                         : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    <FiBriefcase className="h-5 w-5" />
-                    <span className="font-medium">Work Details</span>
+                    <FiBriefcase className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                    <span className="font-medium whitespace-nowrap">Work Details</span>
                   </button>
                 )}
 
                 {isCustomer && (
                   <button
                     onClick={() => setActiveTab('shopping')}
-                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
                       activeTab === 'shopping'
                         ? 'bg-blue-50 text-blue-600'
                         : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    <FiShoppingCart className="h-5 w-5" />
-                    <span className="font-medium">Shopping</span>
+                    <FiShoppingCart className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                    <span className="font-medium whitespace-nowrap">Shopping</span>
                   </button>
                 )}
 
                 {isAdmin && (
                   <button
                     onClick={() => setActiveTab('admin')}
-                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
                       activeTab === 'admin'
                         ? 'bg-red-50 text-red-600'
                         : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    <FiShield className="h-5 w-5" />
-                    <span className="font-medium">Admin Settings</span>
+                    <FiShield className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                    <span className="font-medium whitespace-nowrap">Admin Settings</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => setActiveTab('preferences')}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                  className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
                     activeTab === 'preferences'
                       ? 'bg-blue-50 text-blue-600'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  <FiSettings className="h-5 w-5" />
-                  <span className="font-medium">Preferences</span>
+                  <FiSettings className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Preferences</span>
                 </button>
               </nav>
 
-              {/* Quick Stats */}
-              <div className="mt-6 pt-6 border-t">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
+              {/* Quick Stats - More Compact on Mobile */}
+              <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t">
+                <div className="space-y-2 sm:space-y-3">
+                  <div className="flex items-center justify-between text-xs sm:text-sm">
                     <span className="text-gray-600">Member Since</span>
-                    <span className="font-medium text-gray-900">
-                      {new Date(profile.created_at).toLocaleDateString()}
+                    <span className="font-medium text-gray-900 text-right">
+                      {new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                     </span>
                   </div>
                   {isCustomer && (
                     <>
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center justify-between text-xs sm:text-sm">
                         <span className="text-gray-600">Orders</span>
                         <span className="font-bold text-blue-600">{profile.order_count || 0}</span>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center justify-between text-xs sm:text-sm">
                         <span className="text-gray-600">Loyalty Points</span>
                         <span className="font-bold text-purple-600">{profile.loyalty_points || 0}</span>
                       </div>
@@ -585,17 +586,17 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
             </div>
           </div>
 
-          {/* Main Content */}
+          {/* Main Content - Better Mobile Padding */}
           <div className="lg:col-span-3">
-            <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+            <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 md:p-8">
               {/* Basic Info Tab */}
               {activeTab === 'basic' && (
-                <div className="space-y-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6">Basic Information</h2>
+                <div className="space-y-4 sm:space-y-6">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Basic Information</h2>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Full Name *
                       </label>
                       {editing ? (
@@ -603,23 +604,23 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                           type="text"
                           value={formData.full_name || ''}
                           onChange={(e) => handleInputChange('full_name', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                         />
                       ) : (
-                        <p className="text-gray-900">{profile.full_name}</p>
+                        <p className="text-gray-900 text-sm sm:text-base break-words">{profile.full_name}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Email *
                       </label>
-                      <p className="text-gray-900">{profile.email}</p>
-                      <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                      <p className="text-gray-900 text-sm sm:text-base break-all">{profile.email}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Email cannot be changed</p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Phone
                       </label>
                       {editing ? (
@@ -627,15 +628,15 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                           type="tel"
                           value={formData.phone || ''}
                           onChange={(e) => handleInputChange('phone', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                         />
                       ) : (
-                        <p className="text-gray-900">{profile.phone || 'Not provided'}</p>
+                        <p className="text-gray-900 text-sm sm:text-base">{profile.phone || 'Not provided'}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Location
                       </label>
                       {editing ? (
@@ -644,17 +645,17 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                           value={formData.location || ''}
                           onChange={(e) => handleInputChange('location', e.target.value)}
                           placeholder="City, Country"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                         />
                       ) : (
-                        <p className="text-gray-900">{profile.location || 'Not provided'}</p>
+                        <p className="text-gray-900 text-sm sm:text-base">{profile.location || 'Not provided'}</p>
                       )}
                     </div>
                   </div>
 
                   {/* Bio */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                       Bio
                     </label>
                     {editing ? (
@@ -663,25 +664,25 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                         onChange={(e) => handleInputChange('bio', e.target.value)}
                         rows="4"
                         placeholder="Tell us about yourself..."
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                       />
                     ) : (
-                      <p className="text-gray-900">{profile.bio || 'No bio provided'}</p>
+                      <p className="text-gray-900 text-sm sm:text-base">{profile.bio || 'No bio provided'}</p>
                     )}
                   </div>
 
-                  {/* Avatar Selection */}
+                  {/* Avatar Selection - Grid Optimized for Small Screens */}
                   {editing && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Choose Avatar
                       </label>
-                      <div className="grid grid-cols-8 gap-2">
+                      <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 sm:gap-2">
                         {emojiAvatars.map((emoji, index) => (
                           <button
                             key={index}
                             onClick={() => handleInputChange('avatar', emoji)}
-                            className={`p-3 text-2xl rounded-lg border-2 transition ${
+                            className={`p-2 sm:p-3 text-xl sm:text-2xl rounded-lg border-2 transition ${
                               formData.avatar === emoji
                                 ? 'border-blue-500 bg-blue-50'
                                 : 'border-gray-200 hover:border-blue-300'
@@ -698,12 +699,12 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
 
               {/* Work Details Tab (Manager/Cashier) */}
               {activeTab === 'work' && (isManager || isCashier) && (
-                <div className="space-y-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6">Work Details</h2>
+                <div className="space-y-4 sm:space-y-6">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Work Details</h2>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Employee ID
                       </label>
                       {editing ? (
@@ -711,17 +712,17 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                           type="text"
                           value={formData.employee_id || ''}
                           onChange={(e) => handleInputChange('employee_id', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                         />
                       ) : (
-                        <p className="text-gray-900">{profile.employee_id || 'Not assigned'}</p>
+                        <p className="text-gray-900 text-sm sm:text-base">{profile.employee_id || 'Not assigned'}</p>
                       )}
                     </div>
 
                     {isManager && (
                       <>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                             Department
                           </label>
                           {editing ? (
@@ -729,22 +730,22 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                               type="text"
                               value={formData.department || ''}
                               onChange={(e) => handleInputChange('department', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                             />
                           ) : (
-                            <p className="text-gray-900">{profile.department || 'Not specified'}</p>
+                            <p className="text-gray-900 text-sm sm:text-base">{profile.department || 'Not specified'}</p>
                           )}
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                             Manager Level
                           </label>
                           {editing ? (
                             <select
                               value={formData.manager_level || ''}
                               onChange={(e) => handleInputChange('manager_level', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                             >
                               <option value="">Select Level</option>
                               <option value="Junior">Junior Manager</option>
@@ -753,12 +754,12 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                               <option value="Assistant">Assistant Manager</option>
                             </select>
                           ) : (
-                            <p className="text-gray-900">{profile.manager_level || 'Not specified'}</p>
+                            <p className="text-gray-900 text-sm sm:text-base">{profile.manager_level || 'Not specified'}</p>
                           )}
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                             Team Size
                           </label>
                           {editing ? (
@@ -766,10 +767,10 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                               type="number"
                               value={formData.team_size || ''}
                               onChange={(e) => handleInputChange('team_size', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                             />
                           ) : (
-                            <p className="text-gray-900">{profile.team_size || 0} members</p>
+                            <p className="text-gray-900 text-sm sm:text-base">{profile.team_size || 0} members</p>
                           )}
                         </div>
                       </>
@@ -778,14 +779,14 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                     {isCashier && (
                       <>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                             Shift
                           </label>
                           {editing ? (
                             <select
                               value={formData.shift || ''}
                               onChange={(e) => handleInputChange('shift', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                             >
                               <option value="">Select Shift</option>
                               <option value="Morning (6AM-2PM)">Morning (6AM-2PM)</option>
@@ -793,12 +794,12 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                               <option value="Night (10PM-6AM)">Night (10PM-6AM)</option>
                             </select>
                           ) : (
-                            <p className="text-gray-900">{profile.shift || 'Not assigned'}</p>
+                            <p className="text-gray-900 text-sm sm:text-base">{profile.shift || 'Not assigned'}</p>
                           )}
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                             Register Number
                           </label>
                           {editing ? (
@@ -806,17 +807,17 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                               type="text"
                               value={formData.register_number || ''}
                               onChange={(e) => handleInputChange('register_number', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                             />
                           ) : (
-                            <p className="text-gray-900">{profile.register_number || 'Not assigned'}</p>
+                            <p className="text-gray-900 text-sm sm:text-base">{profile.register_number || 'Not assigned'}</p>
                           )}
                         </div>
                       </>
                     )}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         Hire Date
                       </label>
                       {editing ? (
@@ -824,10 +825,10 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                           type="date"
                           value={formData.hire_date ? new Date(formData.hire_date).toISOString().split('T')[0] : ''}
                           onChange={(e) => handleInputChange('hire_date', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                         />
                       ) : (
-                        <p className="text-gray-900">
+                        <p className="text-gray-900 text-sm sm:text-base">
                           {profile.hire_date ? new Date(profile.hire_date).toLocaleDateString() : 'Not specified'}
                         </p>
                       )}
@@ -838,14 +839,14 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
 
               {/* Customer Shopping Tab */}
               {activeTab === 'shopping' && isCustomer && (
-                <div className="space-y-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6">Shopping Profile</h2>
+                <div className="space-y-4 sm:space-y-6">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Shopping Profile</h2>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 sm:p-4 rounded-xl">
                       <div className="flex items-center justify-between mb-2">
-                        <FiShoppingCart className="h-6 w-6 text-blue-600" />
-                        <span className="text-2xl font-bold text-blue-600">{profile.order_count || 0}</span>
+                        <FiShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                        <span className="text-xl sm:text-2xl font-bold text-blue-600">{profile.order_count || 0}</span>
                       </div>
                       <p className="text-sm text-gray-700">Total Orders</p>
                     </div>
