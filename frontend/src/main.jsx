@@ -6,6 +6,15 @@ import 'react-toastify/dist/ReactToastify.css'
 import App from './App.jsx'
 import setupMockAxios from './services/mockApi.jsx'
 import { initClockDiagnostic } from './utils/clockDiagnostic.js'
+import PWAInstallPrompt from './components/PWAInstallPrompt.jsx'
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log('[SupermartKera PWA] Service worker ready'))
+      .catch((error) => console.error('[SupermartKera PWA] Service worker registration failed', error));
+  })
+}
 
 // ============================================================
 // CRITICAL: Clear browser cache and prevent Farm Agent redirect
@@ -74,6 +83,7 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <App />
+      <PWAInstallPrompt />
     </BrowserRouter>
   </StrictMode>,
 )

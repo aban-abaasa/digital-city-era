@@ -13192,7 +13192,7 @@ FAREDEAL Uganda Management Team
           {activeTab === 'team' && renderTeamManagement()}
           {activeTab === 'suppliers' && (
             <div className="animate-fadeInUp">
-              <SupplierOrderManagement onPosUpdated={(addedProducts) => {
+              <SupplierOrderManagement businessProfileId={branding.pichinBusinessProfileId} onPosUpdated={(addedProducts) => {
                 if (addedProducts && addedProducts.length > 0) {
                   setPosItems(prevItems => {
                     const itemMap = new Map(prevItems.map(i => [i.name, i]));
@@ -13225,7 +13225,7 @@ FAREDEAL Uganda Management Team
           )}
           {activeTab === 'orders' && (
             <div className="animate-fadeInUp">
-              <SupplierOrderManagement onPosUpdated={(addedProducts) => {
+              <SupplierOrderManagement businessProfileId={branding.pichinBusinessProfileId} onPosUpdated={(addedProducts) => {
                 if (addedProducts && addedProducts.length > 0) {
                   setPosItems(prevItems => {
                     const itemMap = new Map(prevItems.map(i => [i.name, i]));

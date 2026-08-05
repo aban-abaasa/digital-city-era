@@ -1,0 +1,17 @@
+{
+  "name": "SupermartKera",
+  "short_name": "SupermartKera",
+  "description": "Supermarket and delivery management platform",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#0f766e",
+  "categories": ["business", "shopping", "travel"],
+  "icons": [
+    { "src": "/icons/supermarketera-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/supermarketera-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

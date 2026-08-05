@@ -14,6 +14,19 @@ const getManagerId = () => {
   }
 };
 
+// Pichin business profiles own the wallet used for business payments. Staff
+// may initiate the order, but their personal wallet must never be charged.
+export const getBusinessWalletUserId = async (businessProfileId) => {
+  if (!businessProfileId) return null;
+  const { data, error } = await supabase
+    .from('business_profiles')
+    .select('user_id')
+    .eq('id', businessProfileId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.user_id || null;
+};
+
 // purchase_orders.supplier_id was historically written as either the supplier's
 // auth UUID or their internal users.id row (see FIX_CURRENT_USER_HELPERS_ID_FALLBACK.sql
 // for the same auth_id/id split elsewhere). Resolve both so orders stored under
@@ -158,6 +171,7 @@ export const createPurchaseOrder = async (orderData) => {
       manager_id:            managerId,
       items:                 orderData.items || [],
       notes:                 orderData.notes || '',
+      supplier_business_profile_id: orderData.supplierBusinessProfileId ?? orderData.supplier_business_profile_id ?? null,
       expected_delivery_date: expectedDeliveryDate,
       delivery_address:      deliveryAddress,
       delivery_instructions: deliveryInstructions,
@@ -274,10 +288,17 @@ export const getAllDeliveries = async () => {
 
 export const createDelivery = async (orderId, deliveryData = {}) => {
   try {
+    const allowedMethods = ['supplier_delivery', 'mybodaguy_delivery', 'supermarket_pickup'];
+    if (!allowedMethods.includes(deliveryData.deliveryMethod)) {
+      throw new Error('Choose a delivery method before recording delivery');
+    }
     const { data, error } = await supabase
       .from('purchase_orders')
       .update({
         status: 'received',
+        delivery_method: deliveryData.deliveryMethod,
+        delivery_selected_by: (await supabase.auth.getUser()).data.user?.id || null,
+        delivery_selected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         notes: deliveryData.notes || 'Delivery recorded'
       })
@@ -336,19 +357,23 @@ export const recordPayment = async ({ orderId, amountPaid, paymentMethod, paymen
 // on a separate supplier confirmation step.
 // Note: like every ICAN transfer platform-wide, there is no fee on sends
 // (see transfer_ican) — the supplier receives the full ICAN amount sent.
-export const payOrderWithICAN = async ({ orderId, supplierUserId, icanAmount, ugxAmount, notes }) => {
+export const payOrderWithICAN = async ({ orderId, supplierUserId, icanAmount, ugxAmount, notes, businessProfileId }) => {
   try {
     if (!supplierUserId) throw new Error('This order has no supplier assigned — cannot pay with ICAN.');
+    if (!businessProfileId) throw new Error('This supermarket has no linked Pichin business account. ICAN payment is unavailable.');
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('No authenticated user for ICAN payment');
+    const businessWalletUserId = await getBusinessWalletUserId(businessProfileId);
+    if (!businessWalletUserId) throw new Error('The linked Pichin business account has no wallet owner.');
 
     const transfer = await sendICAN({
-      fromUserId: user.id,
+      fromUserId: businessWalletUserId,
       toUserId: supplierUserId,
       amount: icanAmount,
       note: notes || `Purchase order payment (${orderId})`,
       referenceId: orderId,
+      businessProfileId,
     });
 
     const { data, error } = await supabase

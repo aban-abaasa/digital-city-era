@@ -101,7 +101,7 @@ const SupplierPortal = () => {
 
   const [performanceInsights] = useState([]);
 
-  const [notifications] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
   const [partnershipGoals] = useState([]);
 
@@ -918,6 +918,55 @@ const SupplierPortal = () => {
     }
   };
 
+  // Live supplier feed built from persisted applications and purchase orders.
+  // This replaces the old empty notification placeholder and is refreshed by
+  // the realtime subscriptions below.
+  const loadSupplierFeed = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const matchIds = await getSupplierOrderMatchIds(user.id);
+      const [{ data: orders }, { data: applications }] = await Promise.all([
+        supabase
+          .from('purchase_orders')
+          .select('id, po_number, status, total_amount, updated_at, ordered_at, delivery_method')
+          .in('supplier_id', matchIds)
+          .order('updated_at', { ascending: false })
+          .limit(25),
+        supabase
+          .from('supplier_applications')
+          .select('id, business_name, status, updated_at, created_at')
+          .eq('supplier_user_id', user.id)
+          .order('updated_at', { ascending: false })
+          .limit(25)
+      ]);
+
+      const orderEvents = (orders || []).map(order => ({
+        id: `order-${order.id}-${order.updated_at}`,
+        type: 'order',
+        title: `Order ${order.po_number || order.id.slice(0, 8)} updated`,
+        message: `Status: ${String(order.status || 'pending').replaceAll('_', ' ')}${order.delivery_method ? ` • Delivery: ${String(order.delivery_method).replaceAll('_', ' ')}` : ''} • UGX ${Number(order.total_amount || 0).toLocaleString()}`,
+        time: order.updated_at || order.ordered_at,
+        timestamp: new Date(order.updated_at || order.ordered_at || 0).getTime()
+      }));
+      const applicationEvents = (applications || []).map(application => ({
+        id: `application-${application.id}-${application.updated_at}`,
+        type: 'application',
+        title: `Supermarket application ${String(application.status || 'pending').replaceAll('_', ' ')}`,
+        message: `${application.business_name || 'Supplier application'} is ${application.status || 'pending'}.`,
+        time: application.updated_at || application.created_at,
+        timestamp: new Date(application.updated_at || application.created_at || 0).getTime()
+      }));
+
+      setNotifications([...orderEvents, ...applicationEvents]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 40));
+    } catch (error) {
+      console.error('Error loading supplier feed:', error);
+    }
+  };
+
   // Main data loading function
   const loadSupplierData = async () => {
     try {
@@ -1111,6 +1160,7 @@ const SupplierPortal = () => {
       // If user is supplier or profile not completed, proceed with loading data
       loadSupplierData();
       loadPaymentData();
+      loadSupplierFeed();
     };
 
     checkAuthAndLoad();
@@ -1125,7 +1175,11 @@ const SupplierPortal = () => {
       }, (payload) => {
         console.log('📊 Real-time order update detected, refreshing supplier metrics...', payload);
         loadSupplierData();
+        loadSupplierFeed();
       })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'supplier_applications'
+      }, () => loadSupplierFeed())
       .subscribe();
 
     return () => {
@@ -2443,6 +2497,11 @@ const SupplierPortal = () => {
       <div className="bg-white rounded-xl p-6 shadow-lg">
         <h3 className="text-xl font-bold text-gray-900 mb-6">Notifications</h3>
         <div className="space-y-4">
+          {notifications.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500">
+              No supplier activity yet. New orders and application decisions will appear here automatically.
+            </div>
+          )}
           {notifications.map((notification) => (
             <div key={notification.id} className={`border-l-4 p-4 rounded-lg ${
               notification.type === 'order' ? 'border-blue-500 bg-blue-50' :
@@ -2454,7 +2513,7 @@ const SupplierPortal = () => {
                 <div>
                   <h4 className="font-semibold text-gray-900">{notification.title}</h4>
                   <p className="text-gray-600">{notification.message}</p>
-                  <p className="text-sm text-gray-500 mt-1">{notification.time}</p>
+                   <p className="text-sm text-gray-500 mt-1">{new Date(notification.time).toLocaleString()}</p>
                 </div>
                 <button className="text-blue-600 hover:text-blue-800">
                   <FiEye className="h-5 w-5" />
@@ -3066,7 +3125,14 @@ const SupplierPortal = () => {
               <SupplierCatalogTab userId={supplierProfile.auth_id || supplierProfile.id} />
             )}
             {activeTab === 'apply-stores' && (
-              <SupplierApplicationsTab userId={supplierProfile.auth_id || supplierProfile.id} />
+              supplierProfile.id ? (
+                <SupplierApplicationsTab
+                  userId={supplierProfile.auth_id || supplierProfile.id}
+                  supplierProfile={supplierProfile}
+                />
+              ) : (
+                <div className="p-6 text-center text-gray-500">Loading supplier profile…</div>
+              )
             )}
             {activeTab === 'ican-wallet' && (
               <div className="mt-0 -mx-4 sm:-mx-0">

@@ -219,11 +219,12 @@ export function SupplierCatalogTab({ userId }) {
 }
 
 // ─── APPLY TO STORES TAB ──────────────────────────────────────────────────────
-export function SupplierApplicationsTab({ userId }) {
+export function SupplierApplicationsTab({ userId, supplierProfile = null }) {
   const [stores, setStores]   = useState([]);
   const [myApps, setMyApps]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(null);  // supermarket id being applied to
+  const [supplierDefaults, setSupplierDefaults] = useState(null);
   const [form, setForm]         = useState({
     business_name: '', contact_name: '', contact_phone: '', contact_email: '',
     product_categories: [], message: '',
@@ -237,9 +238,57 @@ export function SupplierApplicationsTab({ userId }) {
       : [...f.product_categories, cat],
   }));
 
-  useEffect(() => { loadAll(); }, [userId]);
+  useEffect(() => {
+    loadAll();
+    loadSupplierDefaults();
+  }, [userId, supplierProfile]);
+
+  const loadSupplierDefaults = async () => {
+    if (!userId) return null;
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const authUserId = authData?.user?.id || userId;
+      const results = await Promise.allSettled([
+        supabase.from('suppliers')
+          .select('company_name, contact_email, contact_phone')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        supabase.from('business_profiles')
+          .select('id, business_name, business_type')
+          .eq('user_id', authUserId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      const supplier = results[0].status === 'fulfilled' ? results[0].value.data : null;
+      const business = results[1].status === 'fulfilled' ? results[1].value.data : null;
+
+      const defaults = {
+        business_name: supplierProfile?.name || business?.business_name || supplier?.company_name || '',
+        contact_name: supplierProfile?.contactPerson || authData?.user?.user_metadata?.full_name || '',
+        contact_phone: supplierProfile?.phone || supplier?.contact_phone || '',
+        contact_email: supplierProfile?.email || supplier?.contact_email || authData?.user?.email || '',
+        product_categories: CATEGORIES.includes(supplierProfile?.category)
+          ? [supplierProfile.category]
+          : [],
+        message: '',
+        business_type: business?.business_type || 'Sole Proprietorship',
+        business_profile_id: business?.id || null,
+      };
+      setSupplierDefaults(defaults);
+      return defaults;
+    } catch (error) {
+      console.warn('Could not load supplier application defaults:', error.message);
+      return null;
+    }
+  };
 
   const loadAll = async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const [{ data: sm }, { data: apps }] = await Promise.all([
       supabase.from('supermarkets').select('id, name, city, country, is_active').eq('is_active', true),
@@ -252,20 +301,20 @@ export function SupplierApplicationsTab({ userId }) {
 
   const appStatus = (smId) => myApps.find(a => a.supermarket_id === smId)?.status || null;
 
-  const openApply = (smId) => {
+  const openApply = async (smId) => {
     setApplying(smId);
-    // Pre-fill from existing draft if any
+    // Pre-fill from the saved supplier/Pichin profile, then let an existing
+    // draft override those values for this specific supermarket.
+    const defaults = supplierDefaults || await loadSupplierDefaults() || {};
     const existing = myApps.find(a => a.supermarket_id === smId);
-    if (existing) {
-      setForm({
-        business_name:       existing.business_name || '',
-        contact_name:        existing.contact_name || '',
-        contact_phone:       existing.contact_phone || '',
-        contact_email:       existing.contact_email || '',
-        product_categories:  existing.product_categories || [],
-        message:             existing.message || '',
-      });
-    }
+    setForm({
+      business_name:      existing?.business_name || defaults.business_name || '',
+      contact_name:       existing?.contact_name || defaults.contact_name || '',
+      contact_phone:      existing?.contact_phone || defaults.contact_phone || '',
+      contact_email:      existing?.contact_email || defaults.contact_email || '',
+      product_categories: existing?.product_categories || defaults.product_categories || [],
+      message:            existing?.message || defaults.message || '',
+    });
   };
 
   const submitApplication = async (smId) => {
@@ -273,9 +322,17 @@ export function SupplierApplicationsTab({ userId }) {
       toast.error('Business name, contact name and phone are required'); return;
     }
     try {
+      const { data: businessProfileId, error: businessError } = await supabase.rpc('supplier_create_business_account', {
+        p_business_name: form.business_name,
+        p_business_type: supplierDefaults?.business_type || 'Sole Proprietorship',
+        p_registration_number: null
+      });
+      if (businessError) throw businessError;
+
       const { error } = await supabase.from('supplier_applications').upsert({
         supermarket_id:     smId,
         supplier_user_id:   userId,
+        supplier_business_profile_id: businessProfileId,
         business_name:      form.business_name,
         contact_name:       form.contact_name,
         contact_phone:      form.contact_phone,

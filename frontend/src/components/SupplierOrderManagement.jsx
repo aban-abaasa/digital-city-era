@@ -14,14 +14,15 @@ import {
   FiX, FiCheck
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
-import supplierOrdersService from '../services/supplierOrdersService';
+import supplierOrdersService, { getBusinessWalletUserId } from '../services/supplierOrdersService';
 import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
 import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
+import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
 
-const SupplierOrderManagement = ({ onPosUpdated }) => {
+const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
   // State Management
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -92,12 +93,12 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
     if (approvalData.paymentMethod !== 'ican_wallet' || approvalIcanBalance !== null || approvalIcanBalanceLoading) return;
 
     setApprovalIcanBalanceLoading(true);
-    supabase.auth.getUser()
-      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+    getBusinessWalletUserId(businessProfileId)
+      .then((businessWalletUserId) => businessWalletUserId ? getBalance(businessWalletUserId) : null)
       .then((bal) => setApprovalIcanBalance(bal))
       .catch(() => setApprovalIcanBalance(null))
       .finally(() => setApprovalIcanBalanceLoading(false));
-  }, [approvalData.paymentMethod, approvalIcanBalance, approvalIcanBalanceLoading]);
+  }, [approvalData.paymentMethod, approvalIcanBalance, approvalIcanBalanceLoading, businessProfileId]);
 
   // Load data on component mount
   useEffect(() => {
@@ -365,6 +366,7 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
               supplierUserId: selectedOrderData.supplier_id,
               icanAmount:     icanNeeded,
               ugxAmount:      amountPaidNow,
+              businessProfileId,
               notes:          `Payment made during order approval. ${approvalData.notes || ''}`,
             });
           }
@@ -479,7 +481,16 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
    * Handle mark order as received/delivered - Updates inventory automatically
    */
   const handleMarkAsReceived = async (orderId) => {
-    if (!confirm('Mark this order as RECEIVED and update inventory?\n\n✅ This will automatically:\n• Add received quantities to inventory\n• Update stock levels\n• Log inventory movements')) {
+    const deliveryMethod = window.prompt(
+      'Choose delivery method before completing this order:\n\n1 = Supplier delivery\n2 = MyBodaGuy delivery\n3 = Supermarket pickup',
+      '1'
+    );
+    const deliveryMethods = { '1': 'supplier_delivery', '2': 'mybodaguy_delivery', '3': 'supermarket_pickup' };
+    if (!deliveryMethods[deliveryMethod]) {
+      alert('A delivery method is required. The order was not completed.');
+      return;
+    }
+    if (!confirm('Mark this order as RECEIVED and update inventory?\n\nDelivery: ' + deliveryMethods[deliveryMethod])) {
       return;
     }
 
@@ -491,6 +502,9 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
         .from('purchase_orders')
         .update({ 
           status: 'received',
+          delivery_method: deliveryMethods[deliveryMethod],
+          delivery_selected_by: (await supabase.auth.getUser()).data.user?.id || null,
+          delivery_selected_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq('id', orderId);
@@ -773,13 +787,25 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
    * Handle mark order as completed
    */
   const handleMarkAsCompleted = async (orderId) => {
-    if (!confirm('Mark this order as RECEIVED?')) return;
+    const deliveryMethod = window.prompt(
+      'Choose delivery method before completing this order:\n\n1 = Supplier delivery\n2 = MyBodaGuy delivery\n3 = Supermarket pickup',
+      '1'
+    );
+    const deliveryMethods = { '1': 'supplier_delivery', '2': 'mybodaguy_delivery', '3': 'supermarket_pickup' };
+    if (!deliveryMethods[deliveryMethod]) {
+      alert('A delivery method is required. The order was not completed.');
+      return;
+    }
+    if (!confirm('Mark this order as RECEIVED?\n\nDelivery: ' + deliveryMethods[deliveryMethod])) return;
 
     try {
       const { error } = await supabase
         .from('purchase_orders')
         .update({ 
           status: 'received',
+          delivery_method: deliveryMethods[deliveryMethod],
+          delivery_selected_by: (await supabase.auth.getUser()).data.user?.id || null,
+          delivery_selected_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq('id', orderId);
@@ -1915,8 +1941,9 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
 
       {/* Create Order Modal */}
       {showCreateModal && (
-        <CreateOrderModal
+      <CreateOrderModal
           suppliers={suppliers}
+          businessProfileId={businessProfileId}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
@@ -2073,6 +2100,7 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
       {showPaymentModal && selectedOrder && (
         <PaymentModal
           order={selectedOrder}
+          businessProfileId={businessProfileId}
           onClose={() => {
             setShowPaymentModal(false);
             setSelectedOrder(null);
@@ -2116,7 +2144,7 @@ const SupplierOrderManagement = ({ onPosUpdated }) => {
 // =====================================================================
 // CREATE ORDER MODAL COMPONENT
 // =====================================================================
-const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
+const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) => {
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [orderItems, setOrderItems] = useState([]);
   const [newItem, setNewItem] = useState({
@@ -2138,18 +2166,22 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
   const [paymentNotes, setPaymentNotes] = useState('');
   const [icanBalance, setIcanBalance] = useState(null);
   const [icanBalanceLoading, setIcanBalanceLoading] = useState(false);
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [walletPin, setWalletPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [verifyingPin, setVerifyingPin] = useState(false);
 
   // Load the manager's live ICAN balance when they switch to the ICAN Wallet method
   useEffect(() => {
     if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
 
     setIcanBalanceLoading(true);
-    supabase.auth.getUser()
-      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+    getBusinessWalletUserId(businessProfileId)
+      .then((businessWalletUserId) => businessWalletUserId ? getBalance(businessWalletUserId) : null)
       .then((bal) => setIcanBalance(bal))
       .catch(() => setIcanBalance(null))
       .finally(() => setIcanBalanceLoading(false));
-  }, [paymentMethod, icanBalance, icanBalanceLoading]);
+  }, [paymentMethod, icanBalance, icanBalanceLoading, businessProfileId]);
 
   const handleAddItem = () => {
     if (!newItem.productName || newItem.quantity <= 0 || newItem.unitPrice <= 0) {
@@ -2205,6 +2237,46 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
       return;
     }
 
+    setWalletPin('');
+    setPinError('');
+    setShowPinPrompt(true);
+  };
+
+  const confirmCreateOrder = async () => {
+    if (!/^\d{4,6}$/.test(walletPin)) {
+      setPinError('Enter your 4-6 digit IcanEra Wallet PIN.');
+      return;
+    }
+
+    setVerifyingPin(true);
+    setPinError('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        setPinError('Your session has expired. Please log in again.');
+        return;
+      }
+
+      const pinCheck = await verifyPin(user.id, walletPin);
+      if (!pinCheck.success) {
+        setPinError(pinCheck.error || 'PIN verification failed. Order was not sent.');
+        return;
+      }
+
+      setShowPinPrompt(false);
+      setWalletPin('');
+      await createOrder();
+    } catch (err) {
+      console.error('PIN verification failed:', err);
+      setPinError('PIN verification failed. Order was not sent.');
+    } finally {
+      setVerifyingPin(false);
+    }
+  };
+
+  const createOrder = async () => {
+
     setSubmitting(true);
 
     try {
@@ -2250,6 +2322,7 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
                   supplierUserId:  response.order.supplier_id,
                   icanAmount:      icanNeeded,
                   ugxAmount:       parseFloat(cashPaidNow),
+                  businessProfileId,
                   notes:           `Payment made at order creation. ${paymentNotes}`,
                 });
 
@@ -2311,6 +2384,54 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      {showPinPrompt && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-900">Confirm Purchase Order</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Enter your IcanEra Wallet PIN to send this order to the supplier.
+            </p>
+            <form
+              onSubmit={(e) => { e.preventDefault(); if (!verifyingPin) confirmCreateOrder(); }}
+              className="mt-5"
+            >
+              <label className="block text-sm font-semibold text-gray-700 mb-2" htmlFor="purchase-order-wallet-pin">
+                IcanEra Wallet PIN
+              </label>
+              <input
+                id="purchase-order-wallet-pin"
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                maxLength={6}
+                value={walletPin}
+                onChange={(e) => setWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="w-full rounded-lg border-2 border-gray-300 px-4 py-3 text-lg tracking-[0.35em] focus:border-blue-500 focus:outline-none"
+                placeholder="••••••"
+                autoFocus
+              />
+              {pinError && <p className="mt-2 text-sm font-medium text-red-600">{pinError}</p>}
+              <div className="mt-5 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowPinPrompt(false); setWalletPin(''); setPinError(''); }}
+                  disabled={verifyingPin}
+                  className="rounded-lg border-2 border-gray-300 px-5 py-2.5 font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={verifyingPin || walletPin.length < 4}
+                  className="rounded-lg bg-gradient-to-r from-green-600 to-blue-600 px-5 py-2.5 font-bold text-white hover:from-green-700 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {verifyingPin ? 'Verifying...' : 'Verify & Send Order'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 text-white p-6 rounded-t-xl z-10">
@@ -2594,7 +2715,7 @@ const CreateOrderModal = ({ suppliers, onClose, onSuccess }) => {
 // =====================================================================
 // PAYMENT MODAL COMPONENT
 // =====================================================================
-const PaymentModal = ({ order, onClose, onSuccess }) => {
+const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
@@ -2608,12 +2729,12 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
     if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
 
     setIcanBalanceLoading(true);
-    supabase.auth.getUser()
-      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+    getBusinessWalletUserId(businessProfileId)
+      .then((businessWalletUserId) => businessWalletUserId ? getBalance(businessWalletUserId) : null)
       .then((bal) => setIcanBalance(bal))
       .catch(() => setIcanBalance(null))
       .finally(() => setIcanBalanceLoading(false));
-  }, [paymentMethod, icanBalance, icanBalanceLoading]);
+  }, [paymentMethod, icanBalance, icanBalanceLoading, businessProfileId]);
 
   const formatUGX = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -2659,6 +2780,7 @@ const PaymentModal = ({ order, onClose, onSuccess }) => {
           supplierUserId: order.supplier_id,
           icanAmount:     ugxToICAN(amount),
           ugxAmount:      amount,
+          businessProfileId,
           notes:          paymentNotes || null,
         });
 

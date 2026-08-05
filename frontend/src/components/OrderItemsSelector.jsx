@@ -45,9 +45,30 @@ const OrderItemsSelector = ({
       const storedUser = localStorage.getItem('supermarket_user');
       let supermarketId = null;
 
+      // Prefer the authenticated account's store. Portal switching keeps the
+      // admin session active, so the cached localStorage value can be stale.
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        let { data: authUserRow } = await supabase
+          .from('users')
+          .select('supermarket_id')
+          .eq('auth_id', authUser.id)
+          .maybeSingle();
+        if (!authUserRow) {
+          const { data: idUserRow } = await supabase
+            .from('users')
+            .select('supermarket_id')
+            .eq('id', authUser.id)
+            .maybeSingle();
+          authUserRow = idUserRow;
+        }
+        supermarketId = authUserRow?.supermarket_id || null;
+      }
+
       if (storedUser) {
         const parsedUser = JSON.parse(storedUser);
-        supermarketId = parsedUser.supermarket_id;
+        // Legacy auth fallback when no authenticated users row is available.
+        supermarketId = supermarketId || parsedUser.supermarket_id;
         console.log('🏪 Loading products for supermarket:', supermarketId);
         console.log('👤 User role:', parsedUser.role);
       }
@@ -72,7 +93,7 @@ const OrderItemsSelector = ({
           cost_price,
           category_id,
           supermarket_id,
-          inventory!inner(current_stock,supermarket_id)
+          inventory(current_stock,supermarket_id)
         `)
         .eq('is_active', true)
         .eq('supermarket_id', supermarketId)           // ✅ ALWAYS filter by supermarket
@@ -129,6 +150,12 @@ const OrderItemsSelector = ({
   }, []);
 
   const selectProduct = (product) => {
+    // Search selections are also order selections. Editing an existing item
+    // remains manual so choosing a replacement does not add a new row.
+    if (editingIndex === null) {
+      addCatalogProduct(product);
+      return;
+    }
     setSelectedProduct(product);
     setSearchQuery(product.name);
     setUnitPrice(product.selling_price || 0);
@@ -214,6 +241,64 @@ const OrderItemsSelector = ({
     searchInputRef.current?.focus();
     
     toast.success('✅ Item added successfully');
+  };
+
+  // A product chosen from Quick Select is already an order choice. Add it
+  // immediately with the default quantity instead of forcing the manager to
+  // select the same product again and press Add Item.
+  const addCatalogProduct = (product) => {
+    const unitPriceForProduct = Number(product.selling_price) || 0;
+    if (unitPriceForProduct <= 0) {
+      toast.warning('This product has no selling price yet. Set its price before ordering.');
+      return;
+    }
+
+    const existingIndex = orderItems.findIndex((item) => item.product_id === product.id);
+    let updatedItems;
+
+    if (existingIndex >= 0) {
+      updatedItems = orderItems.map((item, index) => {
+        if (index !== existingIndex) return item;
+        const itemQuantity = (Number(item.quantity) || 0) + 1;
+        return { ...item, quantity: itemQuantity, display_quantity: itemQuantity, total: itemQuantity * unitPriceForProduct };
+      });
+    } else {
+      const buyingPriceForProduct = Number(product.cost_price) || 0;
+      updatedItems = [...orderItems, {
+        id: Date.now(),
+        product_id: product.id,
+        product_name: product.name,
+        sku: product.sku,
+        quantity: 1,
+        display_quantity: 1,
+        unit_type: 'units',
+        units_per_box: 12,
+        unit_price: unitPriceForProduct,
+        buying_price: buyingPriceForProduct,
+        total: unitPriceForProduct,
+        margin: unitPriceForProduct - buyingPriceForProduct,
+        margin_percent: buyingPriceForProduct > 0
+          ? ((unitPriceForProduct - buyingPriceForProduct) / buyingPriceForProduct * 100).toFixed(1)
+          : '0.0',
+        current_stock: product.current_stock || 0
+      }];
+    }
+
+    onItemsChange(updatedItems);
+    const subtotal = updatedItems.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    onTotalsChange({
+      subtotal,
+      tax: subtotal * 0.18,
+      total: subtotal * 1.18,
+      itemCount: updatedItems.length,
+      totalUnits: updatedItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+    });
+    setSelectedProduct(product);
+    setSearchQuery(product.name);
+    setUnitPrice(unitPriceForProduct);
+    setBuyingPrice(Number(product.cost_price) || 0);
+    setShowDropdown(false);
+    toast.success(`${product.name} added to the order`);
   };
 
   const editItem = (index) => {
@@ -368,10 +453,7 @@ const OrderItemsSelector = ({
             onChange={(e) => {
               if (e.target.value) {
                 const product = products.find(p => p.id === e.target.value);
-                if (product) {
-                  selectProduct(product);
-                  setSearchQuery(product.name);
-                }
+                if (product) addCatalogProduct(product);
                 e.target.value = '';
               }
             }}

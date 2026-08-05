@@ -476,6 +476,12 @@ const SupermartkeraLanding = () => {
             >
               Contact
             </button>
+            <button
+              onClick={() => window.dispatchEvent(new Event('supermartkera-install-requested'))}
+              className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition lg:px-5 ${palette.outline}`}
+            >
+              Install app
+            </button>
             <Link
               to="/login"
               className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition hover:scale-[1.02] lg:px-5 ${palette.button}`}
@@ -515,6 +521,12 @@ const SupermartkeraLanding = () => {
             className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
           >
             Contact us
+          </button>
+          <button
+            onClick={() => { window.dispatchEvent(new Event('supermartkera-install-requested')); closeMobileMenu(); }}
+            className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
+          >
+            Install SupermartKera
           </button>
           <Link
             to="/login"

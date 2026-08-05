@@ -31,6 +31,7 @@ const SupplierAuth = () => {
     phone: '',
     address: '',
     businessLicense: '',
+    businessType: 'Sole Proprietorship',
     category: ''
   });
 
@@ -289,6 +290,15 @@ const SupplierAuth = () => {
 
       if (supplierErr) console.warn('Supplier profile save warning:', supplierErr.message);
 
+      // Every supplier gets a separate Pichin business account.  This is
+      // intentionally independent from any supermarket or CMMS company.
+      const { error: businessErr } = await supabase.rpc('supplier_create_business_account', {
+        p_business_name: profileData.companyName,
+        p_business_type: profileData.businessType,
+        p_registration_number: profileData.businessLicense
+      });
+      if (businessErr) throw businessErr;
+
       notificationService.show('🎉 Supplier account ready! Apply to supermarkets inside your portal to receive orders.', 'success', 5000);
       navigate('/supplier-portal');
 
@@ -364,6 +374,18 @@ const SupplierAuth = () => {
                 onChange={(e) => setProfileData({...profileData, businessLicense: e.target.value})}
                 required
               />
+            </div>
+
+            <div className="form-group">
+              <label>Business Type *</label>
+              <select
+                value={profileData.businessType}
+                onChange={(e) => setProfileData({...profileData, businessType: e.target.value})}
+                required
+              >
+                <option value="Sole Proprietorship">Sole Proprietorship</option>
+                <option value="Limited Company">Limited Company</option>
+              </select>
             </div>
 
             <div className="form-group">
