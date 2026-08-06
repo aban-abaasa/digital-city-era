@@ -138,6 +138,13 @@ export interface CitySuggestion {
   lng: number;
 }
 
+export interface AddressSuggestion {
+  name: string;
+  displayName: string;
+  lat: number;
+  lng: number;
+}
+
 async function runCitySearch(trimmed: string, countryIso2: string | undefined, strict: boolean): Promise<CitySuggestion[]> {
   const params = new URLSearchParams({
     format: 'json',
@@ -183,6 +190,33 @@ export async function searchCities(query: string, countryIso2?: string): Promise
   const strict = await runCitySearch(trimmed, countryIso2, true);
   if (strict.length > 0) return strict;
   return runCitySearch(trimmed, countryIso2, false);
+}
+
+/** Search hotels, lodges and street addresses within the selected country. */
+export async function searchAddresses(query: string, countryIso2?: string, city?: string): Promise<AddressSuggestion[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const params = new URLSearchParams({
+    format: 'json',
+    limit: '8',
+    q: [trimmed, city].filter(Boolean).join(', '),
+    addressdetails: '1',
+    'accept-language': 'en',
+  });
+  if (countryIso2) params.set('countrycodes', countryIso2.toLowerCase());
+
+  const res = await throttledFetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) return [];
+  const results = await res.json();
+  return (results || []).map((r: any) => ({
+    name: r.name || r.address?.hotel || r.address?.amenity || r.display_name.split(',')[0],
+    displayName: r.display_name,
+    lat: Number(r.lat),
+    lng: Number(r.lon),
+  }));
 }
 
 export async function reverseGeocodeCountry(lat: number, lng: number): Promise<CountryLookup | null> {

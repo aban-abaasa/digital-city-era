@@ -12,7 +12,7 @@ import {
   searchFlights, searchAirports, getJourneyQuote, confirmJourney, pollJourney, requestShipCargoJourney,
   type FlightOffer, type Journey, type JourneyQuote, type AirportSuggestion,
 } from '../services/journeyService';
-import { geocodeAddress, reverseGeocodeCountry, searchCities, type CountryLookup, type CitySuggestion, type GeocodeResult } from '../services/geocodeService';
+import { geocodeAddress, reverseGeocodeCountry, searchCities, searchAddresses, type CountryLookup, type CitySuggestion, type AddressSuggestion, type GeocodeResult } from '../services/geocodeService';
 import { printFlightTicket, printShipTicket } from '../services/printTicket';
 import { getBalance, ICAN_TO_UGX, formatICAN, SOURCE_APP } from '../services/icanWalletService';
 import { payWithFlutterwave, generateTxRef } from '@/services/flutterwaveClient';
@@ -141,6 +141,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const [destAddress, setDestAddress] = useState('');
   const [destPin, setDestPin] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const [findingDestPin, setFindingDestPin] = useState(false);
+  const selectedDestinationAddressRef = useRef('');
 
   const [quote, setQuote] = useState<JourneyQuote | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -320,6 +321,10 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     : manualPickup;
 
   useEffect(() => {
+    if (selectedDestinationAddressRef.current === destAddress) {
+      selectedDestinationAddressRef.current = '';
+      return;
+    }
     setDestPin(null);
   }, [destAddress, destCity, destCountry]);
 
@@ -704,7 +709,17 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
           <AirportPicker
             label="To"
             selectedLabel={destinationLabel}
-            onSelect={(iata, label) => { setDestinationIata(iata); setDestinationLabel(label); }}
+            onSelect={(iata, label, countryIso2) => {
+              setDestinationIata(iata);
+              setDestinationLabel(label);
+              const country = COUNTRIES.find((c) => c.iso2 === countryIso2);
+              if (country && country.name !== destCountry) {
+                setDestCountry(country.name);
+                setDestCity('');
+                setDestAddress('');
+                setDestPin(null);
+              }
+            }}
           />
           <input className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400" type="date" value={departureDate} onChange={(e) => setDepartureDate(e.target.value)} />
           <div>
@@ -778,7 +793,12 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
           <select
             className="w-full border rounded-lg p-3 bg-white text-slate-900"
             value={destCountry}
-            onChange={(e) => { setDestCountry(e.target.value); setDestCity(''); }}
+            onChange={(e) => {
+              setDestCountry(e.target.value);
+              setDestCity('');
+              setDestAddress('');
+              setDestPin(null);
+            }}
           >
             <option value="">Select a country</option>
             {COUNTRIES.map((c) => (
@@ -790,7 +810,17 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
             value={destCity}
             onChange={setDestCity}
           />
-          <input className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400" placeholder="Hotel / room address" value={destAddress} onChange={(e) => setDestAddress(e.target.value)} />
+          <AddressSearchInput
+            countryIso2={COUNTRIES.find((c) => c.name === destCountry)?.iso2}
+            city={destCity}
+            value={destAddress}
+            onChange={setDestAddress}
+            onSelect={(address, lat, lng) => {
+              selectedDestinationAddressRef.current = address;
+              setDestAddress(address);
+              setDestPin({ lat, lng, address });
+            }}
+          />
           <p className="text-xs text-slate-500">A driver is dispatched automatically once you land — timed off your actual arrival, and re-timed automatically if your flight is delayed.</p>
 
           <button
@@ -1035,7 +1065,7 @@ function AirportPicker({
   label: string;
   defaultCountryIso2?: string;
   selectedLabel: string | null;
-  onSelect: (iataCode: string, displayLabel: string) => void;
+  onSelect: (iataCode: string, displayLabel: string, countryIso2?: string) => void;
 }) {
   const [countryIso2, setCountryIso2] = useState(defaultCountryIso2 || 'UG');
   const [query, setQuery] = useState('');
@@ -1044,16 +1074,36 @@ function AirportPicker({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const loadCountryAirports = async (iso2: string) => {
+    const country = COUNTRIES.find((c) => c.iso2 === iso2);
+    if (!country) return;
+
+    setLoading(true);
+    try {
+      // Duffel's Places API accepts a country name and returns the places in
+      // that country. Keep the text input empty so the user can still search
+      // by city or airport after the country list is loaded.
+      const { airports } = await searchAirports(country.name, iso2);
+      setSuggestions(airports);
+      setShowSuggestions(true);
+    } catch {
+      setSuggestions([]);
+      setShowSuggestions(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (!defaultCountryIso2 || defaultCountryIso2 === countryIso2) return;
-    const nextCountry = COUNTRIES.find((c) => c.iso2 === defaultCountryIso2);
-    setCountryIso2(defaultCountryIso2);
-    setQuery(nextCountry?.name || '');
-    setSuggestions([]);
-    setShowSuggestions(true);
-    onSelect('', '');
-    // The parent callback is intentionally excluded: this sync is driven by
-    // the actual country prop, not by the parent's render identity.
+    const nextCountry = defaultCountryIso2 || 'UG';
+    if (nextCountry !== countryIso2) {
+      setCountryIso2(nextCountry);
+      setQuery('');
+      setSuggestions([]);
+      onSelect('', '');
+    }
+    loadCountryAirports(nextCountry);
+    // The initial load is intentionally driven by the country prop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCountryIso2]);
 
@@ -1088,14 +1138,15 @@ function AirportPicker({
           className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
           value={countryIso2}
           onChange={(e) => {
-            const nextCountry = COUNTRIES.find((c) => c.iso2 === e.target.value);
-            setCountryIso2(e.target.value);
+            const nextIso2 = e.target.value;
+            setCountryIso2(nextIso2);
             // Search the selected country immediately and clear any airport
             // code from the previous country so a stale route cannot be used.
-            setQuery(nextCountry?.name || '');
+            setQuery('');
             setSuggestions([]);
             setShowSuggestions(true);
             onSelect('', '');
+            loadCountryAirports(nextIso2);
           }}
         >
           {COUNTRIES.map((c) => (
@@ -1120,7 +1171,7 @@ function AirportPicker({
       {showSuggestions && (
         <div className="relative z-[60] border border-slate-300 rounded-lg bg-white text-slate-900 shadow-xl max-h-56 overflow-y-auto">
           {loading && <div className="p-2.5 text-xs text-slate-400">Searching…</div>}
-          {!loading && suggestions.length === 0 && query.trim().length >= 2 && (
+          {!loading && suggestions.length === 0 && (
             <div className="p-2.5 text-xs text-slate-400">No airports found</div>
           )}
           {suggestions.map((a) => (
@@ -1129,7 +1180,7 @@ function AirportPicker({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                onSelect(a.iataCode, `${a.name} (${a.iataCode})${a.cityName ? ` — ${a.cityName}` : ''}`);
+                onSelect(a.iataCode, `${a.name} (${a.iataCode})${a.cityName ? ` — ${a.cityName}` : ''}`, a.countryCode);
                 setQuery('');
                 setShowSuggestions(false);
               }}
@@ -1137,6 +1188,85 @@ function AirportPicker({
             >
               <div className="font-medium text-slate-800">{a.name} ({a.iataCode})</div>
               {a.cityName && <div className="text-xs text-slate-500">{a.cityName}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddressSearchInput({
+  countryIso2,
+  city,
+  value,
+  onChange,
+  onSelect,
+}: {
+  countryIso2?: string;
+  city: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSelect: (address: string, lat: number, lng: number) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!countryIso2 || value.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        setSuggestions(await searchAddresses(value.trim(), countryIso2, city));
+        setShowSuggestions(true);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 450);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [value, countryIso2, city]);
+
+  return (
+    <div className="relative">
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+      <input
+        className="w-full border rounded-lg p-3 pl-8 bg-white text-slate-900 placeholder-slate-400"
+        placeholder={countryIso2 ? 'Hotel, lodge or street address' : 'Select a country first'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => value.trim().length >= 2 && setShowSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+        disabled={!countryIso2}
+      />
+      {showSuggestions && (
+        <div className="absolute z-20 w-full mt-1 border rounded-lg bg-white shadow-md max-h-56 overflow-y-auto">
+          {loading && <div className="p-2.5 text-xs text-slate-400">Searching hotels and addresses…</div>}
+          {!loading && suggestions.length === 0 && value.trim().length >= 2 && (
+            <div className="p-2.5 text-xs text-slate-400">No matching hotel found — you can still type the address</div>
+          )}
+          {suggestions.map((a, i) => (
+            <button
+              key={`${a.displayName}-${i}`}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onSelect(a.displayName, a.lat, a.lng);
+                setShowSuggestions(false);
+              }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-slate-100 last:border-b-0"
+            >
+              <div className="font-medium text-slate-800">{a.name}</div>
+              <div className="text-xs text-slate-500 truncate">{a.displayName}</div>
             </button>
           ))}
         </div>
