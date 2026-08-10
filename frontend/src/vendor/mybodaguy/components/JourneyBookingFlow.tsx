@@ -17,7 +17,7 @@ import { printFlightTicket, printShipTicket } from '../services/printTicket';
 import { getBalance, ICAN_TO_UGX, formatICAN, SOURCE_APP } from '../services/icanWalletService';
 import { payWithFlutterwave, generateTxRef } from '@/services/flutterwaveClient';
 import LocationPickerMap from './LocationPickerMap';
-import type { Location } from '../data/mockLocations';
+import type { Location } from '../data/locationTypes';
 import { COUNTRIES } from '../data/countries';
 
 interface JourneyBookingFlowProps {

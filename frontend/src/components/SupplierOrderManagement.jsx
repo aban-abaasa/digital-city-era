@@ -14,20 +14,53 @@ import {
   FiX, FiCheck
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
-import supplierOrdersService, { getBusinessWalletUserId } from '../services/supplierOrdersService';
+import supplierOrdersService, { getBusinessWalletBalance, resolveBusinessProfileId } from '../services/supplierOrdersService';
 import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
-import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
+import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
 
 const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
+  const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
+  const activeBusinessProfileId = businessProfileId || resolvedBusinessProfileId;
+
+  useEffect(() => {
+    let cancelled = false;
+    resolveBusinessProfileId(businessProfileId)
+      .then((profileId) => {
+        if (!cancelled && profileId) setResolvedBusinessProfileId(profileId);
+      })
+      .catch((error) => console.warn('Could not resolve the store business account:', error.message));
+    return () => { cancelled = true; };
+  }, [businessProfileId]);
+
   // State Management
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [stats, setStats] = useState({});
   const [products, setProducts] = useState([]); // Products in POS inventory
+  const [wholesalePricingMode, setWholesalePricingMode] = useState('supplier_price');
+  const [storeId, setStoreId] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: userRow } = await supabase.from('users').select('supermarket_id').or(`auth_id.eq.${user.id},id.eq.${user.id}`).maybeSingle();
+      const id = userRow?.supermarket_id;
+      if (!id) return;
+      const { data: store } = await supabase.from('supermarkets').select('id, business_type, wholesale_pricing_mode').eq('id', id).maybeSingle();
+      setStoreId(store?.id || null);
+      if (store?.business_type === 'wholesale') setWholesalePricingMode(store.wholesale_pricing_mode || 'supplier_price');
+    })();
+  }, []);
+
+  const saveWholesalePricingMode = async (mode) => {
+    setWholesalePricingMode(mode);
+    if (storeId) await supabase.from('supermarkets').update({ wholesale_pricing_mode: mode }).eq('id', storeId);
+  };
 
   /**
    * Get current manager ID from localStorage (custom authentication)
@@ -80,6 +113,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   });
   const [approvalIcanBalance, setApprovalIcanBalance] = useState(null);
   const [approvalIcanBalanceLoading, setApprovalIcanBalanceLoading] = useState(false);
+  const [approvalBusinessWalletPin, setApprovalBusinessWalletPin] = useState('');
   // Manager's own vehicle choice at approval time (Car/Van/Truck, or Ship
   // when the route genuinely needs a sea leg) — overrides whatever the
   // supplier picked earlier when set. null = leave the supplier's choice
@@ -93,12 +127,11 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
     if (approvalData.paymentMethod !== 'ican_wallet' || approvalIcanBalance !== null || approvalIcanBalanceLoading) return;
 
     setApprovalIcanBalanceLoading(true);
-    getBusinessWalletUserId(businessProfileId)
-      .then((businessWalletUserId) => businessWalletUserId ? getBalance(businessWalletUserId) : null)
+    getBusinessWalletBalance(activeBusinessProfileId)
       .then((bal) => setApprovalIcanBalance(bal))
       .catch(() => setApprovalIcanBalance(null))
       .finally(() => setApprovalIcanBalanceLoading(false));
-  }, [approvalData.paymentMethod, approvalIcanBalance, approvalIcanBalanceLoading, businessProfileId]);
+  }, [approvalData.paymentMethod, approvalIcanBalance, approvalIcanBalanceLoading, activeBusinessProfileId]);
 
   // Load data on component mount
   useEffect(() => {
@@ -364,9 +397,11 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             paymentResult = await supplierOrdersService.payOrderWithICAN({
               orderId:        approvalOrderId,
               supplierUserId: selectedOrderData.supplier_id,
+              supplierBusinessProfileId: selectedOrderData.supplier_business_profile_id,
               icanAmount:     icanNeeded,
               ugxAmount:      amountPaidNow,
-              businessProfileId,
+              businessProfileId: activeBusinessProfileId,
+              businessWalletPin: approvalBusinessWalletPin,
               notes:          `Payment made during order approval. ${approvalData.notes || ''}`,
             });
           }
@@ -392,8 +427,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
       if (paymentResult?.success) {
         if (approvalData.paymentMethod === 'ican_wallet') {
-          successMsg += `🪙 PAID WITH ICAN: ${formatICAN(ugxToICAN(amountPaidNow))} ICAN (UGX ${amountPaidNow.toLocaleString()})\n`;
-          successMsg += `✅ Supplier's wallet credited instantly — no confirmation needed\n`;
+          successMsg += `🪙 ICAN PAYMENT REQUESTED: ${formatICAN(ugxToICAN(amountPaidNow))} ICAN (UGX ${amountPaidNow.toLocaleString()})\n`;
+          successMsg += paymentResult.wallet_approval_required
+            ? `🔔 Authorized wallet administrator must approve with the business-wallet PIN.\n`
+            : `✅ Supplier's business wallet credited.\n`;
         } else {
           successMsg += `💵 PAID NOW: UGX ${amountPaidNow.toLocaleString()}\n`;
           successMsg += `⏳ Status: Awaiting supplier confirmation\n`;
@@ -496,7 +533,6 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
     try {
       setLoading(true);
-
       // Step 1: Update order status to 'received'
       const { error: statusError } = await supabase
         .from('purchase_orders')
@@ -522,6 +558,13 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         });
 
       if (inventoryError) {
+        const receivedOrder = orders.find((order) => order.id === orderId);
+        if (receivedOrder && /function|rpc|does not exist|not found/i.test(inventoryError.message || '')) {
+          await handleAddOrderProductsToPOS(receivedOrder);
+          alert('✅ Order marked as received and inventory quantities were synchronised.');
+          loadAllData();
+          return;
+        }
         console.error('❌ Error updating inventory:', inventoryError);
         alert(`⚠️ Order marked as received, but inventory update failed:\n${inventoryError.message}\n\nPlease contact IT support.`);
         loadAllData();
@@ -582,6 +625,23 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
     setLoading(true);
     try {
+      let supermarketId = null;
+      try {
+        supermarketId = JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null;
+      } catch {
+        // Fall back to the authenticated user below.
+      }
+      if (!supermarketId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('supermarket_id')
+            .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+            .maybeSingle();
+          supermarketId = userRow?.supermarket_id || null;
+        }
+      }
       let successCount = 0;
       let failedCount = 0;
       const results = [];
@@ -608,7 +668,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
           }
 
           // Try to find existing product - use exact match on name
-          const { data: existingProducts, error: searchError } = await supabase
+          let productQuery = supabase
             .from('products')
             .select(`
               id,
@@ -620,6 +680,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               )
             `)
             .eq('name', productName);
+          if (supermarketId) productQuery = productQuery.eq('supermarket_id', supermarketId);
+          const { data: existingProducts, error: searchError } = await productQuery;
 
           console.log(`🔍 Search result for "${productName}":`, { existingProducts, searchError });
 
@@ -641,6 +703,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                 .from('inventory')
                 .upsert({
                   product_id: existingProduct.id,
+                  ...(supermarketId ? { supermarket_id: supermarketId } : {}),
                   current_stock: quantity,
                   minimum_stock: 10
                 }, { onConflict: 'product_id' });
@@ -675,6 +738,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               .from('products')
               .insert({
                 name: productName,
+                ...(supermarketId ? { supermarket_id: supermarketId } : {}),
                 price: unitPrice,
                 selling_price: unitPrice,
                 cost_price: unitPrice,
@@ -692,6 +756,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                 .from('inventory')
                 .upsert({
                   product_id: newProduct[0].id,
+                  ...(supermarketId ? { supermarket_id: supermarketId } : {}),
                   current_stock: quantity,
                   minimum_stock: 10
                 }, { onConflict: 'product_id' });
@@ -1211,7 +1276,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               {/* IcanEra Wallet Balance — shown only when paying with ICAN */}
               {approvalData.paymentMethod === 'ican_wallet' && (
                 <div className="mb-4 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-                  <div className="text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+                  <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
                   {approvalIcanBalanceLoading ? (
                     <div className="text-sm text-gray-500">Loading balance...</div>
                   ) : (
@@ -1229,6 +1294,22 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                       )}
                     </>
                   )}
+                </div>
+              )}
+
+              {approvalData.paymentMethod === 'ican_wallet' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Business Wallet PIN *</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={approvalBusinessWalletPin}
+                    onChange={(e) => setApprovalBusinessWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Enter the store business-wallet PIN"
+                    className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                    required
+                  />
                 </div>
               )}
 
@@ -1379,8 +1460,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               <FiTruck className="mr-3 h-8 w-8" />
               🇺🇬 Supplier Order Verification & Management
             </h2>
-            <p className="text-yellow-100 text-lg">
-              FAREDEAL Uganda - Complete Supplier & Purchase Order Management System
+           <p className="text-yellow-100 text-lg">
+              Choose suppliers, compare prices, and create purchase orders
             </p>
           </div>
           <button
@@ -1391,6 +1472,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             <span>Create New Order</span>
           </button>
         </div>
+        {storeId && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-black/20 p-3 text-sm">
+            <span className="font-semibold">Order using:</span>
+            <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)} className="rounded-lg px-3 py-2 text-slate-900">
+              <option value="supplier_price">Supplier price</option>
+              <option value="admin_price">Admin-set price</option>
+            </select>
+            <span className="text-yellow-100">You can change this any time before creating an order.</span>
+          </div>
+        )}
       </div>
 
       {/* View Mode Toggle */}
@@ -1701,6 +1792,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                     <div className="mb-4">
                       <OrderPaymentTracker
                         order={order}
+           businessProfileId={activeBusinessProfileId}
+           pricingMode={wholesalePricingMode}
                         onPaymentAdded={loadAllData}
                         showAddPayment={true}
                         userRole="manager"
@@ -1943,7 +2036,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       {showCreateModal && (
       <CreateOrderModal
           suppliers={suppliers}
-          businessProfileId={businessProfileId}
+          businessProfileId={activeBusinessProfileId}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
@@ -2081,6 +2174,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               {activeTab === 'payment' && (
                 <OrderPaymentTracker 
                   order={selectedOrder}
+                  businessProfileId={activeBusinessProfileId}
                   onPaymentAdded={() => {
                     loadAllData();
                     // Refresh selected order data
@@ -2100,7 +2194,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       {showPaymentModal && selectedOrder && (
         <PaymentModal
           order={selectedOrder}
-          businessProfileId={businessProfileId}
+          businessProfileId={activeBusinessProfileId}
           onClose={() => {
             setShowPaymentModal(false);
             setSelectedOrder(null);
@@ -2144,7 +2238,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 // =====================================================================
 // CREATE ORDER MODAL COMPONENT
 // =====================================================================
-const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) => {
+const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplier_price', onClose, onSuccess }) => {
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [orderItems, setOrderItems] = useState([]);
   const [newItem, setNewItem] = useState({
@@ -2176,8 +2270,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
     if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
 
     setIcanBalanceLoading(true);
-    getBusinessWalletUserId(businessProfileId)
-      .then((businessWalletUserId) => businessWalletUserId ? getBalance(businessWalletUserId) : null)
+    getBusinessWalletBalance(businessProfileId)
       .then((bal) => setIcanBalance(bal))
       .catch(() => setIcanBalance(null))
       .finally(() => setIcanBalanceLoading(false));
@@ -2237,6 +2330,13 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
       return;
     }
 
+    // Managers only create the business-wallet request. The Pichin business
+    // administrator enters the business-wallet PIN during approval.
+    if (paymentMethod === 'ican_wallet') {
+      await createOrder(null);
+      return;
+    }
+
     setWalletPin('');
     setPinError('');
     setShowPinPrompt(true);
@@ -2258,15 +2358,21 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
         return;
       }
 
-      const pinCheck = await verifyPin(user.id, walletPin);
-      if (!pinCheck.success) {
-        setPinError(pinCheck.error || 'PIN verification failed. Order was not sent.');
-        return;
+      // Cash orders use the manager's personal confirmation PIN. ICAN orders
+      // must be authorized by the dedicated PitchIn business-wallet PIN in
+      // pitchin_business_wallet_transfer.
+      if (paymentMethod !== 'ican_wallet') {
+        const pinCheck = await verifyPin(user.id, walletPin);
+        if (!pinCheck.success) {
+          setPinError(pinCheck.error || 'PIN verification failed. Order was not sent.');
+          return;
+        }
       }
 
+      const businessWalletPin = paymentMethod === 'ican_wallet' ? walletPin : null;
       setShowPinPrompt(false);
       setWalletPin('');
-      await createOrder();
+      await createOrder(businessWalletPin);
     } catch (err) {
       console.error('PIN verification failed:', err);
       setPinError('PIN verification failed. Order was not sent.');
@@ -2275,7 +2381,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
     }
   };
 
-  const createOrder = async () => {
+  const createOrder = async (businessWalletPin = null) => {
 
     setSubmitting(true);
 
@@ -2320,9 +2426,11 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
                 const payResult = await supplierOrdersService.payOrderWithICAN({
                   orderId:         response.order.id,
                   supplierUserId:  response.order.supplier_id,
+                  supplierBusinessProfileId: response.order.supplier_business_profile_id,
                   icanAmount:      icanNeeded,
                   ugxAmount:       parseFloat(cashPaidNow),
                   businessProfileId,
+                  businessWalletPin,
                   notes:           `Payment made at order creation. ${paymentNotes}`,
                 });
 
@@ -2330,8 +2438,10 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
                   console.error('⚠️ ICAN payment error:', payResult.error);
                   successMsg += `\n\n⚠️ Warning: Order created but ICAN payment failed: ${payResult.error}`;
                 } else {
-                  successMsg += `\n\n🪙 PAID WITH ICAN: ${formatICAN(icanNeeded)} ICAN (${formatUGX(cashPaidNow)})`;
-                  successMsg += `\n✅ Supplier's wallet credited instantly — no confirmation needed`;
+                  successMsg += `\n\n🪙 ICAN PAYMENT REQUESTED: ${formatICAN(icanNeeded)} ICAN (${formatUGX(cashPaidNow)})`;
+                  successMsg += payResult.wallet_approval_required
+                    ? `\n🔔 Authorized wallet administrator must approve with the business-wallet PIN.`
+                    : `\n✅ Supplier's business wallet credited.`;
                 }
               }
             } else {
@@ -2358,6 +2468,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
           }
         }
         
+        successMsg = successMsg.replace('no confirmation needed', 'awaiting supplier confirmation');
         alert(successMsg);
         onSuccess();
       } else {
@@ -2455,7 +2566,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
           {/* Supplier Selection */}
           <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
             <label className="block text-sm font-bold text-gray-700 mb-2">
-              🏢 Select Supplier *
+              🏢 Select supplier or wholesaler *
             </label>
             <select
               value={selectedSupplier}
@@ -2463,7 +2574,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-lg"
               required
             >
-              <option value="">-- Choose Supplier --</option>
+              <option value="">-- Choose supplier or wholesaler --</option>
               {suppliers.map(supplier => (
                 <option key={supplier.id} value={supplier.id}>
                   {supplier.business_name} ({supplier.supplier_code})
@@ -2477,6 +2588,9 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
             orderItems={orderItems}
             onItemsChange={setOrderItems}
             totals={totals}
+            pricingMode={pricingMode}
+            supplierId={selectedSupplier}
+            supplierBusinessProfileId={suppliers.find(supplier => supplier.id === selectedSupplier)?.supplier_business_profile_id || ''}
             onTotalsChange={setTotals}
           />
 
@@ -2619,7 +2733,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
                   {/* ICAN Wallet Balance — shown only when paying with ICAN */}
                   {paymentMethod === 'ican_wallet' && (
                     <div className="md:col-span-2 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-                      <div className="text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+                      <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
                       {icanBalanceLoading ? (
                         <div className="text-sm text-gray-500">Loading balance...</div>
                       ) : (
@@ -2718,6 +2832,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, onClose, onSuccess }) 
 const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [businessWalletPin, setBusinessWalletPin] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -2729,8 +2844,7 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
     if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
 
     setIcanBalanceLoading(true);
-    getBusinessWalletUserId(businessProfileId)
-      .then((businessWalletUserId) => businessWalletUserId ? getBalance(businessWalletUserId) : null)
+    getBusinessWalletBalance(businessProfileId)
       .then((bal) => setIcanBalance(bal))
       .catch(() => setIcanBalance(null))
       .finally(() => setIcanBalanceLoading(false));
@@ -2778,15 +2892,19 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
         const payResult = await supplierOrdersService.payOrderWithICAN({
           orderId:        order.id,
           supplierUserId: order.supplier_id,
+          supplierBusinessProfileId: order.supplier_business_profile_id,
           icanAmount:     ugxToICAN(amount),
           ugxAmount:      amount,
           businessProfileId,
+          businessWalletPin,
           notes:          paymentNotes || null,
         });
 
         if (!payResult.success) throw new Error(payResult.error);
 
-        alert(`✅ Paid ${formatICAN(ugxToICAN(amount))} ICAN from your wallet!\n\nAmount: ${formatUGX(amount)}\n\nThe supplier's wallet has been credited instantly — no confirmation needed.`);
+        alert(payResult.wallet_approval_required
+          ? `🔔 ICAN payment request submitted.\n\nAmount: ${formatUGX(amount)}\n\nAn authorized wallet administrator must approve it with the business-wallet PIN.`
+          : `✅ Paid ${formatICAN(ugxToICAN(amount))} ICAN from the store business account!\n\nAmount: ${formatUGX(amount)}\n\nThe supplier's business wallet has been credited.`);
       } else {
         // Get manager ID from localStorage
         const storedUser = localStorage.getItem('supermarket_user');
@@ -2907,7 +3025,7 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
           {/* IcanEra Wallet Balance — shown only when paying with ICAN */}
           {paymentMethod === 'ican_wallet' && (
             <div className="p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-              <div className="text-sm text-gray-600 mb-1">Your IcanEra Balance</div>
+              <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
               {icanBalanceLoading ? (
                 <div className="text-sm text-gray-500">Loading balance...</div>
               ) : (
@@ -2925,6 +3043,24 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {paymentMethod === 'ican_wallet' && (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                Business Wallet PIN *
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={businessWalletPin}
+                onChange={(e) => setBusinessWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Enter the store business-wallet PIN"
+                className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                required
+              />
             </div>
           )}
 

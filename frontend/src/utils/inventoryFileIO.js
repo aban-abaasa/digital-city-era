@@ -321,6 +321,8 @@ export const parseProductFile = async (file) => {
 const NAME_KEYS = ['name', 'product_name', 'product', 'item', 'item_name', 'description', 'title', 'product_description', 'item_description'];
 const PRICE_KEYS = ['selling_price', 'sell_price', 'retail_price', 'sale_price', 'unit_price', 'price', 'amount', 'rate', 'unit_cost'];
 const COST_KEYS = ['cost_price', 'cost', 'buying_price', 'purchase_price', 'wholesale_price'];
+const WHOLESALE_KEYS = ['wholesale_price', 'wholesale_buying_price', 'bulk_price', 'trade_price'];
+const WHOLESALE_PERCENT_KEYS = ['wholesale_discount_percent', 'wholesale_discount', 'bulk_discount_percent', 'wholesale_percent'];
 const QUANTITY_KEYS = ['initial_stock', 'stock', 'current_stock', 'quantity', 'qty', 'on_hand', 'onhand', 'available_stock', 'balance', 'count', 'inventory'];
 const firstRowValue = (row, keys) => {
   for (const key of keys) {
@@ -354,6 +356,8 @@ const normalizeImportRow = (row) => {
   const name = firstRowValue(normalized, NAME_KEYS);
   const price = normalizeNumber(firstRowValue(normalized, PRICE_KEYS));
   const cost = normalizeNumber(firstRowValue(normalized, COST_KEYS));
+  const wholesale = normalizeNumber(firstRowValue(normalized, WHOLESALE_KEYS));
+  const wholesalePercent = normalizeNumber(firstRowValue(normalized, WHOLESALE_PERCENT_KEYS));
   const quantity = normalizeNumber(firstRowValue(normalized, QUANTITY_KEYS));
 
   return {
@@ -363,6 +367,8 @@ const normalizeImportRow = (row) => {
     barcode: firstRowValue(normalized, ['barcode', 'ean', 'upc', 'gtin']) || '',
     category: firstRowValue(normalized, ['category', 'department', 'group', 'type']) || '',
     cost_price: cost,
+    wholesale_price: wholesale,
+    wholesale_discount_percent: wholesalePercent,
     selling_price: price,
     initial_stock: quantity
   };
@@ -430,6 +436,9 @@ export const bulkImportProductRows = async (rows) => {
         category_id,
         brand: row.brand,
         cost_price: row.cost_price || row.cost,
+        wholesale_price: row.wholesale_price || (row.selling_price && row.wholesale_discount_percent
+          ? Number(row.selling_price) * (1 - Number(row.wholesale_discount_percent) / 100)
+          : ''),
         selling_price: row.selling_price || row.price,
         tax_rate: row.tax_rate,
         initial_stock: row.initial_stock || row.stock || row.quantity,
@@ -459,7 +468,7 @@ export const downloadBlob = (blob, filename) => {
 };
 
 const TEMPLATE_ROWS = [
-  { name: 'Sugar - 1kg', sku: '', barcode: '', category: 'Groceries', brand: 'Kakira', cost_price: 3000, selling_price: 3500, initial_stock: 50, minimum_stock: 10, location: 'Main Storage' }
+  { name: 'Sugar - 1kg', sku: '', barcode: '', category: 'Groceries', brand: 'Kakira', cost_price: 3000, selling_price: 3500, wholesale_price: 3150, wholesale_discount_percent: 10, initial_stock: 50, minimum_stock: 10, location: 'Main Storage' }
 ];
 
 // PDF isn't offered as a template format — filling in PDF cells by hand

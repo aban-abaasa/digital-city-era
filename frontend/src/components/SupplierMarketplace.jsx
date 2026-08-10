@@ -7,7 +7,8 @@ const fmtUGX = n => n ? 'UGX ' + Number(n).toLocaleString() : '—';
 const CATEGORIES = [
   'Fresh Produce', 'Dairy', 'Meat & Poultry', 'Beverages', 'Bakery',
   'Grains & Cereals', 'Snacks', 'Household', 'Personal Care', 'Frozen Foods',
-  'Spices & Condiments', 'Electronics', 'Clothing', 'Other',
+  'Spices & Condiments', 'Electronics', 'Clothing', 'Hardware & Tools',
+  'Building Materials', 'Raw Materials', 'Professional Services', 'Transport & Logistics', 'Other',
 ];
 const UNITS = ['kg', 'piece', 'litre', 'box', 'bag', 'crate', 'dozen', 'pack'];
 
@@ -20,7 +21,7 @@ export function SupplierCatalogTab({ userId }) {
   const [editId, setEditId]   = useState(null);
   const [form, setForm]       = useState({
     name: '', category: '', description: '',
-    unit: 'kg', min_order_qty: 1, price_per_unit: '',
+    unit: 'kg', min_order_qty: 1, price_per_unit: '', image_url: '',
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -40,7 +41,7 @@ export function SupplierCatalogTab({ userId }) {
 
   const openNew = () => {
     setEditId(null);
-    setForm({ name: '', category: '', description: '', unit: 'kg', min_order_qty: 1, price_per_unit: '' });
+    setForm({ name: '', category: '', description: '', unit: 'kg', min_order_qty: 1, price_per_unit: '', image_url: '' });
     setShowForm(true);
   };
 
@@ -50,6 +51,7 @@ export function SupplierCatalogTab({ userId }) {
       name: item.name, category: item.category, description: item.description || '',
       unit: item.unit || 'kg', min_order_qty: item.min_order_qty || 1,
       price_per_unit: item.price_per_unit || '',
+      image_url: item.image_url || '',
     });
     setShowForm(true);
   };
@@ -67,6 +69,7 @@ export function SupplierCatalogTab({ userId }) {
         min_order_qty:    Number(form.min_order_qty) || 1,
         price_per_unit:   form.price_per_unit ? Number(form.price_per_unit) : null,
         is_available:     true,
+        image_url:        form.image_url.trim() || null,
       };
       let error;
       if (editId) {
@@ -122,6 +125,11 @@ export function SupplierCatalogTab({ userId }) {
               <label className="block text-xs font-medium text-gray-500 mb-1">Item name *</label>
               <input value={form.name} onChange={e => set('name', e.target.value)}
                 placeholder="e.g. Fresh Tomatoes"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Product image URL (optional)</label>
+              <input value={form.image_url} onChange={e => set('image_url', e.target.value)} placeholder="https://..."
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400" />
             </div>
             <div>
@@ -187,8 +195,9 @@ export function SupplierCatalogTab({ userId }) {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map(item => (
-            <div key={item.id}
+              <div key={item.id}
               className={`bg-white rounded-2xl border p-4 transition-all ${item.is_available ? 'border-gray-100 shadow-sm' : 'border-gray-100 opacity-50'}`}>
+              {item.image_url ? <img src={item.image_url} alt={item.name} className="mb-3 h-36 w-full rounded-xl object-cover" /> : <div className="mb-3 flex h-20 items-center justify-center rounded-xl bg-purple-50 text-3xl">📦</div>}
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
                   <p className="font-semibold text-gray-800 text-sm">{item.name}</p>

@@ -26,14 +26,24 @@ import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
-import { SupplierCatalogTab, SupplierApplicationsTab } from '../components/SupplierMarketplace';
+import { SupplierCatalogTab } from '../components/SupplierMarketplace';
+import SupplierNetwork from '../components/SupplierNetwork';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
-import { getSupplierOrderMatchIds } from '../services/supplierOrdersService';
+import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
+  const cachedRole = (() => {
+    try { return JSON.parse(localStorage.getItem('supermarket_user') || '{}').role?.toLowerCase(); } catch { return null; }
+  })();
+
+  useEffect(() => {
+    if (!branding.loading && cachedRole !== 'supplier' && branding.supermarketId && !branding.supportsSupplyOrders) {
+      navigate('/manager-portal', { replace: true });
+    }
+  }, [branding.loading, branding.supermarketId, branding.supportsSupplyOrders, cachedRole, navigate]);
   const [activeTab, setActiveTab] = useState('overview');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -853,14 +863,20 @@ const SupplierPortal = () => {
       // supplier_id may be stored as either the auth UUID or the internal users.id row
       const authId = user.id;
       const matchIds = await getSupplierOrderMatchIds(authId);
+      const businessProfileIds = await getSupplierBusinessProfileMatchIds(authId);
       console.log('Loading orders for supplier auth ID:', authId);
 
       // Get orders sent to this supplier
-      const { data: orders, error } = await supabase
+      let ordersQuery = supabase
         .from('purchase_orders')
         .select('*')
-        .in('supplier_id', matchIds)
         .order('ordered_at', { ascending: false });
+      const identityFilters = [`supplier_id.in.(${matchIds.join(',')})`];
+      if (businessProfileIds.length) {
+        identityFilters.push(`supplier_business_profile_id.in.(${businessProfileIds.join(',')})`);
+      }
+      ordersQuery = ordersQuery.or(identityFilters.join(','));
+      const { data: orders, error } = await ordersQuery;
 
       if (error) {
         console.error('Error loading pending orders:', error);
@@ -2741,7 +2757,7 @@ const SupplierPortal = () => {
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
-    { id: 'apply-stores', label: 'Apply to Stores', icon: FiSend },
+    { id: 'supplier-network', label: 'Global Supplier Network', icon: FiSend },
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign },
   ];
 
@@ -2752,6 +2768,13 @@ const SupplierPortal = () => {
         backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
+      {branding.supportsSupplyOrders && (
+        <div className="mx-auto max-w-7xl px-4 pt-4">
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+            <strong>{branding.name}</strong> is enabled as a supply business. Managers can receive incoming orders, confirm them, choose delivery, and dispatch shipments from this portal. Inventory and the business wallet remain scoped to this store.
+          </div>
+        </div>
+      )}
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -3124,12 +3147,9 @@ const SupplierPortal = () => {
             {activeTab === 'my-catalog' && (
               <SupplierCatalogTab userId={supplierProfile.auth_id || supplierProfile.id} />
             )}
-            {activeTab === 'apply-stores' && (
+            {activeTab === 'supplier-network' && (
               supplierProfile.id ? (
-                <SupplierApplicationsTab
-                  userId={supplierProfile.auth_id || supplierProfile.id}
-                  supplierProfile={supplierProfile}
-                />
+                <SupplierNetwork supplierProfile={supplierProfile} />
               ) : (
                 <div className="p-6 text-center text-gray-500">Loading supplier profile…</div>
               )

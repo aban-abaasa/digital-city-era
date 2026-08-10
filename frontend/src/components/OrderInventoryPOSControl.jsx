@@ -43,6 +43,8 @@ const OrderInventoryPOSControl = () => {
   const [sortField, setSortField] = useState('name');
   const [filterCategory, setFilterCategory] = useState('all');
   const [categories, setCategories] = useState([]);
+  const [businessType, setBusinessType] = useState('supermarket');
+  const offersWholesale = ['wholesale', 'factory', 'hardware'].includes(businessType);
   const [stats, setStats] = useState({});
   const [showBulkPricing, setShowBulkPricing] = useState(false);
   const [bulkPriceMultiplier, setBulkPriceMultiplier] = useState(1.1);
@@ -55,6 +57,8 @@ const OrderInventoryPOSControl = () => {
     sku: '',
     barcode: '',
     cost_price: 0,
+    wholesale_price: 0,
+    wholesale_discount_percent: 0,
     selling_price: 0,
     tax_rate: 18,
     category_id: null
@@ -182,7 +186,12 @@ const OrderInventoryPOSControl = () => {
         return;
       }
 
-      const { created, failed } = await bulkImportProductRows(rows);
+      const importRows = offersWholesale ? rows : rows.map(row => ({
+        ...row,
+        wholesale_price: '',
+        wholesale_discount_percent: ''
+      }));
+      const { created, failed } = await bulkImportProductRows(importRows);
       toast.success(`✅ Imported ${created} product${created === 1 ? '' : 's'}${failed ? `, ${failed} row${failed === 1 ? '' : 's'} failed` : ''}`);
       await loadData();
     } catch (error) {
@@ -237,6 +246,12 @@ const OrderInventoryPOSControl = () => {
       const generatedName = `Product - ${trimmedBarcode}`;
       const generatedSKU = `SKU-${trimmedBarcode.substring(0, 8)}`;
       const supermarketId = await inventoryService.getCurrentSupermarketId();
+      const { data: storeProfile } = await supabase
+        .from('supermarkets')
+        .select('business_type')
+        .eq('id', supermarketId)
+        .maybeSingle();
+      setBusinessType(storeProfile?.business_type || 'supermarket');
 
       if (!supermarketId) {
         setProducts([]);
@@ -395,7 +410,7 @@ const OrderInventoryPOSControl = () => {
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
       let productsQuery = supabase
         .from('products')
-        .select('id, name, sku, barcode, category_id, cost_price, selling_price, tax_rate, is_active, images')
+        .select('id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, is_active, images')
         .eq('is_active', true)
         .order('name');
 
@@ -448,6 +463,9 @@ const OrderInventoryPOSControl = () => {
           barcode: p.barcode,
           category_id: p.category_id,
           cost_price: p.cost_price,
+          wholesale_price: p.wholesale_price || 0,
+          accepted_supplier_price: p.accepted_supplier_price || 0,
+          purchasing_price_source: p.purchasing_price_source || 'admin',
           selling_price: p.selling_price,
           tax_rate: p.tax_rate,
           is_active: p.is_active,
@@ -567,6 +585,9 @@ const OrderInventoryPOSControl = () => {
       name: product.name,
       sku: product.sku,
       cost_price: product.cost_price,
+      wholesale_price: product.wholesale_price || 0,
+      accepted_supplier_price: product.accepted_supplier_price || 0,
+      purchasing_price_source: product.purchasing_price_source || 'admin',
       selling_price: product.selling_price,
       tax_rate: product.tax_rate || 18
     });
@@ -686,6 +707,7 @@ const OrderInventoryPOSControl = () => {
             name: newProduct.name.trim(),
             sku: newProduct.sku.trim() || null,
             cost_price: newProduct.cost_price,
+            wholesale_price: newProduct.wholesale_price,
             selling_price: newProduct.selling_price,
             tax_rate: newProduct.tax_rate,
             category_id: newProduct.category_id
@@ -709,6 +731,7 @@ const OrderInventoryPOSControl = () => {
             name: newProduct.name.trim(),
             sku: newProduct.sku.trim() || null,
             cost_price: newProduct.cost_price,
+            wholesale_price: newProduct.wholesale_price,
             selling_price: newProduct.selling_price,
             tax_rate: newProduct.tax_rate,
             category_id: newProduct.category_id,
@@ -773,6 +796,8 @@ const OrderInventoryPOSControl = () => {
         name: '',
         sku: '',
         cost_price: 0,
+        wholesale_price: 0,
+        wholesale_discount_percent: 0,
         selling_price: 0,
         tax_rate: 18,
         category_id: null,
@@ -933,7 +958,7 @@ const OrderInventoryPOSControl = () => {
       {!isAdmin && (
         <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 flex items-start gap-3">
           <FiAlertCircle className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" />
-          <div>
+                  <div>
             <h3 className="font-bold text-yellow-900">⚠️ Read-Only Mode</h3>
             <p className="text-sm text-yellow-800 mt-1">
               You are viewing in read-only mode. Only admins can edit pricing, manage stock, and bulk update prices.
@@ -945,7 +970,7 @@ const OrderInventoryPOSControl = () => {
       {isAdmin && (
         <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 flex items-start gap-3">
           <FiCheckCircle className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
-          <div>
+                  <div>
             <h3 className="font-bold text-green-900">✅ Admin Access Enabled</h3>
             <p className="text-sm text-green-800 mt-1">
               Full control granted. You can edit product pricing, manage stock levels, and apply bulk updates.
@@ -1274,8 +1299,23 @@ const OrderInventoryPOSControl = () => {
                       <input type="number" value={editValues.cost_price} onChange={(e) => setEditValues({ ...editValues, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-orange-300 rounded-lg focus:outline-none focus:border-orange-500 text-sm" />
                     </div>
                     <div>
-                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Selling Price</label>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Wholesale Price</label>
+                      <input type="number" value={editValues.wholesale_price} onChange={(e) => setEditValues({ ...editValues, wholesale_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">POS Selling Price</label>
                       <input type="number" value={editValues.selling_price} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Accepted Supplier Price</label>
+                      <input type="number" value={editValues.accepted_supplier_price} onChange={(e) => setEditValues({ ...editValues, accepted_supplier_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-cyan-300 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Order Price Source</label>
+                      <select value={editValues.purchasing_price_source} onChange={(e) => setEditValues({ ...editValues, purchasing_price_source: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-cyan-300 rounded-lg text-sm">
+                        <option value="admin">Admin wholesale price</option>
+                        <option value="supplier">Accepted supplier price</option>
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Tax Rate %</label>
@@ -1310,7 +1350,11 @@ const OrderInventoryPOSControl = () => {
                       <p className="text-sm md:text-base font-bold text-orange-600">{formatCurrency(product.cost_price)}</p>
                     </div>
                     <div className="bg-white rounded p-2">
-                      <p className="text-xs font-semibold text-gray-600">SELLING</p>
+                      <p className="text-xs font-semibold text-gray-600">WHOLESALE</p>
+                      <p className="text-sm md:text-base font-bold text-purple-600">{formatCurrency(product.wholesale_price)}</p>
+                    </div>
+                    <div className="bg-white rounded p-2">
+                      <p className="text-xs font-semibold text-gray-600">POS SELLING</p>
                       <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
                     </div>
                     <div className="bg-white rounded p-2">
@@ -1444,6 +1488,8 @@ const OrderInventoryPOSControl = () => {
                     sku: '',
                     barcode: '',
                     cost_price: 0,
+                    wholesale_price: 0,
+                    wholesale_discount_percent: 0,
                     selling_price: 0,
                     tax_rate: 18,
                     category_id: null
@@ -1567,20 +1613,47 @@ const OrderInventoryPOSControl = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Selling Price (USh) *
+                 <div>
+                   <label className="block text-sm font-semibold text-gray-700 mb-2">
+                     Selling Price (USh) *
                   </label>
                   <input
                     type="number"
                     value={newProduct.selling_price}
-                    onChange={(e) => setNewProduct({ ...newProduct, selling_price: Math.max(0, parseFloat(e.target.value) || 0) })}
+                     onChange={(e) => {
+                       const sellingPrice = Math.max(0, parseFloat(e.target.value) || 0);
+                       setNewProduct({
+                         ...newProduct,
+                         selling_price: sellingPrice,
+                         wholesale_price: newProduct.wholesale_discount_percent > 0
+                           ? Math.round(sellingPrice * (1 - newProduct.wholesale_discount_percent / 100))
+                           : newProduct.wholesale_price
+                       });
+                     }}
                     placeholder="0"
                     min="0"
                     step="100"
                     className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500"
                   />
-                </div>
+                 </div>
+
+                 <div>
+                   <label className="block text-sm font-semibold text-gray-700 mb-2">Wholesale Price (USh)</label>
+                   <input type="number" min="0" step="100" value={newProduct.wholesale_price}
+                     onChange={(e) => setNewProduct({ ...newProduct, wholesale_price: Math.max(0, parseFloat(e.target.value) || 0), wholesale_discount_percent: 0 })}
+                     placeholder="Optional bulk price" className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500" />
+                 </div>
+
+                 <div>
+                   <label className="block text-sm font-semibold text-gray-700 mb-2">Wholesale discount (%)</label>
+                   <input type="number" min="0" max="100" step="1" value={newProduct.wholesale_discount_percent}
+                     onChange={(e) => {
+                       const percent = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                       setNewProduct({ ...newProduct, wholesale_discount_percent: percent, wholesale_price: Math.round((Number(newProduct.selling_price) || 0) * (1 - percent / 100)) });
+                     }}
+                     placeholder="e.g. 10" className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500" />
+                   <p className="mt-1 text-[11px] text-gray-500">Calculates wholesale price from the POS selling price.</p>
+                 </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">

@@ -8,10 +8,10 @@
 import React, { useState, useEffect } from 'react';
 import { FiDollarSign, FiPlus, FiCheck, FiClock, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
-import supplierOrdersService from '../services/supplierOrdersService';
-import { getBalance, ugxToICAN, formatICAN } from '../services/icanWalletService';
+import supplierOrdersService, { getBusinessWalletBalance } from '../services/supplierOrdersService';
+import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 
-const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
+const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentTransactions, setPaymentTransactions] = useState([]);
   const [unconfirmedCount, setUnconfirmedCount] = useState(0);
@@ -31,11 +31,11 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
 
     setIcanBalanceLoading(true);
     supabase.auth.getUser()
-      .then(({ data }) => data?.user ? getBalance(data.user.id) : null)
+      .then(() => businessProfileId ? getBusinessWalletBalance(businessProfileId) : null)
       .then((bal) => setIcanBalance(bal))
       .catch(() => setIcanBalance(null))
       .finally(() => setIcanBalanceLoading(false));
-  }, [paymentData.method, icanBalance, icanBalanceLoading]);
+  }, [paymentData.method, icanBalance, icanBalanceLoading, businessProfileId]);
 
   // Fetch payment transactions for this order
   useEffect(() => {
@@ -139,18 +139,18 @@ const OrderPaymentTracker = ({ order, onPaymentAdded, showAddPayment = false, us
         const payResult = await supplierOrdersService.payOrderWithICAN({
           orderId,
           supplierUserId: order.supplier_id,
+          supplierBusinessProfileId: order.supplier_business_profile_id,
           icanAmount:     icanNeeded,
           ugxAmount:      amount,
+          businessProfileId,
           notes:          paymentData.notes || null,
         });
 
         if (!payResult.success) throw new Error(payResult.error);
 
-        alert(
-          `✅ Paid ${formatICAN(icanNeeded)} ICAN from your wallet!\n\n` +
-          `Amount: ${formatUGX(amount)}\n\n` +
-          `The supplier's wallet has been credited instantly — no confirmation needed.`
-        );
+        alert(payResult.wallet_approval_required
+          ? `🔔 ICAN payment request submitted.\n\nAmount: ${formatUGX(amount)}\n\nAn authorized wallet administrator must approve it with the business-wallet PIN.`
+          : `✅ Paid ${formatICAN(icanNeeded)} ICAN from the store business wallet!\n\nAmount: ${formatUGX(amount)}\n\nThe supplier's business wallet has been credited.`);
       } else {
         // Get the internal user ID from users table (not auth_id)
         const { data: { user } } = await supabase.auth.getUser();

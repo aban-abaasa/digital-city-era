@@ -182,7 +182,13 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       setCalculatedMarkup(0);
       setCalculatedProfit(0);
     }
-  }, [formData.cost_price, formData.selling_price]);
+  }, [formData.cost_price, formData.selling_price, formData.tax_rate]);
+
+  const sellingPrice = Number(formData.selling_price) || 0;
+  const taxRate = Number(formData.tax_rate) || 0;
+  const includedTax = taxRate > 0
+    ? sellingPrice - (sellingPrice / (1 + taxRate / 100))
+    : 0;
 
   // Generate SKU automatically
   const generateSKU = () => {
@@ -812,7 +818,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   {/* Selling Price */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Selling Price * <span className="text-xs text-gray-500">(Retail)</span>
+                      Selling Price * <span className="text-xs text-gray-500">(Retail, VAT-inclusive)</span>
                     </label>
                     <input
                       type="number"
@@ -827,6 +833,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       placeholder="0.00"
                     />
                     {errors.selling_price && <p className="text-red-500 text-xs mt-1">{errors.selling_price}</p>}
+                    <p className="text-xs text-green-700 mt-1">
+                      Includes {formData.tax_rate || 0}% VAT: UGX {includedTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </p>
                   </div>
 
                   {/* Tax Rate */}

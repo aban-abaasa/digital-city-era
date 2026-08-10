@@ -18,7 +18,10 @@ const OrderItemsSelector = ({
   orderItems, 
   onItemsChange, 
   totals,
-  onTotalsChange 
+  onTotalsChange,
+  pricingMode = 'admin_price',
+  supplierId = '',
+  supplierBusinessProfileId = ''
 }) => {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
@@ -30,14 +33,124 @@ const OrderItemsSelector = ({
   const [unitsPerBox, setUnitsPerBox] = useState(12);
   const [unitPrice, setUnitPrice] = useState(0);
   const [buyingPrice, setBuyingPrice] = useState(0);
+  const [supplierPrices, setSupplierPrices] = useState({});
+  const [supplierCatalogItems, setSupplierCatalogItems] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
   const searchInputRef = useRef(null);
   const dropdownRef = useRef(null);
+
+  // Always derive this from the rows being displayed. Some parent screens use
+  // a read-only totals object, so relying only on totals.totalUnits can leave
+  // the summary stuck at zero.
+  const calculatedTotalUnits = (orderItems || []).reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
 
   // Load products from Supabase
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    if (!supplierId) {
+      setSupplierPrices({});
+      setSupplierCatalogItems([]);
+      return;
+    }
+    const loadSupplierOfferings = async () => {
+      let catalogQuery = supabase.from('supplier_catalog_items')
+        .select('id, name, description, price_per_unit, unit, category, min_order_qty, image_url')
+        .eq('is_available', true);
+    const catalogOwnerFilters = [
+      supplierId ? `supplier_user_id.eq.${supplierId}` : null,
+      supplierBusinessProfileId ? `supplier_business_profile_id.eq.${supplierBusinessProfileId}` : null
+    ].filter(Boolean);
+      if (catalogOwnerFilters.length) catalogQuery = catalogQuery.or(catalogOwnerFilters.join(','));
+      const [{ data: catalog, error: catalogError }, { data: supplierStores }] = await Promise.all([
+        catalogQuery,
+        supabase.from('supermarkets').select('id').eq('owner_user_id', supplierId).eq('is_active', true)
+      ]);
+      if (catalogError) console.warn('Could not load supplier catalog prices:', catalogError.message);
+
+      // Wholesale and factory businesses also sell products entered by their
+      // POS/admin. Bring those products into the same ordering catalog.
+      let posOfferings = [];
+      const storeIds = (supplierStores || []).map(store => store.id);
+      if (storeIds.length) {
+        const { data: posProducts, error: posError } = await supabase.from('products')
+          .select('id, name, sku, cost_price, wholesale_price, selling_price, price, images, is_active')
+          .in('supermarket_id', storeIds)
+          .eq('is_active', true)
+          .order('name');
+        if (posError) console.warn('Could not load supplier POS products:', posError.message);
+        posOfferings = (posProducts || []).map(product => ({
+          id: `pos-${product.id}`,
+          source_product_id: product.id,
+          name: product.name,
+          description: `POS product${product.sku ? ` · SKU ${product.sku}` : ''}`,
+          price_per_unit: Number(product.wholesale_price) || Number(product.cost_price) || Number(product.selling_price) || Number(product.price) || 0,
+          admin_buying_price: Number(product.wholesale_price) || Number(product.cost_price) || 0,
+          admin_selling_price: Number(product.selling_price) || Number(product.price) || 0,
+          unit: 'unit', category: 'POS inventory', min_order_qty: 1,
+          image_url: Array.isArray(product.images) ? product.images[0] : product.images || null,
+          is_pos_product: true
+        }));
+      }
+
+      const offerings = [...(catalog || []), ...posOfferings];
+      setSupplierCatalogItems(offerings);
+      setSupplierPrices(Object.fromEntries(offerings.map(item => [item.name.trim().toLowerCase(), Number(item.price_per_unit) || 0])));
+    };
+    loadSupplierOfferings();
+  }, [supplierId, supplierBusinessProfileId]);
+
+  const priceFor = (product) => pricingMode === 'supplier_price'
+    ? (supplierPrices[product.name?.trim().toLowerCase()] || 0)
+    : (Number(product.wholesale_price) || Number(product.cost_price) || 0);
+
+  const addSupplierCatalogItem = (catalogItem) => {
+    const unitPrice = pricingMode === 'admin_price'
+      ? (Number(catalogItem.admin_buying_price) || Number(catalogItem.price_per_unit) || 0)
+      : (Number(catalogItem.price_per_unit) || 0);
+    if (!unitPrice) {
+      toast.warning('This supplier has not published a price for this item.');
+      return;
+    }
+    const existingIndex = orderItems.findIndex(item => item.supplier_catalog_item_id === catalogItem.id);
+    if (existingIndex >= 0) {
+      const updated = orderItems.map((item, index) => index === existingIndex
+        ? { ...item, quantity: item.quantity + (Number(catalogItem.min_order_qty) || 1), total: (item.quantity + (Number(catalogItem.min_order_qty) || 1)) * item.unit_price }
+        : item);
+      onItemsChange(updated);
+      return;
+    }
+    const quantity = Number(catalogItem.min_order_qty) || 1;
+    const item = {
+      id: `supplier-${catalogItem.id}`,
+      supplier_catalog_item_id: catalogItem.id,
+      product_id: null,
+      product_name: catalogItem.name,
+      quantity,
+      display_quantity: quantity,
+      unit_type: catalogItem.unit || 'units',
+      unit_price: unitPrice,
+      buying_price: unitPrice,
+      total: quantity * unitPrice,
+      margin: 0,
+      margin_percent: '0.0'
+    };
+    const updated = [...orderItems, item];
+    onItemsChange(updated);
+    onTotalsChange({
+      subtotal: updated.reduce((sum, row) => sum + Number(row.total || 0), 0),
+      tax: updated.reduce((sum, row) => sum + Number(row.total || 0), 0) * 0.18,
+      total: updated.reduce((sum, row) => sum + Number(row.total || 0), 0) * 1.18,
+      itemCount: updated.length,
+      totalUnits: updated.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+    });
+    toast.success(`${catalogItem.name} added to the order`);
+  };
 
   const loadProducts = async () => {
     try {
@@ -91,6 +204,7 @@ const OrderItemsSelector = ({
           barcode,
           selling_price,
           cost_price,
+          wholesale_price,
           category_id,
           supermarket_id,
           inventory(current_stock,supermarket_id)
@@ -158,8 +272,8 @@ const OrderItemsSelector = ({
     }
     setSelectedProduct(product);
     setSearchQuery(product.name);
-    setUnitPrice(product.selling_price || 0);
-    setBuyingPrice(product.cost_price || 0);
+    setUnitPrice(priceFor(product));
+    setBuyingPrice(pricingMode === 'supplier_price' ? priceFor(product) : (product.cost_price || 0));
     setShowDropdown(false);
   };
 
@@ -247,9 +361,11 @@ const OrderItemsSelector = ({
   // immediately with the default quantity instead of forcing the manager to
   // select the same product again and press Add Item.
   const addCatalogProduct = (product) => {
-    const unitPriceForProduct = Number(product.selling_price) || 0;
+    const unitPriceForProduct = priceFor(product);
     if (unitPriceForProduct <= 0) {
-      toast.warning('This product has no selling price yet. Set its price before ordering.');
+      toast.warning(pricingMode === 'supplier_price'
+        ? 'This supplier has not published a price for this product yet.'
+        : 'This product has no admin buying price yet. Set its cost price first.');
       return;
     }
 
@@ -263,7 +379,9 @@ const OrderItemsSelector = ({
         return { ...item, quantity: itemQuantity, display_quantity: itemQuantity, total: itemQuantity * unitPriceForProduct };
       });
     } else {
-      const buyingPriceForProduct = Number(product.cost_price) || 0;
+      const buyingPriceForProduct = pricingMode === 'supplier_price'
+        ? unitPriceForProduct
+        : (Number(product.cost_price) || 0);
       updatedItems = [...orderItems, {
         id: Date.now(),
         product_id: product.id,
@@ -295,8 +413,8 @@ const OrderItemsSelector = ({
     });
     setSelectedProduct(product);
     setSearchQuery(product.name);
-    setUnitPrice(unitPriceForProduct);
-    setBuyingPrice(Number(product.cost_price) || 0);
+    setUnitPrice(priceFor(product));
+    setBuyingPrice(pricingMode === 'supplier_price' ? priceFor(product) : (Number(product.cost_price) || 0));
     setShowDropdown(false);
     toast.success(`${product.name} added to the order`);
   };
@@ -468,6 +586,32 @@ const OrderItemsSelector = ({
           </select>
         </div>
 
+        {supplierId && (
+          <div className="mb-4 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold text-emerald-900">Supplier catalog ({supplierCatalogItems.length})</p>
+                <p className="text-xs text-emerald-700">Select an item to add its published supplier price and minimum quantity.</p>
+              </div>
+            </div>
+            {supplierCatalogItems.length === 0 ? <p className="text-sm text-emerald-800">No available catalog items found for this supplier.</p> : (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {supplierCatalogItems.map(item => (
+                  <button type="button" key={item.id} onClick={() => addSupplierCatalogItem(item)} className="overflow-hidden rounded-xl border border-emerald-100 bg-white text-left shadow-sm transition hover:border-emerald-500 hover:shadow-md">
+                    {item.image_url ? <img src={item.image_url} alt={item.name} className="h-24 w-full object-cover" /> : <div className="flex h-24 items-center justify-center bg-emerald-50 text-3xl">📦</div>}
+                    <div className="p-2">
+                      <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
+                      <p className="text-xs text-emerald-700">{formatCurrency(item.price_per_unit)} / {item.unit || 'unit'}</p>
+                      {item.admin_selling_price > 0 && <p className="text-[11px] text-blue-700">Sell: {formatCurrency(item.admin_selling_price)}</p>}
+                      <p className="text-[11px] text-gray-500">Min {item.min_order_qty || 1}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Product Search */}
           <div className="lg:col-span-5 relative" ref={dropdownRef}>
@@ -585,7 +729,7 @@ const OrderItemsSelector = ({
           {/* Unit Price */}
           <div className="lg:col-span-3">
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              💰 Selling Price (UGX)
+              💰 {pricingMode === 'supplier_price' ? 'Supplier Price' : 'Admin Buying Price'} (UGX)
             </label>
             <input
               type="number"
@@ -739,7 +883,7 @@ const OrderItemsSelector = ({
                 </div>
                 <div className="bg-white rounded-lg p-3 border border-gray-200">
                   <p className="text-xs text-gray-600 font-semibold">Total Units</p>
-                  <p className="text-2xl font-bold text-purple-600">{totals.totalUnits || 0}</p>
+                  <p className="text-2xl font-bold text-purple-600">{calculatedTotalUnits}</p>
                 </div>
                 <div className="bg-white rounded-lg p-3 border border-gray-200">
                   <p className="text-xs text-gray-600 font-semibold">Subtotal</p>

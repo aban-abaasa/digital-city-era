@@ -3,7 +3,7 @@
  * Free, no-API-key geocoding (OpenStreetMap Nominatim) so a customer can
  * just type a pickup address instead of being asked for raw lat/lng.
  * Fine for Phase 1's low volume; a production-scale rollout should move to
- * a paid provider (Google/Mapbox) with an API key and request caching.
+ * a hosted OSM-compatible geocoder with request caching.
  * Talks to Nominatim's public API directly (not mybodaguy's backend), so no
  * cross-origin/base-URL adaptation is needed here, unlike journeyService.ts.
  */
@@ -11,28 +11,6 @@ export interface GeocodeResult {
   lat: number;
   lng: number;
   displayName: string;
-}
-
-// Google is used when a browser-restricted key is configured. Keeping this
-// optional means development and deployments without a Google key still have
-// a worldwide OpenStreetMap fallback.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-
-async function geocodeWithGoogle(query: string): Promise<GeocodeResult | null> {
-  if (!GOOGLE_MAPS_API_KEY) return null;
-  try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const result = data?.results?.[0];
-    const lat = Number(result?.geometry?.location?.lat);
-    const lng = Number(result?.geometry?.location?.lng);
-    if (data?.status !== 'OK' || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng, displayName: result.formatted_address || query };
-  } catch {
-    return null;
-  }
 }
 
 // Nominatim's usage policy caps free public use at 1 request/second per
@@ -45,6 +23,13 @@ async function geocodeWithGoogle(query: string): Promise<GeocodeResult | null> {
 const NOMINATIM_MIN_INTERVAL_MS = 1100;
 let lastNominatimRequestAt = 0;
 let nominatimQueue: Promise<void> = Promise.resolve();
+
+function countryCodeHint(countryHint?: string): string | undefined {
+  if (!countryHint) return undefined;
+  const normalized = countryHint.trim().toLowerCase();
+  if (normalized === 'uganda') return 'ug';
+  return /^[a-z]{2}$/.test(normalized) ? normalized : undefined;
+}
 
 function throttledFetch(url: string, init?: RequestInit): Promise<Response> {
   const run = async () => {
@@ -74,28 +59,72 @@ export async function geocodeAddress(query: string, countryHint?: string): Promi
   const trimmed = query.trim();
   if (!trimmed) return null;
 
-  const attempts = countryHint && !trimmed.toLowerCase().includes(countryHint.toLowerCase())
+  // Put the country-qualified query first. This is especially important for
+  // short local names such as "Bugazi", "Kubiri" or "Ntinda", which can
+  // otherwise resolve to a similarly named place in another country.
+  const hasCountry = countryHint && trimmed.toLowerCase().includes(countryHint.toLowerCase());
+  const attempts = countryHint && !hasCountry
     ? [`${trimmed}, ${countryHint}`, trimmed]
     : [trimmed];
 
   for (const attempt of attempts) {
-    const googleResult = await geocodeWithGoogle(attempt);
-    if (googleResult) return googleResult;
-  }
+    const params = new URLSearchParams({
+      format: 'json',
+      q: attempt,
+      limit: '8',
+      addressdetails: '1',
+      'accept-language': 'en',
+    });
+    const countryCode = countryCodeHint(countryHint);
+    if (countryCode) params.set('countrycodes', countryCode);
 
-  for (const attempt of attempts) {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(attempt)}`;
+    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
     const res = await throttledFetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) continue;
 
     const results = await res.json();
-    if (results && results.length > 0) {
-      return {
-        lat: Number(results[0].lat),
-        lng: Number(results[0].lon),
-        displayName: results[0].display_name,
-      };
+    if (results?.length) {
+      // Nominatim can return a broad district before the exact minor place.
+      // Prefer results whose name/address contains more of what the customer
+      // typed, while still accepting every OSM feature type (not just cities).
+      const tokens = trimmed.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      const ranked = results
+        .filter((result: any) => Number.isFinite(Number(result.lat)) && Number.isFinite(Number(result.lon)))
+        .map((result: any) => {
+          const haystack = `${result.display_name || ''} ${result.name || ''}`.toLowerCase();
+          const matches = tokens.filter((token) => haystack.includes(token)).length;
+          return { result, score: matches * 10 + Number(result.importance || 0) };
+        })
+        .sort((a: any, b: any) => b.score - a.score)[0]?.result;
+      if (ranked) {
+        return {
+          lat: Number(ranked.lat),
+          lng: Number(ranked.lon),
+          displayName: ranked.display_name || attempt,
+        };
+      }
     }
+  }
+
+  // Photon indexes many small OSM places that Nominatim may omit or rank
+  // poorly. It is a fallback only, so Nominatim remains the primary source
+  // and its public 1-request/second limit is respected.
+  try {
+    const photonQuery = attempts[0];
+    const photon = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(photonQuery)}&limit=8&lang=en`);
+    if (photon.ok) {
+      const features = (await photon.json())?.features || [];
+      const feature = features.find((item: any) => Number.isFinite(Number(item.geometry?.coordinates?.[1])));
+      if (feature) {
+        const [lng, lat] = feature.geometry.coordinates;
+        const p = feature.properties || {};
+        const displayName = [p.name, p.street, p.city || p.town || p.village, p.state, p.country]
+          .filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ');
+        return { lat: Number(lat), lng: Number(lng), displayName: displayName || trimmed };
+      }
+    }
+  } catch {
+    // Map pinning still works when the secondary geocoder is unavailable.
   }
   return null;
 }
@@ -106,7 +135,7 @@ export async function geocodeAddress(query: string, countryHint?: string): Promi
  * sees real text in the pickup/dropoff field instead of raw coordinates.
  */
 export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=en`;
   try {
     const res = await throttledFetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) return null;
@@ -192,31 +221,70 @@ export async function searchCities(query: string, countryIso2?: string): Promise
   return runCitySearch(trimmed, countryIso2, false);
 }
 
-/** Search hotels, lodges and street addresses within the selected country. */
+/** Search live mapped places, buildings, roads and addresses in a country. */
 export async function searchAddresses(query: string, countryIso2?: string, city?: string): Promise<AddressSuggestion[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
   const params = new URLSearchParams({
     format: 'json',
-    limit: '8',
+    limit: '15',
     q: [trimmed, city].filter(Boolean).join(', '),
     addressdetails: '1',
+    namedetails: '1',
     'accept-language': 'en',
   });
   if (countryIso2) params.set('countrycodes', countryIso2.toLowerCase());
 
-  const res = await throttledFetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) return [];
-  const results = await res.json();
-  return (results || []).map((r: any) => ({
-    name: r.name || r.address?.hotel || r.address?.amenity || r.display_name.split(',')[0],
-    displayName: r.display_name,
-    lat: Number(r.lat),
-    lng: Number(r.lon),
-  }));
+  let results: any[] = [];
+  try {
+    const res = await throttledFetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) results = await res.json();
+  } catch {
+    // Use the secondary live index below if Nominatim is unavailable.
+  }
+
+  // Photon is also based on live OpenStreetMap data and is useful for
+  // autocomplete because it responds faster than the public Nominatim queue.
+  if (!results.length) {
+    try {
+      const photonQuery = [trimmed, city, countryIso2?.toUpperCase() === 'UG' ? 'Uganda' : ''].filter(Boolean).join(', ');
+      const photonRes = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(photonQuery)}&limit=15&lang=en`);
+      if (photonRes.ok) {
+        const features = (await photonRes.json())?.features || [];
+        results = features
+          .filter((feature: any) => Number.isFinite(Number(feature.geometry?.coordinates?.[1])))
+          .filter((feature: any) => !countryIso2 || !feature.properties?.countrycode || feature.properties.countrycode.toUpperCase() === countryIso2.toUpperCase())
+          .map((feature: any) => {
+            const [lng, lat] = feature.geometry.coordinates;
+            const p = feature.properties || {};
+            const displayName = [p.name, p.street, p.city || p.town || p.village, p.state, p.country]
+              .filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ');
+            return { name: p.name || p.street || displayName.split(',')[0], display_name: displayName, lat, lon: lng };
+          });
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  const seen = new Set<string>();
+  return results
+    .filter((r: any) => Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon)))
+    .map((r: any) => ({
+      name: r.name || r.namedetails?.name || r.address?.hotel || r.address?.amenity || r.address?.building || r.display_name.split(',')[0],
+      displayName: r.display_name,
+      lat: Number(r.lat),
+      lng: Number(r.lon),
+    }))
+    .filter((place: AddressSuggestion) => {
+      const key = `${place.name.toLowerCase()}|${place.lat.toFixed(5)}|${place.lng.toFixed(5)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 export async function reverseGeocodeCountry(lat: number, lng: number): Promise<CountryLookup | null> {

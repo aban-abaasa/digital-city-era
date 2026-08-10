@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiCheckCircle, FiClock, FiDollarSign, FiCalendar, FiFileText, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
-import { confirmPayment, getSupplierOrderMatchIds } from '../services/supplierOrdersService';
+import { confirmPayment, getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
 
 const SupplierPaymentConfirmations = () => {
   const [payments, setPayments] = useState([]);
@@ -27,10 +27,16 @@ const SupplierPaymentConfirmations = () => {
       // Step 1: find all purchase_orders for this supplier — supplier_id may be
       // stored as either the auth UUID or the internal users.id row
       const matchIds = await getSupplierOrderMatchIds(user.id);
-      const { data: orders, error: ordErr } = await supabase
+      const businessProfileIds = await getSupplierBusinessProfileMatchIds(user.id);
+      let ordersQuery = supabase
         .from('purchase_orders')
         .select('id, po_number, total_amount, status, ordered_at')
-        .in('supplier_id', matchIds);
+      const identityFilters = [`supplier_id.in.(${matchIds.join(',')})`];
+      if (businessProfileIds.length) {
+        identityFilters.push(`supplier_business_profile_id.in.(${businessProfileIds.join(',')})`);
+      }
+      ordersQuery = ordersQuery.or(identityFilters.join(','));
+      const { data: orders, error: ordErr } = await ordersQuery;
 
       if (ordErr) throw ordErr;
       if (!orders?.length) { setPayments([]); setLoading(false); return; }

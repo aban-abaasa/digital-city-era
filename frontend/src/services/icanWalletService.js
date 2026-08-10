@@ -42,6 +42,61 @@ export async function getBalance(userId) {
   };
 }
 
+// PitchIn business profiles use a dedicated wallet row. Do not resolve this
+// through ican_user_wallets: business_profiles.user_id is only the owner's
+// personal account identity.
+export async function getOrCreateBusinessWallet(businessProfileId) {
+  const { data, error } = await supabase.rpc('get_or_create_pitchin_business_wallet', {
+    p_business_profile_id: businessProfileId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function getBusinessWalletBalance(businessProfileId) {
+  const { data, error } = await supabase
+    .from('ican_business_wallets')
+    .select('ican_balance, wallet_address, total_earned, total_spent')
+    .eq('business_profile_id', businessProfileId)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    ican: data?.ican_balance ?? 0,
+    ugx: (data?.ican_balance ?? 0) * ICAN_TO_UGX,
+    address: data?.wallet_address ?? null,
+    totalEarned: data?.total_earned ?? 0,
+    totalSpent: data?.total_spent ?? 0,
+  };
+}
+
+export async function transferFromBusinessWallet({ businessProfileId, recipientUserId, recipientBusinessProfileId = null, amount, note = '', referenceId = null, pin }) {
+  const rpcName = recipientBusinessProfileId
+    ? 'pitchin_business_wallet_transfer_to_business'
+    : 'pitchin_business_wallet_transfer';
+  const rpcArgs = recipientBusinessProfileId
+    ? {
+        p_business_profile_id: businessProfileId,
+        p_recipient_business_profile_id: recipientBusinessProfileId,
+        p_amount_ican: amount,
+        p_note: note,
+        p_reference_id: referenceId,
+        p_pin: pin,
+      }
+    : {
+        p_business_profile_id: businessProfileId,
+        p_recipient_user_id: recipientUserId,
+        p_amount_ican: amount,
+        p_note: note,
+        p_reference_id: referenceId,
+        p_pin: pin,
+      };
+  const { data, error } = await supabase.rpc(rpcName, rpcArgs);
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Business-wallet transfer failed');
+  return data;
+}
+
 // ─── Country-aware live pricing ─────────────────────────────────────────────
 
 /**
@@ -257,6 +312,7 @@ export default {
   getOrCreateWallet,
   getWallet,
   getBalance,
+  getBusinessWalletBalance,
   getUserWalletDisplay,
   getTransactions,
   sendICAN,

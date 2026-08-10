@@ -47,19 +47,34 @@ export const resolvePickupAndDropoff = async (purchaseOrder) => {
     supplier = supplierRow;
   }
 
-  if (!supermarket?.latitude || !supermarket?.longitude || !supplier?.latitude || !supplier?.longitude) {
+  const pickup = {
+    latitude: purchaseOrder.pickup_latitude ?? supplier?.latitude,
+    longitude: purchaseOrder.pickup_longitude ?? supplier?.longitude,
+    address: purchaseOrder.pickup_address ?? supplier?.address,
+    country: purchaseOrder.pickup_country ?? supplier?.country,
+    name: supplier?.company_name || 'Supplier'
+  };
+  const dropoff = {
+    latitude: purchaseOrder.dropoff_latitude ?? supermarket?.latitude,
+    longitude: purchaseOrder.dropoff_longitude ?? supermarket?.longitude,
+    address: purchaseOrder.delivery_address ?? supermarket?.address,
+    country: purchaseOrder.dropoff_country ?? supermarket?.country,
+    name: supermarket?.name || 'Store'
+  };
+
+  if (!dropoff.latitude || !dropoff.longitude || !pickup.latitude || !pickup.longitude) {
     return null;
   }
 
   return {
-    pickupLat: supplier.latitude,
-    pickupLng: supplier.longitude,
-    pickupLocation: supplier.address || supplier.company_name || 'Supplier',
-    pickupCountry: supplier.country || 'Uganda',
-    dropoffLat: supermarket.latitude,
-    dropoffLng: supermarket.longitude,
-    dropoffLocation: supermarket.address || supermarket.name || 'Store',
-    dropoffCountry: supermarket.country || 'Uganda'
+    pickupLat: pickup.latitude,
+    pickupLng: pickup.longitude,
+    pickupLocation: pickup.address || pickup.name,
+    pickupCountry: pickup.country || 'Uganda',
+    dropoffLat: dropoff.latitude,
+    dropoffLng: dropoff.longitude,
+    dropoffLocation: dropoff.address || dropoff.name,
+    dropoffCountry: dropoff.country || 'Uganda'
   };
 };
 
@@ -94,7 +109,7 @@ export const dispatchDeliveryForPurchaseOrder = async (purchaseOrderId) => {
   try {
     const { data: purchaseOrder, error: poError } = await supabase
       .from('purchase_orders')
-      .select('id, supermarket_id, supplier_id, preferred_vehicle_type')
+      .select('id, supermarket_id, supplier_id, preferred_vehicle_type, pickup_address, pickup_latitude, pickup_longitude, pickup_country, delivery_address, dropoff_latitude, dropoff_longitude, dropoff_country')
       .eq('id', purchaseOrderId)
       .single();
     if (poError || !purchaseOrder) {

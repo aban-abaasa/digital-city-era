@@ -2,14 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import * as React from 'react';
 import { MapPin, Search, Crown, Home, DollarSign, Star, Navigation, Phone, X, Clock, CheckCircle, XCircle, ArrowLeft, Zap, Fuel, Umbrella, Bike, Package, Tag, Car, Truck, Plane } from 'lucide-react';
 import { toast } from 'sonner';
-import { searchLocations, Location } from '../data/mockLocations';
+import { Location } from '../data/locationTypes';
 import { supabase } from '../services/supabaseClient';
 import { trackRideCall, trackUIInteraction } from '../../services/featureAnalyticsService';
 import RideCommsBar from './RideCommsBar';
 import ProductPicker, { CartLine } from './ProductPicker';
 import LocationPickerMap from './LocationPickerMap';
 import JourneyBookingFlow from './JourneyBookingFlow';
-import { reverseGeocodeCountry, type CountryLookup } from '../services/geocodeService';
+import { geocodeAddress, reverseGeocodeCountry, searchAddresses, type CountryLookup } from '../services/geocodeService';
 
 type RideStatus = 'searching' | 'waiting_acceptance' | 'accepted' | 'declined' | 'journey_started' | 'completed';
 type ServiceType = 'ride' | 'delivery';
@@ -393,7 +393,9 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
     const personal = customerAreas.filter(
       a => a.name.toLowerCase().includes(q) || a.fullAddress.toLowerCase().includes(q)
     );
-    return [...personal, ...searchLocations(query)];
+    // Keep the dropdown real: static demo locations must never be presented
+    // as selectable customer destinations.
+    return personal;
   };
 
   const handlePickupChange = (value: string) => {
@@ -411,6 +413,52 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
     setDropoffSuggestions(suggestions);
     setShowDropoffSuggestions(suggestions.length > 0);
   };
+
+  // Live OpenStreetMap place search fills the same dropdown as the map. This
+  // keeps the customer flow on the same Leaflet + OSM provider shown below.
+  useEffect(() => {
+    let active = true;
+    const query = pickup.trim();
+    if (pickupIsAutoFromSupermarket || query.length < 3) {
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      const realResults = await searchAddresses(query, 'UG');
+      if (active) {
+        setPickupSuggestions(realResults.map((result) => ({
+          id: `geocode_pickup_${result.lat}_${result.lng}`,
+          name: result.name,
+          area: result.name,
+          fullAddress: result.displayName,
+          coordinates: { lat: result.lat, lng: result.lng },
+        })));
+        setShowPickupSuggestions(realResults.length > 0);
+      }
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [pickup, pickupIsAutoFromSupermarket]);
+
+  useEffect(() => {
+    let active = true;
+    const query = dropoff.trim();
+    if (query.length < 3) {
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      const realResults = await searchAddresses(query, 'UG');
+      if (active) {
+        setDropoffSuggestions(realResults.map((result) => ({
+          id: `geocode_dropoff_${result.lat}_${result.lng}`,
+          name: result.name,
+          area: result.name,
+          fullAddress: result.displayName,
+          coordinates: { lat: result.lat, lng: result.lng },
+        })));
+        setShowDropoffSuggestions(realResults.length > 0);
+      }
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [dropoff]);
 
   const selectPickupLocation = (location: Location) => {
     setPickup(location.fullAddress);
@@ -1049,6 +1097,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
               onDropoffChange={handleMapDropoffChange}
               onRouteInfo={(distanceKm, durationMin) => setRouteInfo({ distanceKm, durationMin })}
               pickupLocked={pickupIsAutoFromSupermarket}
+              searchCountry="Uganda"
             />
           )}
 

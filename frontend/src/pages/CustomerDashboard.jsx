@@ -764,7 +764,7 @@ const CustomerDashboard = () => {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-sm">Become a Supplier</h3>
                     <p className="text-fuchsia-100 text-xs mt-0.5">
-                      Apply to available supermarkets from the supplier onboarding page.
+                       Create a supplier account, or let your store supply other businesses through the live supplier network.
                     </p>
                   </div>
                   <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
@@ -922,7 +922,7 @@ const CustomerDashboard = () => {
               </div>
               <h3 className="text-xl font-bold mb-2">Become a Supplier</h3>
               <p className="text-fuchsia-100 text-sm mb-4">
-                Apply to available supermarkets from the supplier onboarding page.
+                 Create a supplier account, or let your store supply other businesses through the live supplier network.
               </p>
               <span className="inline-flex items-center text-sm font-semibold">
                 Open Supplier Flow

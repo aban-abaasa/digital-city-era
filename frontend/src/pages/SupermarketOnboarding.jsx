@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
@@ -10,6 +10,7 @@ export default function SupermarketOnboarding() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [existingProfiles, setExistingProfiles] = useState([]);
 
   const [form, setForm] = useState({
     ownerName: '', ownerEmail: '', ownerPhone: '',
@@ -17,9 +18,24 @@ export default function SupermarketOnboarding() {
     storeName: '', description: '',
     storePhone: '', storeEmail: '',
     address: '', city: '', country: 'Uganda',
+    accountMode: 'new', existingBusinessProfileId: '',
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const loadProfiles = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from('business_profiles')
+        .select('id, business_name, legal_structure')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+      setExistingProfiles(data || []);
+    };
+    loadProfiles();
+  }, []);
 
   const next = () => setStep(s => Math.min(s + 1, steps.length - 1));
   const back = () => setStep(s => Math.max(s - 1, 0));
@@ -49,7 +65,24 @@ export default function SupermarketOnboarding() {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Onboarding failed');
 
-      setResult(data);
+      const { data: accountData, error: accountError } = await supabase.rpc('create_store_business_account', {
+        p_supermarket_id: data.supermarket_id,
+        p_business_name: form.storeName.trim(),
+        p_business_type: form.businessType,
+        p_existing_business_profile_id: form.accountMode === 'merge' ? form.existingBusinessProfileId : null,
+        p_merge_existing: form.accountMode === 'merge',
+      });
+      if (accountError) throw accountError;
+      if (!accountData?.success) throw new Error(accountData?.error || 'Business account setup failed');
+
+      if (['wholesale', 'hardware', 'factory'].includes(form.businessType)) {
+        await supabase.rpc('publish_business_as_supplier', {
+          p_business_profile_id: accountData.business_profile_id,
+          p_supplier_type: form.businessType
+        });
+      }
+
+      setResult({ ...data, ...accountData, pichin_business_profile_id: accountData.business_profile_id });
       toast.success('Your supermarket is live! 🎉');
     } catch (err) {
       toast.error(err.message || 'Failed to register supermarket');
@@ -162,6 +195,9 @@ export default function SupermarketOnboarding() {
               <option value="hotel">Hotel</option>
               <option value="boutique">Boutique</option>
               <option value="restaurant_cafe">Restaurant &amp; Café</option>
+              <option value="wholesale">Wholesale</option>
+              <option value="hardware">Hardware</option>
+              <option value="factory">Factory / Manufacturing</option>
             </select>
             <input className="input-field" placeholder="Supermarket name *" value={form.storeName}
               onChange={e => set('storeName', e.target.value)} />
@@ -171,6 +207,25 @@ export default function SupermarketOnboarding() {
               onChange={e => set('storePhone', e.target.value)} />
             <input className="input-field" type="email" placeholder="Store email" value={form.storeEmail}
               onChange={e => set('storeEmail', e.target.value)} />
+            {existingProfiles.length > 0 && (
+              <div className="rounded-xl border border-cyan-100 bg-cyan-50 p-4 space-y-3">
+                <p className="text-sm font-semibold text-cyan-900">Pichin business account</p>
+                <label className="flex gap-2 text-sm text-slate-700">
+                  <input type="radio" checked={form.accountMode === 'new'} onChange={() => set('accountMode', 'new')} />
+                  Create a separate sole-proprietorship account and wallet for this store
+                </label>
+                <label className="flex gap-2 text-sm text-slate-700">
+                  <input type="radio" checked={form.accountMode === 'merge'} onChange={() => set('accountMode', 'merge')} />
+                  Merge this store into an existing business account
+                </label>
+                {form.accountMode === 'merge' && (
+                  <select className="input-field" value={form.existingBusinessProfileId} onChange={e => set('existingBusinessProfileId', e.target.value)}>
+                    <option value="">Choose existing business account</option>
+                    {existingProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.business_name}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
         )}
 

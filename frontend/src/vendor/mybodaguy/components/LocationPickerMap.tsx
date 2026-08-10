@@ -4,9 +4,9 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Locate, Navigation, Search, Loader2 } from 'lucide-react';
-import type { Location } from '../data/mockLocations';
-import { geocodeAddress, reverseGeocode } from '../services/geocodeService';
+import { Locate, Navigation, Search, Loader2, MapPin } from 'lucide-react';
+import type { Location } from '../data/locationTypes';
+import { geocodeAddress, reverseGeocode, searchAddresses, type AddressSuggestion } from '../services/geocodeService';
 
 // Kampala city center — used only as a fallback when GPS is denied/unavailable.
 const DEFAULT_CENTER: [number, number] = [0.3157, 32.5756];
@@ -39,9 +39,12 @@ function pinIcon(color: string) {
 const PICKUP_ICON = pinIcon('#22c55e');
 const DROPOFF_ICON = pinIcon('#ef4444');
 
-async function toLocation(idPrefix: string, name: string, lat: number, lng: number): Promise<Location> {
-  const address = (await reverseGeocode(lat, lng)) || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-  return { id: `${idPrefix}_${lat.toFixed(5)}_${lng.toFixed(5)}`, name, area: name, fullAddress: address, coordinates: { lat, lng } };
+async function toLocation(idPrefix: string, name: string, lat: number, lng: number, knownAddress?: string): Promise<Location> {
+  const address = knownAddress || (await reverseGeocode(lat, lng)) || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  // Use the most specific place returned by the geocoder as the display name;
+  // generic labels like "Selected location" hide useful local-area details.
+  const displayName = knownAddress ? knownAddress.split(',')[0].trim() || name : name;
+  return { id: `${idPrefix}_${lat.toFixed(5)}_${lng.toFixed(5)}`, name: displayName, area: displayName, fullAddress: address, coordinates: { lat, lng } };
 }
 
 interface LocationPickerMapProps {
@@ -83,6 +86,7 @@ export default function LocationPickerMap({
   const [locating, setLocating] = useState(false);
   const [routeSummary, setRouteSummary] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [mapSuggestions, setMapSuggestions] = useState<AddressSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
@@ -246,7 +250,7 @@ export default function LocationPickerMap({
         setLocationError('No location found. Try a full address, landmark, neighborhood, or city.');
         return;
       }
-      const loc = await toLocation(selectionMode, 'Selected location', result.lat, result.lng);
+      const loc = await toLocation(selectionMode, 'Selected location', result.lat, result.lng, result.displayName);
       (selectionMode === 'pickup' ? onPickupChange : onDropoffChange)(loc);
       mapRef.current?.setView([result.lat, result.lng], 16, { animate: false });
     } catch {
@@ -256,10 +260,37 @@ export default function LocationPickerMap({
     }
   };
 
+  // Live map search: show real mapped places while the customer types, not
+  // only after pressing Enter. Results use the same country-aware geocoder as
+  // the rest of the booking flow and selecting one places the active pin.
+  useEffect(() => {
+    let active = true;
+    const query = searchQuery.trim();
+    if (query.length < 3) {
+      setMapSuggestions([]);
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      const country = searchCountry?.trim().toLowerCase() === 'uganda' ? 'ug' : undefined;
+      const results = await searchAddresses(query, country);
+      if (active) setMapSuggestions(results);
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [searchQuery, searchCountry]);
+
+  const selectMapSuggestion = async (result: AddressSuggestion) => {
+    const loc = await toLocation(selectionMode, result.name, result.lat, result.lng, result.displayName);
+    (selectionMode === 'pickup' ? onPickupChange : onDropoffChange)(loc);
+    setSearchQuery(result.displayName);
+    setMapSuggestions([]);
+    mapRef.current?.setView([result.lat, result.lng], 17, { animate: false });
+  };
+
   return (
     <div className="space-y-2">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+      <div className="relative">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             value={searchQuery}
@@ -268,10 +299,29 @@ export default function LocationPickerMap({
             placeholder="Search any address, landmark, neighborhood or city"
             className="w-full rounded-lg border-2 border-slate-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder-slate-400"
           />
+          </div>
+          <button type="button" onClick={searchLocation} disabled={searching || !searchQuery.trim()} className="rounded-lg bg-orange-500 px-4 text-white disabled:bg-slate-300">
+            {searching ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
+          </button>
         </div>
-        <button type="button" onClick={searchLocation} disabled={searching || !searchQuery.trim()} className="rounded-lg bg-orange-500 px-4 text-white disabled:bg-slate-300">
-          {searching ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
-        </button>
+        {mapSuggestions.length > 0 && (
+          <div className="absolute left-0 right-12 top-full z-[1000] mt-1 max-h-64 overflow-y-auto rounded-lg border-2 border-slate-200 bg-white shadow-xl">
+            {mapSuggestions.map((result) => (
+              <button
+                key={`${result.lat}_${result.lng}_${result.displayName}`}
+                type="button"
+                onClick={() => selectMapSuggestion(result)}
+                className="flex w-full items-start gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-orange-50"
+              >
+                <MapPin className="mt-0.5 flex-shrink-0 text-orange-500" size={17} />
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-slate-800">{result.name}</span>
+                  <span className="block text-xs text-slate-600">{result.displayName}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div ref={containerRef} className="rounded-lg border-2 border-slate-200" style={{ height: 420, width: '100%' }} />
       <div className="flex items-center justify-between gap-2 flex-wrap">

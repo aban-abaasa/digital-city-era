@@ -13,6 +13,9 @@ const BUSINESS_TYPE_META = {
   hotel:           { emoji: '🏨', label: 'Hotel',               itemsLabel: 'Rooms & Services' },
   boutique:        { emoji: '👗', label: 'Boutique',            itemsLabel: 'Items' },
   restaurant_cafe: { emoji: '🍽️', label: 'Restaurant & Café',   itemsLabel: 'Menu' },
+  wholesale:       { emoji: '📦', label: 'Wholesale',             itemsLabel: 'Wholesale Products' },
+  hardware:        { emoji: '🔧', label: 'Hardware',              itemsLabel: 'Hardware Products' },
+  factory:         { emoji: '🏭', label: 'Factory / Manufacturing', itemsLabel: 'Manufactured Products' },
 };
 
 /**
@@ -47,7 +50,7 @@ export const useSupermarketBranding = () => {
 
       const { data: supermarketRow, error } = await supabase
         .from('supermarkets')
-        .select('id, name, background_image_url, business_type, pichin_business_profile_id')
+        .select('id, name, background_image_url, business_type, pichin_business_profile_id, supports_supply_orders, can_receive_supplier_orders, can_dispatch_supplier_orders')
         .eq('id', supermarketId)
         .maybeSingle();
 
@@ -73,6 +76,9 @@ export const useSupermarketBranding = () => {
     backgroundUrl: supermarket?.background_image_url || null,
     supermarketId: supermarket?.id || null,
     pichinBusinessProfileId: supermarket?.pichin_business_profile_id || null,
+    supportsSupplyOrders: Boolean(supermarket?.supports_supply_orders),
+    canReceiveSupplierOrders: Boolean(supermarket?.can_receive_supplier_orders),
+    canDispatchSupplierOrders: Boolean(supermarket?.can_dispatch_supplier_orders),
     businessType,
     typeEmoji: typeMeta.emoji,
     typeLabel: typeMeta.label,

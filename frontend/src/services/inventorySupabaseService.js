@@ -265,6 +265,7 @@ class InventorySupabaseService {
         supplier_id,
         brand,
         cost_price = 0,
+        wholesale_price = 0,
         selling_price = 0,
         tax_rate = 18, // Uganda VAT
         initial_stock = 0,
@@ -363,6 +364,7 @@ class InventorySupabaseService {
         barcode: uniqueBarcode,
         price: finalSellingPrice,
         selling_price: finalSellingPrice,
+        wholesale_price: parseFloat(wholesale_price) || 0,
         cost_price: finalCostPrice > 0 ? finalCostPrice : undefined,
         supermarket_id: supermarketId || undefined,
         inventory_mode: effectiveInventoryMode,

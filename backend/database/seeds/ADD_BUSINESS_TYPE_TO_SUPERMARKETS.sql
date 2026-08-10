@@ -31,7 +31,7 @@ END $$;
 
 ALTER TABLE public.supermarkets
   ADD CONSTRAINT supermarkets_business_type_check
-  CHECK (business_type IN ('supermarket', 'pharmacy', 'hotel', 'boutique', 'restaurant_cafe'));
+  CHECK (business_type IN ('supermarket', 'pharmacy', 'hotel', 'boutique', 'restaurant_cafe', 'wholesale'));
 
 CREATE INDEX IF NOT EXISTS idx_supermarkets_business_type
   ON public.supermarkets(business_type);
@@ -87,7 +87,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Store name is required');
   END IF;
 
-  IF p_business_type IS NULL OR p_business_type NOT IN ('supermarket', 'pharmacy', 'hotel', 'boutique', 'restaurant_cafe') THEN
+    IF p_business_type IS NULL OR p_business_type NOT IN ('supermarket', 'pharmacy', 'hotel', 'boutique', 'restaurant_cafe', 'wholesale') THEN
     RETURN jsonb_build_object('success', false, 'error', 'Invalid business type');
   END IF;
 

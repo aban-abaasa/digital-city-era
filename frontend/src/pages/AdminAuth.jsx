@@ -56,6 +56,35 @@ const BUSINESS_TYPES = [
     descPlaceholder: "What's on your menu? Meals, snacks, drinks…",
     itemsLabel: 'menu',
   },
+  {
+    value: 'wholesale', emoji: '📦', label: 'Wholesale',
+    blurb: 'Bulk stock, distribution, and business-to-business supply',
+    namePlaceholder: 'e.g. Kampala Wholesale Hub',
+    nameLabel: 'Wholesale business name *',
+    descPlaceholder: 'What do you supply? Bulk groceries, raw materials, equipment…',
+    itemsLabel: 'wholesale products',
+  },
+  {
+    value: 'hardware', emoji: '🔧', label: 'Hardware',
+    blurb: 'Tools, building supplies, and equipment',
+    namePlaceholder: 'e.g. Central Hardware Store',
+    nameLabel: 'Hardware store name *',
+    descPlaceholder: 'What do you stock? Tools, plumbing, electrical, building materials…',
+    itemsLabel: 'hardware products',
+  },
+  {
+    value: 'factory', emoji: '🏭', label: 'Factory / Manufacturing',
+    blurb: 'Production, finished goods, and raw-material supply',
+    namePlaceholder: 'e.g. Kampala Foods Factory',
+    nameLabel: 'Factory name *',
+    descPlaceholder: 'What do you manufacture or supply? Finished goods, components, raw materials…',
+    itemsLabel: 'manufactured products',
+  },
+];
+
+const WHOLESALE_CATEGORIES = [
+  'Products', 'Services', 'Raw materials', 'Building materials', 'Tools & equipment',
+  'Agriculture & livestock', 'Food & beverages', 'Office supplies', 'Transport & logistics', 'Other'
 ];
 
 const businessTypeInfo = (value) => BUSINESS_TYPES.find(t => t.value === value) || BUSINESS_TYPES[0];
@@ -111,6 +140,7 @@ export default function AdminAuth() {
     businessType: 'supermarket',
     storeName: '', description: '', storePhone: '', storeEmail: '',
     address: '', city: '', country: 'Uganda',
+    wholesaleCategories: ['Products'], wholesalePricingMode: 'supplier_price',
   });
   const [signin, setSignin] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
@@ -258,6 +288,47 @@ export default function AdminAuth() {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Registration failed');
 
+      // Keep the store ledger and its Pichin business wallet isolated from any
+      // other business owned by this person. Merging is an explicit onboarding
+      // choice in the full onboarding screen, never an implicit fallback.
+      const { data: storeAccount, error: storeAccountError } = await supabase.rpc('create_store_business_account', {
+        p_supermarket_id: data.supermarket_id,
+        p_business_name: form.storeName.trim(),
+        p_business_type: form.businessType,
+        p_merge_existing: false,
+      });
+      if (storeAccountError) throw storeAccountError;
+      if (!storeAccount?.success) throw new Error(storeAccount?.error || 'Store business account setup failed');
+
+      // Factories are first-class CMMS businesses. Create the factory template
+      // (production, BOM, warehouse, maintenance, supplier marketplace and
+      // transport) while retaining this Supermarketa POS tenant.
+      let cmmsBusinessProfileId = storeAccount.business_profile_id || null;
+      if (form.businessType === 'factory' && !cmmsBusinessProfileId) {
+        const { data: factoryProfileId, error: factoryProfileError } = await supabase.rpc('create_business_profile_from_category', {
+          p_business_name: form.storeName.trim(),
+          p_category_key: 'factory',
+          p_business_type: 'Factory / Manufacturing',
+          p_source_app: 'supermarketa',
+          p_metadata: { supermarket_id: data.supermarket_id, pos_enabled: true, supplier_enabled: true }
+        });
+        if (factoryProfileError) throw factoryProfileError;
+        cmmsBusinessProfileId = factoryProfileId;
+        await supabase.from('supermarkets').update({ pichin_business_profile_id: cmmsBusinessProfileId }).eq('id', data.supermarket_id);
+        await supabase.rpc('publish_business_as_supplier', {
+          p_business_profile_id: cmmsBusinessProfileId,
+          p_supplier_type: 'factory'
+        });
+      }
+
+      if (form.businessType === 'wholesale' && data.supermarket_id) {
+        const { error: settingsError } = await supabase.from('supermarkets').update({
+          wholesale_categories: form.wholesaleCategories,
+          wholesale_pricing_mode: form.wholesalePricingMode,
+        }).eq('id', data.supermarket_id);
+        if (settingsError) throw settingsError;
+      }
+
       // Update auth metadata so session reflects admin role
       await supabase.auth.updateUser({ data: { role: 'admin' } });
 
@@ -307,7 +378,7 @@ export default function AdminAuth() {
           Your store.<br />Your rules.
         </h1>
         <p className="text-slate-300 text-base leading-relaxed max-w-sm">
-          Set up a supermarket, pharmacy, hotel, boutique, or restaurant/café on the platform, invite your team, and earn ICAN coin on every sale — all from one portal.
+           Set up a supermarket, pharmacy, hotel, boutique, restaurant/café, hardware store, wholesale business, or factory with POS and CMMS operations in one connected workspace.
         </p>
       </div>
 
@@ -523,6 +594,7 @@ export default function AdminAuth() {
                     </button>
                   ))}
                 </div>
+
               </div>
             )}
 
@@ -558,6 +630,27 @@ export default function AdminAuth() {
                     placeholder="store@business.com"
                     value={form.storeEmail} onChange={e => set('storeEmail', e.target.value)} />
                 </div>
+
+                {form.businessType === 'wholesale' && (
+                  <div className="space-y-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                    <p className="text-sm font-bold text-slate-800">Wholesale ordering setup</p>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Product, service, or material categories</label>
+                      <select multiple value={form.wholesaleCategories} onChange={e => set('wholesaleCategories', Array.from(e.target.selectedOptions, option => option.value))} className="w-full min-h-28 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm">
+                        {WHOLESALE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                      </select>
+                      <p className="text-xs text-slate-400">Hold Ctrl/Cmd to select more than one.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Default order price</label>
+                      <select value={form.wholesalePricingMode} onChange={e => set('wholesalePricingMode', e.target.value)} className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-sm">
+                        <option value="supplier_price">Supplier price (recommended for purchasing)</option>
+                        <option value="admin_price">Admin-set price</option>
+                      </select>
+                      <p className="text-xs text-slate-400">Managers can change this choice when creating an order.</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -609,6 +702,10 @@ export default function AdminAuth() {
                   <Row label="Phone"        value={form.storePhone || '—'} />
                   <Row label="Email"        value={form.storeEmail || '—'} />
                   <Row label="Address"      value={[form.address, form.city, form.country].filter(Boolean).join(', ')} />
+                  {form.businessType === 'wholesale' && <>
+                    <Row label="Wholesale categories" value={form.wholesaleCategories.join(', ')} />
+                    <Row label="Default order price" value={form.wholesalePricingMode === 'admin_price' ? 'Admin-set price' : 'Supplier price'} />
+                  </>}
                 </div>
 
                 <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 p-4 flex items-center gap-3">

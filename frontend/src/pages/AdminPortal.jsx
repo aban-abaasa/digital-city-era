@@ -232,39 +232,10 @@ const AdminPortal = () => {
           ownedSm = assignedSupermarket || null;
         }
 
-        // A Pichin profile can pre-date the Supermarketa account link. In
-        // addition, older schemas store business_profiles.user_id as the
-        // public.users.id while newer flows use the auth user id. Resolve
-        // both identities before deciding that the administrator has no
-        // Pichin business account.
+        // Do not silently attach the first Pichin profile owned by this user.
+        // A Supermarketa tenant is a separate entity by default; merging is
+        // an explicit user action through the Pichin merge RPC.
         let pichinBusinessProfileId = ownedSm?.pichin_business_profile_id || null;
-        const possibleProfileOwners = [userData?.id, user.id].filter(Boolean);
-
-        if (!pichinBusinessProfileId && possibleProfileOwners.length > 0) {
-          const { data: ownedBusiness } = await supabase
-            .from('business_profiles')
-            .select('id')
-            .in('user_id', possibleProfileOwners)
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          pichinBusinessProfileId = ownedBusiness?.id || null;
-        }
-
-        // Gmail-based shareholder/admin records are also valid Pichin
-        // authority. This covers profiles where the signed-in account is an
-        // approved co-owner rather than the original profile creator.
-        if (!pichinBusinessProfileId && user.email) {
-          const { data: coOwnerBusiness } = await supabase
-            .from('business_co_owners')
-            .select('business_profile_id')
-            .ilike('owner_email', user.email)
-            .in('status', ['active', 'approved'])
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          pichinBusinessProfileId = coOwnerBusiness?.business_profile_id || null;
-        }
 
         // If the shared app-link migration has already run, use it as the
         // authoritative fallback for an existing link that was not copied to
@@ -278,6 +249,21 @@ const AdminPortal = () => {
             .eq('status', 'active')
             .maybeSingle();
           pichinBusinessProfileId = appLink?.business_profile_id || null;
+        }
+
+        // No explicit link exists: create a dedicated sole-proprietor Pichin
+        // entity for this tenant. The user can later choose Merge from the
+        // business-link controls if they want one shared entity.
+        if (!pichinBusinessProfileId && ownedSm?.id) {
+          const { data: separateResult, error: separateError } = await supabase.rpc(
+            'separate_supermarketa_pichin_business',
+            { p_supermarket_id: ownedSm.id }
+          );
+          if (!separateError && separateResult?.business_profile_id) {
+            pichinBusinessProfileId = separateResult.business_profile_id;
+          } else if (separateError) {
+            console.warn('Could not create separate Pichin supermarket entity:', separateError.message);
+          }
         }
 
         // Match CMMS authority exactly. The shared database function grants
@@ -295,6 +281,20 @@ const AdminPortal = () => {
           } else if (!isPichinAdmin) {
             console.warn('Signed-in user is not the Pichin business administrator for the resolved profile.');
             pichinBusinessProfileId = null;
+          }
+        }
+
+        // A store is also allowed to sell goods to other businesses. Publish
+        // its linked Pichin business in the shared supplier directory so the
+        // supplier portal, CMMS, and manager purchase-order selector use the
+        // same live supplier identity.
+        if (pichinBusinessProfileId && ownedSm) {
+          const { error: supplierPublishError } = await supabase.rpc('publish_business_as_supplier', {
+            p_business_profile_id: pichinBusinessProfileId,
+            p_supplier_type: 'retail'
+          });
+          if (supplierPublishError) {
+            console.warn('Store supplier publishing is unavailable:', supplierPublishError.message);
           }
         }
 
