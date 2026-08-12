@@ -535,7 +535,7 @@ export const recordPayment = async ({ orderId, amountPaid, paymentMethod, paymen
 // Submit a supplier payment request from the supermarket business wallet.
 // Store workers may submit it, but an authorized wallet administrator must
 // approve it with the business-wallet PIN before either wallet is changed.
-export const payOrderWithICAN = async ({ orderId, supplierUserId, supplierBusinessProfileId, icanAmount, ugxAmount, notes, businessProfileId, businessWalletPin }) => {
+const legacyPayOrderWithICAN = async ({ orderId, supplierUserId, supplierBusinessProfileId, icanAmount, ugxAmount, notes, businessProfileId, businessWalletPin }) => {
   try {
     if (!supplierUserId) throw new Error('This order has no supplier assigned — cannot pay with ICAN.');
     if (!businessProfileId) throw new Error('This supermarket has no linked Pichin business account. ICAN payment is unavailable.');
@@ -586,6 +586,28 @@ export const payOrderWithICAN = async ({ orderId, supplierUserId, supplierBusine
   } catch (error) {
     const msg = error?.message || 'Unknown error';
     console.error('Error paying order with ICAN:', msg);
+    return { success: false, error: msg };
+  }
+};
+
+// The database owns payment routing and balance calculation. It creates one
+// pending business-wallet transaction tied to the PO; approval later updates
+// the order to paid and credits the supplier business wallet atomically.
+export const payOrderWithICAN = async ({ orderId }) => {
+  try {
+    const { data: transfer, error } = await supabase.rpc(
+      'supermarketa_request_supplier_order_payment', { p_order_id: orderId }
+    );
+    if (error) throw error;
+    return {
+      success: true,
+      transfer,
+      pending_confirmation: transfer?.status !== 'completed',
+      wallet_approval_required: transfer?.status === 'pending_approval',
+    };
+  } catch (error) {
+    const msg = error?.message || 'Unknown error';
+    console.error('Error requesting supplier wallet payment:', msg);
     return { success: false, error: msg };
   }
 };

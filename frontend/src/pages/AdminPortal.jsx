@@ -13,6 +13,7 @@ import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
 import { 
   FiUsers, FiUser, FiShield, FiSettings, FiBarChart, FiActivity,
@@ -7720,6 +7721,9 @@ const AdminPortal = () => {
       ) : (
         <>
       <NotificationCenter />
+      <div className="fixed right-4 top-4 z-50 rounded-xl bg-indigo-700 shadow-xl">
+        <SupermarketaWalletApprovalBell />
+      </div>
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
