@@ -589,7 +589,8 @@ const OrderInventoryPOSControl = () => {
       accepted_supplier_price: product.accepted_supplier_price || 0,
       purchasing_price_source: product.purchasing_price_source || 'admin',
       selling_price: product.selling_price,
-      tax_rate: product.tax_rate || 18
+      tax_rate: product.tax_rate || 18,
+      current_stock: product.current_stock ?? 0
     });
     setEditImageFile(null);
     setEditImagePreview(product.images?.[0] || null);
@@ -610,12 +611,32 @@ const OrderInventoryPOSControl = () => {
     }
 
     try {
+      const { current_stock, ...productUpdates } = editValues;
+      const parsedStock = Number(current_stock);
+      if (!Number.isInteger(parsedStock) || parsedStock < 0) {
+        toast.error('Quantity must be a whole number of zero or more.');
+        return;
+      }
+
       const { error } = await supabase
         .from('products')
-        .update(editValues)
+        .update(productUpdates)
         .eq('id', productId);
 
       if (error) throw error;
+
+      // This is a one-time admin override. Automatic stock updates from POS
+      // sales and approved supplier orders continue to use this same field.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (!supermarketId) throw new Error('No supermarket is assigned to this admin account.');
+      const { data: updatedInventory, error: inventoryError } = await supabase
+        .from('inventory')
+        .update({ current_stock: parsedStock })
+        .eq('product_id', productId)
+        .eq('supermarket_id', supermarketId)
+        .select('id');
+      if (inventoryError) throw inventoryError;
+      if (!updatedInventory?.length) throw new Error('Inventory record was not found.');
 
       let imageUrl = null;
       if (editImageFile) {
@@ -630,11 +651,20 @@ const OrderInventoryPOSControl = () => {
       // Update local state
       const applyUpdate = (p) => (
         p.id === productId
-          ? { ...p, ...editValues, ...(imageUrl ? { images: [imageUrl] } : {}) }
+          ? { ...p, ...productUpdates, current_stock: parsedStock, ...(imageUrl ? { images: [imageUrl] } : {}) }
           : p
       );
       setProducts(products.map(applyUpdate));
       setFilteredProducts(filteredProducts.map(applyUpdate));
+      setInventoryMap((previous) => ({
+        ...previous,
+        [productId]: {
+          ...(previous[productId] || {}),
+          product_id: productId,
+          quantity: parsedStock,
+          current_stock: parsedStock
+        }
+      }));
 
       setEditingId(null);
       setEditValues({});
@@ -1305,6 +1335,11 @@ const OrderInventoryPOSControl = () => {
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">POS Selling Price</label>
                       <input type="number" value={editValues.selling_price} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Quantity</label>
+                      <input type="number" min="0" step="1" value={editValues.current_stock} onChange={(e) => setEditValues({ ...editValues, current_stock: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" />
+                      <p className="mt-1 text-[10px] text-gray-500">Admin override; automatic updates continue.</p>
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Accepted Supplier Price</label>

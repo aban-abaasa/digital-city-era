@@ -22,6 +22,8 @@ const ProductInventoryInterface = () => {
   // const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false); // COMMENTED OUT
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [adjustmentAmount, setAdjustmentAmount] = useState(0);
+  const [adjustmentMode, setAdjustmentMode] = useState('change');
+  const [targetQuantity, setTargetQuantity] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [reorderQuantity, setReorderQuantity] = useState(0);
   const [expandedProductId, setExpandedProductId] = useState(null); // Track which product is expanded
@@ -264,6 +266,8 @@ const ProductInventoryInterface = () => {
   const handleAdjust = (product) => {
     setSelectedProduct(product);
     setAdjustmentAmount(0);
+    setAdjustmentMode('change');
+    setTargetQuantity(String(product.stock));
     setAdjustmentReason('');
     setShowAdjustModal(true);
   };
@@ -465,20 +469,37 @@ const ProductInventoryInterface = () => {
   };
 
   const processAdjustment = async () => {
-    if (selectedProduct && adjustmentAmount !== 0 && adjustmentReason.trim()) {
+    const requestedQuantity = adjustmentMode === 'set'
+      ? Number(targetQuantity)
+      : selectedProduct?.stock + adjustmentAmount;
+
+    if (
+      selectedProduct &&
+      Number.isInteger(requestedQuantity) &&
+      requestedQuantity >= 0 &&
+      requestedQuantity !== selectedProduct.stock &&
+      adjustmentReason.trim()
+    ) {
       try {
-        const newStock = Math.max(0, selectedProduct.stock + adjustmentAmount);
-        
+        const newStock = requestedQuantity;
+        const supermarketId = await inventoryService.getCurrentSupermarketId();
+        if (!supermarketId) throw new Error('No supermarket is assigned to this admin account.');
+
         // Update inventory in Supabase
-        const { error: updateError } = await supabase
+        const { data: updatedInventory, error: updateError } = await supabase
           .from('inventory')
           .update({
-            quantity: newStock
+            current_stock: newStock
           })
-          .eq('product_id', selectedProduct.productId);
+          .eq('product_id', selectedProduct.productId)
+          .eq('supermarket_id', supermarketId)
+          .select('id');
 
         if (updateError) {
           throw updateError;
+        }
+        if (!updatedInventory?.length) {
+          throw new Error('Inventory record was not found or could not be updated.');
         }
 
         // Log the adjustment (optional - create stock_adjustments table later)
@@ -506,7 +527,7 @@ const ProductInventoryInterface = () => {
             <div className="font-bold">📦 Stock Adjusted Successfully</div>
             <div className="text-sm mt-1">
               <div>{selectedProduct.name}</div>
-              <div>Adjustment: {adjustmentAmount > 0 ? '+' : ''}{adjustmentAmount} units</div>
+              <div>Adjustment: {newStock - selectedProduct.stock > 0 ? '+' : ''}{newStock - selectedProduct.stock} units</div>
               <div>Reason: {adjustmentReason}</div>
               <div>New Stock: {newStock} units</div>
             </div>
@@ -916,25 +937,25 @@ const ProductInventoryInterface = () => {
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   <button
-                    onClick={() => setAdjustmentAmount(-10)}
+                    onClick={() => { setAdjustmentMode('change'); setAdjustmentAmount(-10); }}
                     className="px-2 py-2 md:py-2.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs md:text-sm font-medium transition-colors"
                   >
                     -10
                   </button>
                   <button
-                    onClick={() => setAdjustmentAmount(-5)}
+                    onClick={() => { setAdjustmentMode('change'); setAdjustmentAmount(-5); }}
                     className="px-2 py-2 md:py-2.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs md:text-sm font-medium transition-colors"
                   >
                     -5
                   </button>
                   <button
-                    onClick={() => setAdjustmentAmount(5)}
+                    onClick={() => { setAdjustmentMode('change'); setAdjustmentAmount(5); }}
                     className="px-2 py-2 md:py-2.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs md:text-sm font-medium transition-colors"
                   >
                     +5
                   </button>
                   <button
-                    onClick={() => setAdjustmentAmount(10)}
+                    onClick={() => { setAdjustmentMode('change'); setAdjustmentAmount(10); }}
                     className="px-2 py-2 md:py-2.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs md:text-sm font-medium transition-colors"
                   >
                     +10
@@ -949,10 +970,29 @@ const ProductInventoryInterface = () => {
                 <input
                   type="number"
                   value={adjustmentAmount}
-                  onChange={(e) => setAdjustmentAmount(parseInt(e.target.value) || 0)}
+                  onChange={(e) => { setAdjustmentMode('change'); setAdjustmentAmount(parseInt(e.target.value) || 0); }}
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 text-base"
                   placeholder="Enter adjustment"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Or set exact quantity
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={targetQuantity}
+                  onChange={(e) => {
+                    setAdjustmentMode('set');
+                    setTargetQuantity(e.target.value);
+                    setAdjustmentAmount(Number(e.target.value) - selectedProduct.stock);
+                  }}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 text-base"
+                  placeholder={`Current quantity: ${selectedProduct.stock}`}
+                />
+                <p className="mt-1 text-xs text-gray-500">Enter a value here to replace the current stock count.</p>
               </div>
 
               <div>
@@ -974,9 +1014,9 @@ const ProductInventoryInterface = () => {
                 </select>
               </div>
 
-              {adjustmentAmount !== 0 && (
-                <div className={`p-3 rounded-lg border ${adjustmentAmount > 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                  <div className={`text-xs md:text-sm ${adjustmentAmount > 0 ? 'text-green-800' : 'text-red-800'}`}>
+              {(adjustmentMode === 'set' ? targetQuantity !== '' && Number(targetQuantity) !== selectedProduct.stock : adjustmentAmount !== 0) && (
+                <div className={`p-3 rounded-lg border ${(adjustmentMode === 'set' ? Number(targetQuantity) : selectedProduct.stock + adjustmentAmount) > selectedProduct.stock ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                  <div className={`text-xs md:text-sm ${(adjustmentMode === 'set' ? Number(targetQuantity) : selectedProduct.stock + adjustmentAmount) > selectedProduct.stock ? 'text-green-800' : 'text-red-800'}`}>
                     <strong>Update:</strong> {selectedProduct.stock} → {Math.max(0, selectedProduct.stock + adjustmentAmount)} units
                   </div>
                 </div>
@@ -986,7 +1026,7 @@ const ProductInventoryInterface = () => {
             <div className="flex flex-col md:flex-row gap-3 mt-6 md:space-x-3">
               <button
                 onClick={processAdjustment}
-                disabled={adjustmentAmount === 0 || !adjustmentReason.trim()}
+                disabled={!adjustmentReason.trim() || (adjustmentMode === 'change' ? adjustmentAmount === 0 : !Number.isInteger(Number(targetQuantity)) || Number(targetQuantity) < 0 || Number(targetQuantity) === selectedProduct.stock)}
                 className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold text-sm md:text-base"
               >
                 Apply
