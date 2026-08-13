@@ -109,6 +109,17 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
 
   // Handle payment submission
   const handleAddPayment = async () => {
+    if (!['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'].includes(order.status)) {
+      alert('This purchase order is not available for payment in its current status.');
+      setShowPaymentModal(false);
+      return;
+    }
+
+    if (order.status === 'pending_approval' && paymentData.method !== 'ican_wallet') {
+      alert('A pending purchase order can only be submitted as an ICAN business-wallet approval request. Select ICANera Wallet to notify the authorized administrator.');
+      return;
+    }
+
     if (!paymentData.amount || parseFloat(paymentData.amount) <= 0) {
       alert('Please enter a valid payment amount');
       return;
@@ -146,7 +157,13 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
           notes:          paymentData.notes || null,
         });
 
-        if (!payResult.success) throw new Error(payResult.error);
+        if (!payResult.success) {
+          if (payResult.requires_order_approval) {
+            alert('This purchase order cannot be submitted for wallet approval in its current status.');
+            return;
+          }
+          throw new Error(payResult.error);
+        }
 
         alert(payResult.wallet_approval_required
           ? `🔔 ICAN payment request submitted.\n\nAmount: ${formatUGX(amount)}\n\nAn authorized wallet administrator must approve it with the business-wallet PIN.`

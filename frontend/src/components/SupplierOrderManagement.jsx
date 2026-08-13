@@ -113,7 +113,6 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   });
   const [approvalIcanBalance, setApprovalIcanBalance] = useState(null);
   const [approvalIcanBalanceLoading, setApprovalIcanBalanceLoading] = useState(false);
-  const [approvalBusinessWalletPin, setApprovalBusinessWalletPin] = useState('');
   // Manager's own vehicle choice at approval time (Car/Van/Truck, or Ship
   // when the route genuinely needs a sea leg) — overrides whatever the
   // supplier picked earlier when set. null = leave the supplier's choice
@@ -401,7 +400,6 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               icanAmount:     icanNeeded,
               ugxAmount:      amountPaidNow,
               businessProfileId: activeBusinessProfileId,
-              businessWalletPin: approvalBusinessWalletPin,
               notes:          `Payment made during order approval. ${approvalData.notes || ''}`,
             });
           }
@@ -1298,18 +1296,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               )}
 
               {approvalData.paymentMethod === 'ican_wallet' && (
-                <div className="mb-4">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Business Wallet PIN *</label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={approvalBusinessWalletPin}
-                    onChange={(e) => setApprovalBusinessWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="Enter the store business-wallet PIN"
-                    className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                    required
-                  />
+                <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+                  <strong>Manager action:</strong> submit the payment request only. The authorized business-wallet administrator receives the notification in ICANera Wallet or CMMS and enters the business-wallet PIN there to approve payment.
                 </div>
               )}
 
@@ -1784,7 +1772,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
                   {/* 💰 PAYMENT TRACKER - Interactive Payment Management */}
                   {/* Show payment tracker for all orders that are approved or beyond, allowing managers to add payments anytime */}
-                  {(order.status === 'approved' || 
+                  {(order.status === 'pending_approval' ||
+                    order.status === 'approved' || 
                     order.status === 'sent_to_supplier' || 
                     order.status === 'confirmed' || 
                     order.status === 'received' || 
@@ -1903,7 +1892,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                     )}
 
                     {/* Add Payment Button - Show for approved orders and beyond (not fully paid) */}
-                    {(order.status === 'approved' || 
+                    {(order.status === 'pending_approval' ||
+                      order.status === 'approved' || 
                       order.status === 'sent_to_supplier' || 
                       order.status === 'confirmed' || 
                       order.status === 'received' || 
@@ -2330,8 +2320,9 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
       return;
     }
 
-    // Managers only create the business-wallet request. The Pichin business
-    // administrator enters the business-wallet PIN during approval.
+    // An ICAN selection creates only a purchase order. Once the order is
+    // approved, the manager submits the separate wallet request and the
+    // authorized business-wallet administrator approves it with the PIN.
     if (paymentMethod === 'ican_wallet') {
       await createOrder(null);
       return;
@@ -2358,9 +2349,8 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
         return;
       }
 
-      // Cash orders use the manager's personal confirmation PIN. ICAN orders
-      // must be authorized by the dedicated PitchIn business-wallet PIN in
-      // pitchin_business_wallet_transfer.
+      // This is the manager's personal confirmation PIN for a cash order.
+      // It never authorizes a business-wallet transfer.
       if (paymentMethod !== 'ican_wallet') {
         const pinCheck = await verifyPin(user.id, walletPin);
         if (!pinCheck.success) {
@@ -2369,10 +2359,9 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
         }
       }
 
-      const businessWalletPin = paymentMethod === 'ican_wallet' ? walletPin : null;
       setShowPinPrompt(false);
       setWalletPin('');
-      await createOrder(businessWalletPin);
+      await createOrder();
     } catch (err) {
       console.error('PIN verification failed:', err);
       setPinError('PIN verification failed. Order was not sent.');
@@ -2381,7 +2370,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
     }
   };
 
-  const createOrder = async (businessWalletPin = null) => {
+  const createOrder = async () => {
 
     setSubmitting(true);
 
@@ -2414,36 +2403,16 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
       if (response.success) {
         let successMsg = '✅ Purchase order created successfully!';
         
-        // If cash (or ICAN) was paid during order creation, record it with tracking
+        // New orders remain pending approval. Cash can be recorded now, but an
+        // ICAN business-wallet request must wait for approval; the authorized
+        // wallet administrator is notified only after that request is created.
         if (cashPaidNow && parseFloat(cashPaidNow) > 0 && response.order?.id) {
           try {
             if (paymentMethod === 'ican_wallet') {
-              const icanNeeded = ugxToICAN(parseFloat(cashPaidNow));
-              if (!icanBalance || icanBalance.ican < icanNeeded) {
-                successMsg += `\n\n⚠️ Order created, but ICAN payment skipped — insufficient balance ` +
-                  `(needed ${formatICAN(icanNeeded)}, have ${formatICAN(icanBalance?.ican || 0)}).`;
-              } else {
-                const payResult = await supplierOrdersService.payOrderWithICAN({
-                  orderId:         response.order.id,
-                  supplierUserId:  response.order.supplier_id,
-                  supplierBusinessProfileId: response.order.supplier_business_profile_id,
-                  icanAmount:      icanNeeded,
-                  ugxAmount:       parseFloat(cashPaidNow),
-                  businessProfileId,
-                  businessWalletPin,
-                  notes:           `Payment made at order creation. ${paymentNotes}`,
-                });
-
-                if (!payResult.success) {
-                  console.error('⚠️ ICAN payment error:', payResult.error);
-                  successMsg += `\n\n⚠️ Warning: Order created but ICAN payment failed: ${payResult.error}`;
-                } else {
-                  successMsg += `\n\n🪙 ICAN PAYMENT REQUESTED: ${formatICAN(icanNeeded)} ICAN (${formatUGX(cashPaidNow)})`;
-                  successMsg += payResult.wallet_approval_required
-                    ? `\n🔔 Authorized wallet administrator must approve with the business-wallet PIN.`
-                    : `\n✅ Supplier's business wallet credited.`;
-                }
-              }
+              const payResult = await supplierOrdersService.payOrderWithICAN({ orderId: response.order.id, ugxAmount: parseFloat(cashPaidNow) });
+              if (!payResult.success) throw new Error(payResult.error);
+              successMsg += `\n\n🪙 ICAN PAYMENT REQUEST SENT.` +
+                `\nThe authorized business-wallet administrator has been notified and must open the request in ICANera Wallet or CMMS, then enter the business-wallet PIN to approve payment.`;
             } else {
               const payResult = await supplierOrdersService.recordPayment({
                 orderId:          response.order.id,
@@ -2500,14 +2469,17 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-gray-900">Confirm Purchase Order</h3>
             <p className="mt-2 text-sm text-gray-600">
-              Enter your IcanEra Wallet PIN to send this order to the supplier.
-            </p>
+                Enter your personal IcanEra confirmation PIN to submit this cash order. This PIN cannot approve or spend from the store business wallet.
+              </p>
+              <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+                <strong>Business-wallet protection:</strong> ICAN supplier payments are requested only after the purchase order is approved. The authorized business-wallet administrator receives the notification in ICANera Wallet or CMMS and must enter the business-wallet PIN to approve payment.
+              </div>
             <form
               onSubmit={(e) => { e.preventDefault(); if (!verifyingPin) confirmCreateOrder(); }}
               className="mt-5"
             >
               <label className="block text-sm font-semibold text-gray-700 mb-2" htmlFor="purchase-order-wallet-pin">
-                IcanEra Wallet PIN
+                Personal confirmation PIN
               </label>
               <input
                 id="purchase-order-wallet-pin"
@@ -2536,7 +2508,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
                   disabled={verifyingPin || walletPin.length < 4}
                   className="rounded-lg bg-gradient-to-r from-green-600 to-blue-600 px-5 py-2.5 font-bold text-white hover:from-green-700 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {verifyingPin ? 'Verifying...' : 'Verify & Send Order'}
+                  {verifyingPin ? 'Verifying...' : 'Verify & Submit Cash Order'}
                 </button>
               </div>
             </form>
@@ -2678,6 +2650,9 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
             <p className="text-sm text-green-700 mb-4">
               💡 If you're paying cash now, enter the amount here. It will be recorded with a transaction number and sent to the supplier for confirmation.
             </p>
+            <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+              <strong>ICAN business-wallet protection:</strong> no ICAN funds move when this order is submitted. First approve the purchase order, then submit its wallet payment. The authorized business-wallet administrator receives the request in ICANera Wallet or CMMS and must enter the business-wallet PIN to approve it.
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Cash Amount */}
@@ -2733,6 +2708,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
                   {/* ICAN Wallet Balance — shown only when paying with ICAN */}
                   {paymentMethod === 'ican_wallet' && (
                     <div className="md:col-span-2 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
+                      <p className="mb-3 text-sm font-semibold text-indigo-900">This balance is informational only. The payment is requested after order approval and requires a business-wallet administrator's PIN approval in ICANera Wallet or CMMS.</p>
                       <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
                       {icanBalanceLoading ? (
                         <div className="text-sm text-gray-500">Loading balance...</div>
@@ -2799,12 +2775,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
             </button>
             <button
               type="submit"
-              disabled={submitting || orderItems.length === 0 || (
-                paymentMethod === 'ican_wallet' &&
-                parseFloat(cashPaidNow) > 0 &&
-                icanBalance &&
-                icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow))
-              )}
+              disabled={submitting || orderItems.length === 0}
               className="px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {submitting ? (
@@ -2832,7 +2803,6 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [businessWalletPin, setBusinessWalletPin] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -2861,6 +2831,16 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'].includes(order.status)) {
+      alert('This purchase order is not available for payment in its current status.');
+      return;
+    }
+
+    if (order.status === 'pending_approval' && paymentMethod !== 'ican_wallet') {
+      alert('A pending purchase order can only be submitted as an ICAN business-wallet approval request. Select ICANera Wallet to notify the authorized administrator.');
+      return;
+    }
 
     const amount = parseFloat(amountPaid);
     if (!amount || amount <= 0) {
@@ -2896,11 +2876,16 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
           icanAmount:     ugxToICAN(amount),
           ugxAmount:      amount,
           businessProfileId,
-          businessWalletPin,
           notes:          paymentNotes || null,
         });
 
-        if (!payResult.success) throw new Error(payResult.error);
+        if (!payResult.success) {
+          if (payResult.requires_order_approval) {
+            alert('This purchase order cannot be submitted for wallet approval in its current status.');
+            return;
+          }
+          throw new Error(payResult.error);
+        }
 
         alert(payResult.wallet_approval_required
           ? `🔔 ICAN payment request submitted.\n\nAmount: ${formatUGX(amount)}\n\nAn authorized wallet administrator must approve it with the business-wallet PIN.`
@@ -3047,20 +3032,8 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
           )}
 
           {paymentMethod === 'ican_wallet' && (
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Business Wallet PIN *
-              </label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                value={businessWalletPin}
-                onChange={(e) => setBusinessWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter the store business-wallet PIN"
-                className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                required
-              />
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+              <strong>Manager action:</strong> submitting this creates an approval request only. The authorized business-wallet administrator receives it in ICANera Wallet or CMMS and enters the business-wallet PIN there to approve payment.
             </div>
           )}
 

@@ -29,6 +29,7 @@ import TillSuppliesOrderManagement from '../components/TillSuppliesOrderManageme
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import IcanCoinBadge from '../components/IcanCoinBadge';
+import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
@@ -11616,6 +11617,9 @@ FAREDEAL Uganda Management Team
               </button>
             ) : (
               <>
+                {/* Separate from ordinary portal alerts: this opens only
+                    supplier-wallet requests and requires the wallet PIN. */}
+                <SupermarketaWalletApprovalBell />
                 {/* Notification Bell */}
                 <button
                   onClick={handleNotificationClick}

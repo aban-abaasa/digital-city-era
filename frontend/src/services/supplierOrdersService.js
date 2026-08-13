@@ -593,10 +593,36 @@ const legacyPayOrderWithICAN = async ({ orderId, supplierUserId, supplierBusines
 // The database owns payment routing and balance calculation. It creates one
 // pending business-wallet transaction tied to the PO; approval later updates
 // the order to paid and credits the supplier business wallet atomically.
-export const payOrderWithICAN = async ({ orderId }) => {
+export const payOrderWithICAN = async ({ orderId, ugxAmount = null }) => {
   try {
+    // A manager may submit a pending order for wallet-admin approval. The
+    // administrator's PIN approval then approves the order and pays it.
+    const { data: order, error: orderError } = await supabase
+      .from('purchase_orders')
+      .select('status, wallet_transaction_id')
+      .eq('id', orderId)
+      .single();
+    if (orderError) throw orderError;
+
+    if (order.wallet_transaction_id) {
+      return {
+        success: true,
+        transfer: { status: 'already_requested', transaction_id: order.wallet_transaction_id },
+        pending_confirmation: true,
+        wallet_approval_required: true,
+      };
+    }
+
+    if (!['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'].includes(order.status)) {
+      return {
+        success: false,
+        requires_order_approval: true,
+        error: 'This purchase order cannot be submitted for ICAN business-wallet approval in its current status.',
+      };
+    }
+
     const { data: transfer, error } = await supabase.rpc(
-      'supermarketa_request_supplier_order_payment', { p_order_id: orderId }
+      'supermarketa_request_supplier_order_payment', { p_order_id: orderId, p_amount_ugx: ugxAmount }
     );
     if (error) throw error;
     return {
