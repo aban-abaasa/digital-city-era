@@ -21,8 +21,8 @@ const SupplierAuth = () => {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true); // Add checking state
   const [showProfileForm, setShowProfileForm] = useState(false);
-  const [showProfileCompletion, setShowProfileCompletion] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [businessProfiles, setBusinessProfiles] = useState([]);
+  const [selectedBusinessProfileId, setSelectedBusinessProfileId] = useState('');
   
   // Profile Form Fields
   const [profileData, setProfileData] = useState({
@@ -130,7 +130,18 @@ const SupplierAuth = () => {
         return;
       }
 
-      setCurrentUser(user);
+      // Let a supplier deliberately reuse the Pichin business they already
+      // own, just as CMMS and Supermarketa setup do.
+      const { data: publicUser } = await supabase
+        .from('users').select('id').or(`auth_id.eq.${user.id},id.eq.${user.id}`).limit(1).maybeSingle();
+      const profileOwners = [...new Set([user.id, publicUser?.id].filter(Boolean))];
+      const { data: profiles, error: profilesError } = await supabase
+        .from('business_profiles')
+        .select('id, business_name, business_type, created_at')
+        .in('user_id', profileOwners)
+        .eq('status', 'active')
+        .order('created_at', { ascending: true });
+      if (!profilesError) setBusinessProfiles(profiles || []);
 
       // Fetch existing public.users row (may be customer, supplier, or new)
       const { data: userData } = await supabase
@@ -185,7 +196,7 @@ const SupplierAuth = () => {
       
       console.log('🔐 OAuth redirect URL:', explicitRedirectUrl);
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: explicitRedirectUrl,
@@ -212,12 +223,24 @@ const SupplierAuth = () => {
   // =============================================
   // Handle Profile Completion
   // =============================================
+  const selectBusinessProfile = (profileId) => {
+    setSelectedBusinessProfileId(profileId);
+    const profile = businessProfiles.find((item) => item.id === profileId);
+    if (!profile) return;
+    setProfileData((current) => ({
+      ...current,
+      companyName: profile.business_name || current.companyName,
+      businessType: /limited|llc/i.test(profile.business_type || '') ? 'Limited Company' : current.businessType,
+    }));
+  };
+
   const handleCompleteProfile = async (e) => {
     e.preventDefault();
     
-    // Validation
-    if (!profileData.companyName || !profileData.phone || !profileData.address || 
-        !profileData.businessLicense || !profileData.category) {
+    // A selected Pichin business is already the verified business identity.
+    // Supplier-specific details can be completed later from the portal.
+    if (!selectedBusinessProfileId && (!profileData.companyName || !profileData.phone || !profileData.address ||
+        !profileData.businessLicense || !profileData.category)) {
       notificationService.show('Please fill in all required fields', 'error');
       return;
     }
@@ -295,7 +318,8 @@ const SupplierAuth = () => {
       const { error: businessErr } = await supabase.rpc('supplier_create_business_account', {
         p_business_name: profileData.companyName,
         p_business_type: profileData.businessType,
-        p_registration_number: profileData.businessLicense
+        p_registration_number: profileData.businessLicense,
+        p_existing_business_profile_id: selectedBusinessProfileId || null
       });
       if (businessErr) throw businessErr;
 
@@ -327,61 +351,81 @@ const SupplierAuth = () => {
 
           <form onSubmit={handleCompleteProfile} className="auth-form">
             <div className="form-group">
-              <label>Full Name *</label>
+              <label>Full Name{selectedBusinessProfileId ? ' (optional)' : ' *'}</label>
               <input
                 type="text"
                 value={profileData.fullName}
                 onChange={(e) => setProfileData({...profileData, fullName: e.target.value})}
-                required
+                required={!selectedBusinessProfileId}
               />
             </div>
 
             <div className="form-group">
-              <label>Company Name *</label>
+              <label>Company Name{selectedBusinessProfileId ? ' (from business profile)' : ' *'}</label>
               <input
                 type="text"
                 value={profileData.companyName}
                 onChange={(e) => setProfileData({...profileData, companyName: e.target.value})}
-                required
+                required={!selectedBusinessProfileId}
               />
             </div>
 
             <div className="form-group">
-              <label>Phone Number *</label>
+              <label>Use your business profile</label>
+              <p style={{ color: '#777', fontSize: '12px', margin: '0 0 2px' }}>Optional: use the same Pichin business profile for Supplier, Supermarketa and CMMS.</p>
+              <select value={selectedBusinessProfileId} onChange={(e) => selectBusinessProfile(e.target.value)}>
+                <option value="">Create a separate supplier business profile</option>
+                {businessProfiles.map(profile => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.business_name} {profile.business_type ? `(${profile.business_type})` : ''}
+                  </option>
+                ))}
+              </select>
+              {businessProfiles.length === 0 && <p style={{ color: '#777', fontSize: '12px', margin: '0' }}>No active Pichin business profile found. A dedicated supplier profile will be created.</p>}
+            </div>
+
+            {selectedBusinessProfileId && (
+              <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', padding: '12px', color: '#3730a3', fontSize: '13px', lineHeight: 1.5 }}>
+                Your business profile is connected. You can go straight to the supplier portal; the fields below are optional and can be completed later in your profile.
+              </div>
+            )}
+
+            <div className="form-group">
+              <label>Phone Number{selectedBusinessProfileId ? ' (optional)' : ' *'}</label>
               <input
                 type="tel"
                 value={profileData.phone}
                 onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
-                required
+                required={!selectedBusinessProfileId}
               />
             </div>
 
             <div className="form-group">
-              <label>Business Address *</label>
+              <label>Business Address{selectedBusinessProfileId ? ' (optional)' : ' *'}</label>
               <textarea
                 value={profileData.address}
                 onChange={(e) => setProfileData({...profileData, address: e.target.value})}
                 rows="3"
-                required
+                required={!selectedBusinessProfileId}
               />
             </div>
 
             <div className="form-group">
-              <label>Business License Number *</label>
+              <label>Business License Number{selectedBusinessProfileId ? ' (optional)' : ' *'}</label>
               <input
                 type="text"
                 value={profileData.businessLicense}
                 onChange={(e) => setProfileData({...profileData, businessLicense: e.target.value})}
-                required
+                required={!selectedBusinessProfileId}
               />
             </div>
 
             <div className="form-group">
-              <label>Business Type *</label>
+              <label>Business Type{selectedBusinessProfileId ? ' (optional)' : ' *'}</label>
               <select
                 value={profileData.businessType}
                 onChange={(e) => setProfileData({...profileData, businessType: e.target.value})}
-                required
+                required={!selectedBusinessProfileId}
               >
                 <option value="Sole Proprietorship">Sole Proprietorship</option>
                 <option value="Limited Company">Limited Company</option>
@@ -389,11 +433,11 @@ const SupplierAuth = () => {
             </div>
 
             <div className="form-group">
-              <label>Business Category *</label>
+              <label>Business Category{selectedBusinessProfileId ? ' (optional)' : ' *'}</label>
               <select
                 value={profileData.category}
                 onChange={(e) => setProfileData({...profileData, category: e.target.value})}
-                required
+                required={!selectedBusinessProfileId}
               >
                 <option value="">Select Category</option>
                 <option value="Food & Beverages">Food & Beverages</option>
@@ -410,7 +454,7 @@ const SupplierAuth = () => {
               className="auth-button"
               disabled={loading}
             >
-              {loading ? 'Creating account...' : 'Create Supplier Account'}
+              {loading ? 'Opening portal...' : selectedBusinessProfileId ? 'Continue to Supplier Portal' : 'Create Supplier Account'}
             </button>
           </form>
         </div>

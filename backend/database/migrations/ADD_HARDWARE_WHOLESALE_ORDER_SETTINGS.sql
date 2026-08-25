@@ -48,8 +48,9 @@ BEGIN
   IF v_pichin_business_id IS NOT NULL AND to_regclass('public.business_app_links') IS NOT NULL THEN
     INSERT INTO public.business_app_links (business_profile_id, app_key, source_entity_id, linked_by, metadata)
     VALUES (v_pichin_business_id, 'supermarketa', v_new_id, v_auth_id, jsonb_build_object('business_type', COALESCE(p_business_type, 'supermarket')))
-    ON CONFLICT (business_profile_id, app_key) DO UPDATE SET source_entity_id = excluded.source_entity_id,
-      status = 'active', metadata = excluded.metadata, updated_at = now();
+    ON CONFLICT (app_key, source_entity_id) DO UPDATE SET
+      business_profile_id = excluded.business_profile_id,
+      status = 'active', metadata = public.business_app_links.metadata || excluded.metadata, updated_at = now();
   END IF;
   RETURN jsonb_build_object('success', true, 'supermarket_id', v_new_id, 'onboarding_token', v_token,
     'business_type', COALESCE(p_business_type, 'supermarket'), 'pichin_business_profile_id', v_pichin_business_id);

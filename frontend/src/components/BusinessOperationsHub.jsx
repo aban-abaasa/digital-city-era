@@ -66,8 +66,78 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
         ['cashier', 'manager'].includes(String(employee.role || '').trim().toLowerCase())
       ));
 
+      // A profile made in Pichin's "Manage your business" is already the
+      // owner's CMMS identity. Link that existing profile before considering
+      // creation of a Supermarketa-specific profile; otherwise opening CMMS
+      // appears to ask the owner to create the same business again.
+      if (!linkedBusinessId && authUser) {
+        // Pitchin's older profiles can use public.users.id for user_id while
+        // current sessions use auth.users.id. Resolve both identities and all
+        // shared access records, then let the same authority RPC used by CMMS
+        // decide which profiles this user may administer.
+        const { data: publicUser } = await supabase
+          .from('users')
+          .select('id')
+          .or(`auth_id.eq.${authUser.id},id.eq.${authUser.id}`)
+          .limit(1)
+          .maybeSingle();
+        const identityIds = [...new Set([authUser.id, publicUser?.id].filter(Boolean))];
+        const identityFilter = identityIds.map((id) => `user_id.eq.${id}`);
+        if (authUser.email) identityFilter.push(`owner_email.ilike.${authUser.email}`);
+
+        const [ownedResult, coOwnerResult, accountMemberResult, teamMemberResult] = await Promise.all([
+          supabase.from('business_profiles').select('id').in('user_id', identityIds).or('status.eq.active,status.is.null'),
+          supabase.from('business_co_owners').select('business_profile_id').or(identityFilter.join(',')).in('status', ['active', 'approved', 'verified']),
+          supabase.from('business_account_members').select('business_profile_id').in('auth_user_id', identityIds).eq('employment_status', 'active'),
+          supabase.from('business_team_members').select('business_profile_id').in('user_id', identityIds).eq('status', 'active')
+        ]);
+
+        if (ownedResult.error) {
+          setError(ownedResult.error.message);
+        } else {
+          const candidateIds = [...new Set([
+            ...(ownedResult.data || []).map((profile) => profile.id),
+            ...(coOwnerResult.data || []).map((member) => member.business_profile_id),
+            ...(accountMemberResult.data || []).map((member) => member.business_profile_id),
+            ...(teamMemberResult.data || []).map((member) => member.business_profile_id)
+          ].filter(Boolean))];
+
+          const authorityChecks = await Promise.all(candidateIds.map(async (profileId) => {
+            const { data: isAdministrator, error: authorityError } = await supabase.rpc('ican_business_admin', {
+              p_business_profile_id: profileId
+            });
+            return !authorityError && isAdministrator ? profileId : null;
+          }));
+          const manageableProfileIds = authorityChecks.filter(Boolean);
+
+          if (manageableProfileIds.length === 1) {
+            linkedBusinessId = manageableProfileIds[0];
+
+            const [{ error: storeLinkError }, { error: appLinkError }] = await Promise.all([
+              supabase.from('supermarkets')
+                .update({ pichin_business_profile_id: linkedBusinessId })
+                .eq('id', supermarketId),
+              supabase.from('business_app_links').upsert({
+                business_profile_id: linkedBusinessId,
+                app_key: 'supermarketa',
+                source_entity_id: supermarketId,
+                status: 'active',
+                linked_by: authUser.id,
+                metadata: { mode: 'existing_pichin_profile' }
+              }, { onConflict: 'app_key,source_entity_id' })
+            ]);
+
+            if (storeLinkError) setError(storeLinkError.message);
+            if (appLinkError && appLinkError.code !== '42P01') setError(appLinkError.message);
+          } else if (manageableProfileIds.length > 1) {
+            setError('More than one Pichin business profile is available. Choose the business profile to link in Supermarketa onboarding before opening CMMS.');
+          }
+        }
+      }
+
       // Small Supermarketa stores do not need to leave POS to bootstrap the
-      // shared authority profile. Keep this deliberately limited to <3 staff.
+      // shared authority profile. This runs only when the owner has no Pichin
+      // business profile at all, never as a replacement for an existing one.
       if (!linkedBusinessId && authUser && (staff || []).length < 3) {
         const { data: createdProfile, error: profileError } = await supabase
           .from('business_profiles')
@@ -245,9 +315,25 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
   };
 
   const isEnterprise = plan === 'enterprise';
-  // The temporary product rule is based on workforce size, not subscription:
-  // fewer than three workers stay in Supermarketa; three or more use CMMS.
+  // Keep the small-team operations view available, but do not use team size as
+  // an authorization rule. A newly provisioned business administrator must be
+  // able to open the shared CMMS workspace immediately.
   const requiresFullCmms = employees.length >= 3;
+
+  const openCmms = () => {
+    if (!resolvedBusinessProfileId) {
+      setError('Your business profile is still being prepared. Refresh this page and try again.');
+      return;
+    }
+
+    // CMMS runs on a different web origin, so it cannot read Supermarketa's
+    // local session storage. Preserve the shared business identity in the URL
+    // and let CMMS authenticate the same user against the shared database.
+    const cmmsUrl = new URL(ICANERA_CMMS_URL, window.location.origin);
+    cmmsUrl.searchParams.set('business_profile_id', resolvedBusinessProfileId);
+    cmmsUrl.searchParams.set('source_app', 'supermarketa');
+    window.open(cmmsUrl.toString(), '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="space-y-5">
@@ -317,17 +403,17 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
             <p className="font-semibold text-slate-900">{isEnterprise ? 'Enterprise CMMS workspace' : 'Shared CMMS workspace'}</p>
             <p className="text-sm text-slate-500">
                {requiresFullCmms
-                ? 'Enterprise stores should use the full ICANera CMMS workspace for payroll, assets and transport.'
-                : 'Simple stores use payroll and transport here; your POS remains here.'}
+                ? 'Use the full ICANera CMMS workspace for payroll, assets and transport.'
+                : 'Simple stores can work here or open the full CMMS workspace at any time.'}
             </p>
           </div>
           <button
             type="button"
-             onClick={() => window.open(ICANERA_CMMS_URL, '_blank', 'noopener,noreferrer')}
-             disabled={!requiresFullCmms}
+             onClick={openCmms}
+             disabled={loading || !resolvedBusinessProfileId}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {requiresFullCmms ? 'Open ICANera CMMS' : 'Full CMMS for 3+ workers'} <FiExternalLink size={15} />
+            Open ICANera CMMS <FiExternalLink size={15} />
           </button>
         </div>
       </div>

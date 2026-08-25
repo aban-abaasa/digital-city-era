@@ -13,7 +13,7 @@ import {
   FiMaximize, FiMinimize, FiRotateCw, FiUpload, FiPrinter,
   FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiUsers, FiUser,
   FiShoppingCart, FiPercent, FiFlag, FiWifi, FiSend, FiFileText,
-  FiMenu, FiX, FiChevronUp
+  FiMenu, FiX, FiChevronUp, FiBriefcase
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -31,6 +31,7 @@ import SupplierNetwork from '../components/SupplierNetwork';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
+import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
@@ -238,12 +239,15 @@ const SupplierPortal = () => {
           .maybeSingle();
 
         const certifications = supplier.certifications || [];
+        const linkedBusinessIds = await getSupplierBusinessProfileMatchIds(user.id);
+        const linkedBusinessProfileId = linkedBusinessIds[0] || null;
         const deliveryAreas = ['Kampala', 'Entebbe', 'Mukono', 'Wakiso', 'Jinja'];
         const languages = ['English', 'Luganda', 'Swahili'];
         const profilePicture = supplier.avatar_url || null;
 
         setSupplierProfile({
           id: supplier.id,
+          supplier_business_profile_id: linkedBusinessProfileId,
           name: bizProfile?.company_name || supplier.full_name || 'Your Company',
           contactPerson: supplier.full_name || '',
           email: supplier.email || user.email || '',
@@ -276,6 +280,7 @@ const SupplierPortal = () => {
         console.log('⚠️ No supplier row found yet — showing empty profile');
         setSupplierProfile({
           id: existingUser?.id || user.id,
+          supplier_business_profile_id: null,
           name: existingUser?.full_name || user.user_metadata?.full_name || 'Your Company',
           contactPerson: existingUser?.full_name || '',
           email: existingUser?.email || user.email || '',
@@ -2753,6 +2758,7 @@ const SupplierPortal = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: FiBarChart },
+    { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
     { id: 'orders', label: 'Orders', icon: FiPackage },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
@@ -3137,6 +3143,18 @@ const SupplierPortal = () => {
         ) : (
           <>
             {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'business-profile' && (
+              <UseBusinessProfileTab
+                mode="supplier"
+                supplierUserId={supplierProfile.id}
+                currentProfileId={supplierProfile.supplier_business_profile_id}
+                onLinked={(profileId, profile) => setSupplierProfile((current) => ({
+                  ...current,
+                  supplier_business_profile_id: profileId,
+                  name: profile?.business_name || current.name
+                }))}
+              />
+            )}
             {activeTab === 'profile' && renderProfile()}
             {activeTab === 'orders' && renderOrders()}
             {activeTab === 'products' && renderProducts()}

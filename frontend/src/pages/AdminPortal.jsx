@@ -9,6 +9,7 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
 import BusinessOperationsHub from '../components/BusinessOperationsHub';
+import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
@@ -233,10 +234,24 @@ const AdminPortal = () => {
           ownedSm = assignedSupermarket || null;
         }
 
-        // Do not silently attach the first Pichin profile owned by this user.
-        // A Supermarketa tenant is a separate entity by default; merging is
-        // an explicit user action through the Pichin merge RPC.
-        let pichinBusinessProfileId = ownedSm?.pichin_business_profile_id || null;
+        // Pichin is the shared business authority. Resolve an existing
+        // administrator-owned Pichin profile before reading the Supermarketa
+        // link, so CMMS, supplier and Supermarketa open the same business.
+        let pichinBusinessProfileId = null;
+        if (ownedSm?.id) {
+          const { data: pichinOptions, error: pichinOptionsError } = await supabase.rpc(
+            'get_supermarketa_pichin_merge_options',
+            { p_supermarket_id: ownedSm.id }
+          );
+          if (pichinOptionsError) {
+            console.warn('Could not resolve the shared Pichin business profile:', pichinOptionsError.message);
+          } else if (pichinOptions?.length) {
+            // The RPC orders the user's active Pichin profiles by recency.
+            // Use that authority choice before an older store-local link.
+            pichinBusinessProfileId = pichinOptions[0].business_profile_id;
+          }
+        }
+        pichinBusinessProfileId = pichinBusinessProfileId || ownedSm?.pichin_business_profile_id || null;
 
         // If the shared app-link migration has already run, use it as the
         // authoritative fallback for an existing link that was not copied to
@@ -252,9 +267,8 @@ const AdminPortal = () => {
           pichinBusinessProfileId = appLink?.business_profile_id || null;
         }
 
-        // No explicit link exists: create a dedicated sole-proprietor Pichin
-        // entity for this tenant. The user can later choose Merge from the
-        // business-link controls if they want one shared entity.
+        // No shared profile or legacy link exists, so create the first Pichin
+        // business profile for this tenant.
         if (!pichinBusinessProfileId && ownedSm?.id) {
           const { data: separateResult, error: separateError } = await supabase.rpc(
             'separate_supermarketa_pichin_business',
@@ -7667,6 +7681,7 @@ const AdminPortal = () => {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
+    { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
     { id: 'business-operations', label: 'Payroll & Transport', icon: FiBriefcase },
     { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
@@ -8094,6 +8109,14 @@ const AdminPortal = () => {
 
           <div className="animate-fadeInUp">
             {activeSection === 'dashboard' && renderDashboard()}
+            {activeSection === 'business-profile' && (
+              <UseBusinessProfileTab
+                mode="admin"
+                supermarketId={currentAdmin.supermarket_id}
+                currentProfileId={currentAdmin.pichin_business_profile_id}
+                onLinked={(profileId) => setCurrentAdmin((admin) => ({ ...admin, pichin_business_profile_id: profileId }))}
+              />
+            )}
             {activeSection === 'business-operations' && (
               <BusinessOperationsHub
                 supermarketId={currentAdmin.supermarket_id}

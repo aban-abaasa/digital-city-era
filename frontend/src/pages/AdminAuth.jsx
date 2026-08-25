@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   FiShield, FiBriefcase, FiUsers, FiArrowRight, FiArrowLeft,
   FiLogIn, FiMapPin, FiPhone, FiMail, FiEye, FiEyeOff,
-  FiCheck, FiCopy, FiPackage
+  FiCheck, FiCopy, FiPackage, FiRefreshCw
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 
@@ -135,6 +135,9 @@ export default function AdminAuth() {
   const [copied, setCopied] = useState(false);
   const [result, setResult] = useState(null);
   const [session, setSession] = useState(null);
+  const [businessProfiles, setBusinessProfiles] = useState([]);
+  const [selectedBusinessProfileId, setSelectedBusinessProfileId] = useState('');
+  const [profilesLoading, setProfilesLoading] = useState(false);
 
   const [form, setForm] = useState({
     businessType: 'supermarket',
@@ -147,6 +150,46 @@ export default function AdminAuth() {
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
   const typeInfo = businessTypeInfo(form.businessType);
+
+  const selectBusinessProfile = (profileId) => {
+    setSelectedBusinessProfileId(profileId);
+    const profile = businessProfiles.find((item) => item.id === profileId);
+    if (!profile) return;
+    const type = String(profile.business_type || '').toLowerCase();
+    const matchingType = BUSINESS_TYPES.find((item) => type.includes(item.value) || (item.value === 'restaurant_cafe' && /restaurant|cafe/.test(type)));
+    setForm((current) => ({
+      ...current,
+      storeName: profile.business_name || current.storeName,
+      businessType: matchingType?.value || current.businessType,
+    }));
+  };
+
+  // This is the same authority check CMMS uses.  Showing it during setup
+  // means an owner can intentionally reuse their Pichin business instead of
+  // creating a second wallet and business identity for the new store.
+  const loadBusinessProfiles = useCallback(async (activeSession) => {
+    if (!activeSession?.user) return;
+    setProfilesLoading(true);
+    try {
+      const user = activeSession.user;
+      const { data: publicUser } = await supabase
+        .from('users').select('id').or(`auth_id.eq.${user.id},id.eq.${user.id}`).limit(1).maybeSingle();
+      const ids = [...new Set([user.id, publicUser?.id].filter(Boolean))];
+      const { data: owned, error: ownedError } = await supabase
+        .from('business_profiles').select('id, business_name, business_type, status, created_at').in('user_id', ids).eq('status', 'active');
+      if (ownedError) throw ownedError;
+      const checks = await Promise.all((owned || []).map(async profile => {
+        const { data: canManage } = await supabase.rpc('ican_business_admin', { p_business_profile_id: profile.id });
+        return canManage ? profile : null;
+      }));
+      setBusinessProfiles(checks.filter(Boolean).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
+    } catch (error) {
+      console.warn('Could not load Pichin business profiles:', error.message);
+      setBusinessProfiles([]);
+    } finally {
+      setProfilesLoading(false);
+    }
+  }, []);
 
   // ── on mount: check session ────────────────────────────────────────────────
   useEffect(() => {
@@ -162,6 +205,7 @@ export default function AdminAuth() {
 
       setSession(s);
       setForm(f => ({ ...f, storeEmail: s.user.email || '' }));
+      loadBusinessProfiles(s);
 
       // If this session already belongs to a fully set-up admin, send them
       // straight to their own portal — never show "create a supermarket"
@@ -182,7 +226,7 @@ export default function AdminAuth() {
       setView('create');
     })();
     return () => { alive = false; };
-  }, [navigate]);
+  }, [navigate, loadBusinessProfiles]);
 
   // ── sign-in ────────────────────────────────────────────────────────────────
   const handleSignIn = async (e) => {
@@ -200,6 +244,7 @@ export default function AdminAuth() {
       if (error) throw error;
       setSession(data.session);
       setForm(f => ({ ...f, storeEmail: data.user.email || '' }));
+      loadBusinessProfiles(data.session);
 
       const uid = data.user.id;
 
@@ -249,11 +294,11 @@ export default function AdminAuth() {
   const validate = () => {
     const e = {};
     if (step === 1) {
-      if (!form.storeName.trim()) e.storeName = 'Store name is required';
+      if (!selectedBusinessProfileId && !form.storeName.trim()) e.storeName = 'Store name is required';
     }
     if (step === 2) {
-      if (!form.address.trim()) e.address = 'Street address is required';
-      if (!form.city.trim()) e.city = 'City is required';
+      if (!selectedBusinessProfileId && !form.address.trim()) e.address = 'Street address is required';
+      if (!selectedBusinessProfileId && !form.city.trim()) e.city = 'City is required';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -273,8 +318,10 @@ export default function AdminAuth() {
         return;
       }
 
-      // Call onboard_supermarket RPC (wired in MULTI_TENANT_PLATFORM.sql)
-      const { data, error } = await supabase.rpc('onboard_supermarket', {
+      // Current deployments accept business type. Some already-live projects
+      // still expose the seven-argument RPC, so retry that compatible shape
+      // instead of leaving setup blocked with a PostgREST 400.
+      const onboardingPayload = {
         p_name:          form.storeName.trim(),
         p_description:   form.description.trim() || null,
         p_phone:         form.storePhone.trim() || null,
@@ -283,9 +330,28 @@ export default function AdminAuth() {
         p_city:          form.city.trim(),
         p_country:       form.country,
         p_business_type: form.businessType,
-      });
+      };
+      let { data, error } = await supabase.rpc('onboard_supermarket', onboardingPayload);
+      const missingTypedRpc = error?.code === 'PGRST202' || /could not find the function|p_business_type/i.test(error?.message || '');
+      if (error && missingTypedRpc) {
+        const legacyPayload = { ...onboardingPayload };
+        delete legacyPayload.p_business_type;
+        ({ data, error } = await supabase.rpc('onboard_supermarket', legacyPayload));
+        if (!error && form.businessType !== 'supermarket' && data?.supermarket_id) {
+          // Best effort only: the old RPC created the tenant correctly but
+          // defaults its type to supermarket. New migrations handle this in
+          // the RPC itself.
+          const { error: typeError } = await supabase.from('supermarkets')
+            .update({ business_type: form.businessType })
+            .eq('id', data.supermarket_id);
+          if (typeError) console.warn('Store created, but its business type needs migration:', typeError.message);
+        }
+      }
 
-      if (error) throw error;
+      if (error) {
+        console.error('onboard_supermarket failed:', error);
+        throw error;
+      }
       if (!data?.success) throw new Error(data?.error || 'Registration failed');
 
       // Keep the store ledger and its Pichin business wallet isolated from any
@@ -295,7 +361,8 @@ export default function AdminAuth() {
         p_supermarket_id: data.supermarket_id,
         p_business_name: form.storeName.trim(),
         p_business_type: form.businessType,
-        p_merge_existing: false,
+        p_existing_business_profile_id: selectedBusinessProfileId || null,
+        p_merge_existing: !!selectedBusinessProfileId,
       });
       if (storeAccountError) throw storeAccountError;
       if (!storeAccount?.success) throw new Error(storeAccount?.error || 'Store business account setup failed');
@@ -303,6 +370,8 @@ export default function AdminAuth() {
       // Factories are first-class CMMS businesses. Create the factory template
       // (production, BOM, warehouse, maintenance, supplier marketplace and
       // transport) while retaining this Supermarketa POS tenant.
+      // Keep the default isolated store account unless the administrator made
+      // the explicit choice above.
       let cmmsBusinessProfileId = storeAccount.business_profile_id || null;
       if (form.businessType === 'factory' && !cmmsBusinessProfileId) {
         const { data: factoryProfileId, error: factoryProfileError } = await supabase.rpc('create_business_profile_from_category', {
@@ -342,6 +411,11 @@ export default function AdminAuth() {
       const { error: e1 } = await supabase.from('users').update(userUpdate).eq('auth_id', uid);
       if (e1) await supabase.from('users').update(userUpdate).eq('id', uid);
 
+      if (selectedBusinessProfileId) {
+        toast.success(`${form.storeName} is ready. Complete any remaining store details from your portal.`);
+        navigate('/admin-portal', { replace: true });
+        return;
+      }
       setResult(data);
       setView('success');
       toast.success(`${form.storeName} is now live! 🎉`);
@@ -595,6 +669,31 @@ export default function AdminAuth() {
                   ))}
                 </div>
 
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><FiBriefcase className="text-indigo-600" /> Use your business profile</p>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-600">Optional: connect a Pichin business profile now and use the same administrator authority, wallet and CMMS workspace for this store.</p>
+                    </div>
+                    <button type="button" onClick={() => loadBusinessProfiles(session)} disabled={profilesLoading} className="rounded-lg p-2 text-indigo-700 hover:bg-white disabled:opacity-50" aria-label="Refresh business profiles"><FiRefreshCw className={profilesLoading ? 'animate-spin' : ''} size={16} /></button>
+                  </div>
+
+                  <label className={`mt-3 flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${!selectedBusinessProfileId ? 'border-indigo-400 bg-white' : 'border-transparent bg-white/60'}`}>
+                    <input type="radio" name="setup-business-profile" checked={!selectedBusinessProfileId} onChange={() => setSelectedBusinessProfileId('')} />
+                    <span><span className="block text-sm font-semibold text-slate-800">Create a separate store profile</span><span className="block text-xs text-slate-500">Recommended when this store needs its own wallet and records.</span></span>
+                  </label>
+
+                  {businessProfiles.map(profile => (
+                    <label key={profile.id} className={`mt-2 flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${selectedBusinessProfileId === profile.id ? 'border-indigo-400 bg-white' : 'border-transparent bg-white/60 hover:border-indigo-200'}`}>
+                      <input type="radio" name="setup-business-profile" value={profile.id} checked={selectedBusinessProfileId === profile.id} onChange={() => selectBusinessProfile(profile.id)} />
+                      <span><span className="block text-sm font-semibold text-slate-800">{profile.business_name}</span><span className="block text-xs text-slate-500">{profile.business_type || 'Business profile'} · Use this profile in Supermarketa, Supplier and CMMS</span></span>
+                    </label>
+                  ))}
+
+                  {!profilesLoading && businessProfiles.length === 0 && <p className="mt-3 text-xs text-slate-500">No eligible Pichin business profile was found. You can continue with a new store profile.</p>}
+                  {selectedBusinessProfileId && <p className="mt-3 rounded-lg bg-white p-3 text-xs leading-relaxed text-indigo-800">Your business profile is connected. Store contact and location details are optional and can be completed later in the Admin Portal.</p>}
+                </div>
+
               </div>
             )}
 
@@ -708,6 +807,8 @@ export default function AdminAuth() {
                   </>}
                 </div>
 
+                {selectedBusinessProfileId && <p className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-800">Your Pichin business profile will be used. You can complete store contact and location details from the Admin Portal after launch.</p>}
+
                 <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 p-4 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-lg shrink-0">₡</div>
                   <div>
@@ -744,7 +845,7 @@ export default function AdminAuth() {
                 >
                   {busy
                     ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Launching…</>
-                    : <>Launch my store <FiArrowRight size={14} /></>
+                    : <>{selectedBusinessProfileId ? 'Continue to Admin Portal' : 'Launch my store'} <FiArrowRight size={14} /></>
                   }
                 </button>
               )}

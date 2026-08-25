@@ -30,10 +30,10 @@ export const getBusinessWalletBalance = async (businessProfileId) => {
   } : null;
 };
 
-// Resolve the supermarket's linked Pichin business profile for manager screens
-// that were opened before the link was copied onto supermarkets. This keeps
-// staff wallets out of supplier-order payments while supporting older account
-// shapes used by the shared business-profile flow.
+// Resolve the signed-in user's shared Pichin business profile first. CMMS,
+// Supermarketa and Supplier all use this as their business authority. Store
+// links are retained below only for legacy staff sessions that do not have a
+// direct Pichin membership.
 export const resolveBusinessProfileId = async (providedProfileId = null) => {
   if (providedProfileId) return providedProfileId;
 
@@ -47,6 +47,37 @@ export const resolveBusinessProfileId = async (providedProfileId = null) => {
     .limit(1);
   const userRow = userRows?.[0] || null;
   let supermarketId = userRow?.supermarket_id || null;
+
+  const ownerIds = [...new Set([user.id, userRow?.id].filter(Boolean))];
+  if (ownerIds.length) {
+    const { data: ownedBusiness } = await supabase
+      .from('business_profiles')
+      .select('id')
+      .in('user_id', ownerIds)
+      .eq('status', 'active')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (ownedBusiness?.id) return ownedBusiness.id;
+  }
+
+  // Owners can be represented by an auth UUID or a legacy public.users UUID.
+  // Check both IDs before falling through to a Supermarketa-specific link.
+  if (ownerIds.length || user.email) {
+    const ownershipFilters = [
+      ...ownerIds.map((id) => `user_id.eq.${id}`),
+      ...(user.email ? [`owner_email.ilike.${user.email}`] : [])
+    ];
+    const { data: sharedMembership } = await supabase
+      .from('business_co_owners')
+      .select('business_profile_id')
+      .or(ownershipFilters.join(','))
+      .in('status', ['active', 'approved', 'verified'])
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (sharedMembership?.business_profile_id) return sharedMembership.business_profile_id;
+  }
 
   if (!supermarketId) {
     const { data: ownedSupermarket } = await supabase
@@ -74,30 +105,6 @@ export const resolveBusinessProfileId = async (providedProfileId = null) => {
       .eq('status', 'active')
       .maybeSingle();
     if (appLink?.business_profile_id) return appLink.business_profile_id;
-  }
-
-  const ownerIds = [...new Set([user.id, userRow?.id].filter(Boolean))];
-  if (ownerIds.length) {
-    const { data: ownedBusiness } = await supabase
-      .from('business_profiles')
-      .select('id')
-      .in('user_id', ownerIds)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (ownedBusiness?.id) return ownedBusiness.id;
-  }
-
-  if (user.email) {
-    const { data: coOwnedBusiness } = await supabase
-      .from('business_co_owners')
-      .select('business_profile_id')
-      .ilike('owner_email', user.email)
-      .in('status', ['active', 'approved'])
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (coOwnedBusiness?.business_profile_id) return coOwnedBusiness.business_profile_id;
   }
 
   return null;
