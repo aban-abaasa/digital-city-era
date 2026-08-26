@@ -585,6 +585,7 @@ const CustomerLogin = () => {
                 </label>
                 <button
                   type="button"
+                  onClick={() => navigate('/forgot-password')}
                   className="text-sm text-blue-600 hover:text-blue-500 font-medium transform hover:scale-105 transition-all duration-300 animate-wiggle"
                 >
                   Forgot password?

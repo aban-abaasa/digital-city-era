@@ -193,9 +193,14 @@ export const auth = {
     return { user, error }
   },
 
-  // Reset password
+  // Reset password. Explicit redirectTo matters here: this Supabase project
+  // is shared across multiple apps (ICAN, mybodaguy, this one), so leaving
+  // it out would fall back to the project's single dashboard-configured Site
+  // URL — which may point at a different app's domain entirely.
   resetPassword: async (email) => {
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email)
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`
+    })
     return { data, error }
   },
 

@@ -14,7 +14,7 @@ import emailService from './emailService.js';
  * await sendAdminSignupEmail(email, fullName);
  */
 async function sendAdminSignupEmail(email, fullName) {
-  const adminLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-auth`;
+  const adminLink = `${process.env.FRONTEND_URL || 'https://supermartkera.icanera.space'}/admin-auth`;
   
   return emailService.sendAdminSignupEmail(email, fullName, adminLink);
 }
@@ -23,7 +23,7 @@ async function sendAdminSignupEmail(email, fullName) {
  * Send profile approval email to users
  */
 async function sendProfileApprovalEmail(email, fullName, role) {
-  const dashboardLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard`;
+  const dashboardLink = `${process.env.FRONTEND_URL || 'https://supermartkera.icanera.space'}/dashboard`;
   
   return emailService.sendProfileApprovalEmail(email, fullName, role, dashboardLink);
 }
@@ -32,7 +32,7 @@ async function sendProfileApprovalEmail(email, fullName, role) {
  * Send password reset email
  */
 async function sendPasswordResetEmail(email, fullName, resetToken) {
-  const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+  const resetLink = `${process.env.FRONTEND_URL || 'https://supermartkera.icanera.space'}/reset-password?token=${resetToken}`;
   
   return emailService.sendPasswordResetEmail(email, resetLink, fullName);
 }

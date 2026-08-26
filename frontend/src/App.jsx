@@ -14,6 +14,8 @@ import CountryGate from '@/components/CountryGate';
 // Pages and Components
 import AdminPortal from '@/pages/AdminPortal';
 import CustomerLogin from '@/pages/CustomerLogin';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 import EmployeeAuth from '@/pages/EmployeeAuth';
 import ManagerPortal from '@/pages/ManagerPortal';
 import CashierPortal from '@/pages/CushierPortal';
@@ -173,6 +175,8 @@ function App() {
               />
 
               <Route path="/login" element={<CustomerLogin />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/register" element={<Register />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/customer-login" element={<Navigate to="/login" replace />} />
