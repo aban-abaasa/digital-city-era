@@ -102,6 +102,16 @@ const AuthCallback = () => {
     mountedRef.current = true;
     let sessionTimeout;
 
+    // A password-recovery link produces a session here too (same
+    // access_token hash shape as OAuth, marked by type=recovery). Signing
+    // that straight into the dashboard would skip the reset-password step,
+    // so bounce it to /reset-password before any session is treated as a
+    // completed login.
+    if (window.location.hash.includes('type=recovery')) {
+      window.location.replace('/reset-password' + window.location.hash);
+      return () => {};
+    }
+
     const handleSession = async (session) => {
       // Prevent multiple simultaneous processing
       if (processingRef.current) {

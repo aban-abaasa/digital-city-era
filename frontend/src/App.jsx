@@ -66,12 +66,17 @@ import 'react-toastify/dist/ReactToastify.css';
   // CRITICAL: Handle OAuth callback BEFORE React Router loses the hash
   // ============================================================
   if (window.location.hash.includes('access_token=')) {
-    console.log('🔑 [APP] OAuth token detected in URL hash!');
-    const targetPath = '/auth/callback';
-    
-    // If we're at root path, redirect to auth page while PRESERVING the hash
-    if (window.location.pathname === '/' || window.location.pathname === '') {
-      console.log('🔄 [APP] Redirecting to', targetPath, 'with OAuth hash preserved');
+    // A Supabase password-recovery link carries the same access_token=...
+    // hash shape as an OAuth callback, distinguished only by type=recovery.
+    // Routing it to /auth/callback would sign the user straight into their
+    // dashboard, skipping the reset-password form entirely.
+    const isRecoveryLink = window.location.hash.includes('type=recovery');
+    const targetPath = isRecoveryLink ? '/reset-password' : '/auth/callback';
+    console.log(isRecoveryLink ? '🔑 [APP] Password recovery token detected in URL hash!' : '🔑 [APP] OAuth token detected in URL hash!');
+
+    // If we're not already on the right page, redirect while PRESERVING the hash
+    if (window.location.pathname !== targetPath) {
+      console.log('🔄 [APP] Redirecting to', targetPath, 'with auth hash preserved');
       // Use window.location to preserve the hash
       window.location.href = targetPath + window.location.hash;
     }
