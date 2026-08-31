@@ -13,6 +13,53 @@
 import { supabase, utils } from './supabase';
 import { toast } from 'react-toastify';
 
+/**
+ * Record a stock purchase (new product's initial stock, or a restock) in the
+ * shared ICAN ledger so it reaches the owner's Financial Summary report —
+ * a supermarket/pharmacy/store is a business like any CMMS-tracked one, it
+ * just wasn't feeding the report before. Catalog items are goods held for
+ * resale by definition, so this tags them as current-asset stock (COGS)
+ * directly rather than running each one through an AI classifier the way
+ * CMMS's mixed spare-parts/tools/equipment inventory needs.
+ * Best-effort: never blocks or fails the product/stock write it's called from.
+ */
+const recordSupermarketStockLedgerEntry = async (supermarketId, { productName, category, amount, note }) => {
+  if (!amount || amount <= 0 || !supermarketId) return;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: store } = await supabase
+      .from('supermarkets')
+      .select('pichin_business_profile_id')
+      .eq('id', supermarketId)
+      .maybeSingle();
+
+    const description = `${productName || 'Stock item'}${category ? ` (${category})` : ''} — supermarket inventory${note ? `: ${note}` : ''}`;
+
+    const { error } = await supabase.from('ican_transactions').insert([{
+      user_id: user.id,
+      transaction_type: 'expense',
+      amount,
+      currency: 'UGX',
+      description,
+      status: 'completed',
+      business_profile_id: store?.pichin_business_profile_id || null,
+      metadata: {
+        category: 'supermarket_inventory',
+        source_app: 'digital-city-era',
+        record_category: 'business',
+        accounting_type: 'cogs',
+        product_name: productName,
+        supermarket_id: supermarketId
+      }
+    }]);
+    if (error) console.warn('⚠️ Could not record supermarket stock ledger entry:', error.message);
+  } catch (err) {
+    console.warn('⚠️ Supermarket stock ledger entry failed:', err.message);
+  }
+};
+
 class InventorySupabaseService {
   constructor() {
     this.cache = new Map();
@@ -441,6 +488,16 @@ class InventorySupabaseService {
         if (batchError) console.error('Pharmacy batch creation failed:', batchError);
       }
 
+      // Initial stock is a real purchase cost — record it in the shared
+      // ledger so it reaches the Financial Summary report for this business.
+      if (inventory && initial_stock > 0 && finalCostPrice > 0) {
+        recordSupermarketStockLedgerEntry(supermarketId, {
+          productName: name,
+          category: undefined,
+          amount: finalCostPrice * initial_stock
+        });
+      }
+
       toast.success(`✅ Product "${name}" created successfully!`);
       return { ...product, inventory };
 
@@ -561,6 +618,23 @@ class InventorySupabaseService {
         reference_type: 'manual_adjustment',
         notes: reason
       });
+
+      // A quantity increase is a restock purchase — record it in the shared
+      // ledger. Decreases (shrinkage/correction) aren't a new purchase.
+      if (quantityChange > 0 && currentInventory.supermarket_id) {
+        const { data: product } = await supabase
+          .from('products')
+          .select('name, cost_price')
+          .eq('id', productId)
+          .maybeSingle();
+        if (product?.cost_price > 0) {
+          recordSupermarketStockLedgerEntry(currentInventory.supermarket_id, {
+            productName: product.name,
+            amount: quantityChange * product.cost_price,
+            note: 'restock'
+          });
+        }
+      }
 
       toast.success(`✅ Stock updated to ${quantity} units`);
       return updatedInventory;

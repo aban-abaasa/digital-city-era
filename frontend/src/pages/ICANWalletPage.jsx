@@ -409,6 +409,7 @@ export default function ICANWalletPage({
   const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | null
   const [paymentReceipt, setPaymentReceipt] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedTx, setSelectedTx] = useState(null);
   const [needsPin, setNeedsPin] = useState(false);
 
   useEffect(() => {
@@ -636,39 +637,79 @@ export default function ICANWalletPage({
               <p className={`${embedded ? 'text-gray-600' : 'text-gray-500'} text-sm`}>No transactions yet. Pay or receive ICAN at the supermarket checkout.</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-0.5">
               {filteredTx.map(tx => {
-                const badge = APP_BADGE[tx.source_app] ?? APP_BADGE.ican;
                 const isIn = tx.direction === 'in';
                 return (
-                  <div key={tx.id} className={`${embedded ? 'bg-white border border-gray-200' : 'bg-gray-900'} rounded-xl px-4 py-3 flex items-center gap-3`}>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${isIn ? (embedded ? 'bg-emerald-100' : 'bg-emerald-900') : (embedded ? 'bg-rose-100' : 'bg-rose-900')}`}>
-                      <span className={isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400')}>{isIn ? '↓' : '↑'}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`${embedded ? 'text-gray-900' : 'text-white'} text-sm font-medium`}>
-                          {TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
-                        </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>
-                      </div>
-                      <p className={`${embedded ? 'text-gray-600' : 'text-gray-500'} text-xs truncate`}>{tx.note || '—'}</p>
-                      <p className={`${embedded ? 'text-gray-400' : 'text-gray-600'} text-xs`}>{formatDate(tx.created_at)}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className={`font-semibold text-sm ${TX_COLORS[tx.transaction_type] ?? (isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400'))}`}>
-                        {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
-                      </p>
-                      <p className={`${embedded ? 'text-gray-500' : 'text-gray-600'} text-xs`}>
-                        {currencyCode} {Number(tx.ican_amount * priceLocal).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </p>
-                    </div>
-                  </div>
+                  <button
+                    key={tx.id}
+                    type="button"
+                    onClick={() => setSelectedTx(tx)}
+                    className={`w-full flex items-center justify-between py-1.5 px-2 rounded-lg text-left transition-colors ${embedded ? 'hover:bg-gray-100' : 'hover:bg-gray-900'}`}
+                  >
+                    <p className={`${embedded ? 'text-gray-700' : 'text-gray-200'} text-xs truncate pr-2`}>
+                      {TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
+                    </p>
+                    <p className={`text-xs font-medium shrink-0 ${TX_COLORS[tx.transaction_type] ?? (isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400'))}`}>
+                      {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
+                    </p>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
+
+        {/* Transaction detail modal */}
+        {selectedTx && (() => {
+          const tx = selectedTx;
+          const badge = APP_BADGE[tx.source_app] ?? APP_BADGE.ican;
+          const isIn = tx.direction === 'in';
+          return (
+            <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4" onClick={() => setSelectedTx(null)}>
+              <div className={`${embedded ? 'bg-white text-gray-900' : 'bg-gray-900 text-white'} rounded-2xl shadow-2xl max-w-sm w-full p-6`} onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-base">Transaction Details</h3>
+                  <button onClick={() => setSelectedTx(null)} className={`${embedded ? 'text-gray-500 hover:text-gray-800' : 'text-gray-400 hover:text-white'} text-xl leading-none`}>&times;</button>
+                </div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${isIn ? (embedded ? 'bg-emerald-100' : 'bg-emerald-900') : (embedded ? 'bg-rose-100' : 'bg-rose-900')}`}>
+                    <span className={isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400')}>{isIn ? '↓' : '↑'}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{TX_LABELS[tx.transaction_type] ?? tx.transaction_type}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>
+                    </div>
+                    <p className={`${embedded ? 'text-gray-400' : 'text-gray-600'} text-xs`}>{formatDate(tx.created_at)}</p>
+                  </div>
+                </div>
+                <div className={`${embedded ? 'bg-gray-50' : 'bg-black/30'} rounded-xl p-4 space-y-2 text-sm`}>
+                  <div className="flex justify-between gap-4">
+                    <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>Amount</span>
+                    <strong className={TX_COLORS[tx.transaction_type] ?? (isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400'))}>
+                      {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
+                    </strong>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>Local value</span>
+                    <strong>{currencyCode} {Number(tx.ican_amount * priceLocal).toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>Note</span>
+                    <strong className="truncate max-w-[60%]">{tx.note || '—'}</strong>
+                  </div>
+                  {tx.id && (
+                    <div className="flex justify-between gap-4">
+                      <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>ID</span>
+                      <strong className="truncate max-w-[60%] text-xs">{tx.id}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Earn more section */}
         {!embedded && (
