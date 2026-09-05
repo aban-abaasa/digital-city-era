@@ -158,12 +158,13 @@ const ChatWidget = () => {
   const showCallStage = supportCall.isVideo && (supportCall.callState === 'ringing-out' || supportCall.callState === 'active');
 
   // Community "Go Live" broadcast — no 1:1 calling between community
-  // members, only this one shared group broadcast. Guests can watch but not
-  // go live.
+  // members, only this one shared group broadcast. Guests can go live too,
+  // same as they can already post in Community chat — they just need a name
+  // on file first (enforced in handleGoLive via ensureIdentity()).
   const communityLive = useCommunityLive({
     selfId: identity?.userId || identity?.authId || guestLikeKey,
     selfName,
-    canBroadcast: Boolean(identity && !identity.isGuest),
+    canBroadcast: true,
     scope: 'community',
   });
   const showCommunityLiveStage = communityLive.role === 'broadcasting' || communityLive.role === 'watching';
@@ -209,6 +210,12 @@ const ChatWidget = () => {
     } finally {
       setLiveChatSending(false);
     }
+  };
+
+  const handleGoLive = () => {
+    const who = ensureIdentity();
+    if (!who) return;
+    communityLive.goLive();
   };
 
   const startDrag = (event) => {
@@ -545,7 +552,7 @@ const ChatWidget = () => {
                 </button>
               )}
               {channel === 'community' && communityLive.canBroadcast && (
-                <button onClick={communityLive.goLive} className="rounded-full p-1.5 text-white transition hover:bg-white/20" title="Go live">
+                <button onClick={handleGoLive} className="rounded-full p-1.5 text-white transition hover:bg-white/20" title="Go live">
                   <FiRadio className="h-4 w-4" />
                 </button>
               )}
