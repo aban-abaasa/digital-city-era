@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe } from 'react-icons/fi';
+import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   resolveChatIdentity,
@@ -26,6 +26,37 @@ import {
   replyToLandingMessage,
   subscribeToPublicLandingMessages,
 } from '../services/landingMessagesService';
+import { useDirectCall } from '../hooks/useDirectCall';
+import { useCommunityLive } from '../hooks/useCommunityLive';
+import CallDock from './calls/CallDock';
+import CallStage from './calls/CallStage';
+import IncomingCallOverlay from './calls/IncomingCallOverlay';
+import CommunityLiveStage from './community/CommunityLiveStage';
+
+// Small audio/video call-launch buttons, shown next to the Support header
+// once a conversation exists — hidden once a call is already in progress.
+const CallButtons = ({ call, onAudio, onVideo }) => {
+  if (!call?.canCall) return null;
+  return (
+    <div className="flex flex-shrink-0 items-center gap-1">
+      <button onClick={onAudio} className="rounded-full p-1.5 text-white transition hover:bg-white/20" title="Audio call">
+        <FiPhone className="h-4 w-4" />
+      </button>
+      <button onClick={onVideo} className="rounded-full p-1.5 text-white transition hover:bg-white/20" title="Video call">
+        <FiVideo className="h-4 w-4" />
+      </button>
+    </div>
+  );
+};
+
+const WIDGET_POSITION_KEY = 'dce_chat_widget_position';
+const getSavedPosition = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WIDGET_POSITION_KEY));
+    if (Number.isFinite(saved?.left) && Number.isFinite(saved?.top)) return saved;
+  } catch { /* Use the default position. */ }
+  return { left: Math.max(12, window.innerWidth - 76), top: Math.max(12, window.innerHeight - 76) };
+};
 
 const portalForPath = (pathname) => {
   if (pathname.startsWith('/admin')) return 'admin';
@@ -56,6 +87,8 @@ const ChatWidget = () => {
   const [channel, setChannel] = useState('support'); // 'support' | 'team' | 'community'
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [position, setPosition] = useState(() => getSavedPosition());
+  const [dragging, setDragging] = useState(false);
 
   const [supportConvId, setSupportConvId] = useState(null);
   const [supportMessages, setSupportMessages] = useState([]);
@@ -69,11 +102,32 @@ const ChatWidget = () => {
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [guestLikeKey] = useState(() => getOrCreateGuestLikeKey());
 
+  const [liveChatDraft, setLiveChatDraft] = useState('');
+  const [liveChatSending, setLiveChatSending] = useState(false);
+  const [liveChatError, setLiveChatError] = useState('');
+
   const scrollRef = useRef(null);
   const openRef = useRef(open);
   const channelRef = useRef(channel);
+  const dragRef = useRef(null);
+  const dragMovedRef = useRef(false);
   useEffect(() => { openRef.current = open; }, [open]);
   useEffect(() => { channelRef.current = channel; }, [channel]);
+
+  useEffect(() => {
+    const keepWidgetVisible = () => {
+      setPosition((current) => ({
+        left: Math.min(Math.max(8, current.left), Math.max(8, window.innerWidth - 64)),
+        top: Math.min(Math.max(8, current.top), Math.max(8, window.innerHeight - 64)),
+      }));
+    };
+    window.addEventListener('resize', keepWidgetVisible);
+    return () => window.removeEventListener('resize', keepWidgetVisible);
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(WIDGET_POSITION_KEY, JSON.stringify(position)); } catch { /* Storage is optional. */ }
+  }, [position]);
 
   // Lets other components (e.g. a "Need Help?" card) open the real support
   // chat instead of duplicating fake contact info.
@@ -93,6 +147,90 @@ const ChatWidget = () => {
   const teamSeenKey = identity?.supermarketId ? `chat_team_seen_${identity.supermarketId}` : null;
 
   const scopeKey = identity ? (identity.isGuest ? 'guest' : `user_${identity.userId}`) : null;
+
+  // 1:1 Support call — rings whoever's on the other end of this conversation
+  // (there's no fixed "dev" id to dial), so the room is simply the
+  // conversation's own inbox.
+  const selfName = identity?.name || 'Guest';
+  const supportSelfId = identity?.userId || identity?.authId || guestLikeKey;
+  const supportRoomId = supportConvId ? `support:${supportConvId}` : null;
+  const supportCall = useDirectCall({ roomId: supportRoomId, selfId: supportSelfId, selfName });
+  const showCallStage = supportCall.isVideo && (supportCall.callState === 'ringing-out' || supportCall.callState === 'active');
+
+  // Community "Go Live" broadcast — no 1:1 calling between community
+  // members, only this one shared group broadcast. Guests can watch but not
+  // go live.
+  const communityLive = useCommunityLive({
+    selfId: identity?.userId || identity?.authId || guestLikeKey,
+    selfName,
+    canBroadcast: Boolean(identity && !identity.isGuest),
+    scope: 'community',
+  });
+  const showCommunityLiveStage = communityLive.role === 'broadcasting' || communityLive.role === 'watching';
+
+  // "My Store" team Go Live — mirrors Community's broadcast, scoped to one
+  // supermarket's staff instead of the public. Any staff member can go live
+  // to the rest of their store; there's no single fixed contact to ring
+  // 1:1 here.
+  const teamLive = useCommunityLive({
+    selfId: identity?.userId || null,
+    selfName,
+    canBroadcast: canTeamChat,
+    scope: identity?.supermarketId ? `team:${identity.supermarketId}` : 'team:none',
+  });
+  const showTeamLiveStage = teamLive.role === 'broadcasting' || teamLive.role === 'watching';
+
+  const handleSendLiveChat = async () => {
+    const body = liveChatDraft.trim();
+    if (!body || liveChatSending) return;
+    const who = ensureIdentity();
+    if (!who) return;
+    setLiveChatSending(true);
+    setLiveChatError('');
+    try {
+      if (channel === 'team' && who.supermarketId) {
+        let convId = teamConvId;
+        if (!convId) {
+          const conv = await getOrCreateTeamConversation({ supermarketId: who.supermarketId, portal: who.role });
+          convId = conv.id;
+          setTeamConvId(convId);
+        }
+        const msg = await sendMessage(convId, { senderRole: who.role || 'staff', senderName: who.name, body });
+        setTeamMessages((prev) => dedupe(prev, msg));
+      } else {
+        const senderAuthId = who.isGuest ? null : who.authId;
+        await createLandingMessage({ name: who.name, email: who.email, authId: senderAuthId, message: body, isPublic: true });
+        setCommunityThreads(await fetchPublicThreads(50, { authId: senderAuthId, guestKey: guestLikeKey }));
+      }
+      setLiveChatDraft('');
+    } catch (err) {
+      console.error('[ChatWidget] live chat send failed:', err);
+      setLiveChatError('Could not send — try again.');
+    } finally {
+      setLiveChatSending(false);
+    }
+  };
+
+  const startDrag = (event) => {
+    if (event.button !== 0) return;
+    dragMovedRef.current = false;
+    dragRef.current = { startX: event.clientX, startY: event.clientY, left: position.left, top: position.top };
+    setDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const left = Math.min(Math.max(8, drag.left + event.clientX - drag.startX), Math.max(8, window.innerWidth - 64));
+    const top = Math.min(Math.max(8, drag.top + event.clientY - drag.startY), Math.max(8, window.innerHeight - 64));
+    if (Math.abs(event.clientX - drag.startX) > 4 || Math.abs(event.clientY - drag.startY) > 4) {
+      dragMovedRef.current = true;
+    }
+    setPosition({ left, top });
+  };
+
+  const endDrag = () => { dragRef.current = null; setDragging(false); };
 
   // Resolve who is chatting (real portal user, previously-known guest, or unnamed guest)
   useEffect(() => {
@@ -350,10 +488,37 @@ const ChatWidget = () => {
   const anyUnread = supportUnread || teamUnread;
 
   return (
-    <div className="fixed bottom-5 right-5 z-[999]">
+    <>
+      <IncomingCallOverlay call={supportCall} onAccept={() => { setOpen(true); setChannel('support'); supportCall.acceptCall(); }} />
+      {showCommunityLiveStage && (
+        <CommunityLiveStage
+          live={communityLive}
+          messages={selectedThread ? selectedThread.replies : communityThreads}
+          onLike={handleCommunityLike}
+          draft={liveChatDraft}
+          onDraftChange={setLiveChatDraft}
+          onSend={handleSendLiveChat}
+          sending={liveChatSending}
+          error={liveChatError}
+          scopeLabel="Community"
+        />
+      )}
+      {showTeamLiveStage && (
+        <CommunityLiveStage
+          live={teamLive}
+          messages={teamMessages}
+          draft={liveChatDraft}
+          onDraftChange={setLiveChatDraft}
+          onSend={handleSendLiveChat}
+          sending={liveChatSending}
+          error={liveChatError}
+          scopeLabel="My Store"
+        />
+      )}
+      <div className="fixed z-[999]" style={{ left: position.left, top: position.top }}>
       {open && (
         <div
-          className={`mb-3 flex h-[28rem] w-[22rem] max-w-[90vw] flex-col overflow-hidden rounded-2xl border shadow-2xl ${
+          className={`relative mb-3 flex h-[28rem] w-[22rem] max-w-[90vw] flex-col overflow-hidden rounded-2xl border shadow-2xl ${
             dark ? 'border-white/10 bg-[#0b1220]' : 'border-slate-200 bg-white'
           }`}
         >
@@ -370,10 +535,45 @@ const ChatWidget = () => {
                     : 'We usually reply within a few minutes'}
               </p>
             </div>
-            <button onClick={() => setOpen(false)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
-              <FiX className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              {channel === 'support' && (
+                <CallButtons call={supportCall} onAudio={() => supportCall.startCall(false, 'Support team')} onVideo={() => supportCall.startCall(true, 'Support team')} />
+              )}
+              {channel === 'team' && teamLive.canBroadcast && (
+                <button onClick={teamLive.goLive} className="rounded-full p-1.5 text-white transition hover:bg-white/20" title="Go live to your store">
+                  <FiRadio className="h-4 w-4" />
+                </button>
+              )}
+              {channel === 'community' && communityLive.canBroadcast && (
+                <button onClick={communityLive.goLive} className="rounded-full p-1.5 text-white transition hover:bg-white/20" title="Go live">
+                  <FiRadio className="h-4 w-4" />
+                </button>
+              )}
+              <button onClick={() => setOpen(false)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
+                <FiX className="h-4 w-4" />
+              </button>
+            </div>
           </div>
+
+          {channel === 'team' && teamLive.canWatch && (
+            <button
+              onClick={teamLive.watch}
+              className="flex items-center justify-center gap-1.5 bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
+            >
+              <FiRadio className="h-3 w-3 animate-pulse" /> {teamLive.liveInfo?.broadcasterName || 'A teammate'} is live — {teamLive.viewerCount} watching · tap to watch
+            </button>
+          )}
+          {channel === 'community' && communityLive.canWatch && (
+            <button
+              onClick={communityLive.watch}
+              className="flex items-center justify-center gap-1.5 bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
+            >
+              <FiRadio className="h-3 w-3 animate-pulse" /> {communityLive.liveInfo?.broadcasterName || 'Someone'} is live — {communityLive.viewerCount} watching · tap to watch
+            </button>
+          )}
+
+          {channel === 'support' && showCallStage && <CallStage call={supportCall} />}
+          {channel === 'support' && !showCallStage && <CallDock call={supportCall} dark={dark} />}
 
           <div className={`flex gap-1 border-b px-3 py-2 ${dark ? 'border-white/10 bg-[#0b1220]' : 'border-slate-200 bg-slate-50'}`}>
             <button
@@ -591,8 +791,15 @@ const ChatWidget = () => {
       )}
 
       <button
-        onClick={() => (open ? setOpen(false) : handleOpen())}
-        className="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 via-blue-600 to-violet-600 text-white shadow-2xl transition hover:scale-105"
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onClick={() => {
+          if (dragMovedRef.current) return;
+          open ? setOpen(false) : handleOpen();
+        }}
+        className={`relative flex h-14 w-14 touch-none items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 via-blue-600 to-violet-600 text-white shadow-2xl transition ${dragging ? 'cursor-grabbing' : 'cursor-grab hover:scale-105'}`}
         title="Chat with us"
       >
         {open ? <FiX className="h-6 w-6" /> : <FiMessageCircle className="h-6 w-6" />}
@@ -600,7 +807,8 @@ const ChatWidget = () => {
           <span className="absolute -top-1 -right-1 h-4 w-4 animate-pulse rounded-full border-2 border-white bg-red-500" />
         )}
       </button>
-    </div>
+      </div>
+    </>
   );
 };
 
