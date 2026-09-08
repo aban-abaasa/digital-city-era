@@ -2714,9 +2714,14 @@ const CashierPortal = () => {
             transform: rotateY(5deg) rotateX(5deg);
           }
           .container-glass {
-            backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.3);
+          }
+          @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+            .container-glass {
+              -webkit-backdrop-filter: blur(10px);
+              backdrop-filter: blur(10px);
+            }
           }
           .container-neon {
             box-shadow: 0 0 15px rgba(255, 193, 7, 0.5);

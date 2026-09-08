@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -147,22 +147,6 @@ const themeStyles = {
   }
 };
 
-const useScrollReveal = () => {
-  const ref = useRef(null);
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const items = node.querySelectorAll('.sk-scroll-reveal');
-    const observer = new IntersectionObserver(
-      (entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add('sk-visible'); }),
-      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
-    );
-    items.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-  return ref;
-};
-
 const SupermartkeraLanding = () => {
   const { theme, toggleTheme } = useTheme();
   const palette = themeStyles[theme];
@@ -191,7 +175,6 @@ const SupermartkeraLanding = () => {
   const [contributorBalance, setContributorBalance] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const mainRef = useScrollReveal();
 
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
 
@@ -538,7 +521,7 @@ const SupermartkeraLanding = () => {
         </div>
       </nav>
 
-      <main ref={mainRef} className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10 lg:px-8 lg:pt-16">
+      <main className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10 lg:px-8 lg:pt-16">
         <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12">
           <div className="sk-animate-fade-up space-y-6 sm:space-y-8">
             <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold sm:px-4 sm:py-2 sm:text-sm ${palette.badge}`}>

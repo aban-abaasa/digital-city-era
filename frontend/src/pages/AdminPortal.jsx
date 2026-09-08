@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
@@ -43,6 +44,11 @@ const AdminPortal = () => {
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showQuickRegister, setShowQuickRegister] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showMoreNav, setShowMoreNav] = useState(false);
+  const [moreNavPos, setMoreNavPos] = useState({ top: 0, right: 0 });
+  const moreNavButtonRef = useRef(null);
+  const [profileMenuPos, setProfileMenuPos] = useState({ top: 0, right: 0 });
+  const profileMenuButtonRef = useRef(null);
   const [adminForm, setAdminForm] = useState({
     email: '',
     password: '',
@@ -7690,6 +7696,13 @@ const AdminPortal = () => {
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign }
   ];
 
+  // Desktop header shows only the first 4 tabs; everything past that lives
+  // behind a "More" dropdown in the 5th slot instead of an overflow-x
+  // scroll strip, so the header never needs a horizontal slider.
+  const primaryNavItems = navItems.slice(0, 4);
+  const moreNavItems = navItems.slice(4);
+  const activeMoreItem = moreNavItems.find((item) => item.id === activeSection);
+
   const handleLogout = () => {
     if (window.confirm('Are you sure you want to logout?')) {
       localStorage.clear();
@@ -7813,15 +7826,23 @@ const AdminPortal = () => {
             animation: border-glow 2s infinite;
           }
           .container-glass {
-            backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.9);
             border: 1px solid rgba(59, 130, 246, 0.2);
             transition: all 0.3s ease;
           }
           .container-glass:hover {
-            backdrop-filter: blur(15px);
             background: rgba(255, 255, 255, 0.95);
             transform: translateY(-2px);
+          }
+          @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+            .container-glass {
+              -webkit-backdrop-filter: blur(10px);
+              backdrop-filter: blur(10px);
+            }
+            .container-glass:hover {
+              -webkit-backdrop-filter: blur(15px);
+              backdrop-filter: blur(15px);
+            }
           }
           .container-neon {
             box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
@@ -7936,8 +7957,8 @@ const AdminPortal = () => {
                 </div>
                 <span className="font-bold text-gray-900 hidden lg:inline">{branding.typeEmoji} {branding.name}</span>
               </div>
-              <nav className="flex items-center gap-1 overflow-x-auto">
-                {navItems.map((item) => (
+              <nav className="flex items-center gap-1">
+                {primaryNavItems.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => { if (item.href) { window.location.href = item.href; return; } setActiveSection(item.id); }}
@@ -7956,6 +7977,68 @@ const AdminPortal = () => {
                     )}
                   </button>
                 ))}
+
+                {moreNavItems.length > 0 && (
+                  <div className="relative">
+                    <button
+                      ref={moreNavButtonRef}
+                      onClick={() => {
+                        if (!showMoreNav && moreNavButtonRef.current) {
+                          const rect = moreNavButtonRef.current.getBoundingClientRect();
+                          setMoreNavPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+                        }
+                        setShowMoreNav((prev) => !prev);
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-300 ${
+                        activeMoreItem
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {activeMoreItem ? <activeMoreItem.icon className="h-4 w-4" /> : null}
+                      <span>{activeMoreItem ? activeMoreItem.label : 'More'}</span>
+                      {moreNavItems.some((item) => item.id === 'users') && pendingUsers.length > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
+                          {pendingUsers.length}
+                        </span>
+                      )}
+                      <FiChevronDown className={`h-4 w-4 transition-transform duration-300 ${showMoreNav ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showMoreNav && createPortal(
+                      <>
+                        <div className="fixed inset-0 z-[9998]" onClick={() => setShowMoreNav(false)}></div>
+                        <div
+                          style={{ position: 'fixed', top: moreNavPos.top, right: moreNavPos.right }}
+                          className="w-64 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] overflow-hidden py-2"
+                        >
+                          {moreNavItems.map((item) => (
+                            <button
+                              key={item.id}
+                              onClick={() => {
+                                if (item.href) { window.location.href = item.href; return; }
+                                setActiveSection(item.id);
+                                setShowMoreNav(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors ${
+                                activeSection === item.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <item.icon className="h-4 w-4" />
+                              <span className="flex-1 text-left">{item.label}</span>
+                              {item.id === 'users' && pendingUsers.length > 0 && (
+                                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                                  {pendingUsers.length}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </>,
+                      document.body
+                    )}
+                  </div>
+                )}
               </nav>
               <PortalSwitcher />
               <button
@@ -7988,8 +8071,15 @@ const AdminPortal = () => {
               
               {/* Admin Profile Dropdown - Compact */}
               <div className="relative">
-                <button 
-                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                <button
+                  ref={profileMenuButtonRef}
+                  onClick={() => {
+                    if (!showProfileMenu && profileMenuButtonRef.current) {
+                      const rect = profileMenuButtonRef.current.getBoundingClientRect();
+                      setProfileMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+                    }
+                    setShowProfileMenu(!showProfileMenu);
+                  }}
                   className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 md:px-3 py-1.5 md:py-2 hover:bg-gray-100 transition-colors cursor-pointer"
                   title="Admin Profile"
                 >
@@ -8003,13 +8093,16 @@ const AdminPortal = () => {
                 </button>
 
                 {/* Dropdown Menu */}
-                {showProfileMenu && (
+                {showProfileMenu && createPortal(
                   <>
-                    <div 
-                      className="fixed inset-0 z-10" 
+                    <div
+                      className="fixed inset-0 z-[9998]"
                       onClick={() => setShowProfileMenu(false)}
                     ></div>
-                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-20 overflow-hidden">
+                    <div
+                      style={{ position: 'fixed', top: profileMenuPos.top, right: profileMenuPos.right }}
+                      className="w-64 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] overflow-hidden"
+                    >
                       {/* Profile Header */}
                       <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 text-white">
                         <div className="flex items-center space-x-3">
@@ -8084,7 +8177,8 @@ const AdminPortal = () => {
                         </button>
                       </div>
                     </div>
-                  </>
+                  </>,
+                  document.body
                 )}
               </div>
             </div>

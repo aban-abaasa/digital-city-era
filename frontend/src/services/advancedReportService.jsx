@@ -335,7 +335,7 @@ class AdvancedReportService {
             <span style="margin-right: 15px; font-size: 1.2em;">🇺🇬</span> FAREDEAL ${reportType.toUpperCase()} REPORT
           </h1>
           <p style="margin: 10px 0 0; font-size: 1.3em; opacity: 0.95; position: relative; z-index: 1;">${title}</p>
-          <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.2); border-radius: 12px; backdrop-filter: blur(10px); position: relative; z-index: 1;">
+          <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; backdrop-filter: blur(10px); position: relative; z-index: 1;">
             <p style="margin: 0; font-size: 1.1em; font-weight: 600;">📅 ${dateRange}</p>
             <p style="margin: 5px 0 0; font-size: 0.95em; opacity: 0.9;">Generated: ${formattedDate}</p>
           </div>

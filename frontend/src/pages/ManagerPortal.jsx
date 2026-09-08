@@ -7426,9 +7426,14 @@ _Automated Business Report System_`)}`;
       }
       
       .glass-effect {
-        backdrop-filter: blur(10px);
         background: rgba(255, 255, 255, 0.1);
         border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        .glass-effect {
+          -webkit-backdrop-filter: blur(10px);
+          backdrop-filter: blur(10px);
+        }
       }
       
       .dark .settings-nav-item {
@@ -11927,8 +11932,13 @@ FAREDEAL Uganda Management Team
           /* Glassmorphism effect */
           .glass-morphism {
             background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+            .glass-morphism {
+              -webkit-backdrop-filter: blur(10px);
+              backdrop-filter: blur(10px);
+            }
           }
           
           /* Neon glow effect */
