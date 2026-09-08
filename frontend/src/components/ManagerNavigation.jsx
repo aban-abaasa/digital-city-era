@@ -1,7 +1,7 @@
 // ManagerNavigation Component v2.0 - Mobile: Hidden, Desktop: Full Navigation
 import React from 'react';
 import {
-  FiBarChart, FiPieChart, FiTruck, FiDollarSign, FiBriefcase
+  FiBarChart, FiTruck, FiDollarSign, FiBriefcase
 } from 'react-icons/fi';
 
 const ManagerNavigation = ({ activeTab, setActiveTab, isMobile }) => {
@@ -13,14 +13,6 @@ const ManagerNavigation = ({ activeTab, setActiveTab, isMobile }) => {
       description: 'Business overview',
       color: 'from-blue-500 to-blue-600',
       ugandaEmoji: '📊'
-    },
-    {
-      id: 'analytics',
-      label: 'Analytics',
-      icon: FiPieChart,
-      description: 'Data insights',
-      color: 'from-purple-500 to-purple-600',
-      ugandaEmoji: '📈'
     },
     {
       id: 'orders',

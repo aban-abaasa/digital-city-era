@@ -46,7 +46,6 @@ import { customerService } from '../services/customerService';
 import EnhancedRideRequest from '../vendor/mybodaguy/components/EnhancedRideRequest';
 import JourneyBookingFlow from '../vendor/mybodaguy/components/JourneyBookingFlow';
 import CustomerSelfCheckout from '../vendor/mybodaguy/components/CustomerSelfCheckout';
-import IcanCoinBadge from '../components/IcanCoinBadge';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
@@ -548,9 +547,6 @@ const CustomerDashboard = () => {
                 }`}>
                 <span>₡</span> IcanEra Wallet
               </button>
-              <div className="ml-auto flex-shrink-0 pr-1">
-                <div className="w-36"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
-              </div>
             </nav>
           </div>
         </div>

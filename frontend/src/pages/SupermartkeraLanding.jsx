@@ -407,7 +407,7 @@ const SupermartkeraLanding = () => {
   };
 
   return (
-    <div className={`min-h-screen overflow-x-hidden ${palette.shell}`}>
+    <div className={`sk-landing-page min-h-screen overflow-x-hidden ${palette.shell}`}>
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className={`sk-blob absolute -top-24 -left-16 h-80 w-80 rounded-full blur-3xl ${palette.blob1}`} />
         <div className={`sk-blob-delay absolute top-1/3 -right-20 h-96 w-96 rounded-full blur-3xl ${palette.blob2}`} />

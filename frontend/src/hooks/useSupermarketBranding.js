@@ -50,7 +50,7 @@ export const useSupermarketBranding = () => {
 
       const { data: supermarketRow, error } = await supabase
         .from('supermarkets')
-        .select('id, name, background_image_url, business_type, pichin_business_profile_id, supports_supply_orders, can_receive_supplier_orders, can_dispatch_supplier_orders')
+        .select('id, name, background_image_url, logo_url, business_type, pichin_business_profile_id, supports_supply_orders, can_receive_supplier_orders, can_dispatch_supplier_orders')
         .eq('id', supermarketId)
         .maybeSingle();
 
@@ -74,6 +74,7 @@ export const useSupermarketBranding = () => {
   return {
     name: supermarket?.name || FALLBACK_NAME,
     backgroundUrl: supermarket?.background_image_url || null,
+    logoUrl: supermarket?.logo_url || null,
     supermarketId: supermarket?.id || null,
     pichinBusinessProfileId: supermarket?.pichin_business_profile_id || null,
     supportsSupplyOrders: Boolean(supermarket?.supports_supply_orders),

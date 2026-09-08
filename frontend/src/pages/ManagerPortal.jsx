@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FiTrendingUp, FiUsers, FiDollarSign, FiPackage, FiBarChart, 
-  FiPieChart, FiTarget, FiAward, FiClock, FiAlertTriangle,
+  FiTrendingUp, FiUsers, FiDollarSign, FiPackage, FiBarChart,
+  FiTarget, FiAward, FiClock, FiAlertTriangle,
   FiCalendar, FiMail, FiBell, FiSettings, FiLogOut, FiSearch,
   FiFilter, FiDownload, FiRefreshCw, FiEye, FiEdit, FiTrash2,
   FiPlus, FiMinus, FiChevronRight, FiChevronDown, FiStar,
@@ -28,7 +28,6 @@ import Receipt from '../components/Receipt';
 import TillSuppliesOrderManagement from '../components/TillSuppliesOrderManagement';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
-import IcanCoinBadge from '../components/IcanCoinBadge';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
 import { toast } from 'react-toastify';
@@ -233,6 +232,7 @@ const CHART_COLORS = {
 const ManagerPortal = () => {
   const navigate = useNavigate();
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Each supermarket's own name/background — auto-populated, no manual retyping
   const branding = useSupermarketBranding();
@@ -9344,321 +9344,6 @@ _Automated Business Report System_`)}`;
     </div>
   );
 
-  const renderAnalytics = () => (
-    <div className="space-y-6 animate-fadeInUp">
-      {/* 🇺🇬 Uganda Analytics Header */}
-      <div className="bg-gradient-to-r from-purple-600 via-blue-600 to-green-600 text-white rounded-xl p-6 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold mb-2 flex items-center space-x-3">
-              <span>📈</span>
-              <span>Uganda Business Analytics</span>
-              <span>🇺🇬</span>
-            </h2>
-            <p className="text-blue-100 text-lg">Deep insights into Pearl of Africa markets</p>
-          </div>
-          <div className="text-right">
-            <div className="text-4xl mb-2">📊</div>
-            <p className="text-purple-200">Data-driven decisions</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Enhanced Analytics Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Team Performance with Uganda Context */}
-        <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-              <span>👥</span>
-              <span>Team Performance</span>
-            </h3>
-            <div className="flex space-x-2">
-              <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full font-bold">
-                🇺🇬 Uganda Team
-              </span>
-              <button 
-                onClick={() => {
-                  toast.success('📊 Exporting team analytics...');
-                  setTimeout(() => toast.success('📄 Team report downloaded!'), 1500);
-                }}
-                className="p-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-              >
-                <FiDownload className="h-4 w-4 text-blue-600" />
-              </button>
-            </div>
-          </div>
-          
-          {teamPerformance && teamPerformance.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={teamPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="name" 
-                    tick={{ fontSize: 12 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={80}
-                  />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#1f2937', 
-                      border: 'none', 
-                      borderRadius: '8px',
-                      color: 'white'
-                    }}
-                    formatter={(value, name) => [
-                      `${formatCurrency(value)}`, 
-                      'Sales Performance'
-                    ]}
-                  />
-                  <Bar 
-                    dataKey="sales" 
-                    fill="url(#teamGradient)" 
-                    radius={[4, 4, 0, 0]}
-                    name="Sales (UGX)"
-                  />
-                  <defs>
-                    <linearGradient id="teamGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3B82F6" />
-                      <stop offset="100%" stopColor="#1E40AF" />
-                    </linearGradient>
-                  </defs>
-                </BarChart>
-              </ResponsiveContainer>
-              
-              {/* Team insights */}
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {Math.round(teamPerformance.reduce((sum, t) => sum + t.efficiency, 0) / teamPerformance.length) || 0}%
-                  </div>
-                  <div className="text-sm text-blue-700">Avg Efficiency</div>
-                </div>
-                <div className="bg-green-50 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {(teamPerformance.reduce((sum, t) => sum + t.satisfaction, 0) / teamPerformance.length).toFixed(1) || '0.0'}
-                  </div>
-                  <div className="text-sm text-green-700">Avg Satisfaction</div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-12">
-              <span className="text-6xl mb-4 block">👥</span>
-              <p className="text-gray-500 font-medium text-lg">No team data available</p>
-              <p className="text-sm text-gray-400 mt-2">Add employees to see performance analytics</p>
-            </div>
-          )}
-        </div>
-
-        {/* Enhanced Customer Satisfaction with Uganda insights */}
-        <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-              <span>😊</span>
-              <span>Customer Satisfaction</span>
-            </h3>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-green-600">4.7/5</div>
-              <div className="text-sm text-gray-600">Uganda Rating</div>
-            </div>
-          </div>
-          
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={[
-                  { name: 'Excellent (5⭐)', value: 45, emoji: '🤩' },
-                  { name: 'Good (4⭐)', value: 35, emoji: '😊' },
-                  { name: 'Average (3⭐)', value: 15, emoji: '😐' },
-                  { name: 'Poor (2⭐)', value: 5, emoji: '😞' }
-                ]}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent, emoji }) => `${emoji} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {[
-                  { color: '#10B981' }, // Green for excellent
-                  { color: '#3B82F6' }, // Blue for good  
-                  { color: '#F59E0B' }, // Orange for average
-                  { color: '#EF4444' }  // Red for poor
-                ].map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#1f2937', 
-                  border: 'none', 
-                  borderRadius: '8px',
-                  color: 'white'
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          
-          {/* Customer insights */}
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <span className="text-xl">🏆</span>
-                <span className="font-medium text-green-800">Top Feedback</span>
-              </div>
-              <span className="text-sm text-green-600">"Great service!"</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <span className="text-xl">💡</span>
-                <span className="font-medium text-blue-800">Improvement</span>
-              </div>
-              <span className="text-sm text-blue-600">"Faster delivery"</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Enhanced Inventory Insights */}
-      <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-            <span>📦</span>
-            <span>Uganda Inventory Insights</span>
-          </h3>
-          <button 
-            onClick={() => {
-              setActiveTab('inventory');
-              toast.success('📋 Opening full inventory management...');
-            }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-          >
-            <FiPackage className="h-4 w-4" />
-            <span>Manage Inventory</span>
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {[
-            { label: 'Low Stock', value: inventoryInsights.lowStock, color: 'text-red-600', icon: '⚠️', bgColor: 'bg-red-50', action: 'reorder' },
-            { label: 'Out of Stock', value: inventoryInsights.outOfStock, color: 'text-red-800', icon: '🚫', bgColor: 'bg-red-100', action: 'urgent' },
-            { label: 'Overstock', value: inventoryInsights.overstock, color: 'text-yellow-600', icon: '📦', bgColor: 'bg-yellow-50', action: 'promotion' },
-            { label: 'Fast Moving', value: inventoryInsights.fastMoving, color: 'text-green-600', icon: '🚀', bgColor: 'bg-green-50', action: 'increase' },
-            { label: 'Slow Moving', value: inventoryInsights.slowMoving, color: 'text-orange-600', icon: '🐌', bgColor: 'bg-orange-50', action: 'discount' },
-            { label: 'Total Products', value: inventoryInsights.totalProducts, color: 'text-blue-600', icon: '📊', bgColor: 'bg-blue-50', action: 'view' }
-          ].map((item, index) => (
-            <div 
-              key={index} 
-              className={`text-center p-4 border-2 border-transparent rounded-xl hover:border-blue-300 transition-all duration-300 cursor-pointer group ${item.bgColor} hover:shadow-lg transform hover:scale-105`}
-              onClick={() => {
-                const actions = {
-                  reorder: 'Creating reorder alerts...',
-                  urgent: 'Sending urgent stock alerts...',
-                  promotion: 'Planning promotion campaign...',
-                  increase: 'Analyzing stock increase needs...',
-                  discount: 'Creating discount strategies...',
-                  view: 'Opening product catalog...'
-                };
-                toast.success(`📊 ${actions[item.action]}`);
-              }}
-            >
-              <div className="text-3xl mb-3 group-hover:animate-bounce">{item.icon}</div>
-              <div className={`text-3xl font-bold ${item.color} group-hover:scale-110 transition-transform`}>
-                {item.value}
-              </div>
-              <div className="text-sm font-medium text-gray-700 mt-1">{item.label}</div>
-              
-              {/* Action hint */}
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-2">
-                <span className="text-xs bg-white px-2 py-1 rounded-full shadow-md">
-                  Click to {item.action}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        {/* Inventory trends */}
-        <div className="mt-6 pt-6 border-t border-gray-100">
-          <h4 className="font-bold text-gray-900 mb-4 flex items-center space-x-2">
-            <span>📈</span>
-            <span>Weekly Inventory Trends</span>
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-green-700 font-medium">Stock Inflow</div>
-                  <div className="text-xl font-bold text-green-800">+245 items</div>
-                </div>
-                <div className="text-3xl">📥</div>
-              </div>
-            </div>
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-blue-700 font-medium">Items Sold</div>
-                  <div className="text-xl font-bold text-blue-800">189 items</div>
-                </div>
-                <div className="text-3xl">📤</div>
-              </div>
-            </div>
-            <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-purple-700 font-medium">Net Growth</div>
-                  <div className="text-xl font-bold text-purple-800">+56 items</div>
-                </div>
-                <div className="text-3xl">📊</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Uganda Market Analysis - Mobile Optimized */}
-      <div className="bg-gradient-to-r from-yellow-400 via-red-500 to-black text-white rounded-lg md:rounded-xl p-4 md:p-6 shadow-xl">
-        <h3 className="text-lg md:text-xl font-bold mb-3 md:mb-4 flex items-center space-x-2">
-          <span>Uganda Market Analysis</span>
-        </h3>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6">
-          <div className="bg-white/20 rounded-lg p-3 md:p-4 backdrop-blur-sm">
-            <div className="text-center">
-              <div className="text-2xl md:text-3xl mb-1 md:mb-2">📱</div>
-              <div className="text-xl md:text-2xl font-bold">{businessMetrics.mobileMoneyRatio}%</div>
-              <div className="text-xs md:text-sm text-yellow-200">Mobile Money Usage</div>
-              <div className="text-xs text-yellow-300 mt-1">MTN & Airtel Money</div>
-            </div>
-          </div>
-          
-          <div className="bg-white/20 rounded-lg p-3 md:p-4 backdrop-blur-sm">
-            <div className="text-center">
-              <div className="text-2xl md:text-3xl mb-1 md:mb-2">🏪</div>
-              <div className="text-xl md:text-2xl font-bold">{businessMetrics.localSupplierRatio}%</div>
-              <div className="text-xs md:text-sm text-yellow-200">Local Suppliers</div>
-              <div className="text-xs text-yellow-300 mt-1">Supporting Uganda</div>
-            </div>
-          </div>
-          
-          <div className="bg-white/20 rounded-lg p-3 md:p-4 backdrop-blur-sm">
-            <div className="text-center">
-              <div className="text-2xl md:text-3xl mb-1 md:mb-2">⏰</div>
-              <div className="text-xl md:text-2xl font-bold">{businessMetrics.supplierOnTimeDelivery}%</div>
-              <div className="text-xs md:text-sm text-yellow-200">On-time Delivery</div>
-              <div className="text-xs text-yellow-300 mt-1">Kampala traffic considered</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   const renderTeamManagement = () => (
     <div className="space-y-6 animate-fadeInUp">
       {/* Team Analytics Overview */}
@@ -11625,140 +11310,156 @@ FAREDEAL Uganda Management Team
                 {/* Separate from ordinary portal alerts: this opens only
                     supplier-wallet requests and requires the wallet PIN. */}
                 <SupermarketaWalletApprovalBell />
-                {/* Notification Bell */}
-                <button
-                  onClick={handleNotificationClick}
-                  className="relative group"
-                  title="Notifications"
-                >
-                  <div className="relative p-3 bg-white/15 backdrop-blur-sm rounded-2xl border-2 border-white/20 hover:bg-white/25 transition-all duration-500 transform hover:scale-110 hover:rotate-3 shadow-lg">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-400/30 to-purple-600/30 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    
-                    <FiBell className="h-5 w-5 text-white relative z-10 group-hover:animate-bounce" />
-                    
-                    {notificationCount > 0 && (
-                      <div className="absolute -top-2 -right-2 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold border-2 border-white shadow-lg">
-                        <span className="animate-pulse">{notificationCount}</span>
-                      </div>
-                    )}
-                    
-                    <div className="absolute inset-0 rounded-2xl border-2 border-blue-400/50 opacity-0 group-hover:opacity-100 animate-ping"></div>
-                  </div>
-                </button>
-
-                {/* Settings */}
-                <button
-                  onClick={() => {
-                    startEditingProfile();
-                    toast.info('💼 Edit your profile details');
-                  }}
-                  className="relative group"
-                  title="Edit Profile"
-                >
-                  <div className="relative p-3 bg-white/15 backdrop-blur-sm transform rotate-45 rounded-lg border-2 border-white/20 hover:bg-white/25 transition-all duration-500 group-hover:scale-110 shadow-lg">
-                    <div className="transform -rotate-45">
-                      <FiSettings className="h-5 w-5 text-white group-hover:rotate-180 transition-transform duration-700" />
-                    </div>
-                    
-                    <div className="absolute inset-0 border-2 border-gradient-to-r from-purple-400 to-pink-400 rounded-lg opacity-0 group-hover:opacity-100 animate-spin-slow"></div>
-                  </div>
-                  
-                  <div className="absolute -top-1 -left-1 w-2 h-2 bg-yellow-400 rounded-full opacity-0 group-hover:opacity-100 animate-ping"></div>
-                  <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-pink-400 rounded-full opacity-0 group-hover:opacity-100 animate-ping" style={{ animationDelay: '0.5s' }}></div>
-                </button>
-
-                {/* Profile */}
-                <button
-                  onClick={handleProfileClick}
-                  className="relative group"
-                >
-                  <div className="flex items-center space-x-3 bg-white/15 backdrop-blur-sm hover:bg-white/25 rounded-full pr-4 pl-2 py-2 transition-all duration-500 transform hover:scale-105 border-2 border-white/20 shadow-lg group-hover:shadow-2xl">
-                    {/* Animated avatar container with upload functionality */}
-                    <div className="relative">
-                      <label htmlFor="manager-profile-pic-upload" className="cursor-pointer">
-                        <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-sm group-hover:scale-110 transition-all duration-300 shadow-lg border-2 border-white/30 overflow-hidden">
-                          {profilePicUrl || managerProfile.avatar_url ? (
-                            <img 
-                              src={profilePicUrl || managerProfile.avatar_url} 
-                              alt="Profile" 
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span className="text-lg group-hover:animate-bounce">{managerProfile.avatar}</span>
-                          )}
-                        </div>
-                        
-                        {/* Camera icon overlay on hover */}
-                        <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
-                          <FiCamera className="h-4 w-4 text-white" />
-                        </div>
-                      </label>
-                      
-                      {/* Hidden file input */}
-                      <input
-                        id="manager-profile-pic-upload"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProfilePictureUpload}
-                        className="hidden"
-                      />
-                      
-                      {/* Upload progress indicator */}
-                      {uploadingProfilePic && (
-                        <div className="absolute inset-0 bg-black/80 rounded-full flex items-center justify-center">
-                          <div className="animate-spin text-white">
-                            <FiRefreshCw className="h-4 w-4" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Profile info with enhanced styling */}
-                    <div className="text-left text-white">
-                      <div className="text-sm font-bold group-hover:text-yellow-200 transition-colors">
-                        {managerProfile.name}
-                      </div>
-                      <div className="flex items-center space-x-2 text-xs">
-                        <div className="flex items-center space-x-1">
-                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-sm"></div>
-                          <span className="text-green-200 font-medium">
-                            {managerProfile.status}
-                          </span>
-                        </div>
-                        <span className="text-white/70">•</span>
-                        <span className="text-orange-200 flex items-center space-x-1">
-                          <span>📍</span>
-                          <span>{managerProfile.location.split(',')[0]}</span>
-                        </span>
-                      </div>
-                    </div>
-                    
-                    {/* Chevron indicator */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 ml-2">
-                      <FiChevronDown className="h-4 w-4 text-white/70 group-hover:animate-bounce" />
-                    </div>
-                  </div>
-                </button>
 
                 {/* Switch to the cashier or customer portal — manager outranks both */}
                 <PortalSwitcher variant="dark" />
 
-                {/* Quick Action Floating Button */}
-                <button
-                  onClick={() => {
-                    toast.success('🚀 Quick actions menu opened!');
-                  }}
-                  className="relative group"
-                  title="Quick Actions"
-                >
-                  <div className="relative p-3 bg-gradient-to-br from-purple-500/80 to-pink-500/80 backdrop-blur-sm rounded-full border-2 border-white/30 hover:from-purple-600/90 hover:to-pink-600/90 transition-all duration-500 transform hover:scale-110 shadow-lg group-hover:shadow-2xl">
-                    <FiZap className="h-5 w-5 text-white group-hover:animate-pulse" />
-                    
-                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-yellow-400/50 to-orange-400/50 opacity-0 group-hover:opacity-100 animate-ping"></div>
-                    
-                    <div className="absolute -top-1 -right-1 text-xs text-yellow-300 opacity-0 group-hover:opacity-100 animate-bounce">⚡</div>
-                  </div>
-                </button>
+                {/* Profile — every profile-related action (notifications, account
+                    settings, quick actions, sign out) lives in this one dropdown
+                    instead of separate header icons. */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowProfileMenu((value) => !value)}
+                    className="relative group"
+                  >
+                    <div className="flex items-center space-x-3 bg-white/15 backdrop-blur-sm hover:bg-white/25 rounded-full pr-4 pl-2 py-2 transition-all duration-500 transform hover:scale-105 border-2 border-white/20 shadow-lg group-hover:shadow-2xl">
+                      {/* Animated avatar container with upload functionality */}
+                      <div className="relative">
+                        <label htmlFor="manager-profile-pic-upload" className="cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                          <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-sm group-hover:scale-110 transition-all duration-300 shadow-lg border-2 border-white/30 overflow-hidden">
+                            {profilePicUrl || managerProfile.avatar_url ? (
+                              <img
+                                src={profilePicUrl || managerProfile.avatar_url}
+                                alt="Profile"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-lg group-hover:animate-bounce">{managerProfile.avatar}</span>
+                            )}
+                          </div>
+
+                          {/* Camera icon overlay on hover */}
+                          <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
+                            <FiCamera className="h-4 w-4 text-white" />
+                          </div>
+                        </label>
+
+                        {/* Hidden file input */}
+                        <input
+                          id="manager-profile-pic-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleProfilePictureUpload}
+                          className="hidden"
+                        />
+
+                        {/* Upload progress indicator */}
+                        {uploadingProfilePic && (
+                          <div className="absolute inset-0 bg-black/80 rounded-full flex items-center justify-center">
+                            <div className="animate-spin text-white">
+                              <FiRefreshCw className="h-4 w-4" />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Unread-notification badge, now folded into the profile avatar */}
+                        {notificationCount > 0 && (
+                          <div className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold border-2 border-white shadow-lg">
+                            <span className="animate-pulse">{notificationCount > 9 ? '9+' : notificationCount}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Profile info with enhanced styling */}
+                      <div className="text-left text-white">
+                        <div className="text-sm font-bold group-hover:text-yellow-200 transition-colors">
+                          {managerProfile.name}
+                        </div>
+                        <div className="flex items-center space-x-2 text-xs">
+                          <div className="flex items-center space-x-1">
+                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-sm"></div>
+                            <span className="text-green-200 font-medium">
+                              {managerProfile.status}
+                            </span>
+                          </div>
+                          <span className="text-white/70">•</span>
+                          <span className="text-orange-200 flex items-center space-x-1">
+                            <span>📍</span>
+                            <span>{managerProfile.location.split(',')[0]}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Chevron indicator */}
+                      <div className="ml-2">
+                        <FiChevronDown className={`h-4 w-4 text-white/70 transition-transform duration-300 ${showProfileMenu ? 'rotate-180' : ''}`} />
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Consolidated profile dropdown */}
+                  {showProfileMenu && (
+                    <div className="fixed inset-0 z-50" onClick={() => setShowProfileMenu(false)}>
+                      <div
+                        className="absolute right-4 top-20 w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="p-2">
+                          <button
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              handleNotificationClick();
+                            }}
+                            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+                          >
+                            <FiBell className="h-5 w-5 text-blue-600" />
+                            <span className="font-medium flex-1 text-left">Notifications</span>
+                            {notificationCount > 0 && (
+                              <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                                {notificationCount}
+                              </span>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              startEditingProfile();
+                            }}
+                            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-purple-50 rounded-xl transition-colors"
+                          >
+                            <FiSettings className="h-5 w-5 text-purple-600" />
+                            <span className="font-medium">Account Settings</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              toast.success('🚀 Quick actions menu opened!');
+                            }}
+                            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-orange-50 rounded-xl transition-colors"
+                          >
+                            <FiZap className="h-5 w-5 text-orange-500" />
+                            <span className="font-medium">Quick Actions</span>
+                          </button>
+
+                          <hr className="my-2" />
+
+                          <button
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              handleManagerLogout();
+                            }}
+                            className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                          >
+                            <FiLogOut className="h-5 w-5" />
+                            <span className="font-medium">Sign Out</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -11777,6 +11478,8 @@ FAREDEAL Uganda Management Team
         backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
+      {/* Always-reachable portal switcher on phones — pinned top-right, not buried in the hamburger drawer */}
+      <PortalSwitcher mobileFloating />
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -11792,7 +11495,7 @@ FAREDEAL Uganda Management Team
           .animate-fadeInUp {
             animation: fadeInUp 0.8s ease-out;
           }
-          
+
           @keyframes slideInRight {
             from {
               opacity: 0;
@@ -12038,7 +11741,6 @@ FAREDEAL Uganda Management Team
               </div>
               {[
                 { id: 'overview', icon: '📊', label: 'Dashboard', desc: 'Business overview', gradient: 'from-blue-500 to-blue-600' },
-                { id: 'analytics', icon: '📈', label: 'Analytics', desc: 'Data insights', gradient: 'from-green-500 to-green-600' },
                 { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' },
                 { id: 'business-operations', icon: '🏢', label: 'Payroll & Transport', desc: 'Workforce operations', gradient: 'from-indigo-500 to-blue-600' },
                 { id: 'ican-wallet', icon: '₡', label: 'IcanEra Wallet', desc: 'Wallet & rewards', gradient: 'from-violet-500 to-fuchsia-600' }
@@ -12322,9 +12024,6 @@ FAREDEAL Uganda Management Team
           {/* Enhanced Overview Dashboard with Uganda Context */}
             {activeTab === 'overview' && (
             <>
-            <div className="mb-4 flex justify-end">
-              <div className="w-48"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
-            </div>
             <UgandaOverviewDashboard
               businessMetrics={businessMetrics}
               currentTime={currentTime}
@@ -12737,472 +12436,10 @@ FAREDEAL Uganda Management Team
                   </div>
                 </div>
               </div>
-
-              {/* 🚀 Advanced Portal Analytics Dashboard */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                  <FiPieChart className="w-5 h-5" />
-                  <span>Advanced Portal Analytics</span>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    portalAutoPilot.isEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {portalAutoPilot.isEnabled ? '🤖 AI Active' : '👤 Manual'}
-                  </span>
-                </h3>
-                
-                {/* Real-time Analytics Tabs */}
-                <div className="border-b border-gray-200 mb-4">
-                  <nav className="-mb-px flex space-x-8">
-                    {['heatmap', 'predictions', 'security', 'performance'].map((tab) => (
-                      <button
-                        key={tab}
-                        className={`py-2 px-1 border-b-2 font-medium text-sm capitalize ${
-                          tab === 'heatmap' 
-                            ? 'border-cyan-500 text-cyan-600' 
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }`}
-                      >
-                        {tab === 'heatmap' && '🔥'} {tab === 'predictions' && '🔮'} 
-                        {tab === 'security' && '🛡️'} {tab === 'performance' && '⚡'} {tab}
-                      </button>
-                    ))}
-                  </nav>
-                </div>
-
-                {/* Analytics Content */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* User Activity Heatmap */}
-                  <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-4 border border-blue-200">
-                    <h4 className="font-medium text-blue-900 mb-3 flex items-center space-x-2">
-                      <span>🔥</span>
-                      <span>Real-Time Activity Heatmap</span>
-                    </h4>
-                    <div className="grid grid-cols-4 gap-2">
-                      {['manager', 'employee', 'customer', 'supplier'].map((portal) => (
-                        <div key={portal} className="text-center">
-                          <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center text-xs font-bold ${
-                            portalControlSystem.activePortals[portal]?.status === 'online'
-                              ? 'bg-gradient-to-br from-red-400 to-orange-500 text-white animate-pulse'
-                              : 'bg-gray-200 text-gray-500'
-                          }`}>
-                            {portalControlSystem.activePortals[portal]?.activeUsers || 0}
-                          </div>
-                          <p className="text-xs mt-1 text-blue-700 capitalize">{portal}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-4 text-xs text-blue-600">
-                      <p>🔴 High Activity • 🟡 Medium Activity • ⚪ Inactive</p>
-                    </div>
-                  </div>
-
-                  {/* Predictive Insights */}
-                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
-                    <h4 className="font-medium text-purple-900 mb-3 flex items-center space-x-2">
-                      <span>🔮</span>
-                      <span>AI Predictions</span>
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-purple-700">Next Peak Usage:</span>
-                        <span className="font-bold text-purple-900">2:30 PM (87% confidence)</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-purple-700">Expected Users:</span>
-                        <span className="font-bold text-purple-900">450+ users</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-purple-700">Bottleneck Risk:</span>
-                        <span className="font-bold text-green-600">Low (12%)</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-purple-700">Recommended Action:</span>
-                        <span className="font-bold text-blue-600">Scale up at 2:00 PM</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Security Status */}
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
-                    <h4 className="font-medium text-green-900 mb-3 flex items-center space-x-2">
-                      <span>🛡️</span>
-                      <span>Security Overview</span>
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-green-700">Security Score:</span>
-                        <span className="font-bold text-green-900">{portalSecurity.threatDetection.securityScore}/100</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-green-700">Active Threats:</span>
-                        <span className="font-bold text-red-600">{portalSecurity.threatDetection.activeThreats}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-green-700">Blocked Today:</span>
-                        <span className="font-bold text-green-600">{portalSecurity.threatDetection.blockedAttempts}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-green-700">2FA Coverage:</span>
-                        <span className="font-bold text-blue-600">94% users</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Performance Metrics */}
-                  <div className="bg-gradient-to-br from-orange-50 to-yellow-50 rounded-lg p-4 border border-orange-200">
-                    <h4 className="font-medium text-orange-900 mb-3 flex items-center space-x-2">
-                      <span>⚡</span>
-                      <span>Performance Insights</span>
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-orange-700">Avg Response Time:</span>
-                        <span className="font-bold text-orange-900">
-                          {Math.round(Object.values(portalPerformance.realTimeMetrics.responseTime).reduce((a, b) => a + b, 0) / 4)}ms
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-orange-700">System Load:</span>
-                        <span className="font-bold text-green-600">{portalPerformance.optimizations.cpuUtilization}%</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-orange-700">Cache Hit Rate:</span>
-                        <span className="font-bold text-blue-600">{portalPerformance.optimizations.cacheHitRatio}%</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-orange-700">Memory Usage:</span>
-                        <span className="font-bold text-orange-600">{portalPerformance.optimizations.memoryUsage}%</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Analytics Actions */}
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => generatePredictiveAnalytics()}
-                    className="px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors duration-200 flex items-center space-x-2 text-sm"
-                  >
-                    <FiTrendingUp className="w-4 h-4" />
-                    <span>Generate Predictions</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => runSecurityScan()}
-                    className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors duration-200 flex items-center space-x-2 text-sm"
-                  >
-                    <FiShield className="w-4 h-4" />
-                    <span>Security Scan</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => optimizeLoadBalancing()}
-                    className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-200 flex items-center space-x-2 text-sm"
-                  >
-                    <FiZap className="w-4 h-4" />
-                    <span>Optimize Performance</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => optimizeGeographicRouting()}
-                    className="px-3 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors duration-200 flex items-center space-x-2 text-sm"
-                  >
-                    <FiNavigation className="w-4 h-4" />
-                    <span>Geographic Routing</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 🤖 AI Auto-Pilot Control Panel */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-                    <FiCpu className="w-5 h-5" />
-                    <span>AI Auto-Pilot System</span>
-                  </h3>
-                  <button
-                    onClick={toggleAutoPilot}
-                    className={`px-4 py-2 rounded-lg transition-all duration-300 flex items-center space-x-2 ${
-                      portalAutoPilot.isEnabled
-                        ? 'bg-green-500 text-white hover:bg-green-600'
-                        : 'bg-gray-500 text-white hover:bg-gray-600'
-                    }`}
-                  >
-                    <span className="text-lg">{portalAutoPilot.isEnabled ? '🤖' : '👤'}</span>
-                    <span>{portalAutoPilot.isEnabled ? 'Auto-Pilot ON' : 'Manual Control'}</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* AI Intelligence Status */}
-                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                    <h4 className="font-medium text-blue-900 mb-2">🧠 AI Intelligence</h4>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-blue-700">Model Accuracy:</span>
-                        <span className="font-bold text-blue-900">{portalAutoPilot.learningModel.accuracy}%</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-blue-700">Training Data:</span>
-                        <span className="font-bold text-blue-900">{portalAutoPilot.learningModel.trainingData.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-blue-700">Last Training:</span>
-                        <span className="font-bold text-blue-900 text-xs">
-                          {portalAutoPilot.learningModel.lastTraining.toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Automated Features */}
-                  <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                    <h4 className="font-medium text-green-900 mb-2">⚙️ Auto Features</h4>
-                    <div className="space-y-1 text-sm">
-                      {Object.entries(portalAutoPilot.intelligence).map(([feature, config]) => (
-                        <div key={feature} className="flex justify-between items-center">
-                          <span className="text-green-700 capitalize text-xs">
-                            {feature.replace(/([A-Z])/g, ' $1').trim()}:
-                          </span>
-                          <span className={`text-xs font-bold ${config.enabled ? 'text-green-600' : 'text-gray-500'}`}>
-                            {config.enabled ? '✅' : '❌'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Recent AI Decisions */}
-                  <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                    <h4 className="font-medium text-purple-900 mb-2">🧠 Recent AI Actions</h4>
-                    <div className="space-y-1 text-xs">
-                      <div className="text-purple-700">• Optimized load distribution</div>
-                      <div className="text-purple-700">• Scaled customer portal +2 instances</div>
-                      <div className="text-purple-700">• Updated cache configuration</div>
-                      <div className="text-purple-700">• Applied security patches</div>
-                      <div className="text-purple-700">• Cleaned up log files</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 📊 Advanced System Monitoring */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                  <FiMonitor className="w-5 h-5" />
-                  <span>Advanced System Monitoring</span>
-                </h3>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Geographic Distribution */}
-                  <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg p-4 border border-cyan-200">
-                    <h4 className="font-medium text-cyan-900 mb-3 flex items-center space-x-2">
-                      <span>🌍</span>
-                      <span>Uganda Regional Distribution</span>
-                    </h4>
-                    <div className="space-y-2">
-                      {Object.entries(portalAnalytics.geographicDistribution).map(([region, data]) => (
-                        <div key={region} className="flex justify-between items-center">
-                          <span className="text-cyan-700 capitalize text-sm">{region}:</span>
-                          <div className="flex items-center space-x-2">
-                            <span className="text-xs font-bold text-cyan-900">{data.users} users</span>
-                            <span className={`w-2 h-2 rounded-full ${
-                              data.performance === 'excellent' ? 'bg-green-500' :
-                              data.performance === 'good' ? 'bg-blue-500' :
-                              data.performance === 'average' ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}></span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Backup & Recovery Status */}
-                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200">
-                    <h4 className="font-medium text-indigo-900 mb-3 flex items-center space-x-2">
-                      <span>💾</span>
-                      <span>Backup & Recovery</span>
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-indigo-700">Last Backup:</span>
-                        <span className="font-bold text-indigo-900 text-xs">
-                          {portalBackupSystem.backupStatus.lastBackup.toLocaleTimeString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-indigo-700">Total Backups:</span>
-                        <span className="font-bold text-indigo-900">{portalBackupSystem.backupStatus.totalBackups}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-indigo-700">Storage Used:</span>
-                        <span className="font-bold text-indigo-900">{portalBackupSystem.backupStatus.storageUsed}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-indigo-700">Recovery Time:</span>
-                        <span className="font-bold text-green-600">{portalBackupSystem.disasterRecovery.recoveryTime}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Communication Hub Status */}
-                  <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg p-4 border border-emerald-200">
-                    <h4 className="font-medium text-emerald-900 mb-3 flex items-center space-x-2">
-                      <span>💬</span>
-                      <span>Communication Hub</span>
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      {Object.entries(portalCommunication.chatRooms).map(([room, data]) => (
-                        <div key={room} className="flex justify-between items-center">
-                          <span className="text-emerald-700 capitalize text-xs">{room}:</span>
-                          <div className="flex items-center space-x-1">
-                            <span className="text-xs font-bold text-emerald-900">{data.participants}</span>
-                            <span className={`w-2 h-2 rounded-full ${
-                              data.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-                            }`}></span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-3 pt-2 border-t border-emerald-200">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-emerald-700">Video Calls:</span>
-                        <span className="font-bold text-emerald-900">{portalCommunication.videoCallSessions.length} active</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                  <FiShield className="w-5 h-5" />
-                  <span>System Health & Quick Actions</span>
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <FiCheckCircle className="w-5 h-5 text-green-600" />
-                      <span className="font-medium text-green-900">System Health</span>
-                    </div>
-                    <p className="text-2xl font-bold text-green-600">{portalControlSystem.controlledMetrics.systemHealth}</p>
-                  </div>
-                  
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <FiUsers className="w-5 h-5 text-blue-600" />
-                      <span className="font-medium text-blue-900">Active Users</span>
-                    </div>
-                    <p className="text-2xl font-bold text-blue-600">{portalControlSystem.controlledMetrics.totalActiveUsers}</p>
-                  </div>
-                  
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <FiCreditCard className="w-5 h-5 text-purple-600" />
-                      <span className="font-medium text-purple-900">Transactions</span>
-                    </div>
-                    <p className="text-2xl font-bold text-purple-600">{portalControlSystem.controlledMetrics.totalTransactions}</p>
-                  </div>
-                  
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <FiDollarSign className="w-5 h-5 text-orange-600" />
-                      <span className="font-medium text-orange-900">Real-time Revenue</span>
-                    </div>
-                    <p className="text-lg font-bold text-orange-600">
-                      UGX {(portalControlSystem.controlledMetrics.realTimeRevenue / 1000).toFixed(0)}k
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => broadcastMessage('System maintenance scheduled for tonight at 11 PM EAT', 'high')}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-200 flex items-center space-x-2"
-                  >
-                    <FiSend className="w-4 h-4" />
-                    <span>Broadcast Maintenance Alert</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      const command = availableCommands.find(cmd => cmd.id === 'sync_data');
-                      sendPortalCommand(command, 'all', {});
-                    }}
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors duration-200 flex items-center space-x-2"
-                  >
-                    <FiRefreshCw className="w-4 h-4" />
-                    <span>Sync All Data</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      toast.info('📊 Generating system health report...');
-                      setTimeout(() => {
-                        generatePortalAnalytics('all', '24h');
-                        toast.success('✅ System health report generated and saved to reports section');
-                      }, 2000);
-                    }}
-                    className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors duration-200 flex items-center space-x-2"
-                  >
-                    <FiFileText className="w-4 h-4" />
-                    <span>Generate Health Report</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const alertTitle = prompt('Enter emergency alert title:');
-                      if (alertTitle) {
-                        const alertMessage = prompt('Enter emergency alert message:');
-                        if (alertMessage) {
-                          broadcastEmergencyAlert({ title: alertTitle, message: alertMessage });
-                        }
-                      }
-                    }}
-                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200 flex items-center space-x-2"
-                  >
-                    <FiAlertTriangle className="w-4 h-4" />
-                    <span>Emergency Alert</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const customNotification = {
-                        title: 'FAREDEAL Update',
-                        message: 'New features available! Check your portal for the latest updates.',
-                        priority: 'normal',
-                        category: 'update'
-                      };
-                      sendPortalNotification('all', customNotification);
-                    }}
-                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors duration-200 flex items-center space-x-2"
-                  >
-                    <FiBell className="w-4 h-4" />
-                    <span>Send Update Notification</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      toast.info('📈 Generating real-time analytics...');
-                      setTimeout(() => {
-                        ['employee', 'customer', 'supplier'].forEach(portal => {
-                          generatePortalAnalytics(portal, '1h');
-                        });
-                        toast.success('✅ Real-time analytics generated for all portals');
-                      }, 3000);
-                    }}
-                    className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors duration-200 flex items-center space-x-2"
-                  >
-                    <FiTrendingUp className="w-4 h-4" />
-                    <span>Generate Analytics</span>
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
           {/* Other Tab Content - Enhanced */}
-          {activeTab === 'analytics' && renderAnalytics()}
           {activeTab === 'team' && renderTeamManagement()}
           {activeTab === 'suppliers' && (
             <div className="animate-fadeInUp">

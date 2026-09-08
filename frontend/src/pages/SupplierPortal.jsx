@@ -20,7 +20,6 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, ComposedChart
 } from 'recharts';
 import { supabase } from '../services/supabase';
-import IcanCoinBadge from '../components/IcanCoinBadge';
 import { notificationService } from '../services/notificationService';
 import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
@@ -1863,11 +1862,6 @@ const SupplierPortal = () => {
 
   const renderOverview = () => (
     <div className="space-y-6 animate-fadeInUp">
-      {/* ICAN Coin Balance */}
-      <div className="flex justify-end">
-        <div className="w-44"><IcanCoinBadge onOpen={() => setActiveTab('ican-wallet')} /></div>
-      </div>
-
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl p-6 text-white shadow-lg">
         <div className="flex items-center justify-between">

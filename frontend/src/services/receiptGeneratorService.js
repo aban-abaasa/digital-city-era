@@ -9,7 +9,8 @@ const FALLBACK_COMPANY_INFO = {
   phone: '+256-700-123456',
   email: 'support@yoursupermarket.ug',
   website: 'www.yoursupermarket.ug',
-  motto: 'Your Trusted Local Store 🇺🇬'
+  motto: 'Your Trusted Local Store 🇺🇬',
+  logoUrl: null
 };
 
 class ReceiptService {
@@ -30,7 +31,7 @@ class ReceiptService {
 
         const { data: supermarket, error } = await supabase
           .from('supermarkets')
-          .select('name, address, phone')
+          .select('name, address, phone, logo_url')
           .eq('id', supermarketId)
           .maybeSingle();
 
@@ -43,7 +44,8 @@ class ReceiptService {
           phone: supermarket.phone || FALLBACK_COMPANY_INFO.phone,
           email: `support@${slug}.ug`,
           website: `www.${slug}.ug`,
-          motto: FALLBACK_COMPANY_INFO.motto
+          motto: FALLBACK_COMPANY_INFO.motto,
+          logoUrl: supermarket.logo_url || null
         };
       } catch (error) {
         console.error('Error loading supermarket branding for receipt:', error);
@@ -177,10 +179,19 @@ class ReceiptService {
           padding: 30px; 
           text-align: center;
         }
-        .header h1 { 
-          margin: 0; 
-          font-size: 28px; 
+        .header h1 {
+          margin: 0;
+          font-size: 28px;
           font-weight: bold;
+        }
+        .header .logo {
+          width: 64px;
+          height: 64px;
+          object-fit: cover;
+          border-radius: 12px;
+          margin: 0 auto 10px;
+          display: block;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }
         .header p { 
           margin: 5px 0; 
@@ -261,6 +272,7 @@ class ReceiptService {
     <body>
       <div class="receipt-container">
         <div class="header">
+          ${companyInfo.logoUrl ? `<img class="logo" src="${companyInfo.logoUrl}" alt="${companyInfo.name}" />` : ''}
           <h1><span class="uganda-flag">🇺🇬</span> ${companyInfo.name}</h1>
           <p>${companyInfo.motto}</p>
           <p><span class="emoji">📍</span> ${companyInfo.address}</p>
@@ -369,6 +381,19 @@ class ReceiptService {
     let yPos = 10;
     const pageWidth = 80;
     const margin = 5;
+
+    // Logo, if the store has uploaded one (stored as a base64 data URL)
+    const logoFormatMatch = companyInfo.logoUrl?.match(/^data:image\/(png|jpe?g|webp);base64,/i);
+    if (logoFormatMatch) {
+      try {
+        const logoSize = 18;
+        const format = logoFormatMatch[1].toUpperCase() === 'JPG' ? 'JPEG' : logoFormatMatch[1].toUpperCase();
+        doc.addImage(companyInfo.logoUrl, format, (pageWidth - logoSize) / 2, yPos, logoSize, logoSize);
+        yPos += logoSize + 3;
+      } catch (logoError) {
+        console.warn('Could not add store logo to PDF receipt:', logoError);
+      }
+    }
 
     // Header
     doc.setFontSize(12);

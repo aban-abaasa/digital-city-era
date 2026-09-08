@@ -14,6 +14,7 @@ import {
   FiX, FiCheck
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import supplierOrdersService, { getBusinessWalletBalance, resolveBusinessProfileId } from '../services/supplierOrdersService';
 import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
@@ -1025,6 +1026,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
     };
   }, [orders]);
 
+  // Data for the Order Overview line graph — replaces the old stat-card grid
+  const overviewChartData = useMemo(() => ([
+    { name: 'Total', icon: '📦', value: realTimeStats.totalOrders || 0, amount: realTimeStats.totalValue, sub: 'All orders', color: '#3b82f6' },
+    { name: 'Pending', icon: '⏳', value: realTimeStats.pendingOrders || 0, amount: null, sub: 'Awaiting action', color: '#eab308' },
+    { name: 'Completed', icon: '✅', value: realTimeStats.completedOrders || 0, amount: null, sub: 'Delivered', color: '#22c55e' },
+    { name: 'Paid', icon: '💵', value: realTimeStats.paidOrders || 0, amount: realTimeStats.totalPaidAmount, sub: 'Fully settled', color: '#10b981' },
+    { name: 'Half Paid', icon: '⚠️', value: realTimeStats.partiallyPaidOrders || 0, amount: null, sub: 'Partial payments', color: '#f97316' },
+    { name: 'Unpaid', icon: '❌', value: realTimeStats.unpaidOrders || 0, amount: realTimeStats.totalOutstanding, sub: 'Outstanding balance', color: '#ef4444' },
+  ]), [realTimeStats]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -1441,121 +1452,157 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   return (
     <div className="space-y-6 animate-fadeInUp">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-xl p-6 text-white shadow-xl">
-        <div className="flex items-center justify-between">
+      <div className="relative overflow-hidden rounded-2xl p-6 sm:p-7 text-white shadow-xl bg-gradient-to-br from-yellow-500 via-red-600 to-neutral-900">
+        <div className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-black/20 blur-3xl" />
+
+        <div className="relative flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-3xl font-bold flex items-center mb-2">
-              <FiTruck className="mr-3 h-8 w-8" />
-              🇺🇬 Supplier Order Verification & Management
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-yellow-100 bg-white/10 border border-white/20 rounded-full px-3 py-1 mb-3">
+              🇺🇬 Trusted by Uganda's modern traders
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold flex items-center gap-3 mb-2 tracking-tight">
+              <span className="bg-white/15 p-2 rounded-xl backdrop-blur-sm">
+                <FiTruck className="h-6 w-6 sm:h-7 sm:w-7" />
+              </span>
+              Supplier Order Verification &amp; Management
             </h2>
-           <p className="text-yellow-100 text-lg">
-              Choose suppliers, compare prices, and create purchase orders
+            <p className="text-yellow-100/90 text-base sm:text-lg max-w-xl">
+              Choose suppliers, compare prices, and create purchase orders — built for a world-class buying experience.
             </p>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="bg-white text-black px-6 py-3 rounded-lg font-semibold hover:bg-yellow-100 transition-all duration-300 flex items-center space-x-2 shadow-lg"
+            className="bg-white text-neutral-900 px-6 py-3 rounded-xl font-bold hover:bg-yellow-50 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center gap-2 shadow-lg shadow-black/20"
           >
             <FiPlus className="h-5 w-5" />
             <span>Create New Order</span>
           </button>
         </div>
         {storeId && (
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-black/20 p-3 text-sm">
+          <div className="relative mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-black/25 backdrop-blur-sm border border-white/10 p-3 text-sm">
             <span className="font-semibold">Order using:</span>
-            <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)} className="rounded-lg px-3 py-2 text-slate-900">
+            <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)} className="rounded-lg px-3 py-2 text-slate-900 font-medium">
               <option value="supplier_price">Supplier price</option>
               <option value="admin_price">Admin-set price</option>
             </select>
-            <span className="text-yellow-100">You can change this any time before creating an order.</span>
+            <span className="text-yellow-100/80">You can change this any time before creating an order.</span>
           </div>
         )}
       </div>
 
       {/* View Mode Toggle */}
-      <div className="flex justify-center space-x-4 mb-4">
-        <button
-          onClick={() => setViewMode('active')}
-          className={`px-8 py-3 rounded-lg font-bold transition-all duration-300 ${
-            viewMode === 'active'
-              ? 'bg-gradient-to-r from-green-600 to-blue-600 text-white shadow-lg'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-        >
-          📦 Active Orders
-        </button>
-        <button
-          onClick={() => setViewMode('history')}
-          className={`px-8 py-3 rounded-lg font-bold transition-all duration-300 ${
-            viewMode === 'history'
-              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-        >
-          📚 Order History
-        </button>
+      <div className="flex justify-center">
+        <div className="inline-flex items-center gap-1 bg-gray-100 rounded-xl p-1 shadow-inner">
+          <button
+            onClick={() => setViewMode('active')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${
+              viewMode === 'active'
+                ? 'bg-white text-blue-700 shadow-md'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            📦 Active Orders
+          </button>
+          <button
+            onClick={() => setViewMode('history')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${
+              viewMode === 'history'
+                ? 'bg-white text-purple-700 shadow-md'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            📚 Order History
+          </button>
+        </div>
       </div>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-        {/* Total Orders */}
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border-2 border-blue-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-blue-600">Total Orders</h3>
-            <FiPackage className="h-5 w-5 text-blue-600" />
+      {/* Order Overview — line graph */}
+      <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-lg border border-gray-100">
+        <div className="flex items-start justify-between flex-wrap gap-4 mb-2">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              Order Overview
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            </h3>
+            <p className="text-sm text-gray-500 mt-0.5">Order flow and payment status at a glance</p>
           </div>
-          <p className="text-2xl font-bold text-blue-800">{realTimeStats.totalOrders || 0}</p>
-          <p className="text-xs text-blue-600 mt-1">{formatUGX(realTimeStats.totalValue)}</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {overviewChartData.map((d) => (
+              <div key={d.name} className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                <span className="text-xs font-medium text-gray-500">{d.name}</span>
+                <span className="text-xs font-bold text-gray-900">{d.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Pending Approval */}
-        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 border-2 border-yellow-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-yellow-600">Pending</h3>
-            <FiClock className="h-5 w-5 text-yellow-600" />
-          </div>
-          <p className="text-2xl font-bold text-yellow-800">{realTimeStats.pendingOrders || 0}</p>
-          <p className="text-xs text-yellow-600 mt-1">Awaiting action</p>
-        </div>
-
-        {/* Completed Orders */}
-        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 border-2 border-green-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-green-600">Completed</h3>
-            <FiCheckCircle className="h-5 w-5 text-green-600" />
-          </div>
-          <p className="text-2xl font-bold text-green-800">{realTimeStats.completedOrders || 0}</p>
-          <p className="text-xs text-green-600 mt-1">Delivered</p>
-        </div>
-
-        {/* Paid Orders */}
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-6 border-2 border-emerald-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-emerald-600">✅ Paid</h3>
-            <FiDollarSign className="h-5 w-5 text-emerald-600" />
-          </div>
-          <p className="text-2xl font-bold text-emerald-800">{realTimeStats.paidOrders || 0}</p>
-          <p className="text-xs text-emerald-600 mt-1">{formatUGX(realTimeStats.totalPaidAmount)}</p>
-        </div>
-
-        {/* Half Paid Orders */}
-        <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-6 border-2 border-orange-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-orange-600">⚠️ Half Paid</h3>
-            <FiDollarSign className="h-5 w-5 text-orange-600" />
-          </div>
-          <p className="text-2xl font-bold text-orange-800">{realTimeStats.partiallyPaidOrders || 0}</p>
-          <p className="text-xs text-orange-600 mt-1">Partial payments</p>
-        </div>
-
-        {/* Unpaid Orders */}
-        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-6 border-2 border-red-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-red-600">❌ Unpaid</h3>
-            <FiAlertTriangle className="h-5 w-5 text-red-600" />
-          </div>
-          <p className="text-2xl font-bold text-red-800">{realTimeStats.unpaidOrders || 0}</p>
-          <p className="text-xs text-red-600 mt-1">{formatUGX(realTimeStats.totalOutstanding)}</p>
+        <div className="mt-3 -ml-2">
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={overviewChartData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="orderOverviewFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
+                axisLine={{ stroke: '#e2e8f0' }}
+                tickLine={false}
+              />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={28} />
+              <RechartsTooltip
+                cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }}
+                content={({ active, payload }) => {
+                  if (!active || !payload || !payload.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div className="bg-white rounded-xl shadow-xl border border-gray-100 px-4 py-3 min-w-[160px]">
+                      <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                        <span>{d.icon}</span>{d.name}
+                      </p>
+                      <p className="text-xl font-extrabold mt-0.5" style={{ color: d.color }}>
+                        {d.value} <span className="text-xs font-medium text-gray-400">orders</span>
+                      </p>
+                      {d.amount != null && (
+                        <p className="text-xs font-semibold text-gray-700 mt-1">{formatUGX(d.amount)}</p>
+                      )}
+                      <p className="text-[11px] text-gray-400 mt-0.5">{d.sub}</p>
+                    </div>
+                  );
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="#3b82f6"
+                strokeWidth={3}
+                fill="url(#orderOverviewFill)"
+                dot={(props) => {
+                  const { cx, cy, payload, index } = props;
+                  return (
+                    <circle
+                      key={`dot-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r={6}
+                      fill={payload.color}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                  );
+                }}
+                activeDot={{ r: 8, strokeWidth: 2, stroke: '#fff' }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

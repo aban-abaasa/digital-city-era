@@ -175,6 +175,9 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
               {/* Receipt Preview */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
                 <div className="text-center mb-6">
+                  {branding?.logoUrl && (
+                    <img src={branding.logoUrl} alt={storeName} className="w-16 h-16 object-cover rounded-xl mx-auto mb-3 shadow-md" />
+                  )}
                   <h3 className="text-2xl font-bold text-gray-800">🇺🇬 {storeName}</h3>
                   <p className="text-gray-600">Your Trusted Local Store</p>
                   <p className="text-sm text-gray-500">Kampala, Uganda | +256 700 123 456</p>

@@ -14,7 +14,6 @@ import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
-import IcanCoinBadge from '../components/IcanCoinBadge';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
 import { 
@@ -29,8 +28,8 @@ import {
   FiChevronDown, FiMenu, FiChevronUp, FiChevronRight, FiLogOut, FiInfo
 } from 'react-icons/fi';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
 
 const AdminPortal = () => {
@@ -49,6 +48,8 @@ const AdminPortal = () => {
   const moreNavButtonRef = useRef(null);
   const [profileMenuPos, setProfileMenuPos] = useState({ top: 0, right: 0 });
   const profileMenuButtonRef = useRef(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoFileInputRef = useRef(null);
   const [adminForm, setAdminForm] = useState({
     email: '',
     password: '',
@@ -62,6 +63,10 @@ const AdminPortal = () => {
     startDate: new Date(new Date().setHours(0, 0, 0, 0)),
     endDate: new Date(new Date().setHours(23, 59, 59, 999))
   });
+
+  // Business metrics trend (Users / Revenue / Orders / Growth) for the Live Business Metrics line chart
+  const [businessTrend, setBusinessTrend] = useState([]);
+  const [businessTrendLoading, setBusinessTrendLoading] = useState(false);
 
   // Real-time state management - Initialize with zeros, will be loaded from Supabase
   const [realTimeData, setRealTimeData] = useState({
@@ -130,8 +135,6 @@ const AdminPortal = () => {
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [showQuickAccess, setShowQuickAccess] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(false);
   const [showRecentActivities, setShowRecentActivities] = useState(false);
   const [showInventoryControl, setShowInventoryControl] = useState(false);
   const [showPaymentControl, setShowPaymentControl] = useState(false);
@@ -153,6 +156,7 @@ const AdminPortal = () => {
     full_name: 'Administrator',
     role: 'admin',
     phone: null,
+    avatar_url: null,
     supermarket_id: null,
     pichin_business_profile_id: null
   });
@@ -195,7 +199,7 @@ const AdminPortal = () => {
         let userData = null;
         const { data: ud1, error: e1 } = await supabase
           .from('users')
-          .select('id, role, supermarket_id, full_name, email, phone')
+          .select('id, role, supermarket_id, full_name, email, phone, avatar_url')
           .eq('auth_id', user.id)
           .maybeSingle();
 
@@ -205,7 +209,7 @@ const AdminPortal = () => {
           console.warn('⚠️ auth_id query failed, trying id:', e1.message);
           const { data: ud2, error: e2 } = await supabase
             .from('users')
-            .select('id, role, supermarket_id, full_name, email, phone')
+            .select('id, role, supermarket_id, full_name, email, phone, avatar_url')
             .eq('id', user.id)
             .maybeSingle();
           if (!e2) userData = ud2;
@@ -351,6 +355,7 @@ const AdminPortal = () => {
           full_name: userData?.full_name,
           role: userData?.role,
           phone: userData?.phone,
+          avatar_url: userData?.avatar_url,
           supermarket_id: userData?.supermarket_id || ownedSm?.id,
           pichin_business_profile_id: pichinBusinessProfileId
         });
@@ -984,6 +989,154 @@ const AdminPortal = () => {
     }
   }, []);
 
+  // Build the Users / Revenue / Orders / Growth trend used by the Live Business Metrics line chart.
+  // Buckets transactions + user signups into a handful of points spanning the selected range, then
+  // indexes each series to 0-100 so wildly different units (money, counts, %) can share one chart.
+  const loadBusinessTrend = useCallback(async (type) => {
+    setBusinessTrendLoading(true);
+    try {
+      const endDate = new Date();
+      const startDate = new Date(endDate);
+      let bucketCount = 7;
+      let bucketUnit = 'day';
+
+      switch (type) {
+        case 'today':
+          startDate.setHours(0, 0, 0, 0);
+          bucketCount = 12;
+          bucketUnit = 'hour2';
+          break;
+        case '7days':
+          startDate.setDate(startDate.getDate() - 7);
+          bucketCount = 7;
+          bucketUnit = 'day';
+          break;
+        case '30days':
+          startDate.setDate(startDate.getDate() - 30);
+          bucketCount = 10;
+          bucketUnit = 'day3';
+          break;
+        case '90days':
+          startDate.setDate(startDate.getDate() - 90);
+          bucketCount = 13;
+          bucketUnit = 'week';
+          break;
+        case '1year':
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          bucketCount = 12;
+          bucketUnit = 'month';
+          break;
+        default:
+          startDate.setDate(startDate.getDate() - 7);
+      }
+
+      const bucketMs = {
+        hour2: 2 * 60 * 60 * 1000,
+        day: 24 * 60 * 60 * 1000,
+        day3: 3 * 24 * 60 * 60 * 1000,
+        week: 7 * 24 * 60 * 60 * 1000,
+        month: null // handled separately below
+      }[bucketUnit];
+
+      const bucketStart = (i) => {
+        if (bucketUnit === 'month') {
+          const d = new Date(startDate);
+          d.setMonth(d.getMonth() + i);
+          return d;
+        }
+        return new Date(startDate.getTime() + i * bucketMs);
+      };
+      const bucketLabel = (d) => {
+        if (bucketUnit === 'hour2') return d.toLocaleTimeString([], { hour: '2-digit' });
+        if (bucketUnit === 'month') return d.toLocaleDateString([], { month: 'short' });
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      };
+
+      const buckets = Array.from({ length: bucketCount }, (_, i) => {
+        const start = bucketStart(i);
+        const end = bucketUnit === 'month' ? bucketStart(i + 1) : new Date(start.getTime() + bucketMs);
+        return { start, end, label: bucketLabel(start), revenue: 0, orders: 0, newUsers: 0 };
+      });
+
+      const findBucket = (dateStr) => {
+        const t = new Date(dateStr).getTime();
+        return buckets.find(b => t >= b.start.getTime() && t < b.end.getTime());
+      };
+
+      const [{ data: transactions }, { data: newUsers }] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('total_amount, created_at')
+          .gte('created_at', startDate.toISOString())
+          .lte('created_at', endDate.toISOString()),
+        supabase
+          .from('users')
+          .select('created_at')
+          .gte('created_at', startDate.toISOString())
+          .lte('created_at', endDate.toISOString())
+      ]);
+
+      (transactions || []).forEach(t => {
+        const bucket = findBucket(t.created_at);
+        if (bucket) {
+          bucket.revenue += parseFloat(t.total_amount) || 0;
+          bucket.orders += 1;
+        }
+      });
+      (newUsers || []).forEach(u => {
+        const bucket = findBucket(u.created_at);
+        if (bucket) bucket.newUsers += 1;
+      });
+
+      // Baseline users = current total minus everyone who joined inside the window,
+      // so the cumulative line ends at today's real total user count.
+      const totalNewInWindow = buckets.reduce((sum, b) => sum + b.newUsers, 0);
+      const baselineUsers = Math.max(0, (realTimeData.totalUsers || 0) - totalNewInWindow);
+      let runningUsers = baselineUsers;
+
+      let previousRevenue = null;
+      const withRaw = buckets.map(b => {
+        runningUsers += b.newUsers;
+        const growth = previousRevenue ? ((b.revenue - previousRevenue) / previousRevenue) * 100 : 0;
+        previousRevenue = b.revenue || previousRevenue || 1;
+        return {
+          label: b.label,
+          revenueRaw: Math.round(b.revenue),
+          ordersRaw: b.orders,
+          usersRaw: runningUsers,
+          growthRaw: Math.round(growth * 10) / 10
+        };
+      });
+
+      // Index every series to a shared 0-100 scale so revenue (millions), orders (tens),
+      // users (thousands) and growth (%) can be plotted as comparable lines on one axis.
+      const indexSeries = (key) => {
+        const values = withRaw.map(d => d[key]);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const range = max - min;
+        return values.map(v => (range === 0 ? 50 : Math.round(((v - min) / range) * 100)));
+      };
+      const revenueIdx = indexSeries('revenueRaw');
+      const ordersIdx = indexSeries('ordersRaw');
+      const usersIdx = indexSeries('usersRaw');
+      const growthIdx = indexSeries('growthRaw');
+
+      setBusinessTrend(withRaw.map((d, i) => ({
+        ...d,
+        revenueIdx: revenueIdx[i],
+        ordersIdx: ordersIdx[i],
+        usersIdx: usersIdx[i],
+        growthIdx: growthIdx[i]
+      })));
+    } catch (error) {
+      console.error('Error loading business metrics trend:', error);
+      setBusinessTrend([]);
+    } finally {
+      setBusinessTrendLoading(false);
+    }
+  }, [realTimeData.totalUsers]);
+
   // Load detailed orders from Supabase (real data from manager portal)
   const loadDetailedOrders = useCallback(async () => {
     try {
@@ -1240,12 +1393,14 @@ const AdminPortal = () => {
   useEffect(() => {
     loadSystemData();
     loadOrderStats(); // Also load order stats immediately for dashboard metrics
-    initializeRealTimeUpdates();
+    loadBusinessTrend(revenueDateRange.type); // Populate the Live Business Metrics line chart
+    const stopRealTimeUpdates = initializeRealTimeUpdates();
     simulateWebSocketConnection();
     loadPortalConfiguration();
     setupRealTimeConfigUpdates();
-    
+
     return () => {
+      stopRealTimeUpdates();
       if (wsConnection) {
         wsConnection.close();
       }
@@ -1298,13 +1453,22 @@ const AdminPortal = () => {
 
   // Initialize real-time updates
   const initializeRealTimeUpdates = () => {
-    // Simulate real-time data updates every 5 seconds
+    // Simulate real-time data updates every 5 seconds (cosmetic system metrics only)
     const interval = setInterval(() => {
       updateRealTimeData();
       generateRandomActivity();
     }, 5000);
 
-    return () => clearInterval(interval);
+    // Refresh real order stats from Supabase every 30 seconds so
+    // "Active Orders" reflects actual data instead of drifting randomly
+    const orderStatsInterval = setInterval(() => {
+      loadOrderStats();
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(orderStatsInterval);
+    };
   };
 
   // Simulate WebSocket connection for real-time updates
@@ -1331,7 +1495,6 @@ const AdminPortal = () => {
     setRealTimeData(prev => ({
       ...prev,
       activeUsers: prev.activeUsers + Math.floor(Math.random() * 10 - 5),
-      todaysOrders: prev.todaysOrders + Math.floor(Math.random() * 5),
       dailyRevenue: prev.dailyRevenue + Math.floor(Math.random() * 1000),
       systemLoad: Math.max(10, Math.min(90, prev.systemLoad + Math.floor(Math.random() * 10 - 5))),
       memoryUsage: Math.max(30, Math.min(90, prev.memoryUsage + Math.floor(Math.random() * 6 - 3))),
@@ -2129,7 +2292,6 @@ const AdminPortal = () => {
           setRealTimeData(prev => ({
             ...prev,
             activeUsers: freshData.realTimeMetrics?.activeUsers || prev.activeUsers,
-            todaysOrders: prev.todaysOrders + Math.floor(Math.random() * 3),
             dailyRevenue: prev.dailyRevenue + Math.floor(Math.random() * 1000),
             systemHealth: Math.max(85 + Math.floor(Math.random() * 15), 85)
           }));
@@ -2801,11 +2963,6 @@ const AdminPortal = () => {
         </div>
       </div>
 
-      {/* ICAN Coin Balance */}
-      <div className="flex justify-end mb-2">
-        <div className="w-48"><IcanCoinBadge onOpen={() => setActiveSection('ican-wallet')} /></div>
-      </div>
-
       {/* Admin Access Status Banner - Ultra Mobile Optimized */}
       <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-lg md:rounded-xl p-2 md:p-4 shadow-md">
         <div className="flex items-start gap-1.5 md:gap-3">
@@ -2818,63 +2975,6 @@ const AdminPortal = () => {
             <p className="text-xs text-green-700 mt-0.5 line-clamp-2 md:line-clamp-none">Full control. Edit pricing, manage stock, apply bulk updates.</p>
           </div>
         </div>
-      </div>
-
-      {/* Quick Access Hub - Mobile Optimized Accordion */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-lg md:rounded-2xl shadow-lg md:shadow-2xl p-3 md:p-6 border-2 border-purple-200">
-        <div className="absolute top-0 right-0 w-48 md:w-64 h-48 md:h-64 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -mr-24 md:-mr-32 -mt-24 md:-mt-32 animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-36 md:w-48 h-36 md:h-48 bg-gradient-to-tr from-pink-400/20 to-yellow-400/20 rounded-full blur-3xl -ml-18 md:-ml-24 -mb-18 md:-mb-24 animate-pulse" style={{ animationDelay: '1s' }}></div>
-        
-        {/* Toggle Button - Compact */}
-        <div 
-          className="relative flex items-center justify-between gap-2 md:gap-4 cursor-pointer hover:bg-white/50 p-2 md:p-3 rounded-lg transition-all duration-300 backdrop-blur-sm group"
-          onClick={() => setShowQuickAccess(!showQuickAccess)}
-        >
-          <h3 className="text-base md:text-lg lg:text-2xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent flex items-center gap-1 md:gap-2 lg:gap-3 flex-1 min-w-0">
-            <span className="text-lg md:text-2xl lg:text-3xl animate-bounce flex-shrink-0">🚀</span>
-            <span className="truncate">Quick Access Hub</span>
-          </h3>
-          <div className="bg-gradient-to-r from-purple-500 to-pink-500 p-1.5 md:p-2 rounded-lg shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110 flex-shrink-0">
-            {showQuickAccess ? (
-              <FiChevronUp className="h-4 md:h-5 w-4 md:w-5 text-white" />
-            ) : (
-              <FiChevronDown className="h-4 md:h-5 w-4 md:w-5 text-white" />
-            )}
-          </div>
-        </div>
-
-        {/* Quick Access Grid - Collapsible */}
-        {showQuickAccess && (
-          <div className="relative mt-3 md:mt-6 grid grid-cols-3 md:grid-cols-5 lg:grid-cols-5 gap-1.5 md:gap-3 lg:gap-4 animate-slideDown">
-            {[
-              { id: 'inventory', label: 'Inventory', icon: '📦', stats: '6 Products', gradient: 'from-emerald-500 to-teal-500', bg: 'bg-emerald-50/80', border: 'border-emerald-300', bullet: 'text-emerald-500' },
-              { id: 'orders', label: 'Orders', icon: '📋', stats: '2,847 Orders', gradient: 'from-orange-500 to-amber-500', bg: 'bg-orange-50/80', border: 'border-orange-300', bullet: 'text-orange-500' },
-              { id: 'payments', label: 'Payments', icon: '💳', stats: '$127K Revenue', gradient: 'from-green-500 to-emerald-500', bg: 'bg-green-50/80', border: 'border-green-300', bullet: 'text-green-500' },
-              { id: 'suppliers', label: 'Suppliers', icon: '🏭', stats: '24 Suppliers', gradient: 'from-purple-500 to-pink-500', bg: 'bg-purple-50/80', border: 'border-purple-300', bullet: 'text-purple-500' },
-              { id: 'users', label: 'Users', icon: '👥', stats: '1,234 Users', gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-50/80', border: 'border-blue-300', bullet: 'text-blue-500' }
-            ].map((section, index) => (
-              <button
-                key={section.id}
-                onClick={() => {
-                  setActiveSection(section.id);
-                  setShowQuickAccess(false);
-                }}
-                className={`relative flex flex-col items-center text-center gap-1 p-2 md:p-3 lg:p-4 ${section.bg} backdrop-blur-sm rounded-lg md:rounded-xl border-2 ${section.border} hover:shadow-lg transition-all duration-300 group transform hover:scale-105 hover:-translate-y-1 animate-fadeInUp overflow-hidden`}
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <div className={`absolute inset-0 bg-gradient-to-r ${section.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}></div>
-                <div className="relative">
-                  <span className="text-lg md:text-2xl group-hover:scale-125 transition-transform duration-300 block">{section.icon}</span>
-                </div>
-                <div className="relative flex-1">
-                  <span className={`font-bold text-xs md:text-sm text-gray-800 group-hover:bg-gradient-to-r group-hover:${section.gradient} group-hover:bg-clip-text group-hover:text-transparent transition-all duration-300 block truncate`}>{section.label}</span>
-                  <span className="text-xs text-gray-600 font-medium hidden md:block line-clamp-1">{section.stats}</span>
-                </div>
-                <div className={`w-1.5 md:w-2 h-1.5 md:h-2 rounded-full bg-gradient-to-r ${section.gradient}`}></div>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Employee & Manager Sign-in Control Center - COMMENTED OUT */}
@@ -3103,218 +3203,6 @@ const AdminPortal = () => {
           </div>
         ))}
       </div> */}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* System Performance with Enhanced Animations */}
-        <div className="container-glass rounded-xl p-6 shadow-lg transform hover:scale-[1.02] transition-all duration-500 animate-slideInRight">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 flex items-center space-x-3">
-              <div className="p-2 bg-blue-50 rounded-lg animate-pulse">
-                <FiActivity className="h-6 w-6 text-blue-600" />
-              </div>
-              <span>System Performance</span>
-            </h3>
-            <button 
-              onClick={loadSystemData}
-              className="p-3 hover:bg-blue-50 rounded-lg transition-all duration-300 group"
-            >
-              <FiRefreshCw className="h-5 w-5 text-blue-600 group-hover:rotate-180 transition-transform duration-500" />
-            </button>
-          </div>
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-50/30 to-blue-100/30 rounded-lg animate-pulse" />
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={[
-              { time: '00:00', cpu: 45, memory: 60, network: 30 },
-              { time: '04:00', cpu: 35, memory: 55, network: 25 },
-              { time: '08:00', cpu: 65, memory: 75, network: 60 },
-              { time: '12:00', cpu: 85, memory: 85, network: 75 },
-              { time: '16:00', cpu: 75, memory: 80, network: 65 },
-              { time: '20:00', cpu: 55, memory: 70, network: 45 },
-              { time: '23:59', cpu: 45, memory: 65, network: 35 }
-            ]}>
-              <defs>
-                <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
-                </linearGradient>
-                <linearGradient id="memoryGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
-                </linearGradient>
-                <linearGradient id="networkGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis 
-                dataKey="time" 
-                stroke="#6B7280"
-                tick={{ fill: '#6B7280' }}
-                axisLine={{ stroke: '#E5E7EB' }}
-              />
-              <YAxis 
-                stroke="#6B7280"
-                tick={{ fill: '#6B7280' }}
-                axisLine={{ stroke: '#E5E7EB' }}
-              />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                }}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="cpu" 
-                stroke="#3B82F6" 
-                fillOpacity={1} 
-                fill="url(#cpuGradient)" 
-                strokeWidth={2}
-                name="CPU Usage"
-              />
-              <Area 
-                type="monotone" 
-                dataKey="memory" 
-                stroke="#10B981" 
-                fillOpacity={1} 
-                fill="url(#memoryGradient)"
-                strokeWidth={2}
-                name="Memory Usage"
-              />
-              <Area 
-                type="monotone" 
-                dataKey="network" 
-                stroke="#8B5CF6" 
-                fillOpacity={1} 
-                fill="url(#networkGradient)"
-                strokeWidth={2}
-                name="Network Load"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-        {/* Quick Actions with Enhanced Animations */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl shadow-2xl p-6 border-2 border-indigo-200">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse"></div>
-          
-          <div 
-            className="relative flex items-center justify-between cursor-pointer hover:bg-white/50 p-3 rounded-xl transition-all duration-300 backdrop-blur-sm group"
-            onClick={() => setShowQuickActions(!showQuickActions)}
-          >
-            <h3 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent flex items-center">
-              <span className="mr-3 text-2xl sm:text-3xl animate-bounce">⚡</span>
-              Quick Actions
-            </h3>
-            <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-2 rounded-lg shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
-              {showQuickActions ? (
-                <FiChevronUp className="h-5 w-5 text-white" />
-              ) : (
-                <FiChevronDown className="h-5 w-5 text-white" />
-              )}
-            </div>
-          </div>
-          
-          {showQuickActions && (
-            <div className="relative mt-6 space-y-3 animate-fadeIn">
-              {[
-                { 
-                  title: 'Add Admin',
-                  description: `${pendingUsers.length} pending approvals`,
-                  icon: '👤',
-                  color: 'from-blue-500 to-blue-600',
-                  bg: 'bg-blue-50/80',
-                  border: 'border-blue-300',
-                  bullet: 'text-blue-500',
-                  onClick: () => setShowQuickRegister(true)
-                },
-                { 
-                  title: 'Portal Names',
-                  description: `${Object.keys(portalConfig).length} portals configured`,
-                  icon: '⚙️',
-                  color: 'from-indigo-500 to-purple-600',
-                  bg: 'bg-indigo-50/80',
-                  border: 'border-indigo-300',
-                  bullet: 'text-indigo-500',
-                  onClick: openPortalConfiguration
-                },
-                { 
-                  title: 'System Backup',
-                  description: `Last backup: ${new Date().toLocaleDateString()}`,
-                  icon: '💾',
-                  color: 'from-green-500 to-green-600',
-                  bg: 'bg-green-50/80',
-                  border: 'border-green-300',
-                  bullet: 'text-green-500',
-                  onClick: () => {
-                    toast.info('Creating system backup...');
-                    setTimeout(() => toast.success('Backup completed successfully!'), 2000);
-                  }
-                },
-                { 
-                  title: 'Security Scan',
-                  description: `${realTimeData.activeUsers} active users monitored`,
-                  icon: '🛡️',
-                  color: 'from-yellow-500 to-red-600',
-                  bg: 'bg-orange-50/80',
-                  border: 'border-orange-300',
-                  bullet: 'text-orange-500',
-                  onClick: () => {
-                    toast.info('Running security scan...');
-                    setTimeout(() => toast.success('No security threats detected'), 2500);
-                  }
-                },
-                { 
-                  title: 'Clear Cache',
-                  description: `Optimize system performance`,
-                  icon: '🔄',
-                  color: 'from-purple-500 to-purple-600',
-                  bg: 'bg-purple-50/80',
-                  border: 'border-purple-300',
-                  bullet: 'text-purple-500',
-                  onClick: () => {
-                    toast.info('Clearing cache...');
-                    setTimeout(() => {
-                      window.location.reload();
-                    }, 1000);
-                  }
-                }
-              ].map((action, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    action.onClick();
-                    setShowQuickActions(false);
-                  }}
-                  className={`relative w-full flex items-start space-x-3 p-4 ${action.bg} backdrop-blur-sm rounded-xl border-2 ${action.border} hover:shadow-xl transition-all duration-300 group text-left transform hover:scale-105 hover:-translate-y-1 animate-fadeInUp overflow-hidden`}
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <div className={`absolute inset-0 bg-gradient-to-r ${action.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}></div>
-                  <div className="relative">
-                    <span className={`${action.bullet} text-2xl font-bold animate-pulse`}>•</span>
-                  </div>
-                  <div className="relative flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-2xl group-hover:scale-125 transition-transform duration-300 animate-bounce" style={{ animationDelay: `${index * 100}ms` }}>{action.icon}</span>
-                      <span className={`font-bold text-gray-800 group-hover:bg-gradient-to-r group-hover:${action.color} group-hover:bg-clip-text group-hover:text-transparent transition-all duration-300`}>{action.title}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600 font-medium">{action.description}</span>
-                      <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${action.color} animate-ping`}></div>
-                    </div>
-                  </div>
-                  <FiChevronRight className={`h-5 w-5 ${action.bullet} opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all duration-300`} />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
 
       {showQuickRegister && renderQuickAdminRegister()}
 
@@ -3644,60 +3532,14 @@ const AdminPortal = () => {
               Live Business Metrics
             </h3>
             
-            {/* Date Range Selector for Revenue */}
+            {/* Date Range Selector */}
             <div className="flex gap-2 flex-wrap">
               {['today', '7days', '30days', '90days', '1year'].map((type) => (
                 <button
                   key={type}
                   onClick={() => {
                     setRevenueDateRange({ ...revenueDateRange, type });
-                    // Trigger recalculation
-                    const dateRange = { ...revenueDateRange, type };
-                    let label = '';
-                    let startDate, endDate = new Date();
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    
-                    switch(type) {
-                      case 'today':
-                        label = 'Today';
-                        startDate = today;
-                        break;
-                      case '7days':
-                        label = 'Last 7 Days';
-                        startDate = new Date(today);
-                        startDate.setDate(startDate.getDate() - 7);
-                        break;
-                      case '30days':
-                        label = 'Last 30 Days';
-                        startDate = new Date(today);
-                        startDate.setDate(startDate.getDate() - 30);
-                        break;
-                      case '90days':
-                        label = 'Last 90 Days';
-                        startDate = new Date(today);
-                        startDate.setDate(startDate.getDate() - 90);
-                        break;
-                      case '1year':
-                        label = 'Last Year';
-                        startDate = new Date(today);
-                        startDate.setFullYear(startDate.getFullYear() - 1);
-                        break;
-                    }
-                    
-                    supabase
-                      .from('transactions')
-                      .select('total_amount')
-                      .gte('created_at', startDate.toISOString())
-                      .lte('created_at', endDate.toISOString())
-                      .then(({ data: transactions }) => {
-                        const revenue = transactions?.reduce((sum, t) => sum + (parseFloat(t.total_amount) || 0), 0) || 0;
-                        setRealTimeData(prev => ({
-                          ...prev,
-                          dailyRevenue: Math.round(revenue),
-                          revenueLabel: label
-                        }));
-                      });
+                    loadBusinessTrend(type);
                   }}
                   className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                     revenueDateRange.type === type
@@ -3711,131 +3553,89 @@ const AdminPortal = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* KPI headline row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {[
               {
                 title: 'Total Users',
                 value: realTimeData.totalUsers || (pendingUsers.length + allUsers.length) || 0,
                 icon: '👥',
-                gradient: 'from-blue-500 via-blue-600 to-indigo-600',
-                bg: 'from-blue-50 to-indigo-50',
-                shadowColor: 'blue',
-                trend: '+5.2%',
-                trendUp: true,
-                subtitle: `${pendingUsers.length} pending approval`,
-                pulse: true
+                gradient: 'from-blue-500 to-indigo-600',
+                trend: '+5.2%'
               },
               {
                 title: 'Daily Revenue',
-                value: realTimeData.dailyRevenue 
-
+                value: realTimeData.dailyRevenue
                   ? `UGX ${(realTimeData.dailyRevenue / 1000000).toFixed(1)}M`
                   : 'UGX 0',
                 icon: '💰',
-                gradient: 'from-green-500 via-emerald-600 to-teal-600',
-                bg: 'from-green-50 to-emerald-50',
-                shadowColor: 'green',
-                trend: '+12.5%',
-                trendUp: true,
-                subtitle: realTimeData.revenueLabel || 'Today',
-                pulse: false
+                gradient: 'from-green-500 to-emerald-600',
+                trend: '+12.5%'
               },
               {
                 title: 'Active Orders',
                 value: realTimeData.todaysOrders || orderStats.today || 0,
                 icon: '📋',
-                gradient: 'from-yellow-500 via-orange-500 to-red-500',
-                bg: 'from-yellow-50 to-orange-50',
-                shadowColor: 'orange',
-                trend: '+8.3%',
-                trendUp: true,
-                subtitle: `${realTimeData.todaysOrders || orderStats.today || 0} orders today`,
-                pulse: true
+                gradient: 'from-orange-500 to-red-500',
+                trend: '+8.3%'
               },
               {
                 title: 'Growth Rate',
                 value: `${realTimeData.growthRate || 0}%`,
                 icon: '📈',
-                gradient: 'from-purple-500 via-pink-500 to-rose-500',
-                bg: 'from-purple-50 to-pink-50',
-                shadowColor: 'purple',
-                trend: '+3.1%',
-                trendUp: true,
-                subtitle: 'Monthly growth',
-                pulse: false
+                gradient: 'from-purple-500 to-pink-500',
+                trend: '+3.1%'
               }
             ].map((stat, index) => (
               <div
                 key={index}
-                className={`relative bg-gradient-to-br ${stat.bg} rounded-2xl p-6 border-2 border-white/50 shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-500 group overflow-hidden animate-fadeInUp`}
+                className="relative bg-white/70 backdrop-blur-sm rounded-xl p-4 border-2 border-white/50 shadow-lg animate-fadeInUp"
                 style={{ animationDelay: `${index * 100}ms` }}
               >
-                {/* Animated Background */}
-                <div className={`absolute inset-0 bg-gradient-to-r ${stat.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-500`}></div>
-                
-                {/* Shimmer Effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-
-                <div className="relative">
-                  {/* Header with Icon and Trend */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={`p-4 bg-gradient-to-br ${stat.gradient} rounded-2xl shadow-lg transform group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 ${stat.pulse ? 'animate-pulse' : ''}`}>
-                      <span className="text-3xl filter drop-shadow-lg">{stat.icon}</span>
-                    </div>
-                    <div className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold shadow-md ${
-                      stat.trendUp 
-                        ? 'text-green-700 bg-green-100 border-2 border-green-300' 
-                        : 'text-red-700 bg-red-100 border-2 border-red-300'
-                    } animate-bounce`}>
-                      <span className="text-lg">{stat.trendUp ? '↑' : '↓'}</span>
-                      <span>{stat.trend}</span>
-                    </div>
-                  </div>
-
-                  {/* Title */}
-                  <h4 className="text-gray-600 text-sm font-semibold mb-2 uppercase tracking-wide">{stat.title}</h4>
-
-                  {/* Value */}
-                  <div className="flex items-baseline gap-2 mb-3">
-                    <span className={`text-4xl font-black bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>
-                      {stat.value}
-                    </span>
-                  </div>
-
-                  {/* Subtitle */}
-                  <p className="text-xs text-gray-500 font-medium mb-4">{stat.subtitle}</p>
-
-                  {/* Animated Progress Bar */}
-                  <div className="relative h-2 bg-gray-200/50 rounded-full overflow-hidden">
-                    <div 
-                      className={`absolute inset-y-0 left-0 bg-gradient-to-r ${stat.gradient} rounded-full shadow-lg transition-all duration-1000 ease-out`}
-                      style={{ 
-                        width: '0%',
-                        animation: `progressExpand 2s ease-out ${index * 200}ms forwards`
-                      }}
-                    ></div>
-                  </div>
-
-                  {/* Live Indicator */}
-                  <div className="absolute top-4 right-4 flex items-center gap-1">
-                    <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${stat.gradient} animate-ping`}></div>
-                    <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${stat.gradient}`}></div>
-                  </div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${stat.gradient} text-white`}>{stat.icon}</span>
+                  <span className="text-xs font-bold text-green-600">↑ {stat.trend}</span>
                 </div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide truncate">{stat.title}</p>
+                <p className={`text-xl font-black bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>{stat.value}</p>
               </div>
             ))}
           </div>
+
+          {/* Trend line chart - all four metrics indexed to a shared 0-100 scale so they can share one axis */}
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border-2 border-white/50 shadow-lg">
+            {businessTrendLoading ? (
+              <div className="h-72 flex items-center justify-center text-gray-500 text-sm">Loading trend…</div>
+            ) : businessTrend.length === 0 ? (
+              <div className="h-72 flex items-center justify-center text-gray-500 text-sm">No trend data yet</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={businessTrend} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <XAxis dataKey="label" stroke="#6B7280" tick={{ fill: '#6B7280', fontSize: 12 }} axisLine={{ stroke: '#E5E7EB' }} />
+                  <YAxis domain={[0, 100]} stroke="#6B7280" tick={{ fill: '#6B7280', fontSize: 12 }} axisLine={{ stroke: '#E5E7EB' }} label={{ value: 'Indexed trend', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: 'rgba(255,255,255,0.97)', border: 'none', borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                    formatter={(_value, name, item) => {
+                      const raw = item.payload;
+                      if (name === 'Users') return [raw.usersRaw.toLocaleString(), name];
+                      if (name === 'Revenue') return [`UGX ${(raw.revenueRaw / 1000000).toFixed(2)}M`, name];
+                      if (name === 'Orders') return [raw.ordersRaw.toLocaleString(), name];
+                      if (name === 'Growth') return [`${raw.growthRaw}%`, name];
+                      return [_value, name];
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="usersIdx" name="Users" stroke="#3B82F6" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="revenueIdx" name="Revenue" stroke="#10B981" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="ordersIdx" name="Orders" stroke="#F97316" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="growthIdx" name="Growth" stroke="#A855F7" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </div>
-
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes progressExpand {
-            from { width: 0%; }
-            to { width: 75%; }
-          }
-        `
-      }} />
 
       {/* Enhanced Recent Activities */}
       <div className="relative overflow-hidden bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 rounded-2xl shadow-lg p-6 border-2 border-purple-200 animate-fadeInUp" style={{ animationDelay: '400ms' }}>
@@ -7710,6 +7510,47 @@ const AdminPortal = () => {
     }
   };
 
+  // Store logo — shown in the header next to the store name and printed on
+  // receipts (PDF/email), shared across every portal via useSupermarketBranding.
+  const handleLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !currentAdmin.supermarket_id) return;
+
+    if (!file.type.startsWith('image/')) {
+      notificationService.show('Please select an image file', 'error');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      notificationService.show('Logo image should be less than 2MB', 'error');
+      return;
+    }
+
+    try {
+      setUploadingLogo(true);
+      const base64String = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const { error } = await supabase
+        .from('supermarkets')
+        .update({ logo_url: base64String, updated_at: new Date().toISOString() })
+        .eq('id', currentAdmin.supermarket_id);
+      if (error) throw error;
+
+      branding.refresh();
+      notificationService.show('✅ Store logo updated — it now shows on your header and receipts', 'success');
+    } catch (error) {
+      console.error('Error uploading store logo:', error);
+      notificationService.show('Failed to upload store logo', 'error');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   return (
     <div
       className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 bg-cover bg-center bg-fixed"
@@ -7752,6 +7593,8 @@ const AdminPortal = () => {
       <div className="fixed right-4 top-4 z-50 rounded-xl bg-indigo-700 shadow-xl">
         <SupermarketaWalletApprovalBell />
       </div>
+      {/* Always-reachable portal switcher on phones — pinned top-right, above the fixed mobile header bar and clear of the wallet-approval bell */}
+      <PortalSwitcher mobileFloating mobileFloatingPositionClass="top-4 right-16 z-[60]" />
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -7951,11 +7794,39 @@ const AdminPortal = () => {
         <div className="container-glass rounded-lg md:rounded-2xl shadow-lg p-3 md:p-4 lg:p-6 mb-4 md:mb-6 lg:mb-8 animate-fadeInUp">
           {!isMobile && (
             <div className="flex items-center justify-between gap-3 pb-3 md:pb-4 mb-3 md:mb-4 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <FiShield className="h-5 w-5 text-white" />
+              <div className="flex items-center gap-3">
+                <input
+                  ref={logoFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoUpload}
+                />
+                <button
+                  onClick={() => logoFileInputRef.current?.click()}
+                  disabled={uploadingLogo}
+                  title="Upload store logo"
+                  className="relative w-11 h-11 md:w-12 md:h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md overflow-hidden group"
+                >
+                  {branding.logoUrl ? (
+                    <img src={branding.logoUrl} alt={branding.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <FiShield className="h-6 w-6 text-white" />
+                  )}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center">
+                    {uploadingLogo ? (
+                      <FiRefreshCw className="h-4 w-4 text-white animate-spin" />
+                    ) : (
+                      <FiUpload className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    )}
+                  </div>
+                </button>
+                <div className="hidden sm:block leading-tight">
+                  <span className="block text-lg md:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent truncate max-w-[220px]">
+                    {branding.typeEmoji} {branding.name}
+                  </span>
+                  <span className="hidden lg:block text-[11px] text-gray-500 font-medium tracking-wide uppercase">{branding.typeLabel}</span>
                 </div>
-                <span className="font-bold text-gray-900 hidden lg:inline">{branding.typeEmoji} {branding.name}</span>
               </div>
               <nav className="flex items-center gap-1">
                 {primaryNavItems.map((item) => (
@@ -8055,41 +7926,45 @@ const AdminPortal = () => {
               <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 truncate">Admin Portal - System Administration</h1>
               <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Welcome back to {branding.name}, admin</p>
             </div>
-            <div className="flex items-center gap-1 md:gap-2 lg:gap-4 flex-shrink-0">
-              <button 
-                className="p-1.5 md:p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Notifications"
-              >
-                <FiBell className="h-4 md:h-5 lg:h-6 w-4 md:w-5 lg:w-6" />
-              </button>
-              <button 
-                className="p-1.5 md:p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Settings"
-              >
-                <FiSettings className="h-4 md:h-5 lg:h-6 w-4 md:w-5 lg:w-6" />
-              </button>
-              
-              {/* Admin Profile Dropdown - Compact */}
+            <div className="flex items-center justify-end w-full md:w-auto gap-1 md:gap-2 lg:gap-4 flex-shrink-0">
+              {/* Everything about the signed-in admin — notifications, settings, profile — lives behind one avatar */}
               <div className="relative">
                 <button
                   ref={profileMenuButtonRef}
                   onClick={() => {
                     if (!showProfileMenu && profileMenuButtonRef.current) {
                       const rect = profileMenuButtonRef.current.getBoundingClientRect();
-                      setProfileMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+                      const menuWidth = 288; // matches the dropdown's w-72
+                      const margin = 8;
+                      const rawRight = window.innerWidth - rect.right;
+                      const clampedRight = Math.min(
+                        Math.max(rawRight, margin),
+                        Math.max(window.innerWidth - menuWidth - margin, margin)
+                      );
+                      setProfileMenuPos({ top: rect.bottom + 8, right: clampedRight });
                     }
                     setShowProfileMenu(!showProfileMenu);
                   }}
                   className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 md:px-3 py-1.5 md:py-2 hover:bg-gray-100 transition-colors cursor-pointer"
-                  title="Admin Profile"
+                  title="Account"
                 >
-                  <div className="w-6 md:w-8 h-6 md:h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white flex-shrink-0">
-                    <FiShield className="h-3 md:h-5 w-3 md:w-5" />
+                  <div className="relative w-8 md:w-10 h-8 md:h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white flex-shrink-0 overflow-hidden">
+                    {currentAdmin.avatar_url ? (
+                      <img src={currentAdmin.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <FiShield className="h-4 md:h-5 w-4 md:w-5" />
+                    )}
+                    {pendingUsers.length > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full ring-2 ring-gray-50 animate-pulse">
+                        {pendingUsers.length}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs md:text-sm text-left hidden md:block">
                     <div className="font-medium text-gray-900">{currentAdmin.full_name || 'Administrator'}</div>
                     <div className="text-gray-500 text-xs capitalize">{currentAdmin.role || 'Administrator'}</div>
                   </div>
+                  <FiChevronDown className={`h-4 w-4 text-gray-400 hidden md:block transition-transform duration-300 ${showProfileMenu ? 'rotate-180' : ''}`} />
                 </button>
 
                 {/* Dropdown Menu */}
@@ -8101,23 +7976,50 @@ const AdminPortal = () => {
                     ></div>
                     <div
                       style={{ position: 'fixed', top: profileMenuPos.top, right: profileMenuPos.right }}
-                      className="w-64 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] overflow-hidden"
+                      className="w-72 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] overflow-hidden"
                     >
                       {/* Profile Header */}
                       <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 text-white">
                         <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
-                            <FiShield className="h-6 w-6" />
+                          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {currentAdmin.avatar_url ? (
+                              <img src={currentAdmin.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <FiShield className="h-6 w-6" />
+                            )}
                           </div>
-                          <div>
-                            <div className="font-bold">{currentAdmin.full_name || 'Administrator'}</div>
-                            <div className="text-xs text-white/80">{currentAdmin.email || ''}</div>
+                          <div className="min-w-0">
+                            <div className="font-bold truncate">{currentAdmin.full_name || 'Administrator'}</div>
+                            <div className="text-xs text-white/80 truncate">{currentAdmin.email || ''}</div>
                           </div>
                         </div>
                       </div>
 
                       {/* Menu Items */}
-                      <div className="py-2">
+                      <div className="py-2 max-h-[70vh] overflow-y-auto">
+                        <button
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            setActiveSection('users');
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-yellow-50 transition-colors"
+                        >
+                          <FiBell className="h-5 w-5 text-yellow-600" />
+                          <div className="text-left flex-1">
+                            <div className="font-medium text-sm">Notifications</div>
+                            <div className="text-xs text-gray-500">
+                              {pendingUsers.length > 0 ? `${pendingUsers.length} pending approval${pendingUsers.length === 1 ? '' : 's'}` : 'You\'re all caught up'}
+                            </div>
+                          </div>
+                          {pendingUsers.length > 0 && (
+                            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                              {pendingUsers.length}
+                            </span>
+                          )}
+                        </button>
+
+                        <div className="border-t border-gray-200 my-2"></div>
+
                         <button
                           onClick={() => {
                             setShowProfileMenu(false);
@@ -8129,6 +8031,20 @@ const AdminPortal = () => {
                           <div className="text-left">
                             <div className="font-medium text-sm">My Profile</div>
                             <div className="text-xs text-gray-500">View and edit profile</div>
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            logoFileInputRef.current?.click();
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-indigo-50 transition-colors"
+                        >
+                          <FiUpload className="h-5 w-5 text-indigo-600" />
+                          <div className="text-left">
+                            <div className="font-medium text-sm">Store Logo</div>
+                            <div className="text-xs text-gray-500">Upload the logo shown on your header & receipts</div>
                           </div>
                         </button>
 

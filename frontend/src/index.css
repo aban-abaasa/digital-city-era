@@ -25,6 +25,19 @@ body {
   transition: background-color 200ms ease, color 200ms ease;
 }
 
+/* Hide scroll indicators (vertical & horizontal) app-wide — scrolling still
+   works everywhere, only the visible thumb/track is removed. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Form controls across this app sit on light/white card backgrounds
    regardless of the current app theme, but Tailwind's preflight reset makes
    them inherit `color` from body — which is near-white in the default dark
