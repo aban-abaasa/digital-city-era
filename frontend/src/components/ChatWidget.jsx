@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio } from 'react-icons/fi';
+import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio, FiMaximize2, FiMinimize2 } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   resolveChatIdentity,
@@ -84,6 +84,7 @@ const ChatWidget = () => {
   const [guestFormError, setGuestFormError] = useState('');
 
   const [open, setOpen] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [channel, setChannel] = useState('support'); // 'support' | 'team' | 'community'
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -391,6 +392,7 @@ const ChatWidget = () => {
 
   const handleOpen = () => {
     setOpen(true);
+    setMaximized(false);
     markChannelRead(channel);
   };
 
@@ -522,12 +524,17 @@ const ChatWidget = () => {
           scopeLabel="My Store"
         />
       )}
-      <div className="fixed z-[999]" style={{ left: position.left, top: position.top }}>
       {open && (
         <div
-          className={`relative mb-3 flex h-[28rem] w-[22rem] max-w-[90vw] flex-col overflow-hidden rounded-2xl border shadow-2xl ${
-            dark ? 'border-white/10 bg-[#0b1220]' : 'border-slate-200 bg-white'
-          }`}
+          className={`fixed inset-0 z-[999] flex items-center justify-center bg-black/40 ${maximized ? '' : 'p-4'}`}
+          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+        >
+        <div
+          className={`relative flex flex-col overflow-hidden border shadow-2xl transition-all ${
+            maximized
+              ? 'h-full w-full max-h-full max-w-full rounded-none'
+              : 'h-[28rem] w-[22rem] max-h-[90vh] max-w-[90vw] rounded-2xl'
+          } ${dark ? 'border-white/10 bg-[#0b1220]' : 'border-slate-200 bg-white'}`}
         >
           <div className="flex items-center justify-between bg-gradient-to-r from-cyan-500 via-blue-600 to-violet-600 px-4 py-3 text-white">
             <div>
@@ -556,6 +563,13 @@ const ChatWidget = () => {
                   <FiRadio className="h-4 w-4" />
                 </button>
               )}
+              <button
+                onClick={() => setMaximized((m) => !m)}
+                className="rounded-lg p-1.5 hover:bg-white/20 transition"
+                title={maximized ? 'Restore' : 'Expand to full screen'}
+              >
+                {maximized ? <FiMinimize2 className="h-4 w-4" /> : <FiMaximize2 className="h-4 w-4" />}
+              </button>
               <button onClick={() => setOpen(false)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
                 <FiX className="h-4 w-4" />
               </button>
@@ -795,8 +809,10 @@ const ChatWidget = () => {
             </div>
           </div>
         </div>
+        </div>
       )}
 
+      <div className="fixed z-[999]" style={{ left: position.left, top: position.top }}>
       <button
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
