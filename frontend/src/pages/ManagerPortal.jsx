@@ -13429,7 +13429,7 @@ FAREDEAL Uganda Management Team
                   View all sales transactions, receipts, and generate comprehensive reports
                 </p>
               </div>
-              <TransactionHistory viewMode="manager" />
+              <TransactionHistory viewMode="manager" supermarketId={managerProfile.supermarket_id} />
             </div>
           )}
           {activeTab === 'ican-wallet' && (

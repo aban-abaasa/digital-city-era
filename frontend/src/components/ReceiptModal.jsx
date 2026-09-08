@@ -13,9 +13,12 @@ import {
   FiSmartphone
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
-import receiptService from '../services/receiptService';
+import receiptService from '../services/receiptGeneratorService';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const ReceiptModal = ({ isOpen, onClose, saleData }) => {
+  const branding = useSupermarketBranding();
+  const storeName = branding?.name || 'Your Supermarket';
   const [activeTab, setActiveTab] = useState('preview');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -82,9 +85,9 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     try {
-      const result = receiptService.printReceipt(saleData);
+      const result = await receiptService.printReceipt(saleData);
       if (result.success) {
         toast.success(`🖨️ ${result.message}`);
       }
@@ -172,7 +175,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
               {/* Receipt Preview */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-800">🇺🇬 FareDeal Uganda</h3>
+                  <h3 className="text-2xl font-bold text-gray-800">🇺🇬 {storeName}</h3>
                   <p className="text-gray-600">Your Trusted Local Store</p>
                   <p className="text-sm text-gray-500">Kampala, Uganda | +256 700 123 456</p>
                 </div>

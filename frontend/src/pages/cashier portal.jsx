@@ -3441,6 +3441,7 @@ const CashierPortal = () => {
             </div>
             <TransactionHistory
               cashierId={cashierProfile?.user_id || cashierProfile?.id}
+              supermarketId={cashierProfile?.supermarket_id}
               savedReceipts={savedReceipts}
             />
           </div>

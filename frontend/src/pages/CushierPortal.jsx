@@ -2807,7 +2807,10 @@ const CashierPortal = () => {
               </h2>
               <p className="text-gray-600">View and reprint your receipts</p>
             </div>
-            <TransactionHistory />
+            <TransactionHistory
+              cashierId={cashierProfile?.user_id || cashierProfile?.id}
+              supermarketId={cashierProfile?.supermarket_id}
+            />
           </div>
         )}
         {activeTab === 'profile' && renderProfile()}

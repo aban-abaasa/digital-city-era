@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { FiX, FiMessageSquare, FiMail, FiDownload, FiBarChart, FiCalendar, FiFilter, FiClock, FiUsers, FiPackage, FiDollarSign, FiTrendingUp, FiSettings } from 'react-icons/fi';
 import AdvancedReportService from '../services/advancedReportService';
 import { toast } from 'react-toastify';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const ReportModal = ({ isOpen, onClose }) => {
+  const branding = useSupermarketBranding();
+  const storeName = branding?.name || 'Your Supermarket';
   const [reportConfig, setReportConfig] = useState({
     type: 'sales',
     dateRange: 'last30days',
@@ -107,14 +110,15 @@ const ReportModal = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!generatedReport) {
       toast.error('Please generate a report first');
       return;
     }
 
-    const doc = AdvancedReportService.generateReportPDF(generatedReport);
-    doc.save(`faredeal-${generatedReport.reportType}-report-${Date.now()}.pdf`);
+    const doc = await AdvancedReportService.generateReportPDF(generatedReport);
+    const slug = storeName.toLowerCase().replace(/\s+/g, '-');
+    doc.save(`${slug}-${generatedReport.reportType}-report-${Date.now()}.pdf`);
     toast.success('Report PDF downloaded successfully!');
   };
 

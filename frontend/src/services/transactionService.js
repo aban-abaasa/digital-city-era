@@ -238,13 +238,19 @@ class TransactionService {
   // ===================================================
   // GET TRANSACTION BY ID
   // ===================================================
-  async getTransaction(transactionId) {
+  async getTransaction(transactionId, supermarketId = null) {
     try {
-      const { data: transaction, error: transactionError } = await supabase
+      let transactionQuery = supabase
         .from('transactions')
         .select('*')
-        .eq('id', transactionId)
-        .single();
+        .eq('id', transactionId);
+
+      // Tenant isolation: never let one supermarket view another's transaction
+      if (supermarketId) {
+        transactionQuery = transactionQuery.eq('supermarket_id', supermarketId);
+      }
+
+      const { data: transaction, error: transactionError } = await transactionQuery.single();
 
       if (transactionError) throw transactionError;
 
@@ -286,13 +292,19 @@ class TransactionService {
   // ===================================================
   // GET TRANSACTION BY RECEIPT NUMBER
   // ===================================================
-  async getTransactionByReceipt(receiptNumber) {
+  async getTransactionByReceipt(receiptNumber, supermarketId = null) {
     try {
-      const { data: transaction, error: transactionError } = await supabase
+      let receiptQuery = supabase
         .from('transactions')
         .select('*')
-        .eq('receipt_number', receiptNumber)
-        .single();
+        .eq('receipt_number', receiptNumber);
+
+      // Tenant isolation: never let one supermarket view another's transaction
+      if (supermarketId) {
+        receiptQuery = receiptQuery.eq('supermarket_id', supermarketId);
+      }
+
+      const { data: transaction, error: transactionError } = await receiptQuery.single();
 
       if (transactionError) throw transactionError;
 
@@ -331,7 +343,7 @@ class TransactionService {
   // ===================================================
   // GET TODAY'S TRANSACTIONS
   // ===================================================
-  async getTodaysTransactions(cashierId = null) {
+  async getTodaysTransactions(cashierId = null, supermarketId = null) {
     try {
       // Load all recent transactions (not just today, to match CashierPortal behavior)
       let query = supabase
@@ -342,6 +354,11 @@ class TransactionService {
       // Only filter by cashier if specifically provided
       if (cashierId) {
         query = query.eq('cashier_id', cashierId);
+      }
+
+      // Tenant isolation: never let one supermarket see another's transactions
+      if (supermarketId) {
+        query = query.eq('supermarket_id', supermarketId);
       }
 
       const { data, error } = await query;
@@ -381,7 +398,7 @@ class TransactionService {
   // ===================================================
   // GET TRANSACTIONS BY DATE RANGE
   // ===================================================
-  async getTransactionsByDateRange(startDate, endDate, cashierId = null) {
+  async getTransactionsByDateRange(startDate, endDate, cashierId = null, supermarketId = null) {
     try {
       let query = supabase
         .from('transactions')
@@ -392,6 +409,11 @@ class TransactionService {
 
       if (cashierId) {
         query = query.eq('cashier_id', cashierId);
+      }
+
+      // Tenant isolation: never let one supermarket see another's transactions
+      if (supermarketId) {
+        query = query.eq('supermarket_id', supermarketId);
       }
 
       const { data, error } = await query;
@@ -420,11 +442,11 @@ class TransactionService {
   // ===================================================
   // GET DAILY REPORT
   // ===================================================
-  async getDailyReport(date = new Date()) {
+  async getDailyReport(date = new Date(), supermarketId = null) {
     try {
       // NOTE: daily_sales_reports table doesn't exist
       // Generate report on-the-fly from transactions
-      return await this.generateDailyReport(date);
+      return await this.generateDailyReport(date, supermarketId);
     } catch (error) {
       console.error('Error generating daily report:', error);
       return {
@@ -437,21 +459,28 @@ class TransactionService {
   // ===================================================
   // GENERATE DAILY REPORT
   // ===================================================
-  async generateDailyReport(date = new Date()) {
+  async generateDailyReport(date = new Date(), supermarketId = null) {
     try {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
       // Get all transactions for the day
-      const { data: transactions, error: transError } = await supabase
+      let reportQuery = supabase
         .from('transactions')
         .select('*')
         .gte('created_at', startOfDay.toISOString())
         .lte('created_at', endOfDay.toISOString())
         .eq('status', 'completed');
+
+      // Tenant isolation: never let one supermarket see another's transactions
+      if (supermarketId) {
+        reportQuery = reportQuery.eq('supermarket_id', supermarketId);
+      }
+
+      const { data: transactions, error: transError } = await reportQuery;
 
       if (transError) throw transError;
 
@@ -525,14 +554,21 @@ class TransactionService {
   // ===================================================
   // SEARCH TRANSACTIONS
   // ===================================================
-  async searchTransactions(searchTerm) {
+  async searchTransactions(searchTerm, supermarketId = null) {
     try {
-      const { data, error } = await supabase
+      let searchQuery = supabase
         .from('transactions')
         .select('*')
         .or(`receipt_number.ilike.%${searchTerm}%,transaction_id.ilike.%${searchTerm}%,customer_name.ilike.%${searchTerm}%,customer_phone.ilike.%${searchTerm}%`)
         .order('created_at', { ascending: false })
         .limit(50);
+
+      // Tenant isolation: never let one supermarket search another's transactions
+      if (supermarketId) {
+        searchQuery = searchQuery.eq('supermarket_id', supermarketId);
+      }
+
+      const { data, error } = await searchQuery;
 
       if (error) throw error;
 

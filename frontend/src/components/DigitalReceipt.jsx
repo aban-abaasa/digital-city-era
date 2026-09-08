@@ -7,8 +7,16 @@ import {
   FiSend, FiCheck, FiPhone, FiSmartphone, FiFileText, FiImage,
   FiCopy, FiExternalLink, FiWifi, FiBluetooth, FiMonitor, FiSave
 } from 'react-icons/fi';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
+  const branding = useSupermarketBranding();
+  const storeName = branding?.name || 'Your Supermarket';
+  const storeSlug = storeName.toLowerCase().replace(/\s+/g, '');
+  const storeWebsite = receiptData?.store?.website || `www.${storeSlug}.com`;
+  const storeSupportEmail = receiptData?.store?.supportEmail || `support@${storeSlug}.com`;
+  const storePhone = receiptData?.store?.phone || '';
+  const storeAddress = receiptData?.store?.address || '';
   const [emailAddress, setEmailAddress] = useState(receiptData?.customer?.email || '');
   const [phoneNumber, setPhoneNumber] = useState(receiptData?.customer?.phone || '');
   const [sending, setSending] = useState(false);
@@ -174,7 +182,7 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
         <div class="receipt-container">
           <div class="receipt-header">
             <div class="store-logo">🛒</div>
-            <h1>FAREDEAL POS</h1>
+            <h1>${storeName}</h1>
             <p>Thank you for shopping with us!</p>
           </div>
           
@@ -236,7 +244,7 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
           </div>
 
           <div class="footer">
-            <p><strong>FAREDEAL POS System</strong></p>
+            <p><strong>${storeName}</strong></p>
             <p>Visit us again soon! 😊</p>
             <p><small>This is a digital receipt. Please keep for your records.</small></p>
           </div>
@@ -284,7 +292,7 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
       // Simulate API call to email service
       const emailData = {
         to: emailAddress,
-        subject: `Receipt #${orderId} - FAREDEAL POS`,
+        subject: `Receipt #${orderId} - ${storeName}`,
         html: receiptHTML,
         attachments: [
           {
@@ -320,7 +328,7 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
       setDeliveryStatus(prev => ({ ...prev, sms: 'sending' }));
       
       const smsMessage = `
-🛒 FAREDEAL POS Receipt #${orderId}
+🛒 ${storeName} Receipt #${orderId}
 
 📅 ${new Date(timestamp).toLocaleDateString()}
 💰 Total: UGX ${total.toLocaleString()}
@@ -333,14 +341,14 @@ ${loyaltyPointsEarned ? `⭐ Earned ${loyaltyPointsEarned} points!` : ''}
 
 Thank you for shopping with us! 😊
 
-View full receipt: https://faredeal.pos/receipt/${orderId}
+View full receipt: https://${storeSlug}.pos/receipt/${orderId}
       `.trim();
-      
+
       // Simulate SMS API call
       const smsData = {
         to: phoneNumber,
         message: smsMessage,
-        from: 'FAREDEAL'
+        from: storeName
       };
       
       // Simulate SMS sending
@@ -368,7 +376,7 @@ View full receipt: https://faredeal.pos/receipt/${orderId}
       setDeliveryStatus(prev => ({ ...prev, whatsapp: 'sending' }));
       
       const whatsappMessage = `
-🛒 *FAREDEAL POS Receipt*
+🛒 *${storeName} Receipt*
 📋 Order #${orderId}
 
 📅 Date: ${new Date(timestamp).toLocaleDateString()}
@@ -382,7 +390,7 @@ ${loyaltyPointsEarned ? `⭐ *You earned ${loyaltyPointsEarned} loyalty points!*
 
 Thank you for shopping with us! 😊
 
-_This is an automated message from FAREDEAL POS_
+_This is an automated message from ${storeName}_
       `.trim();
       
       // Create WhatsApp link
@@ -455,7 +463,7 @@ _This is an automated message from FAREDEAL POS_
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>FAREDEAL Receipt - ${orderId}</title>
+        <title>${storeName} Receipt - ${orderId}</title>
         <style>
           body { font-family: 'Arial', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
           .receipt { max-width: 400px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -478,11 +486,11 @@ _This is an automated message from FAREDEAL POS_
       <body>
         <div class="receipt">
           <div class="header">
-            <div class="logo">🛍️ FAREDEAL</div>
+            <div class="logo">🛍️ ${storeName}</div>
             <div class="store-info">
               Your Premium Shopping Destination<br>
-              📍 123 Commerce Street, City, State 12345<br>
-              📞 (555) 123-SHOP | 🌐 www.faredeal.com
+              ${storeAddress ? `📍 ${storeAddress}<br>` : ''}
+              📞 ${storePhone || '+256-700-123456'} | 🌐 ${storeWebsite}
             </div>
           </div>
           
@@ -547,12 +555,12 @@ _This is an automated message from FAREDEAL POS_
           
           <div class="footer">
             <div style="margin-bottom: 10px;">
-              <strong>Thank you for shopping with FAREDEAL!</strong>
+              <strong>Thank you for shopping with ${storeName}!</strong>
             </div>
             <div>
               Return Policy: 30 days with receipt<br>
-              Customer Service: support@faredeal.com<br>
-              Follow us: @faredeal
+              Customer Service: ${storeSupportEmail}<br>
+              Follow us: @${storeSlug}
             </div>
             <div style="margin-top: 10px; font-size: 10px;">
               Receipt generated on ${new Date().toLocaleString()}
@@ -616,7 +624,7 @@ _This is an automated message from FAREDEAL POS_
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `FAREDEAL Receipt - ${orderId}`,
+          title: `${storeName} Receipt - ${orderId}`,
           text: `Receipt for order ${orderId} - Total: ${formatCurrency(total)}`,
           url: window.location.href
         });
@@ -627,7 +635,7 @@ _This is an automated message from FAREDEAL POS_
     } else {
       // Fallback: copy to clipboard
       const receiptText = `
-FAREDEAL Receipt
+${storeName} Receipt
 Order: ${orderId}
 Date: ${formatDate(timestamp)}
 Total: ${formatCurrency(total)}
@@ -675,11 +683,11 @@ Thank you for shopping with us!
             <div ref={receiptRef} className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6 max-w-md mx-auto">
               {/* Store Header */}
               <div className="text-center border-b-2 border-dashed border-gray-300 pb-4 mb-4">
-                <div className="text-2xl font-bold text-blue-600 mb-2">🛍️ FAREDEAL</div>
+                <div className="text-2xl font-bold text-blue-600 mb-2">🛍️ {storeName}</div>
                 <div className="text-xs text-gray-600">
                   Your Premium Shopping Destination<br/>
-                  📍 123 Commerce Street, City, State 12345<br/>
-                  📞 (555) 123-SHOP | 🌐 www.faredeal.com
+                  {storeAddress && <>📍 {storeAddress}<br/></>}
+                  📞 {storePhone || '+256-700-123456'} | 🌐 {storeWebsite}
                 </div>
               </div>
 
@@ -794,11 +802,11 @@ Thank you for shopping with us!
 
               {/* Footer */}
               <div className="text-center border-t border-dashed border-gray-300 pt-4 text-xs text-gray-600">
-                <div className="font-bold mb-2">Thank you for shopping with FAREDEAL!</div>
+                <div className="font-bold mb-2">Thank you for shopping with {storeName}!</div>
                 <div className="space-y-1">
                   <div>Return Policy: 30 days with receipt</div>
-                  <div>Customer Service: support@faredeal.com</div>
-                  <div>Follow us: @faredeal</div>
+                  <div>Customer Service: {storeSupportEmail}</div>
+                  <div>Follow us: @{storeSlug}</div>
                 </div>
                 <div className="mt-3 text-xs text-gray-400">
                   Receipt generated on {new Date().toLocaleString()}

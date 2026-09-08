@@ -260,10 +260,10 @@ Payment Method: ${receiptData.paymentMethod}
 Transaction ID: ${receiptData.transactionId}
 
 Webale nyo! (Thank you!)
-Visit us again at FAREDEAL Uganda
+Visit us again at ${storeName}
 
-Support: +256-700-123456
-www.faredeal.ug
+Support: ${receiptData?.receipt?.phone || '+256-700-123456'}
+${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}
     `.trim();
 
     navigator.clipboard.writeText(receiptText);

@@ -8247,7 +8247,7 @@ const AdminPortal = () => {
                   </p>
                 </div>
                 <div className={isMobile ? 'space-y-3 md:space-y-4' : ''}>
-                  <TransactionHistory viewMode="admin" />
+                  <TransactionHistory viewMode="admin" supermarketId={currentAdmin.supermarket_id} />
                 </div>
               </div>
             )}

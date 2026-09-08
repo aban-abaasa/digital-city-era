@@ -1,11 +1,54 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import DataAggregator from './dataAggregator';
+import { supabase } from './supabase';
+import inventoryService from './inventorySupabaseService';
+
+const FALLBACK_COMPANY_INFO = {
+  name: 'Your Supermarket',
+  email: 'support@yoursupermarket.ug',
+  phone: '+256 700 123 456'
+};
 
 // Enhanced Report Service with comprehensive data integration
 class AdvancedReportService {
   constructor() {
     this.dataAggregator = DataAggregator;
+    this._companyInfoPromise = null;
+  }
+
+  // Every generated report should carry the signed-in user's own
+  // supermarket name, not a hardcoded brand — resolved once per session
+  // and cached, mirroring useSupermarketBranding's approach outside React.
+  async getCompanyInfo() {
+    if (this._companyInfoPromise) return this._companyInfoPromise;
+
+    this._companyInfoPromise = (async () => {
+      try {
+        const supermarketId = await inventoryService.getCurrentSupermarketId();
+        if (!supermarketId) return FALLBACK_COMPANY_INFO;
+
+        const { data: supermarket, error } = await supabase
+          .from('supermarkets')
+          .select('name, phone')
+          .eq('id', supermarketId)
+          .maybeSingle();
+
+        if (error || !supermarket?.name) return FALLBACK_COMPANY_INFO;
+
+        const slug = supermarket.name.toLowerCase().replace(/\s+/g, '');
+        return {
+          name: supermarket.name,
+          phone: supermarket.phone || FALLBACK_COMPANY_INFO.phone,
+          email: `reports@${slug}.ug`
+        };
+      } catch (error) {
+        console.error('Error loading supermarket branding for report:', error);
+        return FALLBACK_COMPANY_INFO;
+      }
+    })();
+
+    return this._companyInfoPromise;
   }
 
   // Generate comprehensive report data
@@ -290,10 +333,11 @@ class AdvancedReportService {
   }
 
   // Generate SMS content
-  generateSMSContent(reportData) {
+  async generateSMSContent(reportData) {
     const { reportType, title, dateRange, summary, insights } = reportData;
-    
-    let smsContent = `🇺🇬 FAREDEAL ${reportType.toUpperCase()} REPORT\n`;
+    const companyInfo = await this.getCompanyInfo();
+
+    let smsContent = `🇺🇬 ${companyInfo.name.toUpperCase()} ${reportType.toUpperCase()} REPORT\n`;
     smsContent += `📅 ${dateRange}\n\n`;
     smsContent += `📊 KEY METRICS:\n`;
     
@@ -315,9 +359,10 @@ class AdvancedReportService {
   }
 
   // Generate HTML content
-  generateHTMLContent(reportData) {
+  async generateHTMLContent(reportData) {
     const { reportType, title, dateRange, summary, insights, data, generatedAt } = reportData;
-    
+    const companyInfo = await this.getCompanyInfo();
+
     const formattedDate = new Date(generatedAt).toLocaleString('en-UG', {
       year: 'numeric',
       month: 'short',
@@ -332,7 +377,7 @@ class AdvancedReportService {
         <div style="background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899); padding: 40px; color: white; text-align: center; position: relative;">
           <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url('data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><defs><pattern id=\"grain\" width=\"100\" height=\"100\" patternUnits=\"userSpaceOnUse\"><circle cx=\"25\" cy=\"25\" r=\"1\" fill=\"white\" opacity=\"0.1\"/><circle cx=\"75\" cy=\"75\" r=\"1\" fill=\"white\" opacity=\"0.1\"/><circle cx=\"50\" cy=\"10\" r=\"0.5\" fill=\"white\" opacity=\"0.1\"/></pattern></defs><rect width=\"100\" height=\"100\" fill=\"url(%23grain)\"/></svg>'); opacity: 0.3;"></div>
           <h1 style="margin: 0; font-size: 2.8em; font-weight: bold; display: flex; align-items: center; justify-content: center; position: relative; z-index: 1;">
-            <span style="margin-right: 15px; font-size: 1.2em;">🇺🇬</span> FAREDEAL ${reportType.toUpperCase()} REPORT
+            <span style="margin-right: 15px; font-size: 1.2em;">🇺🇬</span> ${companyInfo.name.toUpperCase()} ${reportType.toUpperCase()} REPORT
           </h1>
           <p style="margin: 10px 0 0; font-size: 1.3em; opacity: 0.95; position: relative; z-index: 1;">${title}</p>
           <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; backdrop-filter: blur(10px); position: relative; z-index: 1;">
@@ -349,10 +394,10 @@ class AdvancedReportService {
         </div>
 
         <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 30px; text-align: center; border-top: 3px solid #6366f1;">
-          <h4 style="color: #4338ca; margin-bottom: 15px; font-size: 1.3em;">🌟 FAREDEAL Analytics</h4>
+          <h4 style="color: #4338ca; margin-bottom: 15px; font-size: 1.3em;">🌟 ${companyInfo.name} Analytics</h4>
           <p style="margin: 0; font-size: 1em; color: #374151; line-height: 1.6;">
             Building Data-Driven Decisions for Ugandan Businesses<br>
-            <span style="font-weight: bold; color: #4338ca;">Webale nyo!</span> For support: reports@faredeal.ug | +256 700 123 456
+            <span style="font-weight: bold; color: #4338ca;">Webale nyo!</span> For support: ${companyInfo.email} | ${companyInfo.phone}
           </p>
         </div>
       </div>
@@ -517,7 +562,7 @@ class AdvancedReportService {
 
   // Send report via SMS
   async sendReportViaSMS(phoneNumber, reportData) {
-    const smsContent = this.generateSMSContent(reportData);
+    const smsContent = await this.generateSMSContent(reportData);
     console.log(`Sending Report SMS to ${phoneNumber}:\n${smsContent}`);
     
     try {
@@ -532,7 +577,7 @@ class AdvancedReportService {
 
   // Send report via Email
   async sendReportViaEmail(email, reportData) {
-    const htmlContent = this.generateHTMLContent(reportData);
+    const htmlContent = await this.generateHTMLContent(reportData);
     console.log(`Sending Report Email to ${email}`);
     
     try {
@@ -546,8 +591,9 @@ class AdvancedReportService {
   }
 
   // Generate PDF report
-  generateReportPDF(reportData) {
+  async generateReportPDF(reportData) {
     const { reportType, title, dateRange, summary, insights, data, generatedAt } = reportData;
+    const companyInfo = await this.getCompanyInfo();
 
     const doc = new jsPDF({
       unit: 'mm',
@@ -565,7 +611,7 @@ class AdvancedReportService {
     
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
-    doc.text(`🇺🇬 FAREDEAL ${reportType.toUpperCase()} REPORT`, pageWidth / 2, 25, { align: 'center' });
+    doc.text(`🇺🇬 ${companyInfo.name.toUpperCase()} ${reportType.toUpperCase()} REPORT`, pageWidth / 2, 25, { align: 'center' });
     doc.setFontSize(12);
     doc.text(title, pageWidth / 2, 35, { align: 'center' });
     doc.setFontSize(10);
@@ -687,10 +733,10 @@ class AdvancedReportService {
     
     doc.setFontSize(10);
     doc.setTextColor(67, 56, 202);
-    doc.text('FAREDEAL Analytics - Building Data-Driven Decisions', pageWidth / 2, footerY, { align: 'center' });
+    doc.text(`${companyInfo.name} Analytics - Building Data-Driven Decisions`, pageWidth / 2, footerY, { align: 'center' });
     doc.setFontSize(9);
     doc.setTextColor(107, 114, 128);
-    doc.text('Contact: reports@faredeal.ug | +256 700 123 456', pageWidth / 2, footerY + 8, { align: 'center' });
+    doc.text(`Contact: ${companyInfo.email} | ${companyInfo.phone}`, pageWidth / 2, footerY + 8, { align: 'center' });
     doc.text('Webale nyo! 🌟', pageWidth / 2, footerY + 16, { align: 'center' });
 
     return doc;

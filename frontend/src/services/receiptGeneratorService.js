@@ -1,16 +1,57 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { supabase } from './supabase';
+import inventoryService from './inventorySupabaseService';
+
+const FALLBACK_COMPANY_INFO = {
+  name: 'Your Supermarket',
+  address: 'Kampala, Uganda',
+  phone: '+256-700-123456',
+  email: 'support@yoursupermarket.ug',
+  website: 'www.yoursupermarket.ug',
+  motto: 'Your Trusted Local Store 🇺🇬'
+};
 
 class ReceiptService {
   constructor() {
-    this.companyInfo = {
-      name: 'FareDeal Uganda',
-      address: 'Kampala, Uganda',
-      phone: '+256 700 123 456',
-      email: 'info@faredeal.ug',
-      website: 'www.faredeal.ug',
-      motto: 'Your Trusted Local Store 🇺🇬'
-    };
+    this._companyInfoPromise = null;
+  }
+
+  // Every generated receipt should carry the signed-in cashier's own
+  // supermarket name, not a hardcoded brand — resolved once per session
+  // and cached, mirroring useSupermarketBranding's approach outside React.
+  async getCompanyInfo() {
+    if (this._companyInfoPromise) return this._companyInfoPromise;
+
+    this._companyInfoPromise = (async () => {
+      try {
+        const supermarketId = await inventoryService.getCurrentSupermarketId();
+        if (!supermarketId) return FALLBACK_COMPANY_INFO;
+
+        const { data: supermarket, error } = await supabase
+          .from('supermarkets')
+          .select('name, address, phone')
+          .eq('id', supermarketId)
+          .maybeSingle();
+
+        if (error || !supermarket?.name) return FALLBACK_COMPANY_INFO;
+
+        const slug = supermarket.name.toLowerCase().replace(/\s+/g, '');
+        return {
+          name: supermarket.name,
+          address: supermarket.address || FALLBACK_COMPANY_INFO.address,
+          phone: supermarket.phone || FALLBACK_COMPANY_INFO.phone,
+          email: `support@${slug}.ug`,
+          website: `www.${slug}.ug`,
+          motto: FALLBACK_COMPANY_INFO.motto
+        };
+      } catch (error) {
+        console.error('Error loading supermarket branding for receipt:', error);
+        return FALLBACK_COMPANY_INFO;
+      }
+    })();
+
+    return this._companyInfoPromise;
   }
 
   formatCurrency(amount) {
@@ -53,11 +94,12 @@ class ReceiptService {
   }
 
   // SMS/Message Receipt
-  generateSMSReceipt(saleData) {
+  async generateSMSReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
-    
-    let message = `🇺🇬 ${this.companyInfo.name}\n`;
-    message += `📱 ${this.companyInfo.phone}\n`;
+    const companyInfo = await this.getCompanyInfo();
+
+    let message = `🇺🇬 ${companyInfo.name}\n`;
+    message += `📱 ${companyInfo.phone}\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
     message += `🧾 Receipt: ${receipt.receiptNumber}\n`;
     message += `📅 ${receipt.date}\n`;
@@ -104,9 +146,10 @@ class ReceiptService {
   }
 
   // Email Receipt HTML
-  generateEmailReceipt(saleData) {
+  async generateEmailReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
-    
+    const companyInfo = await this.getCompanyInfo();
+
     const html = `
     <!DOCTYPE html>
     <html>
@@ -218,10 +261,10 @@ class ReceiptService {
     <body>
       <div class="receipt-container">
         <div class="header">
-          <h1><span class="uganda-flag">🇺🇬</span> ${this.companyInfo.name}</h1>
-          <p>${this.companyInfo.motto}</p>
-          <p><span class="emoji">📍</span> ${this.companyInfo.address}</p>
-          <p><span class="emoji">📱</span> ${this.companyInfo.phone} | <span class="emoji">📧</span> ${this.companyInfo.email}</p>
+          <h1><span class="uganda-flag">🇺🇬</span> ${companyInfo.name}</h1>
+          <p>${companyInfo.motto}</p>
+          <p><span class="emoji">📍</span> ${companyInfo.address}</p>
+          <p><span class="emoji">📱</span> ${companyInfo.phone} | <span class="emoji">📧</span> ${companyInfo.email}</p>
         </div>
         
         <div class="content">
@@ -298,7 +341,7 @@ class ReceiptService {
         <div class="footer">
           <h3><span class="emoji">🙏</span> Webale nyo! (Thank you!)</h3>
           <p>We appreciate your business and look forward to serving you again!</p>
-          <p><strong>Visit us: ${this.companyInfo.website}</strong></p>
+          <p><strong>Visit us: ${companyInfo.website}</strong></p>
           <p><span class="emoji">😊</span> Come back soon!</p>
         </div>
       </div>
@@ -312,7 +355,8 @@ class ReceiptService {
   // PDF Receipt
   async generatePDFReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
-    
+    const companyInfo = await this.getCompanyInfo();
+
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -329,17 +373,17 @@ class ReceiptService {
     // Header
     doc.setFontSize(12);
     doc.setTextColor(0, 0, 0);
-    doc.text('🇺🇬 FareDeal Uganda', pageWidth/2, yPos, { align: 'center' });
+    doc.text(`🇺🇬 ${companyInfo.name}`, pageWidth/2, yPos, { align: 'center' });
     yPos += 5;
 
     doc.setFontSize(8);
-    doc.text(this.companyInfo.motto, pageWidth/2, yPos, { align: 'center' });
+    doc.text(companyInfo.motto, pageWidth/2, yPos, { align: 'center' });
     yPos += 4;
 
-    doc.text(this.companyInfo.address, pageWidth/2, yPos, { align: 'center' });
+    doc.text(companyInfo.address, pageWidth/2, yPos, { align: 'center' });
     yPos += 4;
 
-    doc.text(this.companyInfo.phone, pageWidth/2, yPos, { align: 'center' });
+    doc.text(companyInfo.phone, pageWidth/2, yPos, { align: 'center' });
     yPos += 8;
 
     // Draw line
@@ -433,14 +477,14 @@ class ReceiptService {
     doc.text('Come back soon! 😊', pageWidth/2, yPos, { align: 'center' });
     yPos += 6;
 
-    doc.text(this.companyInfo.website, pageWidth/2, yPos, { align: 'center' });
+    doc.text(companyInfo.website, pageWidth/2, yPos, { align: 'center' });
 
     return doc;
   }
 
   // Send SMS (mock implementation - would integrate with SMS service)
   async sendSMSReceipt(phoneNumber, saleData) {
-    const message = this.generateSMSReceipt(saleData);
+    const message = await this.generateSMSReceipt(saleData);
     
     // Mock SMS sending - in production, integrate with services like:
     // - Twilio, Africa's Talking, or local Ugandan SMS providers
@@ -460,22 +504,24 @@ class ReceiptService {
 
   // Send Email (mock implementation - would integrate with email service)
   async sendEmailReceipt(email, saleData) {
-    const htmlContent = this.generateEmailReceipt(saleData);
+    const htmlContent = await this.generateEmailReceipt(saleData);
     const receipt = this.generateReceiptData(saleData);
-    
+    const companyInfo = await this.getCompanyInfo();
+    const subject = `Receipt ${receipt.receiptNumber} - ${companyInfo.name}`;
+
     // Mock email sending - in production, integrate with services like:
     // - SendGrid, Mailgun, or AWS SES
     console.log('📧 Sending Email to:', email);
-    console.log('Subject:', `Receipt ${receipt.receiptNumber} - FareDeal Uganda`);
-    
+    console.log('Subject:', subject);
+
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     return {
       success: true,
       message: 'Email receipt sent successfully!',
       recipient: email,
-      subject: `Receipt ${receipt.receiptNumber} - FareDeal Uganda`,
+      subject,
       messageId: `EMAIL_${Date.now()}`
     };
   }
@@ -506,9 +552,9 @@ class ReceiptService {
   }
 
   // Print receipt (browser print)
-  printReceipt(saleData) {
-    const htmlContent = this.generateEmailReceipt(saleData);
-    
+  async printReceipt(saleData) {
+    const htmlContent = await this.generateEmailReceipt(saleData);
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(htmlContent);
     printWindow.document.close();

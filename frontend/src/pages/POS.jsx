@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import ReceiptModal from '../components/ReceiptModal';
 import DualScannerInterface from '../components/DualScannerInterface';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import {
   FiSearch,
   FiPlus,
@@ -42,6 +43,9 @@ import {
 } from 'react-icons/fi';
 
 const POS = () => {
+  const branding = useSupermarketBranding();
+  const storeName = branding?.name || 'Your Supermarket';
+
   // Initialize Supabase
   const supabase = createClient(
     'https://zwmupgbixextqlexknnu.supabase.co',
@@ -658,7 +662,7 @@ const POS = () => {
                 </div>
                 <div>
                   <h1 className="text-3xl font-bold text-white flex items-center">
-                    🇺🇬 FareDeal POS {getMoodEmoji()}
+                    🇺🇬 {storeName} POS {getMoodEmoji()}
                   </h1>
                   <p className="text-purple-100">Smart Point of Sale • {currentTime.toLocaleTimeString()}</p>
                 </div>
