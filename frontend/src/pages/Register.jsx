@@ -1,20 +1,29 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { SiGoogle } from 'react-icons/si';
 import { customerService } from '../services/customerService.jsx';
 import { employeeService } from '../services/employeeService.jsx';
 import { supplierService } from '../services/supplierService.jsx';
 import { managerService } from '../services/managerService.jsx';
 import { adminService } from '../services/adminService.jsx';
+import { supabase } from '../services/supabase';
 import { COUNTRY_NAMES } from '../data/countries';
 import { toast } from 'react-toastify';
 import './styles/Register.css';
 
 const Register = () => {
   const [searchParams] = useSearchParams();
-  const initialTab = ['customer', 'employee', 'manager', 'supplier', 'admin'].includes(searchParams.get('tab'))
-    ? searchParams.get('tab')
+  const explicitTabParam = searchParams.get('tab');
+  const initialTab = ['customer', 'employee', 'manager', 'supplier', 'admin'].includes(explicitTabParam)
+    ? explicitTabParam
     : 'customer';
   const [userType, setUserType] = useState(initialTab);
+  // A normal visitor — or a friend following a referral link — should just
+  // see a plain sign-up form, with no hint that staff/admin/supplier
+  // portals even exist. Only someone arriving via a direct internal link
+  // (e.g. /register?tab=admin from the admin-signup route) sees the
+  // portal switcher at all.
+  const showPortalTabs = ['employee', 'manager', 'supplier', 'admin'].includes(explicitTabParam);
   const [formData, setFormData] = useState({
     // Common fields
     email: '',
@@ -55,7 +64,38 @@ const Register = () => {
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [googleLoading, setGoogleLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Same Google OAuth flow as CustomerLogin.jsx: Supabase creates the
+  // account on first sign-in, so this button works for both "log me in"
+  // and "sign me up" without a separate code path. Always shown — a
+  // referred friend (or any normal visitor) should never be stuck filling
+  // in a manual form when Google is available. AuthCallback.jsx handles
+  // the redirect afterward and lands a brand-new account on
+  // /customer-dashboard by default.
+  const handleGoogleSignIn = async () => {
+    try {
+      setGoogleLoading(true);
+      const redirectTo = `${window.location.origin}/auth/callback`;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          queryParams: {
+            prompt: 'select_account'
+          }
+        }
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      toast.error('Unable to connect with Google right now.');
+      setGoogleLoading(false);
+    }
+  };
 
   // Real-time field validation
   const validateField = (fieldName, value) => {
@@ -858,48 +898,65 @@ const Register = () => {
           <p>Join FAREDEAL and start your journey with us</p>
         </div>
 
-        <div className="user-type-tabs">
+        <div className="google-signin-section">
           <button
             type="button"
-            className={`tab ${userType === 'customer' ? 'active' : ''}`}
-            onClick={() => handleUserTypeChange('customer')}
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
+            className="google-signin-btn"
           >
-            <i className="fas fa-user"></i>
-            Customer
+            <SiGoogle className="google-icon" />
+            {googleLoading ? 'Connecting to Google...' : 'Continue with Google'}
           </button>
-          <button
-            type="button"
-            className={`tab ${userType === 'employee' ? 'active' : ''}`}
-            onClick={() => handleUserTypeChange('employee')}
-          >
-            <i className="fas fa-id-badge"></i>
-            Employee
-          </button>
-          <button
-            type="button"
-            className={`tab ${userType === 'manager' ? 'active' : ''}`}
-            onClick={() => handleUserTypeChange('manager')}
-          >
-            <i className="fas fa-user-tie"></i>
-            Manager
-          </button>
-          <button
-            type="button"
-            className={`tab ${userType === 'supplier' ? 'active' : ''}`}
-            onClick={() => handleUserTypeChange('supplier')}
-          >
-            <i className="fas fa-truck"></i>
-            Supplier
-          </button>
-          <button
-            type="button"
-            className={`tab ${userType === 'admin' ? 'active' : ''}`}
-            onClick={() => handleUserTypeChange('admin')}
-          >
-            <i className="fas fa-user-shield"></i>
-            Admin
-          </button>
+          <div className="auth-divider">
+            <span>or use your email</span>
+          </div>
         </div>
+
+        {showPortalTabs && (
+          <div className="user-type-tabs">
+            <button
+              type="button"
+              className={`tab ${userType === 'customer' ? 'active' : ''}`}
+              onClick={() => handleUserTypeChange('customer')}
+            >
+              <i className="fas fa-user"></i>
+              Customer
+            </button>
+            <button
+              type="button"
+              className={`tab ${userType === 'employee' ? 'active' : ''}`}
+              onClick={() => handleUserTypeChange('employee')}
+            >
+              <i className="fas fa-id-badge"></i>
+              Employee
+            </button>
+            <button
+              type="button"
+              className={`tab ${userType === 'manager' ? 'active' : ''}`}
+              onClick={() => handleUserTypeChange('manager')}
+            >
+              <i className="fas fa-user-tie"></i>
+              Manager
+            </button>
+            <button
+              type="button"
+              className={`tab ${userType === 'supplier' ? 'active' : ''}`}
+              onClick={() => handleUserTypeChange('supplier')}
+            >
+              <i className="fas fa-truck"></i>
+              Supplier
+            </button>
+            <button
+              type="button"
+              className={`tab ${userType === 'admin' ? 'active' : ''}`}
+              onClick={() => handleUserTypeChange('admin')}
+            >
+              <i className="fas fa-user-shield"></i>
+              Admin
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="register-form">
           {/* Common Fields */}

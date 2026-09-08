@@ -36,6 +36,7 @@ import {
   FiChevronDown,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
+import { referralService } from '../services/referralService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
@@ -73,7 +74,14 @@ const CustomerDashboard = () => {
   const [showRewardsModal, setShowRewardsModal] = useState(false);
   const [showReferModal, setShowReferModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [referralCode] = useState('FAREDEAL2024');
+  // status: 'loading' | 'no-session' | 'no-account-row' | 'error' | 'ok'
+  const [referral, setReferral] = useState({
+    status: 'loading',
+    message: '',
+    code: '',
+    friendsReferred: 0,
+    pointsEarned: 0
+  });
   
   // Data states
   const [customerData, setCustomerData] = useState({
@@ -118,7 +126,46 @@ const CustomerDashboard = () => {
     };
     fetchRealRole();
   }, []);
-  
+
+  // Real referral code + stats, backed by public.users / public.referrals
+  // (see referralService.js). diagnoseAvailability() distinguishes "not
+  // signed in" from "signed in but this account has no public.users row
+  // yet" — collapsing both into one "unavailable" state used to show a
+  // "Sign in" button to people who were already signed in.
+  const loadReferralData = React.useCallback(async () => {
+    setReferral(prev => ({ ...prev, status: 'loading', message: '' }));
+    try {
+      const availability = await referralService.diagnoseAvailability();
+      if (availability.status !== 'ok') {
+        setReferral(prev => ({ ...prev, status: availability.status, message: availability.message || '' }));
+        return;
+      }
+
+      // Redeem a ?ref=CODE captured earlier (App.jsx) now that we know
+      // who's signed in — harmless no-op if nothing is pending.
+      const applied = await referralService.consumePendingReferralCode();
+      if (applied) {
+        toast.success(`🎉 Referral applied! ${applied.referrerName} just earned ${referralService.REWARD_POINTS} points.`);
+      }
+
+      const code = await referralService.getOrCreateReferralCode();
+      const stats = await referralService.getReferralStats();
+      setReferral({
+        status: 'ok',
+        code,
+        friendsReferred: stats.friendsReferred,
+        pointsEarned: stats.pointsEarned
+      });
+    } catch (error) {
+      console.error('Error loading referral data:', error);
+      setReferral(prev => ({ ...prev, status: 'error', message: error.message || '' }));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReferralData();
+  }, [loadReferralData]);
+
   // Mock customer data (fallback for demo)
   const fallbackUser = {
     _id: 'demo-customer-1',
@@ -386,7 +433,8 @@ const CustomerDashboard = () => {
   };
 
   const copyReferralCode = () => {
-    navigator.clipboard.writeText(referralCode);
+    if (!referral.code) return;
+    navigator.clipboard.writeText(referral.code);
     toast.success('Referral code copied to clipboard!');
   };
 
@@ -1584,140 +1632,182 @@ const CustomerDashboard = () => {
                 <div className="text-center bg-gradient-to-r from-orange-100 to-red-100 p-6 rounded-2xl border border-orange-200">
                   <div className="text-6xl mb-3 animate-bounce">🎉</div>
                   <h4 className="text-2xl font-bold text-orange-900 mb-2">Earn Rewards for Referring Friends!</h4>
-                  <p className="text-orange-700 text-lg">Share your referral code and earn 100 points for each friend who joins</p>
+                  <p className="text-orange-700 text-lg">Share your referral code and earn {referralService.REWARD_POINTS} points for each friend who joins</p>
                 </div>
-                
-                {/* Referral Stats */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center bg-blue-50 p-4 rounded-xl border border-blue-200">
-                    <div className="text-2xl font-bold text-blue-600">3</div>
-                    <div className="text-sm text-blue-700">Friends Referred</div>
-                  </div>
-                  <div className="text-center bg-green-50 p-4 rounded-xl border border-green-200">
-                    <div className="text-2xl font-bold text-green-600">300</div>
-                    <div className="text-sm text-green-700">Points Earned</div>
-                  </div>
-                  <div className="text-center bg-purple-50 p-4 rounded-xl border border-purple-200">
-                    <div className="text-2xl font-bold text-purple-600">5</div>
-                    <div className="text-sm text-purple-700">More to Go</div>
-                  </div>
-                </div>
-                
-                {/* Referral Code */}
-                <div className="bg-gradient-to-r from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-200">
-                  <label className="block text-lg font-bold text-orange-900 mb-3">🎯 Your Referral Code</label>
-                  <div className="flex space-x-3">
-                    <input
-                      type="text"
-                      value={referralCode}
-                      readOnly
-                      className="flex-1 border-2 border-orange-300 rounded-xl px-4 py-3 bg-white text-center text-xl font-bold text-orange-800"
-                    />
+
+                {referral.status === 'loading' ? (
+                  <div className="text-center py-8 text-gray-500">Loading your referral info…</div>
+                ) : referral.status === 'no-session' ? (
+                  <div className="text-center bg-gray-50 p-6 rounded-xl border border-gray-200">
+                    <p className="text-gray-700 font-medium mb-3">Sign in to get your personal referral code and start earning points.</p>
                     <button
-                      onClick={copyReferralCode}
-                      className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 hover:shadow-xl font-semibold"
+                      onClick={() => { setShowReferModal(false); navigate('/login'); }}
+                      className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 font-semibold"
                     >
-                      📋 Copy
+                      Sign In
                     </button>
                   </div>
-                </div>
-                
-                {/* Share Options */}
-                <div className="space-y-4">
-                  <h5 className="text-lg font-bold text-gray-900 flex items-center">
-                    <span className="mr-2">📱</span>
-                    Share Options
-                  </h5>
-                  <div className="grid grid-cols-1 gap-4">
+                ) : referral.status === 'no-account-row' ? (
+                  <div className="text-center bg-gray-50 p-6 rounded-xl border border-gray-200">
+                    <p className="text-gray-700 font-medium mb-2">You're signed in, but we can't find your account profile yet.</p>
+                    <p className="text-gray-500 text-sm mb-3">This can happen right after creating a new account — try again in a moment.</p>
                     <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(`🎉 Join me on FareDeal! Use my referral code: ${referralCode} and get amazing deals! 🛍️`);
-                        toast.success('📱 Referral message copied to clipboard!');
-                      }}
-                      className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl border border-blue-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                      onClick={loadReferralData}
+                      className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 font-semibold"
                     >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">💬</span>
-                        <div className="text-left">
-                          <div className="font-semibold text-blue-900">Copy Message</div>
-                          <div className="text-sm text-blue-700">Ready-to-send text with emojis</div>
-                        </div>
-                      </div>
-                      <span className="text-blue-600">→</span>
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        const shareUrl = `https://faredeal.com/join?ref=${referralCode}`;
-                        navigator.clipboard.writeText(shareUrl);
-                        toast.success('🔗 Referral link copied to clipboard!');
-                      }}
-                      className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-xl border border-green-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">🔗</span>
-                        <div className="text-left">
-                          <div className="font-semibold text-green-900">Copy Link</div>
-                          <div className="text-sm text-green-700">Direct link to sign up page</div>
-                        </div>
-                      </div>
-                      <span className="text-green-600">→</span>
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        const qrText = `https://faredeal.com/join?ref=${referralCode}`;
-                        navigator.clipboard.writeText(qrText);
-                        toast.success('📱 QR code data copied! Share this link to generate QR codes!');
-                      }}
-                      className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">📱</span>
-                        <div className="text-left">
-                          <div className="font-semibold text-purple-900">QR Code</div>
-                          <div className="text-sm text-purple-700">Generate QR code for easy sharing</div>
-                        </div>
-                      </div>
-                      <span className="text-purple-600">→</span>
+                      Try Again
                     </button>
                   </div>
-                </div>
-                
-                {/* Referral Rewards */}
-                <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl border border-yellow-200">
-                  <h5 className="text-lg font-bold text-orange-900 mb-4 flex items-center">
-                    <span className="mr-2">🏆</span>
-                    Referral Rewards
-                  </h5>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">🎁</span>
-                        <div>
-                          <span className="font-semibold text-orange-900">First Referral</span>
-                          <p className="text-sm text-orange-700">Get 100 bonus points</p>
-                        </div>
+                ) : referral.status === 'error' ? (
+                  <div className="text-center bg-gray-50 p-6 rounded-xl border border-gray-200">
+                    <p className="text-gray-700 font-medium mb-2">Something went wrong loading your referral info.</p>
+                    {referral.message && (
+                      <p className="text-gray-400 text-xs mb-3 font-mono break-words">{referral.message}</p>
+                    )}
+                    <button
+                      onClick={loadReferralData}
+                      className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 font-semibold"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Referral Stats */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center bg-blue-50 p-4 rounded-xl border border-blue-200">
+                        <div className="text-2xl font-bold text-blue-600">{referral.friendsReferred}</div>
+                        <div className="text-sm text-blue-700">Friends Referred</div>
                       </div>
-                      <span className="text-sm font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                        ✓ Earned
-                      </span>
+                      <div className="text-center bg-green-50 p-4 rounded-xl border border-green-200">
+                        <div className="text-2xl font-bold text-green-600">{referral.pointsEarned}</div>
+                        <div className="text-sm text-green-700">Points Earned</div>
+                      </div>
+                      <div className="text-center bg-purple-50 p-4 rounded-xl border border-purple-200">
+                        <div className="text-2xl font-bold text-purple-600">{Math.max(0, 5 - referral.friendsReferred)}</div>
+                        <div className="text-sm text-purple-700">More to Go</div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">🎯</span>
-                        <div>
-                          <span className="font-semibold text-orange-900">5 Referrals</span>
-                          <p className="text-sm text-orange-700">Unlock premium rewards</p>
+
+                    {/* Referral Code */}
+                    <div className="bg-gradient-to-r from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-200">
+                      <label className="block text-lg font-bold text-orange-900 mb-3">🎯 Your Referral Code</label>
+                      <div className="flex space-x-3">
+                        <input
+                          type="text"
+                          value={referral.code}
+                          readOnly
+                          className="flex-1 border-2 border-orange-300 rounded-xl px-4 py-3 bg-white text-center text-xl font-bold text-orange-800"
+                        />
+                        <button
+                          onClick={copyReferralCode}
+                          className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 hover:shadow-xl font-semibold"
+                        >
+                          📋 Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Share Options */}
+                    <div className="space-y-4">
+                      <h5 className="text-lg font-bold text-gray-900 flex items-center">
+                        <span className="mr-2">📱</span>
+                        Share Options
+                      </h5>
+                      <div className="grid grid-cols-1 gap-4">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`🎉 Join me on ${branding.name}! Use my referral code: ${referral.code} and get amazing deals! 🛍️`);
+                            toast.success('📱 Referral message copied to clipboard!');
+                          }}
+                          className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl border border-blue-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl">💬</span>
+                            <div className="text-left">
+                              <div className="font-semibold text-blue-900">Copy Message</div>
+                              <div className="text-sm text-blue-700">Ready-to-send text with emojis</div>
+                            </div>
+                          </div>
+                          <span className="text-blue-600">→</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const shareUrl = `${window.location.origin}/register?ref=${referral.code}`;
+                            navigator.clipboard.writeText(shareUrl);
+                            toast.success('🔗 Referral link copied to clipboard!');
+                          }}
+                          className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-xl border border-green-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl">🔗</span>
+                            <div className="text-left">
+                              <div className="font-semibold text-green-900">Copy Link</div>
+                              <div className="text-sm text-green-700">Direct link to sign up page</div>
+                            </div>
+                          </div>
+                          <span className="text-green-600">→</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const qrText = `${window.location.origin}/register?ref=${referral.code}`;
+                            navigator.clipboard.writeText(qrText);
+                            toast.success('📱 QR code data copied! Share this link to generate QR codes!');
+                          }}
+                          className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl">📱</span>
+                            <div className="text-left">
+                              <div className="font-semibold text-purple-900">QR Code</div>
+                              <div className="text-sm text-purple-700">Generate QR code for easy sharing</div>
+                            </div>
+                          </div>
+                          <span className="text-purple-600">→</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Referral Rewards */}
+                    <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl border border-yellow-200">
+                      <h5 className="text-lg font-bold text-orange-900 mb-4 flex items-center">
+                        <span className="mr-2">🏆</span>
+                        Referral Rewards
+                      </h5>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 bg-white rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl">🎁</span>
+                            <div>
+                              <span className="font-semibold text-orange-900">First Referral</span>
+                              <p className="text-sm text-orange-700">Get {referralService.REWARD_POINTS} bonus points</p>
+                            </div>
+                          </div>
+                          {referral.friendsReferred >= 1 ? (
+                            <span className="text-sm font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">✓ Earned</span>
+                          ) : (
+                            <span className="text-sm font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Not yet</span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-white rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl">🎯</span>
+                            <div>
+                              <span className="font-semibold text-orange-900">5 Referrals</span>
+                              <p className="text-sm text-orange-700">Unlock premium rewards</p>
+                            </div>
+                          </div>
+                          <span className="text-sm font-bold text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
+                            {Math.min(referral.friendsReferred, 5)}/5
+                          </span>
                         </div>
                       </div>
-                      <span className="text-sm font-bold text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
-                        2/5
-                      </span>
                     </div>
-                  </div>
-                </div>
-                
+                  </>
+                )}
+
                 <button
                   onClick={() => setShowReferModal(false)}
                   className="w-full border-2 border-gray-300 text-gray-700 py-3 px-6 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 transform hover:scale-105"

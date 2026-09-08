@@ -61,7 +61,24 @@ import 'react-toastify/dist/ReactToastify.css';
   sessionStorage.removeItem('farm_agent_session');
   
   console.log('✅ [APP] Supermartkera context set. Farm Agent redirect prevention enabled.');
-  
+
+  // ============================================================
+  // Referral capture — remember ?ref=CODE from a shared referral link so
+  // it can be redeemed once the visitor actually signs in (see
+  // referralService.consumePendingReferralCode, called from
+  // CustomerDashboard). Runs on every page load since a referral link can
+  // land on the landing page, /register, or anywhere else.
+  // ============================================================
+  const refCode = new URLSearchParams(window.location.search).get('ref');
+  if (refCode) {
+    try {
+      localStorage.setItem('pending_referral_code', JSON.stringify({ code: refCode.trim().toUpperCase(), savedAt: Date.now() }));
+      console.log('🎁 [APP] Referral code captured:', refCode);
+    } catch {
+      // Storage unavailable — referral capture is best-effort.
+    }
+  }
+
   // ============================================================
   // CRITICAL: Handle OAuth callback BEFORE React Router loses the hash
   // ============================================================
