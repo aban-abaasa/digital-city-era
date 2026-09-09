@@ -11,7 +11,7 @@ import transactionService from '../services/transactionService';
 import Receipt from './Receipt';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
-const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode = 'cashier', savedReceipts = [] }) => {
+const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId = null, viewMode = 'cashier', savedReceipts = [] }) => {
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
   // viewMode: 'cashier' (own transactions), 'manager' (all transactions), 'admin' (all + analytics)
@@ -36,7 +36,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
   useEffect(() => {
     loadTransactions();
     loadDailyReport();
-  }, [dateFilter, viewMode, supermarketId]);
+  }, [dateFilter, viewMode, supermarketId, managerId]);
 
   useEffect(() => {
     filterTransactions();
@@ -61,12 +61,15 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
     try {
       let result;
       
-      // Only filter by cashier in cashier view mode, otherwise load all transactions
+      // Only filter by cashier in cashier view mode; only filter by manager
+      // in manager view mode (a manager sees only their own cashiers' sales,
+      // never the whole supermarket's).
       const filterCashierId = viewMode === 'cashier' ? cashierId : null;
-      
+      const filterManagerId = viewMode === 'manager' ? managerId : null;
+
       switch (dateFilter) {
         case 'today':
-          result = await transactionService.getTodaysTransactions(filterCashierId, supermarketId);
+          result = await transactionService.getTodaysTransactions(filterCashierId, supermarketId, filterManagerId);
           break;
         case 'week':
           const weekStart = new Date();
@@ -75,7 +78,8 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
             weekStart.toISOString(),
             new Date().toISOString(),
             filterCashierId,
-            supermarketId
+            supermarketId,
+            filterManagerId
           );
           break;
         case 'month':
@@ -85,7 +89,8 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
             monthStart.toISOString(),
             new Date().toISOString(),
             filterCashierId,
-            supermarketId
+            supermarketId,
+            filterManagerId
           );
           break;
         case 'year':
@@ -95,11 +100,12 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
             yearStart.toISOString(),
             new Date().toISOString(),
             filterCashierId,
-            supermarketId
+            supermarketId,
+            filterManagerId
           );
           break;
         default:
-          result = await transactionService.getTodaysTransactions(filterCashierId, supermarketId);
+          result = await transactionService.getTodaysTransactions(filterCashierId, supermarketId, filterManagerId);
       }
 
       if (result.success) {
@@ -153,7 +159,8 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
 
   const loadDailyReport = async () => {
     try {
-      const result = await transactionService.getDailyReport(new Date(), supermarketId);
+      const filterManagerId = viewMode === 'manager' ? managerId : null;
+      const result = await transactionService.getDailyReport(new Date(), supermarketId, filterManagerId);
       if (result.success) {
         setDailyReport(result.report);
       }
@@ -195,7 +202,8 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, viewMode =
   const handleViewReceipt = async (transaction) => {
     try {
       // Get full transaction with items
-      const result = await transactionService.getTransaction(transaction.id, supermarketId);
+      const filterManagerId = viewMode === 'manager' ? managerId : null;
+      const result = await transactionService.getTransaction(transaction.id, supermarketId, filterManagerId);
       
       if (result.success) {
         const receiptData = {

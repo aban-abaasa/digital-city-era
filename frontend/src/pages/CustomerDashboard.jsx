@@ -47,6 +47,7 @@ import { customerService } from '../services/customerService';
 import EnhancedRideRequest from '../vendor/mybodaguy/components/EnhancedRideRequest';
 import JourneyBookingFlow from '../vendor/mybodaguy/components/JourneyBookingFlow';
 import CustomerSelfCheckout from '../vendor/mybodaguy/components/CustomerSelfCheckout';
+import RideTrackingModal from '../vendor/mybodaguy/components/RideTrackingModal';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
@@ -74,6 +75,18 @@ const CustomerDashboard = () => {
   const [showRewardsModal, setShowRewardsModal] = useState(false);
   const [showReferModal, setShowReferModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
+  // Real ride/delivery bookings (mbg_rides, made via EnhancedRideRequest)
+  // for the Track Orders modal — separate from customerData.recentOrders,
+  // which is POS/cart orders from orderService. EnhancedRideRequest's own
+  // live tracking only exists in that component's in-memory state while
+  // actively booking, so this re-opens the same LiveTrackingMap + Call/
+  // Video/Chat screen for a ride that's already in progress after the
+  // customer navigates away or refreshes (mirrors the fix shipped today in
+  // Bodagoera's own CustomerDashboard).
+  const [myRides, setMyRides] = useState([]);
+  const [myRidesLoading, setMyRidesLoading] = useState(false);
+  const [rideContacts, setRideContacts] = useState({});
+  const [trackedRide, setTrackedRide] = useState(null);
   // status: 'loading' | 'no-session' | 'no-account-row' | 'error' | 'ok'
   const [referral, setReferral] = useState({
     status: 'loading',
@@ -316,6 +329,50 @@ const CustomerDashboard = () => {
       .catch(() => {})
       .finally(() => setIcanLoading(false));
   }, [activeTab, user?.id]);
+
+  // Fetch this customer's real ride/delivery bookings when the Track
+  // Orders modal opens — mbg_rides rows created by EnhancedRideRequest
+  // (Book Ride / Delivery tabs), keyed off mbg_customers.user_id like
+  // Bodagoera's own CustomerDashboard does it.
+  useEffect(() => {
+    if (!showTrackModal || !user?.id) return;
+    let cancelled = false;
+    setMyRidesLoading(true);
+    (async () => {
+      const { data: cr } = await supabase.from('mbg_customers').select('id').eq('user_id', user.id).maybeSingle();
+      if (!cr?.id) { if (!cancelled) setMyRidesLoading(false); return; }
+      const { data } = await supabase
+        .from('mbg_rides')
+        .select('id, created_at, pickup_location, dropoff_location, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, status, fare, service_type, rider_id')
+        .eq('customer_id', cr.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (cancelled) return;
+      const rows = data || [];
+      setMyRides(rows);
+      setMyRidesLoading(false);
+
+      const activeRows = rows.filter((r) => ['accepted', 'in_progress'].includes(r.status) && r.rider_id);
+      await Promise.all(activeRows.map(async (r) => {
+        const { data: rider } = await supabase
+          .from('mbg_riders')
+          .select('user_id, mbg_users!user_id(phone, email, mbg_user_profiles(full_name))')
+          .eq('id', r.rider_id)
+          .maybeSingle();
+        if (cancelled || !rider?.user_id) return;
+        const rUser = rider.mbg_users;
+        setRideContacts((prev) => ({
+          ...prev,
+          [r.id]: {
+            userId: rider.user_id,
+            name: rUser?.mbg_user_profiles?.[0]?.full_name || rUser?.email?.split('@')[0] || 'Rider',
+            phone: rUser?.phone || null,
+          },
+        }));
+      }));
+    })();
+    return () => { cancelled = true; };
+  }, [showTrackModal, user?.id]);
 
   const switchTab = (id) => { setActiveTab(id); setMobileMenu(false); };
 
@@ -1374,83 +1431,56 @@ const CustomerDashboard = () => {
                   </div>
                 </div>
                 
-                {/* Live Tracking Simulation */}
-                {trackingNumber && (
-                  <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border border-green-200 animate-fadeIn">
-                    <h4 className="font-bold text-green-900 mb-4 flex items-center">
-                      <span className="mr-2">🚚</span>
-                      Live Tracking: {trackingNumber}
-                    </h4>
-                    <div className="space-y-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-green-800 font-medium">Order Confirmed</span>
-                        <span className="text-sm text-gray-500">2 hours ago</span>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-green-800 font-medium">Picked Up</span>
-                        <span className="text-sm text-gray-500">1 hour ago</span>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-4 h-4 bg-yellow-500 rounded-full animate-pulse"></div>
-                        <span className="text-yellow-800 font-medium">In Transit</span>
-                        <span className="text-sm text-gray-500">Currently</span>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-4 h-4 bg-gray-300 rounded-full"></div>
-                        <span className="text-gray-600">Out for Delivery</span>
-                        <span className="text-sm text-gray-500">Estimated 2:30 PM</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
+                {/* Real rides & deliveries (mbg_rides, booked from the Book
+                    Ride / Delivery tabs) — click one with a live rider
+                    assigned to reopen the same live map + Call/Video/Chat
+                    screen EnhancedRideRequest shows while actively booking. */}
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200">
                   <h4 className="font-bold text-blue-900 mb-4 flex items-center">
                     <span className="mr-2">📋</span>
-                    Recent Orders
+                    Your Rides &amp; Deliveries
                   </h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-white rounded-lg hover:shadow-md transition-all duration-300 transform hover:scale-105">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">📦</span>
-                        <div>
-                          <span className="font-semibold text-blue-900">ORD-001</span>
-                          <p className="text-sm text-gray-600">Delivered • 2 days ago</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setTrackingNumber('ORD-001');
-                          toast.success('Tracking ORD-001');
-                        }}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all duration-300 transform hover:scale-105"
-                      >
-                        View Details
-                      </button>
+                  {myRidesLoading ? (
+                    <p className="text-sm text-gray-500 text-center py-4">Loading…</p>
+                  ) : myRides.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">No rides or deliveries booked yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {myRides.map((r) => {
+                        const isLive = ['accepted', 'in_progress'].includes(r.status) && !!r.rider_id;
+                        return (
+                          <div
+                            key={r.id}
+                            className="flex justify-between items-center p-3 bg-white rounded-lg hover:shadow-md transition-all duration-300"
+                          >
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <span className="text-2xl">{r.service_type === 'delivery' ? '📦' : '🏍️'}</span>
+                              <div className="min-w-0">
+                                <span className="font-semibold text-blue-900 truncate block">
+                                  {r.pickup_location} → {r.dropoff_location}
+                                </span>
+                                <p className="text-sm text-gray-600 capitalize">
+                                  {r.status.replace('_', ' ')} • {new Date(r.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => (isLive ? setTrackedRide(r) : toast.info(`This ${r.service_type} is ${r.status.replace('_', ' ')}.`))}
+                              className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all duration-300 transform hover:scale-105 ${
+                                isLive
+                                  ? 'bg-green-600 text-white hover:bg-green-700'
+                                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                              }`}
+                            >
+                              {isLive ? 'Track Live' : 'View'}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="flex justify-between items-center p-3 bg-white rounded-lg hover:shadow-md transition-all duration-300 transform hover:scale-105">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">🚚</span>
-                        <div>
-                          <span className="font-semibold text-green-900">ORD-002</span>
-                          <p className="text-sm text-gray-600">In Transit • ETA 2:30 PM</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setTrackingNumber('ORD-002');
-                          toast.success('Tracking ORD-002');
-                        }}
-                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all duration-300 transform hover:scale-105"
-                      >
-                        Track Live
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
-                
+
                 <div className="flex space-x-4">
                   <button
                     onClick={handleTrackOrder}
@@ -1818,6 +1848,16 @@ const CustomerDashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {trackedRide && (
+        <RideTrackingModal
+          ride={trackedRide}
+          contact={rideContacts[trackedRide.id] || null}
+          customerId={user?.id}
+          customerName={currentUser.firstName + (currentUser.lastName ? ` ${currentUser.lastName}` : '')}
+          onClose={() => setTrackedRide(null)}
+        />
       )}
     </div>
   );

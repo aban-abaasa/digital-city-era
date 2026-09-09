@@ -12,7 +12,7 @@ import {
   FiShoppingCart, FiTag, FiHash, FiImage, FiInfo, FiHelpCircle,
   FiBarChart, FiPieChart, FiActivity, FiGift, FiNavigation, 
   FiX, FiXCircle, FiCheck, FiPercent, FiPhone, FiWifi, FiGlobe, FiCamera,
-  FiMenu, FiChevronDown
+  FiMenu, FiChevronDown, FiSun, FiMoon
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,6 +36,8 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/supermartkera-portals.css';
 
 const CashierPortal = () => {
   const navigate = useNavigate();
@@ -50,6 +52,7 @@ const CashierPortal = () => {
 
   // Each supermarket's own name/background — auto-populated, no manual retyping
   const branding = useSupermarketBranding();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('pos');
   const [currentTime, setCurrentTime] = useState(new Date());
   
@@ -3241,9 +3244,9 @@ const CashierPortal = () => {
 
   return (
     <div
-      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed"
       style={branding.backgroundUrl ? {
-        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+        backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
       <style dangerouslySetInnerHTML={{
@@ -3336,8 +3339,19 @@ const CashierPortal = () => {
               <h1 className="text-lg font-bold text-white truncate">{branding.name} Cashier Portal</h1>
             </div>
 
-            {/* Always-reachable portal switcher, right where a mobile user expects it */}
-            <PortalSwitcher variant="dark" />
+            <div className="flex items-center space-x-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+                className="sk-portal-theme-toggle"
+              >
+                {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+              </button>
+
+              {/* Always-reachable portal switcher, right where a mobile user expects it */}
+              <PortalSwitcher variant="dark" />
+            </div>
           </div>
         </div>
       )}
@@ -3437,6 +3451,15 @@ const CashierPortal = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-4">
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  aria-label="Toggle theme"
+                  className="sk-portal-theme-toggle"
+                >
+                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+                  <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+                </button>
                 <button
                   ref={avatarButtonRef}
                   onClick={toggleAvatarMenu}

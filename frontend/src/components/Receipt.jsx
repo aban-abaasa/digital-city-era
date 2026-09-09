@@ -83,6 +83,13 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
               font-size: 24px;
               font-weight: bold;
             }
+            .receipt-store-logo {
+              max-width: 60px;
+              max-height: 60px;
+              display: block;
+              margin: 0 auto 8px auto;
+              object-fit: cover;
+            }
             .receipt-row {
               display: flex;
               justify-content: space-between;
@@ -143,6 +150,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
             .receipt-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px; }
+            .receipt-store-logo { max-width: 60px; max-height: 60px; display: block; margin: 0 auto 8px auto; object-fit: cover; }
             .receipt-row { display: flex; justify-content: space-between; padding: 3px 0; }
             .receipt-total { font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
             .receipt-footer { text-align: center; border-top: 2px dashed #000; padding-top: 10px; margin-top: 15px; font-size: 11px; }
@@ -348,6 +356,13 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
           <div ref={receiptRef} className="max-w-md mx-auto bg-white text-xs md:text-sm">
             {/* Receipt Header */}
             <div className="receipt-header text-center border-b-2 border-dashed border-gray-300 pb-3 md:pb-4 mb-3 md:mb-4">
+              {branding?.logoUrl && (
+                <img
+                  src={branding.logoUrl}
+                  alt={storeName}
+                  className="receipt-store-logo w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl mx-auto mb-2 shadow-md"
+                />
+              )}
               <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">{storeName}</div>
               <div className="text-xs md:text-sm text-gray-600 mt-2 space-y-1">
                 <p>{storeLocation}</p>

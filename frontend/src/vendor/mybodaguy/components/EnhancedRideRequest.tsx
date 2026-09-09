@@ -8,6 +8,7 @@ import { trackRideCall, trackUIInteraction } from '../../services/featureAnalyti
 import RideCommsBar from './RideCommsBar';
 import ProductPicker, { CartLine } from './ProductPicker';
 import LocationPickerMap from './LocationPickerMap';
+import LiveTrackingMap from './LiveTrackingMap';
 import JourneyBookingFlow from './JourneyBookingFlow';
 import { geocodeAddress, reverseGeocodeCountry, searchAddresses, type CountryLookup } from '../services/geocodeService';
 
@@ -1660,6 +1661,11 @@ function RiderOnTheWay({
         <p className="opacity-90">Your rider is heading to your pickup location</p>
       </div>
 
+      {/* Live map — rider's real position, pushed instantly via realtime
+          subscription on mbg_riders.current_lat/current_lng (kept fresh by
+          useLiveLocationPing on the rider's own dashboard). */}
+      <LiveTrackingMap riderId={rider.rider_id} pickup={pickup} dropoff={dropoff} phase="to_pickup" />
+
       {/* Rider Details Card */}
       <div className="bg-white rounded-xl shadow-lg p-6">
         <h3 className="text-lg font-bold text-slate-800 mb-4">Rider Details</h3>
@@ -1824,6 +1830,10 @@ function JourneyStarted({
           </div>
         </div>
       </div>
+
+      {/* Live map — same realtime rider position as the "On The Way" screen,
+          now tracking the drop-off leg instead of the pickup leg. */}
+      <LiveTrackingMap riderId={rider.rider_id} pickup={pickup} dropoff={dropoff} phase="to_dropoff" />
 
       {/* Trip Details */}
       <div className="bg-white rounded-xl shadow-lg p-6">

@@ -6,7 +6,27 @@
 import { supabase } from './supabase';
 
 class TransactionService {
-  
+
+  // ===================================================
+  // RESOLVE A MANAGER'S OWN CASHIER IDS
+  // Used to scope transaction reads to only the cashiers a given manager
+  // owns (users.manager_id), without adding a manager_id column to
+  // transactions itself.
+  // ===================================================
+  async _resolveManagerCashierIds(managerId) {
+    if (!managerId) return null;
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('manager_id', managerId);
+    if (error) {
+      console.error('Error resolving manager cashier ids:', error);
+      return [];
+    }
+    return (data || []).map(u => u.id);
+  }
+
+
   // ===================================================
   // SAVE TRANSACTION
   // ===================================================
@@ -238,7 +258,7 @@ class TransactionService {
   // ===================================================
   // GET TRANSACTION BY ID
   // ===================================================
-  async getTransaction(transactionId, supermarketId = null) {
+  async getTransaction(transactionId, supermarketId = null, managerId = null) {
     try {
       let transactionQuery = supabase
         .from('transactions')
@@ -248,6 +268,15 @@ class TransactionService {
       // Tenant isolation: never let one supermarket view another's transaction
       if (supermarketId) {
         transactionQuery = transactionQuery.eq('supermarket_id', supermarketId);
+      }
+
+      // Manager isolation: only this manager's own cashiers' transactions
+      if (managerId) {
+        const cashierIds = await this._resolveManagerCashierIds(managerId);
+        if (cashierIds.length === 0) {
+          return { success: false, error: 'No cashiers assigned to this manager' };
+        }
+        transactionQuery = transactionQuery.in('cashier_id', cashierIds);
       }
 
       const { data: transaction, error: transactionError } = await transactionQuery.single();
@@ -292,7 +321,7 @@ class TransactionService {
   // ===================================================
   // GET TRANSACTION BY RECEIPT NUMBER
   // ===================================================
-  async getTransactionByReceipt(receiptNumber, supermarketId = null) {
+  async getTransactionByReceipt(receiptNumber, supermarketId = null, managerId = null) {
     try {
       let receiptQuery = supabase
         .from('transactions')
@@ -302,6 +331,15 @@ class TransactionService {
       // Tenant isolation: never let one supermarket view another's transaction
       if (supermarketId) {
         receiptQuery = receiptQuery.eq('supermarket_id', supermarketId);
+      }
+
+      // Manager isolation: only this manager's own cashiers' transactions
+      if (managerId) {
+        const cashierIds = await this._resolveManagerCashierIds(managerId);
+        if (cashierIds.length === 0) {
+          return { success: false, error: 'No cashiers assigned to this manager' };
+        }
+        receiptQuery = receiptQuery.in('cashier_id', cashierIds);
       }
 
       const { data: transaction, error: transactionError } = await receiptQuery.single();
@@ -343,7 +381,7 @@ class TransactionService {
   // ===================================================
   // GET TODAY'S TRANSACTIONS
   // ===================================================
-  async getTodaysTransactions(cashierId = null, supermarketId = null) {
+  async getTodaysTransactions(cashierId = null, supermarketId = null, managerId = null) {
     try {
       // Load all recent transactions (not just today, to match CashierPortal behavior)
       let query = supabase
@@ -359,6 +397,15 @@ class TransactionService {
       // Tenant isolation: never let one supermarket see another's transactions
       if (supermarketId) {
         query = query.eq('supermarket_id', supermarketId);
+      }
+
+      // Manager isolation: only this manager's own cashiers' transactions
+      if (managerId) {
+        const cashierIds = await this._resolveManagerCashierIds(managerId);
+        if (cashierIds.length === 0) {
+          return { success: true, transactions: [], count: 0, totalSales: 0 };
+        }
+        query = query.in('cashier_id', cashierIds);
       }
 
       const { data, error } = await query;
@@ -398,7 +445,7 @@ class TransactionService {
   // ===================================================
   // GET TRANSACTIONS BY DATE RANGE
   // ===================================================
-  async getTransactionsByDateRange(startDate, endDate, cashierId = null, supermarketId = null) {
+  async getTransactionsByDateRange(startDate, endDate, cashierId = null, supermarketId = null, managerId = null) {
     try {
       let query = supabase
         .from('transactions')
@@ -414,6 +461,15 @@ class TransactionService {
       // Tenant isolation: never let one supermarket see another's transactions
       if (supermarketId) {
         query = query.eq('supermarket_id', supermarketId);
+      }
+
+      // Manager isolation: only this manager's own cashiers' transactions
+      if (managerId) {
+        const cashierIds = await this._resolveManagerCashierIds(managerId);
+        if (cashierIds.length === 0) {
+          return { success: true, transactions: [], count: 0, totalSales: 0, totalTax: 0 };
+        }
+        query = query.in('cashier_id', cashierIds);
       }
 
       const { data, error } = await query;
@@ -442,11 +498,11 @@ class TransactionService {
   // ===================================================
   // GET DAILY REPORT
   // ===================================================
-  async getDailyReport(date = new Date(), supermarketId = null) {
+  async getDailyReport(date = new Date(), supermarketId = null, managerId = null) {
     try {
       // NOTE: daily_sales_reports table doesn't exist
       // Generate report on-the-fly from transactions
-      return await this.generateDailyReport(date, supermarketId);
+      return await this.generateDailyReport(date, supermarketId, managerId);
     } catch (error) {
       console.error('Error generating daily report:', error);
       return {
@@ -459,7 +515,7 @@ class TransactionService {
   // ===================================================
   // GENERATE DAILY REPORT
   // ===================================================
-  async generateDailyReport(date = new Date(), supermarketId = null) {
+  async generateDailyReport(date = new Date(), supermarketId = null, managerId = null) {
     try {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
@@ -480,7 +536,21 @@ class TransactionService {
         reportQuery = reportQuery.eq('supermarket_id', supermarketId);
       }
 
-      const { data: transactions, error: transError } = await reportQuery;
+      // Manager isolation: only this manager's own cashiers' transactions
+      let managerHasNoCashiers = false;
+      if (managerId) {
+        const cashierIds = await this._resolveManagerCashierIds(managerId);
+        if (cashierIds.length === 0) {
+          managerHasNoCashiers = true;
+        } else {
+          reportQuery = reportQuery.in('cashier_id', cashierIds);
+        }
+      }
+
+      const { data: transactionsRaw, error: transError } = managerHasNoCashiers
+        ? { data: [], error: null }
+        : await reportQuery;
+      const transactions = transactionsRaw || [];
 
       if (transError) throw transError;
 
@@ -554,7 +624,7 @@ class TransactionService {
   // ===================================================
   // SEARCH TRANSACTIONS
   // ===================================================
-  async searchTransactions(searchTerm, supermarketId = null) {
+  async searchTransactions(searchTerm, supermarketId = null, managerId = null) {
     try {
       let searchQuery = supabase
         .from('transactions')
@@ -566,6 +636,15 @@ class TransactionService {
       // Tenant isolation: never let one supermarket search another's transactions
       if (supermarketId) {
         searchQuery = searchQuery.eq('supermarket_id', supermarketId);
+      }
+
+      // Manager isolation: only this manager's own cashiers' transactions
+      if (managerId) {
+        const cashierIds = await this._resolveManagerCashierIds(managerId);
+        if (cashierIds.length === 0) {
+          return { success: true, transactions: [], count: 0 };
+        }
+        searchQuery = searchQuery.in('cashier_id', cashierIds);
       }
 
       const { data, error } = await searchQuery;

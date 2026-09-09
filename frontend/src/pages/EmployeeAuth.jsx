@@ -668,32 +668,58 @@ const EmployeeAuth = () => {
       // Check if email confirmation is required
       const needsEmailConfirmation = !authData.user?.email_confirmed_at && !authData.user?.confirmed_at;
 
-      const { error: userError } = await supabase
+      // If a manager already invited this email (register_cashier RPC), a
+      // pending row exists with manager_id/supermarket_id set and no
+      // auth_id yet. Attach this new auth identity to that row instead of
+      // inserting a duplicate (email is UNIQUE) — and never let this
+      // form's own supermarket dropdown override the store/manager the
+      // inviting manager already assigned.
+      const { data: pendingInvite } = await supabase
         .from('users')
-        .insert({
-          auth_id: authData.user.id,
-          email: formData.email,
-          full_name: formData.fullName,
-          phone: formData.phone,
-          role: 'employee',
-          supermarket_id: selectedSupermarket,
-          department: formData.position,
-          position: formData.position,
-          address: formData.address,
-          city: formData.city,
-          date_of_birth: formData.dateOfBirth,
-          gender: formData.gender,
-          education_level: formData.education,
-          previous_experience: formData.experience,
-          skills: formData.skills,
-          emergency_contact: formData.emergencyContact,
-          emergency_phone: formData.emergencyPhone,
-          availability: formData.availability,
-          id_number: formData.idNumber,
-          is_active: false,
-          profile_completed: true,
-          employee_id: `EMP-${Date.now().toString().slice(-6)}`
-        });
+        .select('id, manager_id, supermarket_id')
+        .eq('email', formData.email)
+        .is('auth_id', null)
+        .not('manager_id', 'is', null)
+        .maybeSingle();
+
+      const profileFields = {
+        full_name: formData.fullName,
+        phone: formData.phone,
+        department: formData.position,
+        position: formData.position,
+        address: formData.address,
+        city: formData.city,
+        date_of_birth: formData.dateOfBirth,
+        gender: formData.gender,
+        education_level: formData.education,
+        previous_experience: formData.experience,
+        skills: formData.skills,
+        emergency_contact: formData.emergencyContact,
+        emergency_phone: formData.emergencyPhone,
+        availability: formData.availability,
+        id_number: formData.idNumber,
+        profile_completed: true,
+        employee_id: `EMP-${Date.now().toString().slice(-6)}`
+      };
+
+      const { error: userError } = pendingInvite
+        ? await supabase
+            .from('users')
+            .update({
+              auth_id: authData.user.id,
+              ...profileFields
+            })
+            .eq('id', pendingInvite.id)
+        : await supabase
+            .from('users')
+            .insert({
+              auth_id: authData.user.id,
+              email: formData.email,
+              role: 'employee',
+              supermarket_id: selectedSupermarket,
+              is_active: false,
+              ...profileFields
+            });
 
       if (userError) throw userError;
 

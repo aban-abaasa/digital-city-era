@@ -13,7 +13,7 @@ import {
   FiMaximize, FiMinimize, FiRotateCw, FiUpload, FiPrinter,
   FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiUsers, FiUser,
   FiShoppingCart, FiPercent, FiFlag, FiWifi, FiSend, FiFileText,
-  FiMenu, FiX, FiChevronUp, FiBriefcase
+  FiMenu, FiX, FiChevronUp, FiBriefcase, FiSun, FiMoon
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -31,10 +31,13 @@ import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
 import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/supermartkera-portals.css';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
+  const { theme, toggleTheme } = useTheme();
   const cachedRole = (() => {
     try { return JSON.parse(localStorage.getItem('supermarket_user') || '{}').role?.toLowerCase(); } catch { return null; }
   })();
@@ -2763,9 +2766,9 @@ const SupplierPortal = () => {
 
   return (
     <div
-      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed"
       style={branding.backgroundUrl ? {
-        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+        backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
       {branding.supportsSupplyOrders && (
@@ -2821,13 +2824,24 @@ const SupplierPortal = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => { setActiveTab('profile'); setShowMobileMenu(false); }}
-                  className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
-                  title="My Profile"
-                >
-                  <FiUser className="h-5 w-5 text-white" />
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={toggleTheme}
+                    aria-label="Toggle theme"
+                    className="sk-portal-theme-toggle"
+                  >
+                    {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+                  </button>
+
+                  <button
+                    onClick={() => { setActiveTab('profile'); setShowMobileMenu(false); }}
+                    className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
+                    title="My Profile"
+                  >
+                    <FiUser className="h-5 w-5 text-white" />
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -2892,6 +2906,17 @@ const SupplierPortal = () => {
 
               {/* Action Buttons Container */}
               <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-xl px-2 py-2 border border-white/20">
+                {/* Theme Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  aria-label="Toggle theme"
+                  className="sk-portal-theme-toggle"
+                >
+                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+                  <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+                </button>
+
                 {/* Notifications with Badge */}
                 <button className="relative p-2 text-white hover:bg-white/20 rounded-lg transition-all duration-300 group">
                   <FiBell className="h-6 w-6 group-hover:animate-bounce" />

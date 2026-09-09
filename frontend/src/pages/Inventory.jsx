@@ -890,6 +890,7 @@ const Inventory = () => {
         <DualScannerInterface
           onBarcodeScanned={handleBarcodeScanned}
           onClose={() => setShowBarcodeScanner(false)}
+          context="admin"
         />
       )}
 

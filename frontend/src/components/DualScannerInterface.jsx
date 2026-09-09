@@ -41,6 +41,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const autoSaveTimeoutRef = useRef(null);
   const lastProcessedBarcodeRef = useRef(null); // 🔒 Cooldown tracker
   const barcodeProcessingTimeRef = useRef(0); // 🔒 Last processing time
+  const audioContextRef = useRef(null); // Reused AudioContext (was recreated on every beep)
 
   //  Initialize Camera Scanner
   useEffect(() => {
@@ -74,9 +75,14 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   useEffect(() => {
     loadProductsFromSupabase();
     startNoActivityTimer();
-    
+
     return () => {
       if (noActivityTimer) clearTimeout(noActivityTimer);
+      // Close the shared AudioContext when the scanner unmounts entirely
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
     };
   }, []);
 
@@ -434,25 +440,57 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       console.error('❌ Cannot get canvas context');
       return;
     }
-    
+
+    // Quagga2 (1D barcodes — UPC/EAN/Code128/etc.) needs noticeably more
+    // horizontal resolution than jsQR does to resolve thin bars; feeding it
+    // the same heavily-downscaled canvas used for the fast per-frame jsQR
+    // check was causing real barcodes to never decode (stuck on "pattern
+    // detected" forever). It's throttled to a few times a second, so a
+    // separate, higher-res capture just for Quagga calls is cheap enough.
+    const quaggaCanvas = document.createElement('canvas');
+    const quaggaCtx = quaggaCanvas.getContext('2d', { willReadFrequently: true });
+
     const video = videoRef.current;
     let frameCount = 0;
     let isDetecting = true; // Use local flag instead of stale closure
     let noDetectionStartTime = Date.now();
     let aiTriggered = false; // Prevent multiple AI triggers
+    let lastProcessTime = 0;
+    let lastQuaggaTime = 0;
+
+    // Detection is throttled independently of display refresh rate (which can be
+    // 60-120Hz) — running full-res pixel analysis on every rAF tick was the main
+    // cause of camera lag. ~12 checks/sec is plenty for a handheld barcode scan.
+    const PROCESS_INTERVAL_MS = 80;
+    // Quagga2 spins up a fresh worker pool on every decodeSingle() call, so it's
+    // throttled by wall-clock time (not frame count) to a few times a second.
+    const QUAGGA_INTERVAL_MS = 350;
+    // Downscaling before pixel analysis is the single biggest win for the
+    // per-frame jsQR check: a 1280x720 capture is far more pixels than a QR
+    // code needs to decode reliably.
+    const MAX_PROCESS_WIDTH = 640;
+    // Quagga gets a larger capture (thin 1D barcode bars need more horizontal
+    // resolution than QR modules do), capped well below native to stay fast.
+    const QUAGGA_PROCESS_WIDTH = 960;
 
     console.log('🎬 Starting barcode detection loop...');
 
     const detectFrame = async () => {
       try {
-        // Process every frame for maximum sensitivity
-        frameCount++;
+        const now = Date.now();
+        const dueForProcessing = now - lastProcessTime >= PROCESS_INTERVAL_MS;
 
-        if (video.readyState >= 2) { // HAVE_CURRENT_DATA or better
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          
-          // Draw video frame to canvas
+        if (dueForProcessing && video.readyState >= 2) { // HAVE_CURRENT_DATA or better
+          lastProcessTime = now;
+          frameCount++;
+
+          const sourceWidth = video.videoWidth || MAX_PROCESS_WIDTH;
+          const sourceHeight = video.videoHeight || Math.round(MAX_PROCESS_WIDTH * 0.75);
+          const scale = Math.min(1, MAX_PROCESS_WIDTH / sourceWidth);
+          canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+          canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+
+          // Draw video frame to canvas (downscaled for fast analysis)
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
           // Get image data for barcode detection
@@ -466,7 +504,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             }
             return;
           }
-          
+
           // Try jsQR detection FIRST (fastest for QR codes)
           let detectedBarcode = null;
           let detectedFormat = 'QR';
@@ -480,10 +518,16 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
           } catch (e) {
             console.warn('⚠️ jsQR detection error:', e.message);
           }
-          
-          // If no QR found, try Quagga2 for other barcode formats (every 5th frame to save CPU)
-          if (!detectedBarcode && frameCount % 5 === 0) {
-            const quaggaResult = await detectBarcodeWithQuagga(canvas);
+
+          // If no QR found, try Quagga2 for other barcode formats (time-throttled to save CPU).
+          // Uses its own higher-resolution capture — see quaggaCanvas note above.
+          if (!detectedBarcode && now - lastQuaggaTime >= QUAGGA_INTERVAL_MS) {
+            lastQuaggaTime = now;
+            const qScale = Math.min(1, QUAGGA_PROCESS_WIDTH / sourceWidth);
+            quaggaCanvas.width = Math.max(1, Math.round(sourceWidth * qScale));
+            quaggaCanvas.height = Math.max(1, Math.round(sourceHeight * qScale));
+            quaggaCtx.drawImage(video, 0, 0, quaggaCanvas.width, quaggaCanvas.height);
+            const quaggaResult = await detectBarcodeWithQuagga(quaggaCanvas);
             if (quaggaResult && quaggaResult.barcode) {
               detectedBarcode = quaggaResult.barcode;
               detectedFormat = quaggaResult.format;
@@ -639,9 +683,10 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       const balanceRatio = Math.min(blackPixels, whitePixels) / totalPixels;
       
       // ULTRA-SENSITIVE thresholds for immediate FEEDBACK
-      // If pattern detected, return true (feedback only - actual barcode must come from jsQR)
+      // If pattern detected, return true (feedback only - actual barcode comes from jsQR/Quagga)
       if (transitionRatio > 0.05 && balanceRatio > 0.06) {
-        console.log(`📊 Barcode pattern detected at row ${rowIndex} - Transitions: ${transitionRatio.toFixed(3)}, Balance: ${balanceRatio.toFixed(3)}`);
+        // (No per-row console.log here — this runs up to ~12x/sec while a
+        // barcode shape is in frame and was flooding devtools.)
         return true; // Just indicate pattern was found, don't return fake barcode ID
       }
     }
@@ -683,9 +728,12 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
           Quagga.decodeSingle(
             {
               src: canvas.toDataURL('image/png', 0.95),
-              numOfWorkers: 2,
+              // 0 workers: decodeSingle() spins up a brand-new worker pool on every
+              // call, and at this call frequency that startup cost dwarfs the actual
+              // decode time on our already-downscaled frame — running inline is faster.
+              numOfWorkers: 0,
               inputStream: {
-                size: 1200
+                size: Math.max(canvas.width, canvas.height)
               },
               decoder: {
                 readers: [
@@ -1243,10 +1291,34 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     setScanBuffer('');
 
     console.log(`📊 Barcode scanned from ${source}:`, barcode);
-    
+
+    // Admin scanning is for ADDING or LOOKING UP a product (new-product form,
+    // inventory registration, stock editor) — NOT a POS sale. There's no cart,
+    // no stock depletion, and an "unknown" barcode is the happy path (it means
+    // there's a new item to add), so we skip the cashier's inventory lookup
+    // entirely and just capture + hand off — the parent screen owns the
+    // actual find-or-create logic via onBarcodeScanned.
+    if (context === 'admin') {
+      setScanStats(prev => ({
+        total: prev.total + 1,
+        gunScans: source === 'gun' ? prev.gunScans + 1 : prev.gunScans,
+        cameraScans: source === 'camera' ? prev.cameraScans + 1 : prev.cameraScans
+      }));
+      setRecentScans(prev => [
+        { id: Date.now(), barcode: barcode.toUpperCase(), source, timestamp, detected: true },
+        ...prev.slice(0, 9)
+      ]);
+      playSound('success');
+      toast.success(`📦 Barcode captured: ${barcode}`, { autoClose: 1500, pauseOnHover: false });
+      onBarcodeScanned(barcode);
+      setTimeout(() => onClose(), autoCloseDelay || 1500);
+      return;
+    }
+
+    // ----- Cashier / POS flow below -----
     // IMMEDIATELY check if product exists in inventory (FAST FEEDBACK < 2 SECONDS)
     const product = findProductInInventory(barcode);
-    
+
     if (!product) {
       // Product NOT FOUND - Show IMMEDIATE error notification
       playSound('error');
@@ -1304,34 +1376,24 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     // Callback to parent with full context
     onBarcodeScanned(barcode);
 
-    // 🤖 AUTO-CLOSE LOGIC
-    // For admin portal: auto-close after successfully adding a new product
-    if (context === 'admin' && added) {
-      console.log('📦 Admin context: Auto-closing scanner after product added...');
-      const delayTime = autoCloseDelay || 1500; // Default 1.5 seconds
-      setTimeout(() => {
-        onClose();
-      }, delayTime);
-    }
-    // For cashier portal: keep scanner open for continuous scanning (no auto-close)
-    else if (context === 'cashier') {
-      // Auto-focus back to gun input for next scan
-      if (gunInputRef.current && (scanMode === 'gun' || scanMode === 'smart')) {
-        setTimeout(() => gunInputRef.current?.focus(), 200);
-      }
-    }
-    // For admin creating NEW products: close immediately after barcode is handled
-    else if (context === 'admin' && !added) {
-      // Product already exists or is being handled - close after short delay
-      setTimeout(() => {
-        onClose();
-      }, 800);
+    // Cashier keeps the scanner open for continuous scanning (no auto-close) —
+    // the admin auto-close branch lives above, since admin returns early.
+    if (gunInputRef.current && (scanMode === 'gun' || scanMode === 'smart')) {
+      setTimeout(() => gunInputRef.current?.focus(), 200);
     }
   };
 
   const playSound = (type = 'success') => {
-    // Create a simple beep sound using Web Audio API
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // Reuse a single AudioContext instead of allocating a new one per beep
+    // (creating/GC'ing an AudioContext dozens of times a minute was adding
+    // jank to the detection loop).
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const audioContext = audioContextRef.current;
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
 
@@ -1516,7 +1578,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm">
-      <div className="bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+      <div className="relative bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
         {/* ✨ Modern Compact Header with Icon Bar */}
         <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 px-3 sm:px-6 py-3 sm:py-4 flex flex-col space-y-2 sm:space-y-3 flex-shrink-0 relative overflow-hidden">
           {/* Animated background elements */}
@@ -1532,8 +1594,12 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
                 <FiZap className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
               </div>
               <div>
-                <h2 className="text-white text-lg sm:text-2xl font-bold tracking-tight">Scanner</h2>
-                <p className="text-white/80 text-xs sm:text-sm hidden sm:block">Smart Barcode Detection</p>
+                <h2 className="text-white text-lg sm:text-2xl font-bold tracking-tight">
+                  {context === 'admin' ? 'Add Item' : 'Scanner'}
+                </h2>
+                <p className="text-white/80 text-xs sm:text-sm hidden sm:block">
+                  {context === 'admin' ? 'Scan to add or find a product' : 'Smart Barcode Detection'}
+                </p>
               </div>
             </div>
             
@@ -1640,7 +1706,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
             {/* AI Ready Badge - Shows when AI is enabled */}
             {geminiAIService.isInitialized() && (
-              <div className="ml-auto flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 bg-white/20 rounded-full backdrop-blur-md animate-pulse">
+              <div className="ml-auto lg:mr-44 xl:mr-52 flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 bg-white/20 rounded-full backdrop-blur-md animate-pulse">
                 <FiCpu className="h-3 w-3 sm:h-4 sm:w-4 text-cyan-300" />
                 <span className="text-white text-xs sm:text-sm font-semibold hidden sm:inline">AI Ready</span>
               </div>
@@ -1648,10 +1714,13 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
           </div>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 p-2 sm:p-6 flex-1 overflow-y-auto">
-          {/* Left: Status & Info */}
-          <div className="space-y-2 sm:space-y-4">
+        {/* Main Content Grid — camera stays a small, fixed-size viewfinder; on
+            narrow screens the scanned-items lists (Transaction, Recent Scans)
+            are reordered above the secondary Status & Info panel so the live
+            scan feedback is visible without scrolling past a full-page camera. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-6 flex-1 overflow-y-auto">
+          {/* Left: Status & Info (secondary — pushed last on mobile) */}
+          <div className="order-4 md:order-none space-y-2 sm:space-y-4">
             <h3 className="font-bold text-gray-900 text-sm sm:text-base flex items-center space-x-2">
               <FiSmartphone className="h-5 w-5 text-blue-600 sm:h-6 sm:w-6" />
               <span className="font-semibold">Status & Info</span>
@@ -1780,8 +1849,13 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             </div>
           </div>
 
-          {/* Center: Camera Feed - Enhanced Modern Design */}
-          <div className="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center relative h-full min-h-[300px] sm:min-h-[400px] border border-gray-700 shadow-2xl">
+          {/* Center: Camera Feed — a compact viewfinder, not a page-filling block.
+              Below lg it sits inline at the top of the stacked content (small,
+              capped height). At lg+ ("computer") it lifts out of the grid
+              entirely and docks as a small thumbnail in the header's empty
+              top-right area, so the full-width content area is left free for
+              the Status/Transaction/Scans lists. */}
+          <div className="order-1 md:order-none bg-gradient-to-br from-gray-950 via-gray-900 to-gray-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center relative aspect-[4/3] max-h-[200px] sm:max-h-[240px] md:max-h-none md:h-full lg:!absolute lg:top-3 lg:right-16 lg:z-40 lg:w-40 lg:h-24 lg:!max-h-none lg:!aspect-auto xl:w-48 xl:h-28 border border-gray-700 shadow-2xl lg:shadow-xl lg:border-2 lg:border-white/30">
             {scanMode === 'camera' || scanMode === 'smart' ? (
               <>
                 <video
@@ -1794,46 +1868,51 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
                   ref={canvasRef}
                   className="hidden"
                 />
+                {!cameraActive && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center space-y-2 lg:space-y-0 bg-gray-950/80 text-white">
+                    <div className="h-6 w-6 lg:h-4 lg:w-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-xs font-semibold lg:hidden">Starting camera…</p>
+                  </div>
+                )}
                 {cameraActive && (
                   <>
                     {/* Enhanced scanning border with glow */}
-                    <div className="absolute inset-0 border-3 border-blue-500/60 rounded-xl pointer-events-none shadow-xl shadow-blue-500/20">
+                    <div className="absolute inset-0 border-3 lg:border-2 border-blue-500/60 rounded-xl pointer-events-none shadow-xl shadow-blue-500/20">
                       {/* Top scanning line */}
                       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
                       {/* Bottom scanning line */}
                       <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
                     </div>
-                    
-                    {/* Animated corner markers */}
-                    <div className="absolute top-6 left-6 w-12 h-12 border-t-3 border-l-3 border-cyan-400 rounded-tl-xl shadow-lg shadow-cyan-400/30 animate-pulse"></div>
-                    <div className="absolute top-6 right-6 w-12 h-12 border-t-3 border-r-3 border-cyan-400 rounded-tr-xl shadow-lg shadow-cyan-400/30 animate-pulse"></div>
-                    <div className="absolute bottom-6 left-6 w-12 h-12 border-b-3 border-l-3 border-cyan-400 rounded-bl-xl shadow-lg shadow-cyan-400/30 animate-pulse"></div>
-                    <div className="absolute bottom-6 right-6 w-12 h-12 border-b-3 border-r-3 border-cyan-400 rounded-br-xl shadow-lg shadow-cyan-400/30 animate-pulse"></div>
+
+                    {/* Animated corner markers — sized to fit the compact viewfinder (smaller still on the header thumbnail) */}
+                    <div className="absolute top-2 left-2 lg:top-1 lg:left-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-t-2 border-l-2 border-cyan-400 rounded-tl-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
+                    <div className="absolute top-2 right-2 lg:top-1 lg:right-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-t-2 border-r-2 border-cyan-400 rounded-tr-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
+                    <div className="absolute bottom-2 left-2 lg:bottom-1 lg:left-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-b-2 border-l-2 border-cyan-400 rounded-bl-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
+                    <div className="absolute bottom-2 right-2 lg:bottom-1 lg:right-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-b-2 border-r-2 border-cyan-400 rounded-br-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
                   </>
                 )}
-                
-                {/* Status indicator - Enhanced */}
+
+                {/* Status indicator - compact (dot only on the header thumbnail) */}
                 {showScanningIndicator && (
-                  <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-gradient-to-r from-cyan-500 to-blue-500 text-white px-4 sm:px-5 py-2 sm:py-3 rounded-full text-xs sm:text-sm flex items-center space-x-2 shadow-2xl shadow-cyan-500/50 font-bold">
-                    <div className="h-2.5 w-2.5 bg-white rounded-full animate-pulse"></div>
-                    <span>✨ Scanning...</span>
+                  <div className="absolute top-1.5 right-1.5 lg:top-1 lg:right-1 bg-gradient-to-r from-cyan-500 to-blue-500 text-white px-2 lg:px-0 py-0.5 lg:py-0 rounded-full text-[10px] sm:text-xs flex items-center space-x-1 shadow-lg shadow-cyan-500/50 font-bold lg:h-2.5 lg:w-2.5">
+                    <div className="h-1.5 w-1.5 lg:h-full lg:w-full bg-white rounded-full animate-pulse"></div>
+                    <span className="lg:hidden">Scanning...</span>
                   </div>
                 )}
-                
-                {/* Instructions - Enhanced modern card */}
-                <div className="absolute bottom-4 left-4 right-4 sm:bottom-6 sm:left-6 sm:right-6 bg-gradient-to-r from-black/80 to-gray-900/80 backdrop-blur-md text-white px-4 sm:px-5 py-3 sm:py-4 rounded-xl text-center space-y-2 border border-gray-700/50 shadow-2xl">
-                  <p className="text-sm sm:text-base font-semibold">📱 Point camera at barcode</p>
-                  <p className="text-cyan-400 font-bold text-xs sm:text-sm flex items-center justify-center space-x-1">
-                    <FiCheck className="h-4 w-4" />
-                    <span>Automatic detection active</span>
+
+                {/* Instructions - a slim single-line strip; dropped entirely on the tiny header thumbnail */}
+                <div className="lg:hidden absolute bottom-1.5 left-1.5 right-1.5 bg-black/70 backdrop-blur-md text-white px-2 py-1 rounded-lg text-center border border-gray-700/50">
+                  <p className="text-[10px] sm:text-xs font-semibold flex items-center justify-center gap-1">
+                    <FiCheck className="h-3 w-3 text-cyan-400 flex-shrink-0" />
+                    <span>Point at barcode — auto-detect on</span>
                   </p>
                 </div>
               </>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center space-y-2 sm:space-y-4 p-3 sm:p-6">
-                <FiCamera className="h-8 w-8 sm:h-12 sm:w-12 text-gray-600" />
-                <p className="text-gray-400 text-center text-xs sm:text-sm">
-                  {scanMode === 'gun' 
+              <div className="w-full h-full flex flex-col items-center justify-center space-y-2 sm:space-y-4 lg:space-y-1 p-3 sm:p-6 lg:p-1">
+                <FiCamera className="h-8 w-8 sm:h-12 sm:w-12 lg:h-4 lg:w-4 text-gray-600" />
+                <p className="text-gray-400 text-center text-xs sm:text-sm lg:hidden">
+                  {scanMode === 'gun'
                     ? '🔫 Gun mode active - scan with hand scanner'
                     : 'Switch to Camera mode to enable video'
                   }
@@ -1851,79 +1930,107 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             />
           </div>
 
-          {/* Right: Current Transaction */}
-          <div className="space-y-2 sm:space-y-3 flex flex-col bg-gradient-to-b from-green-50 to-white rounded-lg border-2 border-green-300 p-2 sm:p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-gray-900 text-sm sm:text-lg">🛒 Transaction</h3>
-              {currentTransaction.length > 0 && (
-                <button
-                  onClick={clearTransaction}
-                  className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-all active:scale-95"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            
-            {/* Transaction Items */}
-            <div className="flex-1 bg-white rounded-lg p-2 sm:p-3 overflow-y-auto space-y-1 sm:space-y-2 border border-green-200">
-              {currentTransaction.length === 0 ? (
-                <p className="text-gray-400 text-center text-xs sm:text-sm py-4">No items yet</p>
-              ) : (
-                currentTransaction.map(item => (
-                  <div
-                    key={item.id}
-                    className="bg-green-50 p-1 sm:p-2 rounded border border-green-200 text-xs space-y-0.5 sm:space-y-1 hover:shadow-md transition-all"
+          {/* Right: Current Transaction — cashier-only. This cart + total +
+              "Save & Submit" (which inserts a sale and depletes stock) only
+              makes sense for a POS checkout. The admin scanner is for
+              adding/looking up products, not ringing up a sale, so it gets a
+              lightweight "last captured barcode" card in the same slot instead. */}
+          {context === 'cashier' ? (
+            <div className="order-2 md:order-none space-y-2 sm:space-y-3 flex flex-col bg-gradient-to-b from-green-50 to-white rounded-lg border-2 border-green-300 p-2 sm:p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-900 text-sm sm:text-lg">🛒 Transaction</h3>
+                {currentTransaction.length > 0 && (
+                  <button
+                    onClick={clearTransaction}
+                    className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-all active:scale-95"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-green-700 truncate text-xs">{item.name}</span>
-                      <button
-                        onClick={() => removeFromTransaction(item.id)}
-                        className="text-red-500 hover:text-red-700 text-lg leading-none active:scale-125 transition-transform"
-                      >
-                        ×
-                      </button>
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Transaction Items */}
+              <div className="flex-1 bg-white rounded-lg p-2 sm:p-3 overflow-y-auto space-y-1 sm:space-y-2 border border-green-200">
+                {currentTransaction.length === 0 ? (
+                  <p className="text-gray-400 text-center text-xs sm:text-sm py-4">No items yet</p>
+                ) : (
+                  currentTransaction.map(item => (
+                    <div
+                      key={item.id}
+                      className="bg-green-50 p-1 sm:p-2 rounded border border-green-200 text-xs space-y-0.5 sm:space-y-1 hover:shadow-md transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-green-700 truncate text-xs">{item.name}</span>
+                        <button
+                          onClick={() => removeFromTransaction(item.id)}
+                          className="text-red-500 hover:text-red-700 text-lg leading-none active:scale-125 transition-transform"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between text-gray-700">
+                        <span>Qty: <span className="font-bold">{item.quantity}</span></span>
+                        <span>₱{item.price.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between font-bold text-green-700 border-t border-green-200 pt-1">
+                        <span>Subtotal:</span>
+                        <span>₱{item.subtotal.toFixed(2)}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-gray-700">
-                      <span>Qty: <span className="font-bold">{item.quantity}</span></span>
-                      <span>₱{item.price.toFixed(2)}</span>
+                  ))
+                )}
+              </div>
+
+              {/* Transaction Total */}
+              {currentTransaction.length > 0 && (
+                <>
+                  <div className="bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg p-2 sm:p-4 space-y-1 sm:space-y-2">
+                    <div className="flex items-center justify-between text-sm sm:text-lg">
+                      <span className="font-bold">TOTAL</span>
+                      <span className="text-lg sm:text-2xl font-bold">₱{transactionTotal.toFixed(2)}</span>
                     </div>
-                    <div className="flex items-center justify-between font-bold text-green-700 border-t border-green-200 pt-1">
-                      <span>Subtotal:</span>
-                      <span>₱{item.subtotal.toFixed(2)}</span>
+                    <div className="text-xs opacity-90">
+                      <p>Items: {currentTransaction.length} | Units: {currentTransaction.reduce((sum, item) => sum + item.quantity, 0)}</p>
                     </div>
                   </div>
-                ))
+
+                  {/* Save Transaction Button - Creates POS data for dashboard */}
+                  <button
+                    onClick={saveTransactionToSupabase}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-4 rounded-lg transition-all active:scale-95 flex items-center justify-center space-x-2 shadow-lg"
+                  >
+                    <FiZap className="h-5 w-5" />
+                    <span>💾 Save & Submit</span>
+                  </button>
+                </>
               )}
             </div>
+          ) : (
+            <div className="order-2 md:order-none space-y-2 sm:space-y-3 flex flex-col bg-gradient-to-b from-blue-50 to-white rounded-lg border-2 border-blue-300 p-2 sm:p-4">
+              <h3 className="font-bold text-gray-900 text-sm sm:text-lg">📦 Add Item</h3>
+              <p className="text-xs sm:text-sm text-gray-600">
+                Scan a barcode to add it to the catalog or open it for editing — no cart, no checkout.
+              </p>
+              <div className="flex-1 bg-white rounded-lg p-3 border border-blue-200 flex flex-col items-center justify-center text-center space-y-2">
+                {recentScans.length > 0 ? (
+                  <>
+                    <FiCheck className="h-6 w-6 text-green-500" />
+                    <p className="font-mono font-bold text-blue-700 text-sm break-all">{recentScans[0].barcode}</p>
+                    <p className="text-xs text-gray-500">Captured {recentScans[0].timestamp.toLocaleTimeString()}</p>
+                  </>
+                ) : (
+                  <>
+                    <FiCamera className="h-6 w-6 text-gray-300" />
+                    <p className="text-xs sm:text-sm text-gray-400">Waiting for a scan…</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
-            {/* Transaction Total */}
-            {currentTransaction.length > 0 && (
-              <>
-                <div className="bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg p-2 sm:p-4 space-y-1 sm:space-y-2">
-                  <div className="flex items-center justify-between text-sm sm:text-lg">
-                    <span className="font-bold">TOTAL</span>
-                    <span className="text-lg sm:text-2xl font-bold">₱{transactionTotal.toFixed(2)}</span>
-                  </div>
-                  <div className="text-xs opacity-90">
-                    <p>Items: {currentTransaction.length} | Units: {currentTransaction.reduce((sum, item) => sum + item.quantity, 0)}</p>
-                  </div>
-                </div>
-
-                {/* Save Transaction Button - Creates POS data for dashboard */}
-                <button
-                  onClick={saveTransactionToSupabase}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-4 rounded-lg transition-all active:scale-95 flex items-center justify-center space-x-2 shadow-lg"
-                >
-                  <FiZap className="h-5 w-5" />
-                  <span>💾 Save & Submit</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Recent Scans Log */}
-          <div className="space-y-2 sm:space-y-3 flex flex-col">
+          {/* Recent Scans Log — also part of the live scanned-items view, so it
+              stays ahead of the secondary Status & Info panel on mobile. */}
+          <div className="order-3 md:order-none space-y-2 sm:space-y-3 flex flex-col">
             <h3 className="font-bold text-gray-900 text-sm sm:text-base">📋 Scans</h3>
             <div className="flex-1 bg-gray-50 rounded-lg p-2 sm:p-3 overflow-y-auto space-y-1 sm:space-y-2 border border-gray-200">
               {recentScans.length === 0 ? (

@@ -1026,6 +1026,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         <DualScannerInterface
           onBarcodeScanned={handleBarcodeScanned}
           onClose={() => setShowBarcodeScanner(false)}
+          context="admin"
         />
       )}
     </>

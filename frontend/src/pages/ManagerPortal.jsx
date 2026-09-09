@@ -13,7 +13,7 @@ import {
   FiMaximize, FiMinimize, FiRotateCw, FiUpload, FiPrinter,
   FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiTruck,
   FiX, FiSend, FiFileText, FiCopy, FiExternalLink, FiCheck,
-  FiPlay, FiCpu, FiMonitor, FiDatabase
+  FiPlay, FiCpu, FiMonitor, FiDatabase, FiSun, FiMoon
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -24,6 +24,7 @@ import SupplierManagement from '../components/SupplierManagement';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import AddProductModal from '../components/AddProductModal';
 import TransactionHistory from '../components/TransactionHistory';
+import AddCashierModal from '../components/AddCashierModal';
 import Receipt from '../components/Receipt';
 import TillSuppliesOrderManagement from '../components/TillSuppliesOrderManagement';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
@@ -36,6 +37,8 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalSwitcher from '../components/PortalSwitcher';
 import ProfileModal from '../components/ProfileModal';
 import BusinessOperationsHub from '../components/BusinessOperationsHub';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/supermartkera-portals.css';
 
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
@@ -231,6 +234,7 @@ const CHART_COLORS = {
 
 const ManagerPortal = () => {
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -251,6 +255,7 @@ const ManagerPortal = () => {
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showSupplierManagementModal, setShowSupplierManagementModal] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [showAddCashierModal, setShowAddCashierModal] = useState(false);
   const [editModal, setEditModal] = useState({
     isOpen: false,
     type: '',
@@ -277,6 +282,7 @@ const ManagerPortal = () => {
 
   // Manager Profile - moved up to avoid initialization order issues
   const [managerProfile, setManagerProfile] = useState({
+    id: null,
     name: 'Manager',
     role: 'Store Manager',
     department: 'Operations Management',
@@ -4378,6 +4384,7 @@ _Automated Business Report System_`)}`;
         }
         
         setManagerProfile({
+          id: managerData.id,
           name: profileData?.full_name || managerData.full_name || 'Manager',
           role: 'Store Manager',
           department: profileData?.department || managerData.department || 'Operations Management',
@@ -5088,11 +5095,14 @@ _Automated Business Report System_`)}`;
   // Load Team Performance Analytics from Supabase
   const loadTeamPerformanceAnalytics = async () => {
     try {
-      // Get all employees
+      // Get only THIS manager's own cashiers in THIS supermarket — never
+      // the whole users table (other managers' cashiers must stay hidden).
       const { data: employees, error: employeeError } = await supabase
         .from('users')
         .select('id, full_name, email, role, created_at')
-        .eq('role', 'employee');
+        .eq('role', 'employee')
+        .eq('supermarket_id', managerProfile.supermarket_id)
+        .eq('manager_id', managerProfile.id);
 
       if (employeeError) {
         console.error('Error loading employees:', employeeError);
@@ -5105,9 +5115,12 @@ _Automated Business Report System_`)}`;
       }
 
       // Get transactions for each employee to calculate their sales
+      // (scoped to this supermarket; per-employee filtering below further
+      // narrows this to only the manager's own cashiers).
       const { data: allTransactions } = await supabase
         .from('transactions')
-        .select('cashier_id, total_amount, created_at');
+        .select('cashier_id, total_amount, created_at')
+        .eq('supermarket_id', managerProfile.supermarket_id);
 
       const teamData = await Promise.all(employees.map(async (employee) => {
         // Calculate employee's sales
@@ -9321,7 +9334,7 @@ _Automated Business Report System_`)}`;
           <div className="p-6 bg-white animate-fadeIn">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {[
-                { title: 'Add Team', icon: FiUsers, color: 'bg-blue-500 hover:bg-blue-600', action: () => openEditModal('team', null, 'add') },
+                { title: 'Add Team', icon: FiUsers, color: 'bg-blue-500 hover:bg-blue-600', action: () => setShowAddCashierModal(true) },
                 { title: 'New Supplier', icon: FiCheckCircle, color: 'bg-green-500 hover:bg-green-600', action: () => setActiveTab('suppliers') },
                 { title: 'Check Orders', icon: FiTruck, color: 'bg-orange-500 hover:bg-orange-600', action: () => setActiveTab('orders') },
                 { title: 'View Stock', icon: FiPackage, color: 'bg-purple-500 hover:bg-purple-600', action: () => setShowInventoryModal(true) },
@@ -9388,8 +9401,8 @@ _Automated Business Report System_`)}`;
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-gray-900">Team Performance Dashboard</h3>
           <div className="flex space-x-3">
-            <button 
-              onClick={() => openEditModal('team', null, 'add')}
+            <button
+              onClick={() => setShowAddCashierModal(true)}
               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all duration-300 flex items-center space-x-2"
             >
               <FiPlus className="h-4 w-4" />
@@ -11278,7 +11291,16 @@ FAREDEAL Uganda Management Team
           <div className="flex items-center space-x-4">
             {/* Mobile Menu Button - Always visible on mobile, replaces all other buttons */}
             {isMobile ? (
-              <button
+              <>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  aria-label="Toggle theme"
+                  className="sk-portal-theme-toggle"
+                >
+                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+                </button>
+                <button
                 onClick={() => setShowMobileDropdown(!showMobileDropdown)}
                 className="relative group"
                 title="Mobile Menu"
@@ -11304,7 +11326,8 @@ FAREDEAL Uganda Management Team
                     </div>
                   )}
                 </div>
-              </button>
+                </button>
+              </>
             ) : (
               <>
                 {/* Separate from ordinary portal alerts: this opens only
@@ -11313,6 +11336,17 @@ FAREDEAL Uganda Management Team
 
                 {/* Switch to the cashier or customer portal — manager outranks both */}
                 <PortalSwitcher variant="dark" />
+
+                {/* Light/dark theme toggle for the portal */}
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  aria-label="Toggle theme"
+                  className="sk-portal-theme-toggle"
+                >
+                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+                  <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+                </button>
 
                 {/* Profile — every profile-related action (notifications, account
                     settings, quick actions, sign out) lives in this one dropdown
@@ -11473,9 +11507,9 @@ FAREDEAL Uganda Management Team
 
   return (
     <div
-      className="min-h-screen bg-gray-50 bg-cover bg-center bg-fixed"
+      className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed"
       style={branding.backgroundUrl ? {
-        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(249,250,251,0.92)), url(${branding.backgroundUrl})`
+        backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
       {/* Always-reachable portal switcher on phones — pinned top-right, not buried in the hamburger drawer */}
@@ -12666,7 +12700,7 @@ FAREDEAL Uganda Management Team
                   View all sales transactions, receipts, and generate comprehensive reports
                 </p>
               </div>
-              <TransactionHistory viewMode="manager" supermarketId={managerProfile.supermarket_id} />
+              <TransactionHistory viewMode="manager" supermarketId={managerProfile.supermarket_id} managerId={managerProfile.id} />
             </div>
           )}
           {activeTab === 'ican-wallet' && (
@@ -12679,6 +12713,17 @@ FAREDEAL Uganda Management Team
 
       {/* Edit Modal */}
       {renderEditModal()}
+
+      {/* Add Cashier Modal */}
+      {showAddCashierModal && (
+        <AddCashierModal
+          onClose={() => setShowAddCashierModal(false)}
+          onSuccess={() => {
+            setShowAddCashierModal(false);
+            loadTeamPerformanceAnalytics();
+          }}
+        />
+      )}
 
       {/* Inventory Management Modal */}
       <InventoryManagement 

@@ -16,7 +16,7 @@ import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
-import { 
+import {
   FiUsers, FiUser, FiShield, FiSettings, FiBarChart, FiActivity,
   FiGlobe, FiServer, FiDatabase, FiLock, FiAlertTriangle,
   FiTerminal, FiCpu, FiHardDrive, FiRefreshCw, FiZap,
@@ -25,15 +25,19 @@ import {
   FiXCircle, FiUserPlus, FiSearch, FiFilter, FiDownload,
   FiUpload, FiTrash2, FiEdit, FiEye, FiRotateCw, FiX,
   FiMoreVertical, FiMail, FiPhone, FiBriefcase, FiFileText,
-  FiChevronDown, FiMenu, FiChevronUp, FiChevronRight, FiLogOut, FiInfo
+  FiChevronDown, FiMenu, FiChevronUp, FiChevronRight, FiLogOut, FiInfo,
+  FiSun, FiMoon
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/supermartkera-portals.css';
 
 const AdminPortal = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
+  const { theme, toggleTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [systemData, setSystemData] = useState({
     analytics: {},
@@ -7553,9 +7557,9 @@ const AdminPortal = () => {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 bg-cover bg-center bg-fixed"
+      className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed"
       style={branding.backgroundUrl ? {
-        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(243,244,246,0.92)), url(${branding.backgroundUrl})`
+        backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
       {/* Authorization Check */}
@@ -7877,7 +7881,7 @@ const AdminPortal = () => {
                     </button>
 
                     {showMoreNav && createPortal(
-                      <>
+                      <div className="sk-portal-themed">
                         <div className="fixed inset-0 z-[9998]" onClick={() => setShowMoreNav(false)}></div>
                         <div
                           style={{ position: 'fixed', top: moreNavPos.top, right: moreNavPos.right }}
@@ -7905,7 +7909,7 @@ const AdminPortal = () => {
                             </button>
                           ))}
                         </div>
-                      </>,
+                      </div>,
                       document.body
                     )}
                   </div>
@@ -7927,6 +7931,15 @@ const AdminPortal = () => {
               <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Welcome back to {branding.name}, admin</p>
             </div>
             <div className="flex items-center justify-end w-full md:w-auto gap-1 md:gap-2 lg:gap-4 flex-shrink-0">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+                className="sk-portal-theme-toggle"
+              >
+                {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
+                <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+              </button>
               {/* Everything about the signed-in admin — notifications, settings, profile — lives behind one avatar */}
               <div className="relative">
                 <button
@@ -7969,7 +7982,7 @@ const AdminPortal = () => {
 
                 {/* Dropdown Menu */}
                 {showProfileMenu && createPortal(
-                  <>
+                  <div className="sk-portal-themed">
                     <div
                       className="fixed inset-0 z-[9998]"
                       onClick={() => setShowProfileMenu(false)}
@@ -8093,7 +8106,7 @@ const AdminPortal = () => {
                         </button>
                       </div>
                     </div>
-                  </>,
+                  </div>,
                   document.body
                 )}
               </div>
