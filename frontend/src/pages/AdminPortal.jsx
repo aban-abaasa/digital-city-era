@@ -8203,7 +8203,7 @@ const AdminPortal = () => {
             )}
             {activeSection === 'ican-wallet' && (
               <div className="mt-0 -mx-4 sm:-mx-0">
-                <ICANWalletPage embedded={true} />
+                <ICANWalletPage embedded={true} showSupplierAvailability={true} />
               </div>
             )}
           </div>

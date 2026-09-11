@@ -12705,7 +12705,7 @@ FAREDEAL Uganda Management Team
           )}
           {activeTab === 'ican-wallet' && (
             <div className="mt-0 -mx-4 sm:-mx-0">
-              <ICANWalletPage embedded={true} />
+              <ICANWalletPage embedded={true} showSupplierAvailability={true} />
             </div>
           )}
         </Suspense>

@@ -22,6 +22,7 @@ import SetPinPrompt from '@/components/SetPinPrompt';
 import { hasPinSet, verifyPin } from '@/services/pinService';
 import { parseIcanPayCode, payIcanRequest, payInvoiceWithIcan } from '@/services/icanPaymentRequestService';
 import { parseInvoiceTransactionId } from '@/services/transactionService';
+import SupplierAvailabilityPanel from '@/components/SupplierAvailabilityPanel';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -394,12 +395,13 @@ function ReceiveModal({ walletAddress, onClose }) {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
-export default function ICANWalletPage({ 
-  embedded = false, 
+export default function ICANWalletPage({
+  embedded = false,
   userId: propUserId = null,
   initialModal = null,
   receiveAmount = null,
-  receiveDescription = ''
+  receiveDescription = '',
+  showSupplierAvailability = false
 }) {
   const [userId, setUserId] = useState(propUserId);
   const [wallet, setWallet] = useState(null);
@@ -649,6 +651,9 @@ export default function ICANWalletPage({
             </button>
           ))}
         </div>
+
+        {/* Supplier availability — confirmed suppliers only, see SupplierAvailabilityPanel */}
+        {showSupplierAvailability && <SupplierAvailabilityPanel embedded={embedded} />}
 
         {/* Stats row */}
         {!embedded && (

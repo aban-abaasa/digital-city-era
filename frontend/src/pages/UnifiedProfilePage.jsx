@@ -35,6 +35,7 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   const backgroundInputRef = useRef(null);
   const [pendingBusinessType, setPendingBusinessType] = useState(null);
   const [savingBusinessType, setSavingBusinessType] = useState(false);
+  const [resyncingProducts, setResyncingProducts] = useState(false);
 
   // Emoji avatars for selection
   const emojiAvatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼', '👨‍🔧', '👩‍🔧',
@@ -357,9 +358,15 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   // Business type drives default behavior across the app (POS job-status
   // for services, wholesale tier pricing, boutique variants, default
   // inventory mode for new products — see AdminAuth.jsx's BUSINESS_TYPES
-  // comment). Changing it here never touches existing products/services —
-  // it only changes what NEW products default to and which POS features
-  // switch on, so it's safe to change after onboarding without data loss.
+  // comment). The UPDATE below also fires
+  // sync_products_inventory_mode_on_business_type_change_trigger
+  // (ADD_PRODUCT_MODE_SYNC_ON_BUSINESS_TYPE_CHANGE.sql), which moves any
+  // existing product still sitting on the OLD business type's default
+  // inventory_mode onto the NEW one — e.g. switching Supermarket -> Laundry
+  // flips old stock-tracked products to services, and switching back flips
+  // them back — so the cashier POS (keyed off item.inventoryMode) reflects
+  // the new type immediately, not just for products added afterward. A
+  // product an owner deliberately set to a non-default mode is left alone.
   const saveBusinessType = async () => {
     if (!supermarket || !pendingBusinessType || pendingBusinessType === supermarket.business_type) {
       setPendingBusinessType(null);
@@ -384,6 +391,36 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         : 'Failed to update business type.');
     } finally {
       setSavingBusinessType(false);
+    }
+  };
+
+  // One-off, admin-triggered fix for a store that drifted BEFORE
+  // sync_products_inventory_mode_on_business_type_change_trigger existed:
+  // products left over from an earlier business type (e.g. still tagged
+  // 'service_item' and showing as "🧺 Service" in the POS even though the
+  // store isn't Laundry anymore) get moved onto the CURRENT business type's
+  // default. Scoped to this store only, and only run when the admin asks —
+  // see ADD_RESYNC_STORE_PRODUCT_INVENTORY_MODE_RPC.sql.
+  const resyncStoreProducts = async () => {
+    if (!supermarket?.id) return;
+    setResyncingProducts(true);
+    try {
+      const { data, error } = await supabase.rpc('resync_store_product_inventory_mode', {
+        p_supermarket_id: supermarket.id
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Resync failed');
+
+      toast.success(
+        data.updated > 0
+          ? `✅ Fixed ${data.updated} product${data.updated === 1 ? '' : 's'} to match ${businessTypeInfo(data.businessType).label}.`
+          : `✅ All products already match ${businessTypeInfo(data.businessType).label}.`
+      );
+    } catch (error) {
+      console.error('Error resyncing store products:', error);
+      toast.error(error.message || 'Failed to resync products.');
+    } finally {
+      setResyncingProducts(false);
     }
   };
 
@@ -1055,9 +1092,22 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                             {['laundry', 'restaurant_cafe'].includes(pendingBusinessType)
                               ? ' — new items will list as services by default'
                               : ' — new items will track stock by default'}
-                            , and switches on the matching POS features (job status & invoices for laundry, quantity pricing for wholesale, variants for boutique). Your existing products and past sales are not changed. The app will reload after saving so the change applies everywhere.
+                            , and switches on the matching POS features (job status & invoices for laundry, quantity pricing for wholesale, variants for boutique). Existing products still on the old type's default mode are moved to match automatically. Past sales are not changed. The app will reload after saving so the change applies everywhere.
                           </p>
                         )}
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={resyncStoreProducts}
+                            disabled={resyncingProducts || !supermarket?.id}
+                            className="text-xs px-3 py-1.5 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-100 transition disabled:opacity-50"
+                          >
+                            {resyncingProducts ? 'Fixing…' : `Fix products stuck on an old business type now`}
+                          </button>
+                          <span className="text-xs text-gray-500">
+                            Use this if the POS still shows old products as "Service" (or vice versa) from before a past business type change.
+                          </span>
+                        </div>
                       </div>
 
                       <div className="mt-4 pt-4 border-t border-blue-200">
