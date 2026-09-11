@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
+import { BUSINESS_TYPES } from './AdminAuth';
 
 // onClose: when set, this is being shown as a popup over the current portal
 // (see ProfileModal) and the close button calls onClose() instead of
@@ -32,6 +33,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   const [supermarket, setSupermarket] = useState(null);
   const [uploadingBackground, setUploadingBackground] = useState(false);
   const backgroundInputRef = useRef(null);
+  const [pendingBusinessType, setPendingBusinessType] = useState(null);
+  const [savingBusinessType, setSavingBusinessType] = useState(false);
 
   // Emoji avatars for selection
   const emojiAvatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼', '👨‍🔧', '👩‍🔧',
@@ -346,6 +349,41 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
       toast.error('Failed to upload background image');
     } finally {
       setUploadingBackground(false);
+    }
+  };
+
+  const businessTypeInfo = (value) => BUSINESS_TYPES.find(t => t.value === value) || BUSINESS_TYPES[0];
+
+  // Business type drives default behavior across the app (POS job-status
+  // for services, wholesale tier pricing, boutique variants, default
+  // inventory mode for new products — see AdminAuth.jsx's BUSINESS_TYPES
+  // comment). Changing it here never touches existing products/services —
+  // it only changes what NEW products default to and which POS features
+  // switch on, so it's safe to change after onboarding without data loss.
+  const saveBusinessType = async () => {
+    if (!supermarket || !pendingBusinessType || pendingBusinessType === supermarket.business_type) {
+      setPendingBusinessType(null);
+      return;
+    }
+    setSavingBusinessType(true);
+    try {
+      const { error } = await supabase
+        .from('supermarkets')
+        .update({ business_type: pendingBusinessType, updated_at: new Date().toISOString() })
+        .eq('id', supermarket.id);
+      if (error) throw error;
+
+      setSupermarket(prev => ({ ...prev, business_type: pendingBusinessType }));
+      toast.success(`✅ Business type changed to ${businessTypeInfo(pendingBusinessType).label}. Reloading so it applies everywhere...`);
+      setPendingBusinessType(null);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+      console.error('Error updating business type:', error);
+      toast.error(error.message?.includes('check constraint')
+        ? 'That business type is not recognized by the system.'
+        : 'Failed to update business type.');
+    } finally {
+      setSavingBusinessType(false);
     }
   };
 
@@ -976,6 +1014,51 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                       <p className="text-xs text-blue-700 mt-3">
                         Auto-attached from the supermarket created for your account — Business Name above is filled in from this automatically.
                       </p>
+
+                      <div className="mt-4 pt-4 border-t border-blue-200">
+                        <p className="text-sm font-medium text-blue-900 mb-2">Business Type</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            value={pendingBusinessType ?? supermarket.business_type ?? 'supermarket'}
+                            onChange={(e) => setPendingBusinessType(e.target.value)}
+                            disabled={savingBusinessType}
+                            className="px-3 py-2 border border-blue-300 rounded-lg bg-white text-sm text-gray-900"
+                          >
+                            {BUSINESS_TYPES.map(t => (
+                              <option key={t.value} value={t.value}>{t.emoji} {t.label}</option>
+                            ))}
+                          </select>
+                          {pendingBusinessType && pendingBusinessType !== supermarket.business_type && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={saveBusinessType}
+                                disabled={savingBusinessType}
+                                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                              >
+                                {savingBusinessType ? 'Saving...' : 'Save change'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingBusinessType(null)}
+                                disabled={savingBusinessType}
+                                className="text-sm px-3 py-1.5 text-blue-700 hover:bg-blue-100 rounded-lg transition"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        {pendingBusinessType && pendingBusinessType !== supermarket.business_type && (
+                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                            ⚠️ Switching to <strong>{businessTypeInfo(pendingBusinessType).label}</strong> changes what NEW {businessTypeInfo(pendingBusinessType).itemsLabel} default to
+                            {['laundry', 'restaurant_cafe'].includes(pendingBusinessType)
+                              ? ' — new items will list as services by default'
+                              : ' — new items will track stock by default'}
+                            , and switches on the matching POS features (job status & invoices for laundry, quantity pricing for wholesale, variants for boutique). Your existing products and past sales are not changed. The app will reload after saving so the change applies everywhere.
+                          </p>
+                        )}
+                      </div>
 
                       <div className="mt-4 pt-4 border-t border-blue-200">
                         <p className="text-sm font-medium text-blue-900 mb-2">Portal Background Image</p>

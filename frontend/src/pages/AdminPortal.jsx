@@ -162,7 +162,8 @@ const AdminPortal = () => {
     phone: null,
     avatar_url: null,
     supermarket_id: null,
-    pichin_business_profile_id: null
+    pichin_business_profile_id: null,
+    business_type: null
   });
   
   // Supermarket Profile Completion
@@ -232,7 +233,7 @@ const AdminPortal = () => {
         // Always query supermarkets table — it is the source of truth for ownership
         let { data: ownedSm } = await supabase
           .from('supermarkets')
-          .select('id, name, pichin_business_profile_id')
+          .select('id, name, pichin_business_profile_id, business_type')
           .eq('owner_user_id', user.id)
           .maybeSingle();
 
@@ -242,7 +243,7 @@ const AdminPortal = () => {
         if (!ownedSm && userData?.supermarket_id) {
           const { data: assignedSupermarket } = await supabase
             .from('supermarkets')
-            .select('id, name, pichin_business_profile_id')
+            .select('id, name, pichin_business_profile_id, business_type')
             .eq('id', userData.supermarket_id)
             .maybeSingle();
           ownedSm = assignedSupermarket || null;
@@ -361,7 +362,8 @@ const AdminPortal = () => {
           phone: userData?.phone,
           avatar_url: userData?.avatar_url,
           supermarket_id: userData?.supermarket_id || ownedSm?.id,
-          pichin_business_profile_id: pichinBusinessProfileId
+          pichin_business_profile_id: pichinBusinessProfileId,
+          business_type: ownedSm?.business_type || null
         });
 
         // Only show the supermarket profile form if they have NO supermarket at all
@@ -5302,7 +5304,7 @@ const AdminPortal = () => {
             {/* Enhanced Product Interface */}
             <div className="px-3 md:px-4 lg:px-6 pb-3 md:pb-4 lg:pb-6">
               <div className="bg-white rounded-lg md:rounded-xl shadow-inner border-2 border-gray-100 overflow-hidden">
-                <ProductInventoryInterface />
+                <ProductInventoryInterface defaultView={currentAdmin.business_type === 'laundry' ? 'services' : 'all'} />
               </div>
             </div>
           </div>

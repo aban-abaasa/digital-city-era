@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   getOrCreateWallet,
@@ -411,6 +412,7 @@ export default function ICANWalletPage({
   const [activeTab, setActiveTab] = useState('all');
   const [selectedTx, setSelectedTx] = useState(null);
   const [needsPin, setNeedsPin] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     if (!propUserId) {
@@ -490,6 +492,19 @@ export default function ICANWalletPage({
       toast.error(e.message || 'Payment failed');
     }
   };
+
+  // Arriving here via a scanned "Receive Money" QR/link (PayRequestPublicPage
+  // -> /ican-wallet?pay=<code>) while already signed in should be as smart as
+  // scanning in-app: no re-entering the code, no separate account-linking
+  // step — just go straight into the same PIN-authorized pay flow.
+  useEffect(() => {
+    const payCode = searchParams.get('pay');
+    if (!payCode || !userId) return;
+    handlePaymentScanned(payCode);
+    searchParams.delete('pay');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, userId]);
 
   const downloadPaymentReceipt = () => {
     if (!paymentReceipt) return;

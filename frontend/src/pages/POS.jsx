@@ -529,7 +529,11 @@ const POS = () => {
   };
 
   const calculateTax = () => {
-    return calculateSubtotal() * 0.18; // 18% VAT for Uganda
+    // Tagged/shelf prices are VAT-inclusive — the customer pays exactly the
+    // price shown on the item, so this is the VAT portion already sitting
+    // inside calculateSubtotal(), not an amount added on top of it.
+    const subtotal = calculateSubtotal();
+    return subtotal - (subtotal / 1.18); // 18% VAT for Uganda, included in price
   };
 
   const calculateLoyaltyDiscount = () => {
@@ -541,10 +545,10 @@ const POS = () => {
   };
 
   const calculateTotal = () => {
+    // No += tax here: VAT is already included in calculateSubtotal().
     const subtotal = calculateSubtotal();
-    const tax = calculateTax();
     const discount = calculateLoyaltyDiscount();
-    return subtotal + tax - discount;
+    return subtotal - discount;
   };
 
   const getChange = () => {
@@ -1020,7 +1024,7 @@ const POS = () => {
               <span className="font-medium">${calculateSubtotal().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Tax (8%):</span>
+              <span className="text-gray-600">VAT (18%, included):</span>
               <span className="font-medium">${calculateTax().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-lg font-semibold border-t border-gray-200 pt-2">

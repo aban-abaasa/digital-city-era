@@ -21,6 +21,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('today');
   const [paymentFilter, setPaymentFilter] = useState('all');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all'); // all | unpaid | partial | paid — "customers who owe"
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [dailyReport, setDailyReport] = useState(null);
@@ -32,6 +33,9 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   });
   const [localReceiptsOnly, setLocalReceiptsOnly] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [collectingFor, setCollectingFor] = useState(null); // transaction being paid off
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collecting, setCollecting] = useState(false);
 
   useEffect(() => {
     loadTransactions();
@@ -40,7 +44,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
 
   useEffect(() => {
     filterTransactions();
-  }, [transactions, searchTerm, paymentFilter]);
+  }, [transactions, searchTerm, paymentFilter, invoiceStatusFilter]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -169,6 +173,35 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
     }
   };
 
+  const openCollectPayment = (item) => {
+    setCollectingFor(item);
+    setCollectAmount(String(Math.round(parseFloat(item.balance_due_ugx) || 0)));
+  };
+
+  const handleCollectPayment = async () => {
+    if (!collectingFor) return;
+    setCollecting(true);
+    try {
+      const result = await transactionService.collectInvoicePayment(collectingFor.id, collectAmount);
+      if (result.success) {
+        toast.success(
+          result.paymentStatus === 'paid'
+            ? `✅ Invoice ${collectingFor.receipt_number} fully paid`
+            : `✅ Payment recorded — balance due ${formatCurrency(result.balanceDue)}`
+        );
+        setCollectingFor(null);
+        setCollectAmount('');
+        await loadTransactions();
+      } else {
+        toast.error(result.error || 'Failed to record payment');
+      }
+    } catch (error) {
+      toast.error('Failed to record payment: ' + error.message);
+    } finally {
+      setCollecting(false);
+    }
+  };
+
   const filterTransactions = () => {
     let filtered = [...transactions];
 
@@ -196,6 +229,14 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
       });
     }
 
+    // Invoice status filter — "customers who owe" (unpaid/partial sales are
+    // invoices; see ADD_TRANSACTION_PAYMENT_STATUS_AND_JOB_STATUS.sql).
+    // Rows saved before this feature existed have no payment_status yet, so
+    // treat a missing value as 'paid' rather than hiding them from "All".
+    if (invoiceStatusFilter !== 'all') {
+      filtered = filtered.filter(t => (t.payment_status || 'paid') === invoiceStatusFilter);
+    }
+
     setFilteredTransactions(filtered);
   };
 
@@ -207,11 +248,20 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
       
       if (result.success) {
         const receiptData = {
+          id: transaction.id,
           receiptNumber: transaction.receipt_number,
           transactionId: transaction.transaction_id,
           timestamp: transaction.transaction_date || transaction.created_at,
           amount: transaction.total_amount,
           paymentMethod: transaction.payment_provider,
+          // Invoice vs. receipt — see Receipt.jsx's isInvoice. Without these
+          // every past bill-later sale re-opened here rendered as a plain
+          // paid receipt, hiding that money is still owed.
+          paymentStatus: transaction.payment_status,
+          amountPaid: transaction.amount_paid_ugx,
+          balanceDue: transaction.balance_due_ugx,
+          dueDate: transaction.due_date,
+          jobStatus: transaction.job_status,
           receipt: {
             items: result.transaction.items,
             subtotal: transaction.subtotal,
@@ -221,7 +271,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
             register: transaction.register_number
           }
         };
-        
+
         setSelectedTransaction(receiptData);
         setShowReceipt(true);
       }
@@ -485,6 +535,18 @@ www.${storeName.toLowerCase().replace(/\s+/g, '')}.ug
               <option value="card">Card</option>
             </select>
 
+            <select
+              value={invoiceStatusFilter}
+              onChange={(e) => setInvoiceStatusFilter(e.target.value)}
+              title="Filter by whether the customer has paid"
+              className={`px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 flex-1 ${isMobile ? 'text-xs' : ''}`}
+            >
+              <option value="all">All (Paid & Owing)</option>
+              <option value="unpaid">🧾 Unpaid</option>
+              <option value="partial">🧾 Partially Paid</option>
+              <option value="paid">✅ Paid</option>
+            </select>
+
             <button
               onClick={loadTransactions}
               disabled={loading}
@@ -624,8 +686,23 @@ www.${storeName.toLowerCase().replace(/\s+/g, '')}.ug
                     <div>
                       <p className="text-xs text-gray-600">Total Amount</p>
                       <p className="font-bold text-green-600 text-lg">{formatCurrency(localReceiptsOnly ? item.total : item.total_amount)}</p>
+                      {!localReceiptsOnly && item.payment_status && item.payment_status !== 'paid' && (
+                        <p className="text-xs font-bold text-amber-700 mt-0.5">
+                          🧾 {item.payment_status === 'partial' ? 'Partial' : 'Unpaid'} — owes {formatCurrency(item.balance_due_ugx || 0)}
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-2">
+                      {!localReceiptsOnly && item.payment_status && item.payment_status !== 'paid' && (
+                        <button
+                          onClick={() => openCollectPayment(item)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-100 text-amber-700 hover:bg-amber-200 rounded font-semibold"
+                          title="Collect Payment"
+                        >
+                          <FiDollarSign className="h-3 w-3" />
+                          <span>Collect</span>
+                        </button>
+                      )}
                       {!localReceiptsOnly && (
                         <button
                           onClick={() => handleViewReceipt(item)}
@@ -793,6 +870,13 @@ www.${storeName.toLowerCase().replace(/\s+/g, '')}.ug
                       <span className="text-sm font-bold text-gray-900">
                         {formatCurrency(localReceiptsOnly ? item.total : item.total_amount)}
                       </span>
+                      {!localReceiptsOnly && item.payment_status && item.payment_status !== 'paid' && (
+                        <div className="mt-1">
+                          <span className="px-2 py-0.5 inline-flex text-xs font-semibold rounded-full bg-amber-100 text-amber-800">
+                            🧾 {item.payment_status === 'partial' ? 'Partial' : 'Unpaid'} · owes {formatCurrency(item.balance_due_ugx || 0)}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     {localReceiptsOnly && (
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -808,34 +892,46 @@ www.${storeName.toLowerCase().replace(/\s+/g, '')}.ug
                       </td>
                     )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => {
-                          if (localReceiptsOnly) {
-                            setSelectedTransaction({
-                              receiptNumber: item.receiptNumber,
-                              transactionId: item.transactionId,
-                              timestamp: item.timestamp,
-                              amount: item.total,
-                              paymentMethod: item.paymentMethod,
-                              receipt: {
-                                items: item.items || [],
-                                subtotal: item.subtotal,
-                                tax: item.tax,
-                                total: item.total,
-                                cashier: item.cashier || 'Unknown',
-                                register: item.register || 'N/A'
-                              }
-                            });
-                          } else {
-                            handleViewReceipt(item);
-                          }
-                          setShowReceipt(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
-                      >
-                        <FiEye className="h-4 w-4" />
-                        <span>View</span>
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {!localReceiptsOnly && item.payment_status && item.payment_status !== 'paid' && (
+                          <button
+                            onClick={() => openCollectPayment(item)}
+                            className="text-amber-700 hover:text-amber-900 flex items-center space-x-1"
+                            title="Collect Payment"
+                          >
+                            <FiDollarSign className="h-4 w-4" />
+                            <span>Collect</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (localReceiptsOnly) {
+                              setSelectedTransaction({
+                                receiptNumber: item.receiptNumber,
+                                transactionId: item.transactionId,
+                                timestamp: item.timestamp,
+                                amount: item.total,
+                                paymentMethod: item.paymentMethod,
+                                receipt: {
+                                  items: item.items || [],
+                                  subtotal: item.subtotal,
+                                  tax: item.tax,
+                                  total: item.total,
+                                  cashier: item.cashier || 'Unknown',
+                                  register: item.register || 'N/A'
+                                }
+                              });
+                            } else {
+                              handleViewReceipt(item);
+                            }
+                            setShowReceipt(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
+                        >
+                          <FiEye className="h-4 w-4" />
+                          <span>View</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -853,6 +949,49 @@ www.${storeName.toLowerCase().replace(/\s+/g, '')}.ug
           receiptData={selectedTransaction}
           onClose={() => setShowReceipt(false)}
         />
+      )}
+
+      {/* Collect Payment Modal — settle an open invoice's balance due */}
+      {collectingFor && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Collect Payment</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Receipt {collectingFor.receipt_number} · balance due{' '}
+              <span className="font-semibold text-amber-700">
+                {formatCurrency(collectingFor.balance_due_ugx || 0)}
+              </span>
+            </p>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Amount received now (UGX)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max={collectingFor.balance_due_ugx || undefined}
+              value={collectAmount}
+              onChange={(e) => setCollectAmount(e.target.value)}
+              className="w-full mt-1 mb-4 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setCollectingFor(null); setCollectAmount(''); }}
+                disabled={collecting}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCollectPayment}
+                disabled={collecting || !collectAmount || parseFloat(collectAmount) <= 0}
+                className="flex-1 px-4 py-2 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-50"
+              >
+                {collecting ? 'Recording...' : 'Record Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

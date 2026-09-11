@@ -89,7 +89,15 @@ class ReceiptService {
       change: saleData.change || 0,
       loyaltyPointsEarned: saleData.loyaltyPointsEarned || 0,
       customer: saleData.customer,
-      cashier: saleData.cashier || 'System User'
+      cashier: saleData.cashier || 'System User',
+
+      // Invoice vs. receipt: 'paid' prints a RECEIPT; 'partial'/'unpaid'
+      // prints an INVOICE showing what's still owed.
+      paymentStatus: saleData.paymentStatus || 'paid',
+      amountPaid: saleData.amountPaid ?? saleData.total ?? 0,
+      balanceDue: saleData.balanceDue || 0,
+      dueDate: saleData.dueDate || null,
+      jobStatus: saleData.jobStatus || null
     };
 
     return receiptData;
@@ -100,10 +108,14 @@ class ReceiptService {
     const receipt = this.generateReceiptData(saleData);
     const companyInfo = await this.getCompanyInfo();
 
+    const isInvoice = receipt.paymentStatus !== 'paid';
+
     let message = `🇺🇬 ${companyInfo.name}\n`;
     message += `📱 ${companyInfo.phone}\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `🧾 Receipt: ${receipt.receiptNumber}\n`;
+    message += isInvoice
+      ? `🧾 INVOICE: ${receipt.receiptNumber}\n`
+      : `🧾 Receipt: ${receipt.receiptNumber}\n`;
     message += `📅 ${receipt.date}\n`;
     
     if (receipt.customer) {
@@ -131,11 +143,20 @@ class ReceiptService {
     
     message += `💳 TOTAL: ${this.formatCurrency(receipt.total)}\n`;
     message += `💰 Payment: ${receipt.paymentMethod.toUpperCase()}\n`;
-    
+
     if (receipt.change > 0) {
       message += `💵 Change: ${this.formatCurrency(receipt.change)}\n`;
     }
-    
+
+    if (isInvoice) {
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `✅ Amount Paid: ${this.formatCurrency(receipt.amountPaid)}\n`;
+      message += `⚠️ Balance Due: ${this.formatCurrency(receipt.balanceDue)}\n`;
+      if (receipt.dueDate) {
+        message += `📆 Due: ${receipt.dueDate}\n`;
+      }
+    }
+
     if (receipt.loyaltyPointsEarned > 0) {
       message += `⭐ Points Earned: ${receipt.loyaltyPointsEarned}\n`;
     }
@@ -151,13 +172,18 @@ class ReceiptService {
   async generateEmailReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
     const companyInfo = await this.getCompanyInfo();
+    const isInvoice = receipt.paymentStatus !== 'paid';
+    const docLabel = isInvoice ? 'Invoice' : 'Receipt';
+    const statusBadge = isInvoice
+      ? ` <span style="color:#b45309;">(${receipt.paymentStatus === 'partial' ? 'PARTIALLY PAID' : 'UNPAID'})</span>`
+      : '';
 
     const html = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
-      <title>Receipt - ${receipt.receiptNumber}</title>
+      <title>${docLabel} - ${receipt.receiptNumber}</title>
       <style>
         body { 
           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -265,6 +291,16 @@ class ReceiptService {
           margin: 10px 0;
           font-weight: bold;
         }
+        .balance-due-row {
+          background: #fff3cd;
+          border: 2px solid #ffc107;
+          border-radius: 8px;
+          padding: 12px 15px;
+          margin-top: 10px;
+        }
+        .balance-due-row .total-row.final-total {
+          color: #b45309;
+        }
         .uganda-flag { font-size: 24px; }
         .emoji { font-size: 18px; }
       </style>
@@ -281,8 +317,8 @@ class ReceiptService {
         
         <div class="content">
           <div class="receipt-info">
-            <h2><span class="emoji">🧾</span> Receipt Details</h2>
-            <p><strong>Receipt #:</strong> ${receipt.receiptNumber}</p>
+            <h2><span class="emoji">🧾</span> ${docLabel} Details${statusBadge}</h2>
+            <p><strong>${docLabel} #:</strong> ${receipt.receiptNumber}</p>
             <p><strong>Date:</strong> ${receipt.date}</p>
             <p><strong>Cashier:</strong> ${receipt.cashier}</p>
             ${receipt.customer ? `<p><strong>Customer:</strong> ${receipt.customer.firstName} ${receipt.customer.lastName}</p>` : ''}
@@ -343,6 +379,25 @@ class ReceiptService {
             ` : ''}
           </div>
 
+          ${isInvoice ? `
+          <div class="balance-due-row">
+            <div class="total-row">
+              <span><span class="emoji">✅</span> Amount Paid:</span>
+              <span>${this.formatCurrency(receipt.amountPaid)}</span>
+            </div>
+            <div class="total-row final-total">
+              <span><span class="emoji">⚠️</span> Balance Due:</span>
+              <span>${this.formatCurrency(receipt.balanceDue)}</span>
+            </div>
+            ${receipt.dueDate ? `
+            <div class="total-row">
+              <span><span class="emoji">📆</span> Due Date:</span>
+              <span>${receipt.dueDate}</span>
+            </div>
+            ` : ''}
+          </div>
+          ` : ''}
+
           ${receipt.loyaltyPointsEarned > 0 ? `
           <div class="loyalty-badge">
             <span class="emoji">⭐</span> You earned ${receipt.loyaltyPointsEarned} loyalty points!
@@ -368,6 +423,7 @@ class ReceiptService {
   async generatePDFReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
     const companyInfo = await this.getCompanyInfo();
+    const isInvoice = receipt.paymentStatus !== 'paid';
 
     const doc = new jsPDF({
       orientation: 'portrait',
@@ -415,9 +471,23 @@ class ReceiptService {
     doc.line(margin, yPos, pageWidth - margin, yPos);
     yPos += 6;
 
+    // Document type — RECEIPT when fully paid, INVOICE with a status tag
+    // when there's a balance due.
+    doc.setFontSize(11);
+    doc.text(isInvoice ? 'INVOICE' : 'RECEIPT', pageWidth/2, yPos, { align: 'center' });
+    yPos += 5;
+    if (isInvoice) {
+      doc.setFontSize(8);
+      doc.text(
+        receipt.paymentStatus === 'partial' ? '(PARTIALLY PAID)' : '(UNPAID)',
+        pageWidth/2, yPos, { align: 'center' }
+      );
+      yPos += 5;
+    }
+
     // Receipt info
     doc.setFontSize(9);
-    doc.text(`Receipt: ${receipt.receiptNumber}`, margin, yPos);
+    doc.text(`${isInvoice ? 'Invoice' : 'Receipt'}: ${receipt.receiptNumber}`, margin, yPos);
     yPos += 4;
 
     doc.text(`Date: ${receipt.date}`, margin, yPos);
@@ -482,6 +552,22 @@ class ReceiptService {
     if (receipt.change > 0) {
       doc.text(`Change: ${this.formatCurrency(receipt.change)}`, margin, yPos);
       yPos += 4;
+    }
+
+    if (isInvoice) {
+      yPos += 2;
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 5;
+      doc.text(`Amount Paid: ${this.formatCurrency(receipt.amountPaid)}`, margin, yPos);
+      yPos += 4;
+      doc.setFontSize(10);
+      doc.text(`Balance Due: ${this.formatCurrency(receipt.balanceDue)}`, margin, yPos);
+      doc.setFontSize(9);
+      yPos += 4;
+      if (receipt.dueDate) {
+        doc.text(`Due: ${receipt.dueDate}`, margin, yPos);
+        yPos += 4;
+      }
     }
 
     if (receipt.loyaltyPointsEarned > 0) {

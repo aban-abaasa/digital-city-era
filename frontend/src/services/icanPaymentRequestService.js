@@ -117,13 +117,42 @@ export async function createIcanPaymentRequest({
   }
 
   if (error) throw error;
-  return { ...data, qrValue: `ICANPAY:${paymentCode}` };
+  // A real, public URL rather than the old app-only `ICANPAY:<code>` scheme:
+  // any camera app can open it, not just this wallet's own scanner. Whoever
+  // opens it lands on /pay/:paymentCode (see PayRequestPublicPage.jsx), which
+  // reads the request straight from payment_requests' existing "Anyone can
+  // view valid payment requests by code" RLS policy — no account needed to
+  // see what's being asked for; paying still requires a signed-in wallet.
+  return { ...data, qrValue: `${window.location.origin}/pay/${paymentCode}` };
 }
 
-const getRequestIcanAmount = (request) => {
+export const getRequestIcanAmount = (request) => {
   if (request.currency === 'ICAN') return Number(request.amount);
   const match = /^ICAN_REQUEST:([\d.]+)\|/.exec(request.description || '');
   return match ? Number(match[1]) : Number(request.amount) / ICAN_TO_UGX;
+};
+
+/**
+ * Shapes a raw payment_requests row for display on the public /pay/:code
+ * page — strips the internal `ICAN_REQUEST:` encoding some deployments fall
+ * back to (see createIcanPaymentRequest) into a plain amount + description.
+ */
+export const getPaymentRequestDisplay = (request) => {
+  const icanMatch = /^ICAN_REQUEST:([\d.]+)\|([A-Z]+)\|([\d.]+)\|([\s\S]*)$/.exec(request.description || '');
+  if (icanMatch) {
+    return {
+      icanAmount: Number(icanMatch[1]),
+      localAmount: Number(request.amount),
+      localCurrency: icanMatch[2],
+      description: icanMatch[4]
+    };
+  }
+  return {
+    icanAmount: request.currency === 'ICAN' ? Number(request.amount) : null,
+    localAmount: request.currency !== 'ICAN' ? Number(request.amount) : null,
+    localCurrency: request.currency !== 'ICAN' ? request.currency : null,
+    description: request.description || ''
+  };
 };
 
 async function findRecentIcanTransfer({ payerUserId, recipientUserId, amount }) {
@@ -164,11 +193,20 @@ export async function getIcanPaymentRequest(paymentCode, { allowCompleted = fals
 /** Parses a scanned QR value; returns the payment code, or null if not an ICAN payment request. */
 export function parseIcanPayCode(scannedText) {
   const value = (scannedText || '').trim();
-  const qrMatch = /^ICANPAY:(.+)$/i.exec(value);
-  if (qrMatch) return qrMatch[1].trim();
+
+  // Current QR/link form: a public https://<host>/pay/<code> URL (see
+  // createIcanPaymentRequest) — scannable by any camera app, not just this
+  // wallet's own scanner.
+  const urlMatch = /\/pay\/([A-Za-z0-9_]+)\/?(?:[?#].*)?$/i.exec(value);
+  if (urlMatch) return urlMatch[1].trim();
+
+  // Legacy in-app-only scheme from before the public QR page existed —
+  // still accepted so an old/cached QR code keeps working.
+  const schemeMatch = /^ICANPAY:(.+)$/i.exec(value);
+  if (schemeMatch) return schemeMatch[1].trim();
 
   // Manual entry often uses the displayed payment code directly
-  // (`ICANPAY_ABC123`) rather than the QR payload (`ICANPAY:ICANPAY_ABC123`).
+  // (`ICANPAY_ABC123`) rather than the QR payload.
   return /^ICANPAY_[A-Z0-9]+$/i.test(value) ? value : null;
 }
 

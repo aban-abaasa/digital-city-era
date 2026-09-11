@@ -86,6 +86,21 @@ const CashierPortal = () => {
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [lastScannedBarcode, setLastScannedBarcode] = useState(null); // Track missing barcode for adding
+
+  // 🧺 SERVICE SALES (e.g. laundry) - job-status ticket + bill-later/invoice
+  // support. Reset with the cart via clearTransaction/removeItemFromTransaction.
+  const [jobStatus, setJobStatus] = useState('pending');
+  const [billLater, setBillLater] = useState(false);
+  const JOB_STATUS_STAGES = [
+    { value: 'pending', label: 'Pending', icon: '🕓' },
+    { value: 'in_progress', label: 'In Progress', icon: '🧺' },
+    { value: 'ready_for_collection', label: 'Ready', icon: '📦' },
+    { value: 'collected', label: 'Collected', icon: '✅' },
+  ];
+
+  // 👗 Boutique variant picker - shown before adding a product with
+  // size/color variants to the cart
+  const [variantPickerProduct, setVariantPickerProduct] = useState(null);
   
   // 🧾 RECEIPT & TRANSACTION HISTORY
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -154,6 +169,8 @@ const CashierPortal = () => {
   // Cashier Profile - Load from Supabase (no mock data)
   const [cashierProfile, setCashierProfile] = useState({
     id: null,
+    supermarket_id: null,
+    businessType: null,
     name: 'Cashier',
     phone: '+256 XXX XXX XXX',
     email: 'your.email@example.com',
@@ -260,6 +277,16 @@ const CashierPortal = () => {
     };
   }, []);
 
+  // The very first product load can race ahead of the cashier profile (and
+  // its businessType) resolving — reload once wholesale/boutique is
+  // confirmed so quantity-tier prices / variants get attached to products.
+  useEffect(() => {
+    if (['wholesale', 'boutique'].includes(cashierProfile?.businessType)) {
+      loadProductsFromSupabase();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cashierProfile?.businessType]);
+
   // Function to load products from Supabase
   const loadProductsFromSupabase = async () => {
     try {
@@ -284,7 +311,7 @@ const CashierPortal = () => {
       // Build query for products
       let productsQuery = supabase
         .from('products')
-        .select('id, name, price, selling_price, cost_price, category, barcode, sku, is_active, supermarket_id')
+        .select('id, name, price, selling_price, cost_price, category, barcode, sku, is_active, supermarket_id, inventory_mode')
         .eq('is_active', true);
       
       // Strict tenant isolation: only this exact supermarket's products.
@@ -317,6 +344,35 @@ const CashierPortal = () => {
         inventoryMap[inv.product_id] = inv;
       });
 
+      // Wholesale stores price by quantity tier, not a single flat price —
+      // fetch every tier for this store in one query and group by product.
+      let tiersByProduct = {};
+      if (cashierProfile?.businessType === 'wholesale') {
+        const { data: tierRows } = await supabase
+          .from('product_price_tiers')
+          .select('product_id, min_quantity, unit_price')
+          .eq('supermarket_id', supermarketId);
+        (tierRows || []).forEach(t => {
+          if (!tiersByProduct[t.product_id]) tiersByProduct[t.product_id] = [];
+          tiersByProduct[t.product_id].push(t);
+        });
+      }
+
+      // Boutique products may have size/color variants, each with its own
+      // stock and price adjustment — fetched once per store, grouped by product.
+      let variantsByProduct = {};
+      if (cashierProfile?.businessType === 'boutique') {
+        const { data: variantRows } = await supabase
+          .from('product_variants')
+          .select('id, product_id, variant_name, variant_value, price_adjustment, stock_quantity')
+          .eq('supermarket_id', supermarketId)
+          .eq('is_active', true);
+        (variantRows || []).forEach(v => {
+          if (!variantsByProduct[v.product_id]) variantsByProduct[v.product_id] = [];
+          variantsByProduct[v.product_id].push(v);
+        });
+      }
+
       // Combine products with inventory
       const allProducts = (productsData || []).map(product => {
         const inv = inventoryMap[product.id];
@@ -331,6 +387,9 @@ const CashierPortal = () => {
           category: product.category || 'General',
           categoryName: product.category || 'General',
           is_active: product.is_active,
+          inventoryMode: product.inventory_mode || 'stock_controlled',
+          priceTiers: tiersByProduct[product.id] || [],
+          variants: variantsByProduct[product.id] || [],
           // Inventory data
           stock: inv?.current_stock || 0,
           current_stock: inv?.current_stock || 0,
@@ -423,10 +482,25 @@ const CashierPortal = () => {
         const localProfilePic = localStorage.getItem(storageKey);
         const profilePicture = cashierData.avatar_url || localProfilePic || null;
         
+        // The store's business type drives POS behavior (service job-status
+        // stepper for laundry, wholesale tier pricing, etc.) — resolved once
+        // and cached on cashierProfile, same pattern as
+        // inventorySupabaseService.js's businessType lookup.
+        let businessType = null;
+        if (cashierData.supermarket_id) {
+          const { data: store } = await supabase
+            .from('supermarkets')
+            .select('business_type')
+            .eq('id', cashierData.supermarket_id)
+            .maybeSingle();
+          businessType = store?.business_type || null;
+        }
+
         const profileData = {
           id: cashierData.id,
           user_id: user.id, // Auth user ID for wallet operations
           supermarket_id: cashierData.supermarket_id, // CRITICAL: Supermarket ID for RLS filtering
+          businessType,
           name: cashierData.full_name && cashierData.full_name.trim() ? cashierData.full_name : 'Cashier',
           phone: cashierData.phone && cashierData.phone.trim() ? cashierData.phone : '+256 XXX XXX XXX',
           email: cashierData.email || user.email || 'your.email@example.com',
@@ -472,6 +546,7 @@ const CashierPortal = () => {
           id: user.id,
           user_id: user.id,
           supermarket_id: null, // No supermarket assigned
+          businessType: null,
           name: 'Cashier',
           phone: '+256 XXX XXX XXX',
           email: user.email || 'your.email@example.com',
@@ -1375,40 +1450,85 @@ const CashierPortal = () => {
     }
   };
 
+  // Wholesale quantity-tier pricing: the highest tier whose min_quantity is
+  // at or below the cart quantity wins, else the item's normal selling price.
+  // A boutique variant line already has its price_adjustment baked into
+  // item.price at add-time and is never wholesale-tiered — leave it as is.
+  const getTieredUnitPrice = (item, quantity) => {
+    const basePrice = item.selling_price || item.price || 0;
+    if (item.variant_id) return item.price;
+    if (!item.priceTiers?.length) return basePrice;
+    const applicable = item.priceTiers
+      .filter(t => quantity >= t.min_quantity)
+      .sort((a, b) => b.min_quantity - a.min_quantity)[0];
+    return applicable ? parseFloat(applicable.unit_price) : basePrice;
+  };
+
   // 🔥 ENHANCED POS Functions with Supabase Integration
-  const addItemToTransaction = (product) => {
-    // Check if product has enough stock
-    const productStock = product.stock || product.available_stock || 0;
-    const currentQuantity = currentTransaction.items.find(item => item.id === product.id)?.quantity || 0;
-    
-    if (productStock <= currentQuantity) {
-      toast.error(`⚠️ Insufficient stock for ${product.name}. Available: ${productStock}`);
-      return;
+  // `variant` (boutique size/color) is optional — when present, this cart
+  // line is keyed by product+variant so different variants of the same
+  // product stack as separate lines instead of merging into one.
+  const addItemToTransaction = (product, variant = null) => {
+    // Services and listing-only items deliberately carry no POS inventory
+    // row (see inventorySupabaseService.js) — their availability is
+    // controlled by is_active, not stock, so skip the stock check for them.
+    const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
+    const cartLineId = variant ? `${product.id}::${variant.id}` : product.id;
+
+    if (variant) {
+      const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
+      if ((variant.stock_quantity || 0) <= currentQuantity) {
+        toast.error(`⚠️ Insufficient stock for ${product.name} (${variant.variant_value}). Available: ${variant.stock_quantity || 0}`);
+        return;
+      }
+    } else if (!isUnlimitedItem) {
+      // Check if product has enough stock
+      const productStock = product.stock || product.available_stock || 0;
+      const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
+
+      if (productStock <= currentQuantity) {
+        toast.error(`⚠️ Insufficient stock for ${product.name}. Available: ${productStock}`);
+        return;
+      }
     }
-    
+
     setCurrentTransaction(prev => {
-      const existingItem = prev.items.find(item => item.id === product.id);
+      const existingItem = prev.items.find(item => item.cartLineId === cartLineId);
       let newItems;
-      
+
       if (existingItem) {
+        const newQuantity = existingItem.quantity + 1;
         newItems = prev.items.map(item =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+          item.cartLineId === cartLineId
+            ? { ...item, quantity: newQuantity, price: getTieredUnitPrice(item, newQuantity) }
             : item
         );
       } else {
         // Use selling_price for Supabase products, price for sample products
-        const price = product.selling_price || product.price;
-        newItems = [...prev.items, { ...product, quantity: 1, price }];
+        const basePrice = getTieredUnitPrice(product, 1);
+        const price = variant ? basePrice + (parseFloat(variant.price_adjustment) || 0) : basePrice;
+        newItems = [...prev.items, {
+          ...product,
+          quantity: 1,
+          price,
+          cartLineId,
+          variant_id: variant?.id || null,
+          variant_label: variant ? `${variant.variant_name}: ${variant.variant_value}` : null,
+          name: variant ? `${product.name} (${variant.variant_value})` : product.name
+        }];
       }
-      
-      const subtotal = newItems.reduce((sum, item) => {
+
+      // Tagged/shelf prices are VAT-inclusive — the customer pays exactly the
+      // price shown on the item, no VAT added on top. "total" is that summed
+      // price; "tax" is the VAT portion already sitting inside it (shown on
+      // the receipt for accounting only) and "subtotal" is the pre-VAT base.
+      const total = newItems.reduce((sum, item) => {
         const itemPrice = item.selling_price || item.price || 0;
         return sum + (itemPrice * item.quantity);
       }, 0);
-      const tax = subtotal * 0.18; // 18% VAT in Uganda
-      const total = subtotal + tax;
-      
+      const tax = total - (total / 1.18); // 18% VAT in Uganda, included in price
+      const subtotal = total - tax;
+
       return {
         ...prev,
         items: newItems,
@@ -1417,11 +1537,11 @@ const CashierPortal = () => {
         total
       };
     });
-    
+
     // Clear cash received when cart changes
     setCashReceived('');
-    
-    toast.success(`✅ Added ${product.name} to cart`);
+
+    toast.success(`✅ Added ${product.name}${variant ? ` (${variant.variant_value})` : ''} to cart`);
   };
 
   // 🔥 Handle new product added - refresh products list
@@ -1497,13 +1617,15 @@ const CashierPortal = () => {
     }
   };
 
-  const removeItemFromTransaction = (productId) => {
+  const removeItemFromTransaction = (cartLineId) => {
     setCurrentTransaction(prev => {
-      const newItems = prev.items.filter(item => item.id !== productId);
-      const subtotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const tax = subtotal * 0.18;
-      const total = subtotal + tax;
-      
+      const newItems = prev.items.filter(item => (item.cartLineId || item.id) !== cartLineId);
+      // VAT-inclusive tagged price — see addItemToTransaction for why total
+      // comes first and tax/subtotal are derived from it, not added to it.
+      const total = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const tax = total - (total / 1.18);
+      const subtotal = total - tax;
+
       return {
         ...prev,
         items: newItems,
@@ -1512,28 +1634,30 @@ const CashierPortal = () => {
         total
       };
     });
-    
+
     // Clear cash received when cart changes
     setCashReceived('');
   };
 
-  const updateItemQuantity = (productId, newQuantity) => {
+  const updateItemQuantity = (cartLineId, newQuantity) => {
     if (newQuantity <= 0) {
-      removeItemFromTransaction(productId);
+      removeItemFromTransaction(cartLineId);
       return;
     }
-    
+
     setCurrentTransaction(prev => {
       const newItems = prev.items.map(item =>
-        item.id === productId
-          ? { ...item, quantity: newQuantity }
+        (item.cartLineId || item.id) === cartLineId
+          ? { ...item, quantity: newQuantity, price: getTieredUnitPrice(item, newQuantity) }
           : item
       );
-      
-      const subtotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const tax = subtotal * 0.18;
-      const total = subtotal + tax;
-      
+
+      // VAT-inclusive tagged price — see addItemToTransaction for why total
+      // comes first and tax/subtotal are derived from it, not added to it.
+      const total = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const tax = total - (total / 1.18);
+      const subtotal = total - tax;
+
       return {
         ...prev,
         items: newItems,
@@ -1542,14 +1666,23 @@ const CashierPortal = () => {
         total
       };
     });
-    
+
     // Clear cash received when cart changes
     setCashReceived('');
   };
 
   const processPayment = async (paymentMethodId) => {
     console.log('🔔 processPayment called with:', paymentMethodId);
-    
+
+    // A service job (e.g. laundry) can only be paid in full once it's ready
+    // for collection — billing it later (drop-off, unpaid/partial) is always
+    // allowed regardless of job status. Re-checked here as a safety net
+    // behind the button's own disabled state.
+    if (hasServiceItem && !billLater && jobStatus !== 'ready_for_collection') {
+      toast.error('⚠️ Mark the job "Ready for Collection" before taking full payment, or bill the customer later.');
+      return;
+    }
+
     // IcanEra Wallet - Open wallet page with receive modal pre-filled
     if (paymentMethodId === 'icanera_wallet') {
       if (!currentTransaction.items.length) {
@@ -1559,11 +1692,17 @@ const CashierPortal = () => {
 
       setPaymentProcessing(true);
       try {
-        const stockUpdated = await inventoryService.adjustStockAfterSale(
-          currentTransaction.items.map(item => ({
+        // Services/listing-only items have no POS inventory row, and
+        // variant items are deducted from product_variants by the DB
+        // trigger instead — skip all three here.
+        const itemsToPreDeduct = currentTransaction.items
+          .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
+          .map(item => ({
             product_id: item.id,
             quantity: item.quantity
-          })),
+          }));
+        const stockUpdated = itemsToPreDeduct.length === 0 ? true : await inventoryService.adjustStockAfterSale(
+          itemsToPreDeduct,
           `PREPAY_${Date.now()}`,
           cashierProfile.supermarket_id
         );
@@ -1597,15 +1736,23 @@ const CashierPortal = () => {
     try {
       const fee = 0;
       const finalAmount = currentTransaction.total;
-      
-      // Cash - Simple validation
-      if (paymentMethodId === 'cash_ugx' && cashReceived) {
+
+      // Cash - Simple validation (skipped when billing the customer later —
+      // a drop-off sale can be recorded with partial or zero payment now)
+      if (paymentMethodId === 'cash_ugx' && cashReceived && !billLater) {
         const cashAmount = parseFloat(cashReceived);
         if (cashAmount < currentTransaction.total) {
           throw new Error('Insufficient cash received. Please enter the correct amount.');
         }
       }
-      
+
+      // Amount actually paid right now. A "bill later" sale may have 0 or a
+      // partial amount entered; an ordinary sale defaults to the full total
+      // (preserving existing paid-in-full behavior).
+      const amountPaidNow = billLater
+        ? (cashReceived ? parseFloat(cashReceived) : 0)
+        : finalAmount;
+
       // Both payments succeed - record real transactions
       const isSuccessful = true;
       
@@ -1655,15 +1802,16 @@ const CashierPortal = () => {
           paymentMethod: paymentMethod,
           paymentReference: result.transactionId,
           paymentFee: fee,
-          amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-          changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0,
+          amountPaid: amountPaidNow,
+          changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+          jobStatus: hasServiceItem ? jobStatus : null,
           customer: currentTransaction.customer || { name: 'Walk-in Customer' },
           cashier: cashierProfile,
           register: cashierProfile.register,
           location: cashierProfile.location || 'Kampala Main Branch',
           supermarket_id: cashierProfile.supermarket_id // Add supermarket_id for proper isolation
         });
-        
+
         if (saveResult && saveResult.success) {
           console.log('✅ Transaction saved successfully:', {
             receiptNumber: saveResult.receiptNumber,
@@ -1671,14 +1819,20 @@ const CashierPortal = () => {
           });
           receiptSaved = true;
           savedReceiptNumber = saveResult.receiptNumber || `RCP-${Date.now()}`;
-          
-          // Set receipt data for display
+
+          // Set receipt data for display — an unpaid/partial sale renders
+          // as an INVOICE (see Receipt.jsx / receiptGeneratorService.js),
+          // a fully paid one renders as the usual RECEIPT.
           setReceiptData({
             ...result,
+            id: saveResult.transaction?.id,
             receiptNumber: savedReceiptNumber,
             transactionId: saveResult.transactionId || result.transactionId,
-            amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-            changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0
+            amountPaid: amountPaidNow,
+            changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+            paymentStatus: saveResult.paymentStatus,
+            balanceDue: saveResult.balanceDue,
+            jobStatus: hasServiceItem ? jobStatus : null
           });
           
           // 💾 Save receipt to Supabase using receipt service
@@ -1691,11 +1845,11 @@ const CashierPortal = () => {
             tax: currentTransaction.tax,
             total: currentTransaction.total,
             paymentMethod: paymentMethod.name,
-            amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-            changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0,
+            amountPaid: amountPaidNow,
+            changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
             cashier: cashierProfile.name
           };
-          
+
           // Save to Supabase via receipt service
           try {
             const receiptSaveResult = await receiptService.saveReceipt({
@@ -1709,8 +1863,8 @@ const CashierPortal = () => {
               itemsJson: currentTransaction.items,
               subtotal: currentTransaction.subtotal,
               taxAmount: currentTransaction.tax,
-              amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-              changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0,
+              amountPaid: amountPaidNow,
+              changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
               registerNumber: cashierProfile.register || 'POS-001',
               storeLocation: cashierProfile.location || 'Kampala Main Branch'
             });
@@ -1739,7 +1893,11 @@ const CashierPortal = () => {
             setShowReceiptModal(true);
           }, 500);
           
-          toast.success(`✅ Payment successful! Receipt: ${savedReceiptNumber}`);
+          toast.success(
+            saveResult.paymentStatus === 'paid' || !saveResult.paymentStatus
+              ? `✅ Payment successful! Receipt: ${savedReceiptNumber}`
+              : `🧾 Invoice created: ${savedReceiptNumber} — balance due ${formatUGX(saveResult.balanceDue)}`
+          );
         } else {
           console.error('❌ Failed to save transaction:', saveResult?.error);
           
@@ -1751,8 +1909,8 @@ const CashierPortal = () => {
             ...result,
             receiptNumber: savedReceiptNumber,
             transactionId: result.transactionId,
-            amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-            changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0
+            amountPaid: amountPaidNow,
+            changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0
           });
           
           // 💾 Save fallback receipt to localStorage
@@ -1767,8 +1925,8 @@ const CashierPortal = () => {
               tax: currentTransaction.tax,
               total: currentTransaction.total,
               paymentMethod: paymentMethod.name,
-              amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-              changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0,
+              amountPaid: amountPaidNow,
+              changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
               cashier: cashierProfile.name,
               syncStatus: 'pending' // Mark for sync later
             });
@@ -1795,8 +1953,8 @@ const CashierPortal = () => {
           ...result,
           receiptNumber: savedReceiptNumber,
           transactionId: result.transactionId,
-          amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-          changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0
+          amountPaid: amountPaidNow,
+          changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0
         });
         
         try {
@@ -1810,8 +1968,8 @@ const CashierPortal = () => {
             tax: currentTransaction.tax,
             total: currentTransaction.total,
             paymentMethod: paymentMethod.name,
-            amountPaid: cashReceived ? parseFloat(cashReceived) : finalAmount,
-            changeGiven: cashReceived ? parseFloat(cashReceived) - currentTransaction.total : 0,
+            amountPaid: amountPaidNow,
+            changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
             cashier: cashierProfile.name,
             syncStatus: 'pending'
           });
@@ -1830,14 +1988,25 @@ const CashierPortal = () => {
       }
       
       // 🔥 Update stock in Supabase after successful payment
+      // Services and listing-only items have no POS inventory row (see
+      // inventorySupabaseService.js) — skip them or adjustStockAfterSale's
+      // .single() lookup throws for every line in the sale. Variant items
+      // (boutique size/color) are also skipped here — the DB trigger
+      // (deduct_inventory_on_transaction) already deducts product_variants
+      // stock for them; deducting the shared product's inventory row too
+      // would double-count the sale.
       try {
-        const itemsForStockUpdate = currentTransaction.items.map(item => ({
-          product_id: item.id,
-          quantity: item.quantity
-        }));
-        
-        const stockUpdated = await inventoryService.adjustStockAfterSale(itemsForStockUpdate, saleId);
-        
+        const itemsForStockUpdate = currentTransaction.items
+          .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
+          .map(item => ({
+            product_id: item.id,
+            quantity: item.quantity
+          }));
+
+        const stockUpdated = itemsForStockUpdate.length === 0
+          ? true
+          : await inventoryService.adjustStockAfterSale(itemsForStockUpdate, saleId);
+
         if (stockUpdated) {
           console.log('✅ Stock updated successfully in Supabase');
           
@@ -1866,6 +2035,8 @@ const CashierPortal = () => {
         });
         setPaymentModal(false);
         setPaymentResult(null);
+        setBillLater(false);
+        setJobStatus('pending');
       }, 3000);
       
     } catch (error) {
@@ -2011,6 +2182,10 @@ const CashierPortal = () => {
     );
   };
 
+  // Service items (e.g. laundry) have no stock and go through the job-status
+  // + invoice/receipt flow instead of a simple paid-in-full sale.
+  const hasServiceItem = currentTransaction.items.some(item => item.inventoryMode === 'service_item');
+
   const renderPOS = () => (
     <div className="space-y-3 md:space-y-6 animate-fadeInUp container-glass shadow-xl rounded-lg md:rounded-2xl p-2 md:p-6 border border-yellow-200">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-6">
@@ -2126,16 +2301,24 @@ const CashierPortal = () => {
                 const productPrice = product.selling_price || product.price || 0;
                 const productStock = product.stock || product.available_stock || 0;
                 const categoryName = product.categoryName || product.category || 'General';
-                const isLowStock = productStock <= (product.minStock || 10);
-                const isOutOfStock = productStock === 0;
-                
+                const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
+                const isLowStock = !isUnlimitedItem && productStock <= (product.minStock || 10);
+                const isOutOfStock = !isUnlimitedItem && productStock === 0;
+
                 return (
                   <div
                     key={product.id}
-                    onClick={() => !isOutOfStock && addItemToTransaction(product)}
+                    onClick={() => {
+                      if (isOutOfStock) return;
+                      if (product.variants?.length) {
+                        setVariantPickerProduct(product);
+                      } else {
+                        addItemToTransaction(product);
+                      }
+                    }}
                     className={`border rounded-lg p-3 md:p-4 hover:shadow-md transition-all duration-300 ${
-                      isOutOfStock 
-                        ? 'cursor-not-allowed opacity-50 bg-gray-100 border-gray-300' 
+                      isOutOfStock
+                        ? 'cursor-not-allowed opacity-50 bg-gray-100 border-gray-300'
                         : 'cursor-pointer hover:bg-yellow-50 border-gray-200 hover:border-yellow-300'
                     }`}
                   >
@@ -2150,7 +2333,9 @@ const CashierPortal = () => {
                       <h4 className="font-semibold text-xs md:text-sm text-gray-900 mb-1 line-clamp-2">{product.name}</h4>
                       <p className="text-green-600 font-bold text-sm md:text-base">{formatUGX(productPrice)}</p>
                       <div className="flex items-center justify-center space-x-1 text-xs mt-1">
-                        {isOutOfStock ? (
+                        {isUnlimitedItem ? (
+                          <span className="text-purple-600 font-semibold text-xs">🧺 Service</span>
+                        ) : isOutOfStock ? (
                           <span className="text-red-600 font-semibold text-xs">❌ Out</span>
                         ) : isLowStock ? (
                           <span className="text-orange-600 font-semibold text-xs">⚠️ {productStock}</span>
@@ -2183,29 +2368,30 @@ const CashierPortal = () => {
             ) : (
               currentTransaction.items.map((item) => {
                 const itemPrice = item.selling_price || item.price || 0;
+                const lineId = item.cartLineId || item.id;
                 return (
-                  <div key={item.id} className="flex items-center justify-between p-2 md:p-3 bg-gray-50 rounded-lg">
+                  <div key={lineId} className="flex items-center justify-between p-2 md:p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1">
                       <h4 className="font-medium text-gray-900 text-xs md:text-sm">{item.name}</h4>
                       <p className="text-xs md:text-sm text-gray-600">{formatUGX(itemPrice)} x {item.quantity}</p>
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
-                        onClick={() => updateItemQuantity(item.id, item.quantity - 1)}
+                        onClick={() => updateItemQuantity(lineId, item.quantity - 1)}
                         className="w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
                     >
                       <FiMinus />
                     </button>
                     <span className="w-8 text-center font-semibold">{item.quantity}</span>
                     <button
-                      onClick={() => updateItemQuantity(item.id, item.quantity + 1)}
+                      onClick={() => updateItemQuantity(lineId, item.quantity + 1)}
                       className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-green-600"
                     >
                       <FiPlus />
                     </button>
                   </div>
                   <button
-                    onClick={() => removeItemFromTransaction(item.id)}
+                    onClick={() => removeItemFromTransaction(lineId)}
                     className="ml-2 text-red-500 hover:text-red-700"
                   >
                     <FiX className="h-4 w-4" />
@@ -2222,11 +2408,11 @@ const CashierPortal = () => {
               {/* Subtotal and Tax */}
               <div className="space-y-1 md:space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Subtotal:</span>
+                  <span className="text-gray-600">Subtotal (excl. VAT):</span>
                   <span className="font-semibold text-gray-900">{formatUGX(currentTransaction.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">VAT (18%):</span>
+                  <span className="text-gray-600">VAT (18%, included):</span>
                   <span className="font-semibold text-gray-900">{formatUGX(currentTransaction.tax)}</span>
                 </div>
               </div>
@@ -2237,10 +2423,43 @@ const CashierPortal = () => {
                 <span className="text-green-600">{formatUGX(currentTransaction.total)}</span>
               </div>
               
+              {/* Service Job Status - laundry/service tickets only */}
+              {hasServiceItem && (
+                <div className="bg-purple-50 border-2 border-purple-200 rounded-lg md:rounded-xl p-2 md:p-3 space-y-2">
+                  <label className="block text-xs font-semibold text-purple-900">
+                    🧺 Job Status
+                  </label>
+                  <div className="grid grid-cols-4 gap-1">
+                    {JOB_STATUS_STAGES.map(stage => (
+                      <button
+                        key={stage.value}
+                        onClick={() => setJobStatus(stage.value)}
+                        className={`px-1 py-1.5 rounded-lg text-[10px] md:text-xs font-semibold transition-colors ${
+                          jobStatus === stage.value
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-white text-purple-700 border border-purple-200'
+                        }`}
+                      >
+                        <div>{stage.icon}</div>
+                        <div>{stage.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-purple-900 pt-1">
+                    <input
+                      type="checkbox"
+                      checked={billLater}
+                      onChange={(e) => setBillLater(e.target.checked)}
+                    />
+                    Customer hasn't paid yet — bill later (creates an invoice)
+                  </label>
+                </div>
+              )}
+
               {/* Cash Received Input */}
               <div className="bg-blue-50 border-2 border-blue-200 rounded-lg md:rounded-xl p-2 md:p-3 space-y-2 md:space-y-3">
                 <label className="block text-xs font-semibold text-blue-900">
-                  💵 Cash Received (UGX)
+                  {billLater ? '💵 Amount Paid Now (optional)' : '💵 Cash Received (UGX)'}
                 </label>
                 <input
                   type="number"
@@ -2324,8 +2543,8 @@ const CashierPortal = () => {
                 </div>
               )}
               
-              {/* Warning if insufficient cash */}
-              {cashReceived && parseFloat(cashReceived) < currentTransaction.total && (
+              {/* Warning if insufficient cash (not applicable when billing later) */}
+              {!billLater && cashReceived && parseFloat(cashReceived) < currentTransaction.total && (
                 <div className="bg-red-50 border-2 border-red-300 rounded-lg md:rounded-xl p-2 flex items-center space-x-2">
                   <FiAlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0" />
                   <span className="text-xs font-semibold text-red-900">
@@ -2333,23 +2552,42 @@ const CashierPortal = () => {
                   </span>
                 </div>
               )}
-              
+
+              {/* Warning: a service job must be Ready for Collection before it can be paid in full */}
+              {hasServiceItem && !billLater && jobStatus !== 'ready_for_collection' && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-lg md:rounded-xl p-2 flex items-center space-x-2">
+                  <FiAlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                  <span className="text-xs font-semibold text-amber-900">
+                    Mark the job "Ready" above before collecting full payment — or check "bill later" to save it as a drop-off.
+                  </span>
+                </div>
+              )}
+
               {/* Process Payment Button */}
-              <button
-                onClick={() => setPaymentModal(true)}
-                disabled={cashReceived && parseFloat(cashReceived) < currentTransaction.total}
-                className={`w-full py-2 md:py-3 rounded-lg md:rounded-xl font-bold text-xs md:text-sm transition-all duration-300 mt-2 md:mt-3 transform hover:scale-105 shadow-lg ${
-                  cashReceived && parseFloat(cashReceived) >= currentTransaction.total
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
-                    : 'bg-gradient-to-r from-yellow-500 to-red-600 text-white hover:from-yellow-600 hover:to-red-700'
-                }`}
-              >
-                {cashReceived && parseFloat(cashReceived) >= currentTransaction.total ? (
-                  <>✅ Complete Sale</>
-                ) : (
-                  <>💳 Process Payment</>
-                )}
-              </button>
+              {(() => {
+                const cashOk = billLater || !cashReceived || parseFloat(cashReceived) >= currentTransaction.total;
+                const jobOk = !hasServiceItem || billLater || jobStatus === 'ready_for_collection';
+                const canProceed = cashOk && jobOk;
+                return (
+                  <button
+                    onClick={() => setPaymentModal(true)}
+                    disabled={!canProceed}
+                    className={`w-full py-2 md:py-3 rounded-lg md:rounded-xl font-bold text-xs md:text-sm transition-all duration-300 mt-2 md:mt-3 transform hover:scale-105 shadow-lg ${
+                      canProceed
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
+                        : 'bg-gradient-to-r from-yellow-500 to-red-600 text-white hover:from-yellow-600 hover:to-red-700'
+                    }`}
+                  >
+                    {billLater ? (
+                      <>🧾 Create Invoice</>
+                    ) : cashReceived && parseFloat(cashReceived) >= currentTransaction.total ? (
+                      <>✅ Complete Sale</>
+                    ) : (
+                      <>💳 Process Payment</>
+                    )}
+                  </button>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -3706,6 +3944,47 @@ const CashierPortal = () => {
         onProductAdded={handleProductAdded}
         prefilledData={lastScannedBarcode ? { barcode: lastScannedBarcode, sku: lastScannedBarcode } : {}}
       />
+
+      {/* 👗 Variant Picker - boutique size/color, shown before adding to cart */}
+      {variantPickerProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Choose a variant</h3>
+              <button onClick={() => setVariantPickerProduct(null)} className="text-gray-400 hover:text-gray-600">
+                <FiX className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">{variantPickerProduct.name}</p>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {variantPickerProduct.variants.map(v => {
+                const outOfStock = (v.stock_quantity || 0) <= 0;
+                return (
+                  <button
+                    key={v.id}
+                    disabled={outOfStock}
+                    onClick={() => {
+                      addItemToTransaction(variantPickerProduct, v);
+                      setVariantPickerProduct(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left ${
+                      outOfStock
+                        ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200'
+                        : 'hover:bg-pink-50 border-gray-200 hover:border-pink-300'
+                    }`}
+                  >
+                    <span className="font-medium text-gray-900">{v.variant_name}: {v.variant_value}</span>
+                    <span className="text-sm text-gray-500">
+                      {outOfStock ? 'Out of stock' : `${v.stock_quantity} left`}
+                      {v.price_adjustment ? ` · ${v.price_adjustment > 0 ? '+' : ''}${formatUGX(v.price_adjustment)}` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🧾 Receipt Modal - Show after successful payment */}
       {showReceiptModal && receiptData && (

@@ -5,8 +5,10 @@
 
 import React, { useRef } from 'react';
 import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy } from 'react-icons/fi';
+import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-toastify';
 import transactionService from '../services/transactionService';
+import receiptGeneratorService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => {
@@ -18,6 +20,11 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const storeName = branding?.name || 'Your Supermarket';
   const storeLocation = receiptData?.receipt?.location || 'Kampala Main Branch';
   const storeType = branding?.typeLabel || 'Store';
+
+  // Invoice vs. receipt: a fully paid sale is a RECEIPT; anything with a
+  // balance still owed (unpaid/partial service drop-off, etc.) is an INVOICE.
+  const isInvoice = receiptData?.paymentStatus && receiptData.paymentStatus !== 'paid';
+  const docLabel = isInvoice ? 'Invoice' : 'Receipt';
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -58,7 +65,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Receipt - ${receiptData.receiptNumber}</title>
+          <title>${docLabel} - ${receiptData.receiptNumber}</title>
           <style>
             @media print {
               @page { 
@@ -138,39 +145,31 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // ===================================================
   // DOWNLOAD AS PDF
   // ===================================================
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     try {
-      // Create printable HTML
-      const printContent = receiptRef.current.innerHTML;
-      const blob = new Blob([`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Receipt - ${receiptData.receiptNumber}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
-            .receipt-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px; }
-            .receipt-store-logo { max-width: 60px; max-height: 60px; display: block; margin: 0 auto 8px auto; object-fit: cover; }
-            .receipt-row { display: flex; justify-content: space-between; padding: 3px 0; }
-            .receipt-total { font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
-            .receipt-footer { text-align: center; border-top: 2px dashed #000; padding-top: 10px; margin-top: 15px; font-size: 11px; }
-          </style>
-        </head>
-        <body>${printContent}</body>
-        </html>
-      `], { type: 'text/html' });
-      
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Receipt-${receiptData.receiptNumber}.html`;
-      link.click();
-      
-      URL.revokeObjectURL(url);
-      toast.success('📥 Receipt downloaded!');
+      const items = receiptData.receipt.items || [];
+      await receiptGeneratorService.downloadPDFReceipt({
+        saleNumber: receiptData.receiptNumber,
+        createdAt: receiptData.timestamp,
+        items: items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.selling_price || item.price || 0
+        })),
+        subtotal: receiptData.receipt.subtotal,
+        tax: receiptData.receipt.tax,
+        total: receiptData.receipt.total,
+        paymentMethod: receiptData.paymentMethod,
+        cashier: receiptData.receipt.cashier,
+        paymentStatus: receiptData.paymentStatus,
+        amountPaid: receiptData.amountPaid,
+        balanceDue: receiptData.balanceDue,
+        dueDate: receiptData.dueDate
+      });
+      toast.success('📥 PDF downloaded!');
     } catch (error) {
-      console.error('Download error:', error);
-      toast.error('❌ Failed to download receipt');
+      console.error('PDF download error:', error);
+      toast.error('❌ Failed to download PDF');
     }
   };
 
@@ -178,16 +177,16 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // EMAIL RECEIPT
   // ===================================================
   const handleEmail = () => {
-    const subject = `Receipt ${receiptData.receiptNumber} - ${storeName}`;
+    const subject = `${docLabel} ${receiptData.receiptNumber} - ${storeName}`;
     const body = `
 Thank you for shopping at ${storeName}! 🇺🇬
 
-Receipt Number: ${receiptData.receiptNumber}
+${docLabel} Number: ${receiptData.receiptNumber}
 Date: ${formatDate(receiptData.timestamp)}
 Cashier: ${receiptData.receipt.cashier}
 
 Items:
-${receiptData.receipt.items.map(item => 
+${receiptData.receipt.items.map(item =>
   `${item.name} x ${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
 ).join('\n')}
 
@@ -196,7 +195,7 @@ VAT (18%): ${formatCurrency(receiptData.receipt.tax)}
 Total: ${formatCurrency(receiptData.receipt.total)}
 
 Payment Method: ${receiptData.paymentMethod}
-
+${isInvoice ? `\nAmount Paid: ${formatCurrency(receiptData.amountPaid)}\nBalance Due: ${formatCurrency(receiptData.balanceDue)}\n` : ''}
 Webale nyo! (Thank you!)
 Visit us again at ${storeName}
     `.trim();
@@ -210,7 +209,7 @@ Visit us again at ${storeName}
   // SMS RECEIPT
   // ===================================================
   const handleSMS = () => {
-    const smsText = `${storeName} 🇺🇬\nReceipt: ${receiptData.receiptNumber}\nTotal: ${formatCurrency(receiptData.receipt.total)}\nDate: ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\nWebale nyo!`;
+    const smsText = `${storeName} 🇺🇬\n${docLabel}: ${receiptData.receiptNumber}\nTotal: ${formatCurrency(receiptData.receipt.total)}${isInvoice ? `\nBalance Due: ${formatCurrency(receiptData.balanceDue)}` : ''}\nDate: ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\nWebale nyo!`;
     
     // For mobile devices
     if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
@@ -226,9 +225,9 @@ Visit us again at ${storeName}
   // SHARE VIA WHATSAPP
   // ===================================================
   const handleWhatsApp = () => {
-    const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - RECEIPT*\n\n📄 *Receipt:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item => 
+    const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - ${docLabel.toUpperCase()}*\n\n📄 *${docLabel}:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item =>
       `• ${item.name} x${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
-    ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *VAT (18%):* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}\n\n💳 *Payment:* ${receiptData.paymentMethod}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
+    ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *VAT (18%):* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}\n\n💳 *Payment:* ${receiptData.paymentMethod}${isInvoice ? `\n⚠️ *Balance Due:* ${formatCurrency(receiptData.balanceDue)}` : ''}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
     
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
     window.open(whatsappUrl, '_blank');
@@ -244,7 +243,7 @@ Visit us again at ${storeName}
   ${storeName.toUpperCase()} ${storeType.toUpperCase()}
 ════════════════════════════════
 
-Receipt: ${receiptData.receiptNumber}
+${docLabel}: ${receiptData.receiptNumber}
 Date: ${formatDate(receiptData.timestamp)}
 Cashier: ${receiptData.receipt.cashier}
 Register: ${receiptData.receipt.register}
@@ -263,7 +262,10 @@ VAT (18%):       ${formatCurrency(receiptData.receipt.tax)}
 ════════════════════════════════
 TOTAL:           ${formatCurrency(receiptData.receipt.total)}
 ════════════════════════════════
-
+${isInvoice ? `
+Amount Paid:     ${formatCurrency(receiptData.amountPaid)}
+BALANCE DUE:     ${formatCurrency(receiptData.balanceDue)}
+` : ''}
 Payment Method: ${receiptData.paymentMethod}
 Transaction ID: ${receiptData.transactionId}
 
@@ -283,10 +285,10 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
       <div className="bg-white rounded-lg md:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] overflow-hidden flex flex-col">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-3 md:p-6 flex items-center justify-between">
+        <div className={`bg-gradient-to-r ${isInvoice ? 'from-amber-500 to-orange-600' : 'from-green-600 to-emerald-600'} text-white p-3 md:p-6 flex items-center justify-between`}>
           <div className="flex-1">
             <h2 className="text-lg md:text-2xl font-bold flex items-center">
-              🧾 Receipt
+              🧾 {docLabel}{isInvoice ? ` (${receiptData.paymentStatus === 'partial' ? 'Partially Paid' : 'Unpaid'})` : ''}
             </h2>
             <p className="text-green-100 mt-1 text-xs md:text-sm">
               #{receiptData.receiptNumber}
@@ -349,6 +351,26 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
             <FiCopy className="h-4 w-4" />
             <span>Copy</span>
           </button>
+
+          {receiptData.id && navigator.share && (
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.share({
+                    title: `${docLabel} ${receiptData.receiptNumber}`,
+                    text: `${docLabel} ${receiptData.receiptNumber} — Total ${formatCurrency(receiptData.receipt.total)}`,
+                    url: `${window.location.origin}/invoice/${receiptData.id}`
+                  });
+                } catch (err) {
+                  // User cancelled the native share sheet — nothing to report.
+                }
+              }}
+              className="flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm"
+            >
+              <FiShare2 className="h-4 w-4" />
+              <span>Share</span>
+            </button>
+          )}
         </div>
 
         {/* Receipt Content */}
@@ -436,11 +458,11 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
                 <span className="font-semibold">Payment Method:</span>
                 <span className="text-right">{receiptData.paymentMethod}</span>
               </div>
-              {receiptData.amountPaid && (
+              {receiptData.amountPaid != null && (
                 <>
                   <div className="receipt-row flex justify-between">
                     <span>Amount Paid:</span>
-                    <span className="text-right">{formatCurrency(receiptData.amount)}</span>
+                    <span className="text-right">{formatCurrency(receiptData.amountPaid)}</span>
                   </div>
                   {receiptData.changeGiven > 0 && (
                     <div className="receipt-row flex justify-between font-semibold">
@@ -449,6 +471,32 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
                     </div>
                   )}
                 </>
+              )}
+              {isInvoice && (
+                <div className="mt-2 p-2 rounded-lg bg-amber-50 border-2 border-amber-300">
+                  <div className="receipt-row flex justify-between font-bold text-amber-900">
+                    <span>⚠️ Balance Due:</span>
+                    <span className="text-right">{formatCurrency(receiptData.balanceDue)}</span>
+                  </div>
+                </div>
+              )}
+              {isInvoice && receiptData.id && (
+                <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200 flex flex-col items-center gap-2">
+                  <QRCodeCanvas
+                    value={`${window.location.origin}/invoice/${receiptData.id}`}
+                    size={120}
+                    level="M"
+                  />
+                  <p className="text-xs text-gray-500 text-center">
+                    Scan to collect payment later — no need to search this invoice up again
+                  </p>
+                </div>
+              )}
+              {receiptData.jobStatus && (
+                <div className="receipt-row flex justify-between">
+                  <span className="font-semibold">Job Status:</span>
+                  <span className="text-right capitalize">{receiptData.jobStatus.replace(/_/g, ' ')}</span>
+                </div>
               )}
               <div className="receipt-row flex justify-between text-xs text-gray-500">
                 <span>Transaction ID:</span>

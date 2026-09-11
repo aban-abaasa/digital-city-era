@@ -15,7 +15,7 @@ const STEPS = ['Business type', 'Store details', 'Location', 'Review'];
 // plumbing — this map only drives copy, placeholders, and the emoji shown in
 // the UI. Keep in sync with the CHECK constraint on supermarkets.business_type
 // (ADD_BUSINESS_TYPE_TO_SUPERMARKETS.sql).
-const BUSINESS_TYPES = [
+export const BUSINESS_TYPES = [
   {
     value: 'supermarket', emoji: '🏪', label: 'Supermarket',
     blurb: 'Groceries, electronics, general retail',
@@ -79,6 +79,14 @@ const BUSINESS_TYPES = [
     nameLabel: 'Factory name *',
     descPlaceholder: 'What do you manufacture or supply? Finished goods, components, raw materials…',
     itemsLabel: 'manufactured products',
+  },
+  {
+    value: 'laundry', emoji: '🧺', label: 'Laundry',
+    blurb: 'Drop-off laundry, dry cleaning, and pressing services',
+    namePlaceholder: 'e.g. Kampala Laundry Hub',
+    nameLabel: 'Laundry business name *',
+    descPlaceholder: 'What services do you offer? Wash & fold, dry cleaning, ironing…',
+    itemsLabel: 'services',
   },
 ];
 

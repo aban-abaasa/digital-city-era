@@ -400,6 +400,7 @@ class InventorySupabaseService {
 
       const effectiveInventoryMode = inventory_mode || (
         businessType === 'restaurant_cafe' ? 'listing_only' :
+        businessType === 'laundry' ? 'service_item' :
         businessType === 'pharmacy' ? 'stock_controlled' : 'stock_controlled'
       );
 
@@ -1253,6 +1254,126 @@ class InventorySupabaseService {
       data,
       timestamp: Date.now()
     });
+  }
+
+  // ===================================================
+  // WHOLESALE QUANTITY-TIER PRICING
+  // (see ADD_PRODUCT_PRICE_TIERS_AND_VARIANTS.sql)
+  // ===================================================
+
+  async getProductPriceTiers(productId) {
+    if (!productId) return [];
+    const { data, error } = await supabase
+      .from('product_price_tiers')
+      .select('id, min_quantity, unit_price')
+      .eq('product_id', productId)
+      .order('min_quantity', { ascending: true });
+    if (error) {
+      console.error('Error loading price tiers:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // Replace all of a product's tiers with the given list — simplest correct
+  // behavior for a small admin-managed list edited as a whole in one modal.
+  async saveProductPriceTiers(productId, tiers) {
+    const supermarketId = await this.getCurrentSupermarketId();
+    if (!productId || !supermarketId) return { success: false, error: 'Missing product or supermarket' };
+
+    const { error: deleteError } = await supabase
+      .from('product_price_tiers')
+      .delete()
+      .eq('product_id', productId);
+    if (deleteError) {
+      console.error('Error clearing old price tiers:', deleteError);
+      return { success: false, error: deleteError.message };
+    }
+
+    const rows = (tiers || [])
+      .filter(t => t.min_quantity > 0 && t.unit_price >= 0)
+      .map(t => ({
+        product_id: productId,
+        supermarket_id: supermarketId,
+        min_quantity: parseFloat(t.min_quantity),
+        unit_price: parseFloat(t.unit_price)
+      }));
+
+    if (rows.length === 0) return { success: true };
+
+    const { error: insertError } = await supabase.from('product_price_tiers').insert(rows);
+    if (insertError) {
+      console.error('Error saving price tiers:', insertError);
+      return { success: false, error: insertError.message };
+    }
+    return { success: true };
+  }
+
+  // Highest tier whose min_quantity is at or below the given quantity.
+  async getApplicableUnitPrice(productId, quantity, fallbackPrice) {
+    const tiers = await this.getProductPriceTiers(productId);
+    const applicable = tiers
+      .filter(t => quantity >= t.min_quantity)
+      .sort((a, b) => b.min_quantity - a.min_quantity)[0];
+    return applicable ? applicable.unit_price : fallbackPrice;
+  }
+
+  // ===================================================
+  // BOUTIQUE-STYLE PRODUCT VARIANTS (size/color)
+  // (see ADD_PRODUCT_PRICE_TIERS_AND_VARIANTS.sql)
+  // ===================================================
+
+  async getProductVariants(productId) {
+    if (!productId) return [];
+    const { data, error } = await supabase
+      .from('product_variants')
+      .select('id, variant_name, variant_value, sku, price_adjustment, stock_quantity, is_active')
+      .eq('product_id', productId)
+      .eq('is_active', true)
+      .order('variant_name', { ascending: true });
+    if (error) {
+      console.error('Error loading product variants:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // Replace all of a product's variants with the given list, same
+  // whole-list-replace approach as saveProductPriceTiers above.
+  async saveProductVariants(productId, variants) {
+    const supermarketId = await this.getCurrentSupermarketId();
+    if (!productId || !supermarketId) return { success: false, error: 'Missing product or supermarket' };
+
+    const { error: deleteError } = await supabase
+      .from('product_variants')
+      .delete()
+      .eq('product_id', productId);
+    if (deleteError) {
+      console.error('Error clearing old variants:', deleteError);
+      return { success: false, error: deleteError.message };
+    }
+
+    const rows = (variants || [])
+      .filter(v => v.variant_name && v.variant_value)
+      .map(v => ({
+        product_id: productId,
+        supermarket_id: supermarketId,
+        variant_name: String(v.variant_name).trim(),
+        variant_value: String(v.variant_value).trim(),
+        sku: v.sku || null,
+        price_adjustment: parseFloat(v.price_adjustment) || 0,
+        stock_quantity: parseFloat(v.stock_quantity) || 0,
+        is_active: true
+      }));
+
+    if (rows.length === 0) return { success: true };
+
+    const { error: insertError } = await supabase.from('product_variants').insert(rows);
+    if (insertError) {
+      console.error('Error saving product variants:', insertError);
+      return { success: false, error: insertError.message };
+    }
+    return { success: true };
   }
 }
 

@@ -96,6 +96,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const [calculatedMarkup, setCalculatedMarkup] = useState(0);
   const [calculatedProfit, setCalculatedProfit] = useState(0);
 
+  // Business-type-driven extras: wholesale quantity-tier pricing and
+  // boutique-style variants (see ADD_PRODUCT_PRICE_TIERS_AND_VARIANTS.sql).
+  const [businessType, setBusinessType] = useState(null);
+  const [priceTiers, setPriceTiers] = useState([]); // [{ min_quantity, unit_price }]
+  const [variants, setVariants] = useState([]); // [{ variant_name, variant_value, price_adjustment, stock_quantity }]
+
   // Load categories and suppliers
   useEffect(() => {
     if (isOpen) {
@@ -106,6 +112,49 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const loadFormData = async () => {
     try {
       setLoadingData(true);
+
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (supermarketId) {
+        const { data: store } = await supabase
+          .from('supermarkets')
+          .select('business_type')
+          .eq('id', supermarketId)
+          .maybeSingle();
+        const resolvedBusinessType = store?.business_type || null;
+        setBusinessType(resolvedBusinessType);
+
+        // New products should default to the inventory mode their store's
+        // business type actually uses (mirrors inventorySupabaseService.js's
+        // createProduct fallback) — otherwise every laundry item is created
+        // as 'stock_controlled' and the cashier's bill-later/invoice prompt
+        // (which only shows for inventoryMode === 'service_item') never
+        // appears, so a service business's checkout looks like a plain sale.
+        if (!isEditMode && !prefilledData.inventory_mode) {
+          const defaultInventoryMode =
+            resolvedBusinessType === 'restaurant_cafe' ? 'listing_only' :
+            resolvedBusinessType === 'laundry' ? 'service_item' :
+            'stock_controlled';
+          setFormData(prev => ({ ...prev, inventory_mode: defaultInventoryMode }));
+        }
+      }
+
+      if (editingProductId) {
+        const [existingTiers, existingVariants] = await Promise.all([
+          inventoryService.getProductPriceTiers(editingProductId),
+          inventoryService.getProductVariants(editingProductId)
+        ]);
+        setPriceTiers(existingTiers.map(t => ({ min_quantity: t.min_quantity, unit_price: t.unit_price })));
+        setVariants(existingVariants.map(v => ({
+          variant_name: v.variant_name,
+          variant_value: v.variant_value,
+          price_adjustment: v.price_adjustment,
+          stock_quantity: v.stock_quantity
+        })));
+      } else {
+        setPriceTiers([]);
+        setVariants([]);
+      }
+
       let [categoriesData, suppliersData] = await Promise.all([
         inventoryService.getCategories(),
         inventoryService.getSuppliers()
@@ -416,6 +465,13 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         await uploadProductPhoto(productId);
       }
 
+      if (businessType === 'wholesale') {
+        await inventoryService.saveProductPriceTiers(productId, priceTiers);
+      }
+      if (businessType === 'boutique') {
+        await inventoryService.saveProductVariants(productId, variants);
+      }
+
       if (onProductAdded) {
         onProductAdded({ id: productId, ...productData });
       }
@@ -465,6 +521,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     setCalculatedProfit(0);
     setImageFile(null);
     setImagePreview(null);
+    setPriceTiers([]);
+    setVariants([]);
   };
 
   if (!isOpen) return null;
@@ -726,6 +784,110 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       Listing-only products remain sellable without fixed quantities.
                     </p>
                   </div>
+
+                  {/* Wholesale quantity-tier pricing */}
+                  {businessType === 'wholesale' && (
+                    <div className="md:col-span-2 border border-blue-200 bg-blue-50 rounded-lg p-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        📦 Quantity price tiers <span className="text-xs text-gray-500">(optional — bulk pricing applied automatically in POS)</span>
+                      </label>
+                      <div className="space-y-2">
+                        {priceTiers.map((tier, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder="Min qty"
+                              value={tier.min_quantity}
+                              onChange={(e) => setPriceTiers(prev => prev.map((t, i) => i === index ? { ...t, min_quantity: e.target.value } : t))}
+                              className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <span className="text-sm text-gray-500">units @</span>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Unit price"
+                              value={tier.unit_price}
+                              onChange={(e) => setPriceTiers(prev => prev.map((t, i) => i === index ? { ...t, unit_price: e.target.value } : t))}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPriceTiers(prev => prev.filter((_, i) => i !== index))}
+                              className="text-red-500 hover:text-red-700 px-2"
+                            >
+                              <FiX />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setPriceTiers(prev => [...prev, { min_quantity: '', unit_price: '' }])}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          + Add price tier
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Boutique-style variants (size/color) */}
+                  {businessType === 'boutique' && (
+                    <div className="md:col-span-2 border border-pink-200 bg-pink-50 rounded-lg p-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        👗 Variants <span className="text-xs text-gray-500">(optional — e.g. Size: M, Color: Red — each with its own stock)</span>
+                      </label>
+                      <div className="space-y-2">
+                        {variants.map((variant, index) => (
+                          <div key={index} className="flex items-center gap-2 flex-wrap">
+                            <input
+                              type="text"
+                              placeholder="Name (e.g. Size)"
+                              value={variant.variant_name}
+                              onChange={(e) => setVariants(prev => prev.map((v, i) => i === index ? { ...v, variant_name: e.target.value } : v))}
+                              className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Value (e.g. M)"
+                              value={variant.variant_value}
+                              onChange={(e) => setVariants(prev => prev.map((v, i) => i === index ? { ...v, variant_value: e.target.value } : v))}
+                              className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Price +/-"
+                              value={variant.price_adjustment}
+                              onChange={(e) => setVariants(prev => prev.map((v, i) => i === index ? { ...v, price_adjustment: e.target.value } : v))}
+                              className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Stock"
+                              value={variant.stock_quantity}
+                              onChange={(e) => setVariants(prev => prev.map((v, i) => i === index ? { ...v, stock_quantity: e.target.value } : v))}
+                              className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setVariants(prev => prev.filter((_, i) => i !== index))}
+                              className="text-red-500 hover:text-red-700 px-2"
+                            >
+                              <FiX />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setVariants(prev => [...prev, { variant_name: '', variant_value: '', price_adjustment: '', stock_quantity: '' }])}
+                          className="text-sm text-pink-600 hover:text-pink-800 font-medium"
+                        >
+                          + Add variant
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Supplier */}
                   <div className="md:col-span-2">

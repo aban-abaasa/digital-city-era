@@ -13,9 +13,10 @@ import {
 } from '../utils/inventoryFileIO';
 // import PurchaseOrderManager from './PurchaseOrderManager'; // COMMENTED OUT - Using order system instead
 
-const ProductInventoryInterface = () => {
+const ProductInventoryInterface = ({ defaultView = 'all' }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewFilter, setViewFilter] = useState(defaultView); // 'all' | 'products' | 'services'
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -543,6 +544,13 @@ const ProductInventoryInterface = () => {
     }
   };
 
+  const visibleProducts = products.filter(p => {
+    if (viewFilter === 'services') return p.inventoryMode === 'service_item';
+    if (viewFilter === 'products') return p.inventoryMode !== 'service_item';
+    return true;
+  });
+  const serviceCount = products.filter(p => p.inventoryMode === 'service_item').length;
+
   return (
     <div className="bg-white min-h-screen">
       {/* Header - Mobile Optimized */}
@@ -558,11 +566,32 @@ const ProductInventoryInterface = () => {
                 Inventory Management
               </h2>
               <p className="text-xs md:text-sm text-gray-600">
-                {loading ? 'Loading...' : `${products.length} products`}
+                {loading ? 'Loading...' : `${visibleProducts.length} ${viewFilter === 'services' ? 'services' : viewFilter === 'products' ? 'products' : 'items'}`}
               </p>
             </div>
           </div>
-          
+
+          {/* Products / Services View Toggle */}
+          <div className="flex gap-2 mb-4">
+            {[
+              { value: 'all', label: 'All' },
+              { value: 'products', label: '📦 Products' },
+              { value: 'services', label: `🧺 Services${serviceCount ? ` (${serviceCount})` : ''}` },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setViewFilter(opt.value)}
+                className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${
+                  viewFilter === opt.value
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           {/* Action Buttons - Stacked on Mobile */}
           <div className="grid grid-cols-2 md:flex md:space-x-2 gap-2">
             <button
@@ -736,9 +765,14 @@ const ProductInventoryInterface = () => {
           </div>
 
           {/* Products List - Collapsible */}
+          {showProductList && visibleProducts.length === 0 && (
+            <div className="max-w-7xl mx-auto text-center py-10 text-gray-500 text-sm">
+              {viewFilter === 'services' ? 'No services listed yet.' : 'No products match this view.'}
+            </div>
+          )}
           {showProductList && (
             <div className="max-w-7xl mx-auto space-y-2 md:space-y-3 animate-fadeIn">
-              {products.map((product) => (
+              {visibleProducts.map((product) => (
                 <div key={product.id} className="bg-white border-2 border-gray-200 rounded-lg md:rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
                   {/* Product Summary Row - Clickable */}
                   <button
@@ -1047,7 +1081,7 @@ const ProductInventoryInterface = () => {
         key={editingProduct?.id || 'add-product'}
         isOpen={showAddProductModal}
         onClose={closeProductModal}
-        prefilledData={editingProduct || {}}
+        prefilledData={editingProduct || (viewFilter === 'services' ? { inventory_mode: 'service_item' } : {})}
         editingProductId={editingProduct?.id || null}
         onProductAdded={async (savedProduct) => {
           console.log(editingProduct ? '✅ Product updated:' : '✅ New product added:', savedProduct);

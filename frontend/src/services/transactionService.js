@@ -55,7 +55,9 @@ class TransactionService {
         walletTransactionId = null,  // Link to wallet transaction
         customerWalletAddress = null,  // Customer's wallet address
         expenditureType = null,  // business or personal
-        expenditureCategory = null  // Category classification
+        expenditureCategory = null,  // Category classification
+        jobStatus = null,  // Service-ticket progress (e.g. laundry): pending/in_progress/ready_for_collection/collected
+        dueDate = null  // Optional invoice due date when the sale is not fully paid
       } = transactionData;
 
       // Generate transaction ID and receipt number
@@ -79,6 +81,17 @@ class TransactionService {
 
       // Auto-classify expenditure based on purchase details
       const classification = this.classifyExpenditure(items, parseFloat(total), customer?.name);
+
+      // Invoice vs. receipt: amountPaid is what the customer actually paid
+      // right now (defaults to the full total for ordinary paid-in-full
+      // sales, preserving today's behavior). Anything less than the total
+      // leaves a balance due and the sale is recorded as an invoice.
+      const totalAmountNum = parseFloat(total) || 0;
+      const amountPaidNum = amountPaid !== undefined && amountPaid !== null
+        ? parseFloat(amountPaid)
+        : totalAmountNum;
+      const balanceDueUgx = Math.max(0, totalAmountNum - amountPaidNum);
+      const paymentStatus = balanceDueUgx <= 0 ? 'paid' : (amountPaidNum > 0 ? 'partial' : 'unpaid');
 
       // Prepare transaction record
       const transactionRecord = {
@@ -128,14 +141,21 @@ class TransactionService {
         
         // Wallet integration
         wallet_transaction_id: walletTransactionId,
-        
+
         // Items
         items_count: items.length,
         items: items, // Store items as JSON for reference
-        
+
         // Status
         status: 'completed',
         created_at: new Date().toISOString(),
+
+        // Invoice vs. receipt (see comment above) and service job progress
+        payment_status: paymentStatus,
+        amount_paid_ugx: amountPaidNum,
+        balance_due_ugx: balanceDueUgx,
+        due_date: dueDate || null,
+        job_status: jobStatus || null,
       };
 
       // Insert transaction
@@ -184,7 +204,9 @@ class TransactionService {
         quantity: parseInt(item.quantity),
         line_total: parseFloat(item.selling_price || item.price) * parseInt(item.quantity),
         tax_included: true,
-        tax_amount: (parseFloat(item.selling_price || item.price) * parseInt(item.quantity)) * 0.18
+        // line_total is VAT-inclusive (tax_included above), so the VAT
+        // portion is derived out of it, not added on top of it.
+        tax_amount: (parseFloat(item.selling_price || item.price) * parseInt(item.quantity)) - ((parseFloat(item.selling_price || item.price) * parseInt(item.quantity)) / 1.18)
       }));
 
       const { error: itemsError } = await supabase
@@ -202,7 +224,9 @@ class TransactionService {
         success: true,
         transaction,
         receiptNumber: transaction.receipt_number || receiptNumber,
-        transactionId: transaction.transaction_id || transactionId
+        transactionId: transaction.transaction_id || transactionId,
+        paymentStatus: transaction.payment_status || paymentStatus,
+        balanceDue: transaction.balance_due_ugx ?? balanceDueUgx
       };
 
     } catch (error) {
@@ -213,6 +237,76 @@ class TransactionService {
         receiptNumber: null,
         transactionId: null
       };
+    }
+  }
+
+  // ===================================================
+  // COLLECT PAYMENT ON AN OPEN INVOICE
+  // A "bill later" sale (e.g. a laundry drop-off) is saved with
+  // payment_status 'unpaid'/'partial' and a balance_due_ugx > 0. This is how
+  // a cashier/manager records the customer actually paying that balance —
+  // on collection, or whenever they come back with the money — without
+  // which those invoices just sat there with no way to ever mark them paid.
+  //
+  // Goes through the collect_invoice_payment() RPC rather than a plain
+  // .update(): transactions has no UPDATE RLS policy at all (SELECT/INSERT
+  // only — see FIX_TRANSACTIONS_MANAGER_ISOLATION_RLS.sql), and this same
+  // action is also reachable from the public /invoice/:id page a QR code
+  // opens, where a client-side-only check could be bypassed. The RPC
+  // enforces server-side that only the sale's own cashier, or that store's
+  // admin/manager, can ever apply a payment (see ADD_PUBLIC_INVOICE_QR_ACCESS.sql).
+  // ===================================================
+  async collectInvoicePayment(transactionId, amountReceived) {
+    try {
+      const amount = parseFloat(amountReceived) || 0;
+      const { data, error } = await supabase.rpc('collect_invoice_payment', {
+        p_transaction_id: transactionId,
+        p_amount: amount
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      if (!data?.success) {
+        return { success: false, error: data?.error || 'Failed to record payment' };
+      }
+
+      return {
+        success: true,
+        amountApplied: data.amountApplied,
+        paymentStatus: data.paymentStatus,
+        balanceDue: data.balanceDue
+      };
+    } catch (error) {
+      console.error('❌ Error collecting invoice payment:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ===================================================
+  // GET A PUBLIC, SHAREABLE VIEW OF AN INVOICE/RECEIPT
+  // Backs the /invoice/:id page a scanned QR code opens — readable by
+  // anyone with the link (no login required), but only the safe fields a
+  // printed receipt would show. See get_invoice_public() in
+  // ADD_PUBLIC_INVOICE_QR_ACCESS.sql.
+  // ===================================================
+  async getPublicInvoice(transactionId) {
+    try {
+      const { data, error } = await supabase.rpc('get_invoice_public', {
+        p_transaction_id: transactionId
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      if (!data?.success) {
+        return { success: false, error: data?.error || 'Invoice not found' };
+      }
+
+      return { success: true, invoice: data };
+    } catch (error) {
+      console.error('❌ Error loading public invoice:', error);
+      return { success: false, error: error.message };
     }
   }
 

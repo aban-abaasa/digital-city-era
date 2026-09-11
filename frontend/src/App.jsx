@@ -42,6 +42,8 @@ import CustomerDelivery from '@/pages/CustomerDelivery';
 import ICANWalletPage from '@/pages/ICANWalletPage';
 import UnifiedProfilePage from '@/pages/UnifiedProfilePage';
 import DevPanel from '@/pages/DevPanel';
+import InvoicePublicPage from '@/pages/InvoicePublicPage';
+import PayRequestPublicPage from '@/pages/PayRequestPublicPage';
 
 // Styles
 import 'react-toastify/dist/ReactToastify.css';
@@ -238,6 +240,19 @@ function App() {
               {/* Public application form for suppliers, mybodaguy, manager, cashier */}
               <Route path="/apply/:supermarketId" element={<ApplyPage />} />
               <Route path="/apply" element={<ApplyPage />} />
+
+              {/* Public invoice/receipt page — opened by an invoice's QR
+                  code or a shared link. No login required to view; only the
+                  sale's cashier or that store's admin/manager can collect
+                  payment from it (enforced server-side, see
+                  collect_invoice_payment() in ADD_PUBLIC_INVOICE_QR_ACCESS.sql). */}
+              <Route path="/invoice/:transactionId" element={<InvoicePublicPage />} />
+
+              {/* Public IcanEra Wallet payment-request page — opened by a
+                  "Receive Money" QR code or shared link. Viewable by anyone;
+                  paying still requires a signed-in wallet (see
+                  PayRequestPublicPage.jsx). */}
+              <Route path="/pay/:paymentCode" element={<PayRequestPublicPage />} />
               
               {/* Admin routes - protected, require authentication */}
               <Route 
