@@ -480,7 +480,7 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
                   </div>
                 </div>
               )}
-              {isInvoice && receiptData.id && (
+              {receiptData.id && (isInvoice || receiptData.jobStatus) && (
                 <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200 flex flex-col items-center gap-2">
                   <QRCodeCanvas
                     value={`${window.location.origin}/invoice/${receiptData.id}`}
@@ -488,7 +488,11 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
                     level="M"
                   />
                   <p className="text-xs text-gray-500 text-center">
-                    Scan to collect payment later — no need to search this invoice up again
+                    {isInvoice && receiptData.jobStatus
+                      ? 'Scan to collect payment or update job status later'
+                      : isInvoice
+                      ? 'Scan to collect payment later — no need to search this invoice up again'
+                      : 'Scan to update job status when the customer returns'}
                   </p>
                 </div>
               )}

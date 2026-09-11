@@ -311,6 +311,36 @@ class TransactionService {
   }
 
   // ===================================================
+  // ADVANCE A SERVICE JOB'S STATUS FROM THE PUBLIC PAGE
+  // A service sale (e.g. laundry) can be paid in full while the job is
+  // still pending — this is how the cashier scans the receipt's QR code
+  // later to move it along (in_progress -> ready_for_collection ->
+  // collected), independent of payment status. Same server-side
+  // cashier/admin/manager gate as collectInvoicePayment. See
+  // update_job_status() in ADD_JOB_STATUS_UPDATE_RPC.sql.
+  // ===================================================
+  async updateJobStatus(transactionId, newStatus) {
+    try {
+      const { data, error } = await supabase.rpc('update_job_status', {
+        p_transaction_id: transactionId,
+        p_new_status: newStatus
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      if (!data?.success) {
+        return { success: false, error: data?.error || 'Failed to update job status' };
+      }
+
+      return { success: true, jobStatus: data.jobStatus };
+    } catch (error) {
+      console.error('❌ Error updating job status:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ===================================================
   // GENERATE RECEIPT NUMBER
   // ===================================================
   async generateReceiptNumber() {

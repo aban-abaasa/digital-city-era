@@ -10,9 +10,17 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { FiDownload, FiShare2, FiMessageSquare, FiDollarSign, FiCheckCircle } from 'react-icons/fi';
+import { FiDownload, FiShare2, FiMessageSquare, FiDollarSign, FiCheckCircle, FiTool } from 'react-icons/fi';
 import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
+
+const JOB_STATUS_LABELS = {
+  pending: '⏳ Pending',
+  in_progress: '🔧 In Progress',
+  ready_for_collection: '📦 Ready for Collection',
+  collected: '✅ Collected'
+};
+const JOB_STATUS_FLOW = ['pending', 'in_progress', 'ready_for_collection', 'collected'];
 
 const InvoicePublicPage = () => {
   const { transactionId } = useParams();
@@ -22,6 +30,8 @@ const InvoicePublicPage = () => {
   const [showCollect, setShowCollect] = useState(false);
   const [collectAmount, setCollectAmount] = useState('');
   const [collecting, setCollecting] = useState(false);
+  const [showJobUpdate, setShowJobUpdate] = useState(false);
+  const [updatingJob, setUpdatingJob] = useState(false);
 
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', minimumFractionDigits: 0 }).format(amount || 0);
@@ -92,6 +102,22 @@ const InvoicePublicPage = () => {
       toast.success('📥 PDF downloaded!');
     } catch (err) {
       toast.error('Failed to generate PDF');
+    }
+  };
+
+  const handleUpdateJobStatus = async (newStatus) => {
+    setUpdatingJob(true);
+    try {
+      const result = await transactionService.updateJobStatus(invoice.id, newStatus);
+      if (result.success) {
+        toast.success(`✅ Job status updated to ${JOB_STATUS_LABELS[newStatus] || newStatus}`);
+        setShowJobUpdate(false);
+        await loadInvoice();
+      } else {
+        toast.error(result.error || 'Failed to update job status');
+      }
+    } finally {
+      setUpdatingJob(false);
     }
   };
 
@@ -190,6 +216,42 @@ const InvoicePublicPage = () => {
               </>
             )}
           </div>
+
+          {invoice.jobStatus && (
+            <div className="flex items-center justify-between text-sm bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+              <span className="text-indigo-900 font-semibold">
+                {JOB_STATUS_LABELS[invoice.jobStatus] || invoice.jobStatus}
+              </span>
+              {invoice.jobStatus !== 'collected' && (
+                <button
+                  onClick={() => setShowJobUpdate((v) => !v)}
+                  className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 flex items-center gap-1"
+                >
+                  <FiTool className="h-3 w-3" /> Update
+                </button>
+              )}
+            </div>
+          )}
+
+          {showJobUpdate && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+              <p className="text-xs text-indigo-800">
+                Only this sale's cashier, or the store's manager/admin, can update this — sign in with that account first if you haven't already.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {JOB_STATUS_FLOW.filter((s) => s !== invoice.jobStatus).map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => handleUpdateJobStatus(status)}
+                    disabled={updatingJob}
+                    className="py-2 px-2 bg-white border border-indigo-300 rounded-lg text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                  >
+                    {JOB_STATUS_LABELS[status]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-2 pt-2">
             <button onClick={handleShare} className="flex flex-col items-center gap-1 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold">
