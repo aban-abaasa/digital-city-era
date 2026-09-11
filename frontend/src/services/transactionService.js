@@ -881,6 +881,54 @@ class TransactionService {
       };
     }
   }
+
+  // ===================================================
+  // SETTLE AN INVOICE PAID VIA THE ICAN WALLET
+  // Called after a real ICAN transfer to the store's own wallet completes
+  // (see payInvoiceWithIcan() in icanPaymentRequestService.js). Unlike
+  // collectInvoicePayment (staff-only), this is callable by the paying
+  // customer themselves — authorization instead comes from the transfer
+  // itself being verified server-side. See
+  // settle_invoice_via_ican_transfer() in ADD_SETTLE_INVOICE_VIA_ICAN.sql.
+  // ===================================================
+  async settleInvoiceViaIcanTransfer(transactionId, icanTransactionId) {
+    try {
+      const { data, error } = await supabase.rpc('settle_invoice_via_ican_transfer', {
+        p_transaction_id: transactionId,
+        p_ican_tx_id: icanTransactionId
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      if (!data?.success) {
+        return { success: false, error: data?.error || 'Failed to settle invoice' };
+      }
+
+      return {
+        success: true,
+        amountApplied: data.amountApplied,
+        paymentStatus: data.paymentStatus,
+        balanceDue: data.balanceDue
+      };
+    } catch (error) {
+      console.error('❌ Error settling invoice via ICAN transfer:', error);
+      return { success: false, error: error.message };
+    }
+  }
+}
+
+/**
+ * Parses a scanned QR value / shared link; returns the transaction id if it
+ * points at a public invoice page (/invoice/:id), or null otherwise. Lets
+ * the IcanEra Wallet's Pay scanner recognize a POS invoice/receipt QR code
+ * alongside its own ICAN payment-request codes (see parseIcanPayCode in
+ * icanPaymentRequestService.js).
+ */
+export function parseInvoiceTransactionId(scannedText) {
+  const value = (scannedText || '').trim();
+  const match = /\/invoice\/([0-9a-f-]{36})\/?(?:[?#].*)?$/i.exec(value);
+  return match ? match[1] : null;
 }
 
 export default new TransactionService();

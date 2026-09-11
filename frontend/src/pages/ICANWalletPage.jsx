@@ -20,7 +20,8 @@ import PayMoneyModal from '@/components/PayMoneyModal';
 import ReceiveMoneyModal from '@/components/ReceiveMoneyModal';
 import SetPinPrompt from '@/components/SetPinPrompt';
 import { hasPinSet, verifyPin } from '@/services/pinService';
-import { parseIcanPayCode, payIcanRequest } from '@/services/icanPaymentRequestService';
+import { parseIcanPayCode, payIcanRequest, payInvoiceWithIcan } from '@/services/icanPaymentRequestService';
+import { parseInvoiceTransactionId } from '@/services/transactionService';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -457,9 +458,16 @@ export default function ICANWalletPage({
       toast.error('Wallet is still loading. Please try again.');
       return;
     }
+
+    // Smart about which of the two QR/link shapes this is — a merchant's
+    // "Receive Money" request (payment_requests), or a POS invoice/receipt
+    // (transactions, via the /invoice/:id public page's QR code) — so the
+    // Pay scanner isn't limited to only one kind of code.
     const paymentCode = parseIcanPayCode(scannedValue);
-    if (!paymentCode) {
-      toast.error('This QR code is not an ICAN payment request');
+    const invoiceTransactionId = paymentCode ? null : parseInvoiceTransactionId(scannedValue);
+
+    if (!paymentCode && !invoiceTransactionId) {
+      toast.error('This QR code is not an ICAN payment request or invoice');
       return;
     }
 
@@ -476,16 +484,42 @@ export default function ICANWalletPage({
         return;
       }
 
-      console.log('[ICAN PAY] Starting real transfer:', { paymentCode, payerUserId: userId });
-      const paymentResult = await payIcanRequest({
-        paymentCode,
-        payerUserId: userId,
-        expenseClassification: paymentPurpose === 'business' ? 'business_expense' : 'personal_expense',
-        counterpartyType: 'business',
-        businessProfileId,
-      });
-      setPaymentReceipt(paymentResult.payerReceipt);
-      toast.success(`Payment sent and recorded. Receipt: ${paymentResult.payerReceipt?.receiptNumber || 'available in transaction history'}`);
+      const expenseClassification = paymentPurpose === 'business' ? 'business_expense' : 'personal_expense';
+
+      if (invoiceTransactionId) {
+        console.log('[ICAN PAY] Paying invoice via ICAN:', { invoiceTransactionId, payerUserId: userId });
+        const result = await payInvoiceWithIcan({
+          transactionId: invoiceTransactionId,
+          payerUserId: userId,
+          expenseClassification,
+          counterpartyType: 'business',
+        });
+        setPaymentReceipt({
+          receiptNumber: result.invoice.receiptNumber,
+          transactionId: result.transfer.out_tx_id,
+          amount: result.transfer.amount_sent,
+          currency: 'ICAN',
+          payerUserId: userId,
+          issuedAt: new Date().toISOString(),
+          description: `Invoice payment — ${result.invoice.storeName}`,
+        });
+        toast.success(
+          result.paymentStatus === 'paid'
+            ? `Invoice fully paid and recorded with the store!`
+            : `Payment sent and recorded — balance due updated.`
+        );
+      } else {
+        console.log('[ICAN PAY] Starting real transfer:', { paymentCode, payerUserId: userId });
+        const paymentResult = await payIcanRequest({
+          paymentCode,
+          payerUserId: userId,
+          expenseClassification,
+          counterpartyType: 'business',
+          businessProfileId,
+        });
+        setPaymentReceipt(paymentResult.payerReceipt);
+        toast.success(`Payment sent and recorded. Receipt: ${paymentResult.payerReceipt?.receiptNumber || 'available in transaction history'}`);
+      }
       setModal(null);
       await loadWallet();
     } catch (e) {

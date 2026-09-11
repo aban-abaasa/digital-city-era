@@ -8,7 +8,8 @@
  */
 
 import { supabase } from './supabase';
-import { sendICAN, ICAN_TO_UGX, getUserWalletDisplay } from './icanWalletService';
+import { sendICAN, ICAN_TO_UGX, getUserWalletDisplay, ugxToICAN } from './icanWalletService';
+import transactionService from './transactionService';
 
 const TABLE = 'payment_requests';
 
@@ -284,6 +285,63 @@ export async function payIcanRequest({
   }
 
   return { request, transfer, payerReceipt };
+}
+
+/**
+ * Pays a POS invoice/receipt (see get_invoice_public() /
+ * ADD_PUBLIC_INVOICE_QR_ACCESS.sql) with ICAN — the other kind of QR code
+ * the wallet's Pay scanner (and the public /invoice/:id page itself) can
+ * now recognize, alongside its own payment_requests codes. Sends ICAN
+ * straight to the selling store's wallet, then settles the *real* POS
+ * transaction (payment_status/balance_due_ugx) via
+ * settle_invoice_via_ican_transfer() — which independently verifies the
+ * transfer server-side (a paying customer isn't the sale's cashier/admin/
+ * manager, so collect_invoice_payment's staff-only gate doesn't apply here)
+ * — so the sale itself reflects the payment, not just the wallet's ledger.
+ */
+export async function payInvoiceWithIcan({
+  transactionId,
+  payerUserId,
+  expenseClassification = 'personal_expense',
+  counterpartyType = 'business',
+}) {
+  const invoiceResult = await transactionService.getPublicInvoice(transactionId);
+  if (!invoiceResult.success) throw new Error(invoiceResult.error || 'Invoice not found');
+  const invoice = invoiceResult.invoice;
+
+  const balanceDue = Number(invoice.balanceDue) || 0;
+  if (balanceDue <= 0) throw new Error('This invoice is already fully paid');
+
+  const { data: store, error: storeError } = await supabase
+    .from('supermarkets')
+    .select('owner_user_id, name')
+    .eq('id', invoice.supermarketId)
+    .maybeSingle();
+  if (storeError || !store?.owner_user_id) throw new Error('Could not find this store\'s wallet');
+  if (store.owner_user_id === payerUserId) throw new Error('You cannot pay your own store\'s invoice');
+
+  const icanAmount = ugxToICAN(balanceDue);
+  const transfer = await sendICAN({
+    fromUserId: payerUserId,
+    toUserId: store.owner_user_id,
+    amount: icanAmount,
+    note: `Invoice ${invoice.receiptNumber}`,
+    referenceId: transactionId,
+    localAmount: balanceDue,
+    localCurrency: 'UGX',
+    merchantName: store.name || invoice.storeName || 'SupermartKera',
+    counterpartyType,
+    expenseClassification,
+  });
+
+  const settleResult = await transactionService.settleInvoiceViaIcanTransfer(transactionId, transfer.out_tx_id);
+  if (!settleResult.success) {
+    // The ICAN transfer already succeeded — surface this distinctly so the
+    // customer isn't told the payment failed when their money did move.
+    throw new Error(`Payment sent, but the store's records could not be updated automatically: ${settleResult.error}. Show this screen to the cashier.`);
+  }
+
+  return { invoice, transfer, amountApplied: settleResult.amountApplied, paymentStatus: settleResult.paymentStatus };
 }
 
 export async function getActiveIcanPaymentRequests(userId) {

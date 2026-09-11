@@ -1,10 +1,16 @@
 // ===================================================
 // 🧾 PUBLIC INVOICE PAGE
-// Opened by scanning an invoice's QR code (see Receipt.jsx) or from a
-// shared link — no login required to view. A signed-in cashier/manager/
-// admin of the store that made the sale can also collect the outstanding
-// balance right here; anyone else who tries is refused server-side (see
-// collect_invoice_payment() in ADD_PUBLIC_INVOICE_QR_ACCESS.sql).
+// Opened by scanning an invoice's QR code (see Receipt.jsx), the IcanEra
+// Wallet's Pay scanner recognizing the same code, or a shared link — no
+// login required to view. Two different ways to settle the balance, each
+// authorized differently server-side:
+//   - A signed-in customer can pay it straight from their own ICAN wallet
+//     (payInvoiceWithIcan -> settle_invoice_via_ican_transfer, verified by
+//     the real transfer having happened, not by who the payer is).
+//   - A signed-in cashier/manager/admin of the store can record a cash (or
+//     other) payment directly (collect_invoice_payment, staff-only).
+// Anyone else attempting either is refused server-side. See
+// ADD_PUBLIC_INVOICE_QR_ACCESS.sql and ADD_SETTLE_INVOICE_VIA_ICAN.sql.
 // ===================================================
 
 import React, { useEffect, useState } from 'react';
@@ -13,6 +19,8 @@ import { toast } from 'react-toastify';
 import { FiDownload, FiShare2, FiMessageSquare, FiDollarSign, FiCheckCircle, FiTool } from 'react-icons/fi';
 import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
+import { payInvoiceWithIcan } from '../services/icanPaymentRequestService';
+import { supabase } from '../services/supabase';
 
 const JOB_STATUS_LABELS = {
   pending: '⏳ Pending',
@@ -32,6 +40,12 @@ const InvoicePublicPage = () => {
   const [collecting, setCollecting] = useState(false);
   const [showJobUpdate, setShowJobUpdate] = useState(false);
   const [updatingJob, setUpdatingJob] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [payingWithIcan, setPayingWithIcan] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data?.user?.id || null));
+  }, []);
 
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', minimumFractionDigits: 0 }).format(amount || 0);
@@ -118,6 +132,24 @@ const InvoicePublicPage = () => {
       }
     } finally {
       setUpdatingJob(false);
+    }
+  };
+
+  const handlePayWithIcan = async () => {
+    if (!currentUserId) return;
+    setPayingWithIcan(true);
+    try {
+      const result = await payInvoiceWithIcan({ transactionId: invoice.id, payerUserId: currentUserId });
+      toast.success(
+        result.paymentStatus === 'paid'
+          ? '✅ Invoice fully paid with your IcanEra Wallet!'
+          : `✅ Payment sent — balance due updated.`
+      );
+      await loadInvoice();
+    } catch (err) {
+      toast.error(err.message || 'Payment failed');
+    } finally {
+      setPayingWithIcan(false);
     }
   };
 
@@ -264,6 +296,25 @@ const InvoicePublicPage = () => {
               <FiDownload /> PDF
             </button>
           </div>
+
+          {isInvoice && currentUserId && (
+            <button
+              onClick={handlePayWithIcan}
+              disabled={payingWithIcan}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-lg font-semibold text-sm disabled:opacity-50"
+            >
+              💎 {payingWithIcan ? 'Paying...' : 'Pay Balance with IcanEra Wallet'}
+            </button>
+          )}
+
+          {isInvoice && !currentUserId && (
+            <Link
+              to="/login"
+              className="block text-center py-2.5 bg-white border border-cyan-300 text-cyan-700 rounded-lg font-semibold text-sm"
+            >
+              💎 Sign in to pay with IcanEra Wallet
+            </Link>
+          )}
 
           {isInvoice && (
             <div className="pt-3 border-t">

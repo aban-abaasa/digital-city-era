@@ -40,6 +40,7 @@ BEGIN
   RETURN jsonb_build_object(
     'success', true,
     'id', v_txn.id,
+    'supermarketId', v_txn.supermarket_id,
     'receiptNumber', v_txn.receipt_number,
     'transactionId', v_txn.transaction_id,
     'createdAt', v_txn.created_at,
