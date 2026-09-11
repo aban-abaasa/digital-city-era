@@ -97,3 +97,8 @@ DO $$
 BEGIN
   RAISE NOTICE '✅ settle_invoice_via_ican_transfer() ready — ICAN payments now settle the real POS transaction.';
 END $$;
+
+-- Force PostgREST to pick up the new function immediately — without this,
+-- calls can fail with "Could not find the function ... in the schema
+-- cache" until the cache refreshes on its own.
+NOTIFY pgrst, 'reload schema';

@@ -102,6 +102,15 @@ const AuthCallback = () => {
     mountedRef.current = true;
     let sessionTimeout;
 
+    // A caller can ask to land back where they were (e.g. a public
+    // /invoice/:id or /pay/:code page's inline "sign in" prompt) via
+    // /auth/callback?redirect=/invoice/abc — captured now, before anything
+    // below rewrites the URL and drops the query string.
+    const redirectParam = new URLSearchParams(window.location.search).get('redirect');
+    const safeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
+      ? redirectParam
+      : null;
+
     // A password-recovery link produces a session here too (same
     // access_token hash shape as OAuth, marked by type=recovery). Signing
     // that straight into the dashboard would skip the reset-password step,
@@ -143,7 +152,7 @@ const AuthCallback = () => {
         window.history.replaceState(null, '', '/login');
         
         toast.success(`Welcome, ${displayName}.`);
-        navigate(await getSignedInRoute(signedInUser), { replace: true });
+        navigate(safeRedirect || await getSignedInRoute(signedInUser), { replace: true });
       } catch (authError) {
         console.error('[AUTH] Callback error:', authError);
         if (!mountedRef.current) return;

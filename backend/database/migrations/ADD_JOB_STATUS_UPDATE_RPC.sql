@@ -66,3 +66,8 @@ DO $$
 BEGIN
   RAISE NOTICE '✅ update_job_status() ready for the public invoice/QR page.';
 END $$;
+
+-- Force PostgREST to pick up the new function immediately — without this,
+-- calls can fail with "Could not find the function ... in the schema
+-- cache" until the cache refreshes on its own.
+NOTIFY pgrst, 'reload schema';

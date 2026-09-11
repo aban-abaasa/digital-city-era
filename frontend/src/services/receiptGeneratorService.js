@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import QRCode from 'qrcode';
 import { supabase } from './supabase';
 import inventoryService from './inventorySupabaseService';
 
@@ -78,6 +79,7 @@ class ReceiptService {
 
   generateReceiptData(saleData) {
     const receiptData = {
+      id: saleData.id || null,
       receiptNumber: saleData.saleNumber || `RCP-${Date.now()}`,
       date: this.formatDateTime(saleData.createdAt || new Date()),
       items: saleData.items || [],
@@ -576,6 +578,28 @@ class ReceiptService {
       yPos += 6;
     }
 
+    // Scannable link to the public /invoice/:id page — same condition
+    // Receipt.jsx uses on-screen: an open balance, or an open service job.
+    // A real embedded QR image, not just a printed URL, so the cashier can
+    // actually scan the paper/PDF later (see collect_invoice_payment() /
+    // update_job_status()).
+    if (receipt.id && (isInvoice || receipt.jobStatus)) {
+      try {
+        const invoiceUrl = `${window.location.origin}/invoice/${receipt.id}`;
+        const qrDataUrl = await QRCode.toDataURL(invoiceUrl, { margin: 1, width: 240 });
+        const qrSize = 26;
+        yPos += 2;
+        doc.addImage(qrDataUrl, 'PNG', (pageWidth - qrSize) / 2, yPos, qrSize, qrSize);
+        yPos += qrSize + 3;
+        doc.setFontSize(7);
+        doc.text('Scan to collect payment / update job status', pageWidth / 2, yPos, { align: 'center' });
+        doc.setFontSize(9);
+        yPos += 4;
+      } catch (qrError) {
+        console.warn('Could not add QR code to PDF receipt:', qrError);
+      }
+    }
+
     // Footer
     yPos += 4;
     doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -643,8 +667,12 @@ class ReceiptService {
       try {
         const doc = await this.generatePDFReceipt(saleData);
         const receipt = this.generateReceiptData(saleData);
-        
-        const finalFilename = filename || `Receipt_${receipt.receiptNumber}.pdf`;
+
+        // An unpaid/partial sale is an invoice, not a receipt — the
+        // downloaded filename should say so too, not just the PDF's own
+        // "INVOICE" heading (see generatePDFReceipt's isInvoice).
+        const docWord = receipt.paymentStatus && receipt.paymentStatus !== 'paid' ? 'Invoice' : 'Receipt';
+        const finalFilename = filename || `${docWord}_${receipt.receiptNumber}.pdf`;
         doc.save(finalFilename);
         
         resolve({

@@ -141,3 +141,8 @@ DO $$
 BEGIN
   RAISE NOTICE '✅ get_invoice_public() and collect_invoice_payment() ready for the public invoice/QR page.';
 END $$;
+
+-- Force PostgREST to pick up the new functions immediately — without this,
+-- calls can fail with "Could not find the function ... in the schema
+-- cache" until the cache refreshes on its own.
+NOTIFY pgrst, 'reload schema';

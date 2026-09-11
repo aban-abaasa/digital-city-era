@@ -149,6 +149,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
     try {
       const items = receiptData.receipt.items || [];
       await receiptGeneratorService.downloadPDFReceipt({
+        id: receiptData.id,
         saleNumber: receiptData.receiptNumber,
         createdAt: receiptData.timestamp,
         items: items.map((item) => ({
@@ -164,7 +165,8 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         paymentStatus: receiptData.paymentStatus,
         amountPaid: receiptData.amountPaid,
         balanceDue: receiptData.balanceDue,
-        dueDate: receiptData.dueDate
+        dueDate: receiptData.dueDate,
+        jobStatus: receiptData.jobStatus
       });
       toast.success('📥 PDF downloaded!');
     } catch (error) {
