@@ -221,7 +221,13 @@ export default function SupermarketHub() {
         </div>
 
         {/* ── OVERVIEW ── */}
-        {tab === 'overview' && <Overview supermarket={supermarket} navigate={navigate} />}
+        {tab === 'overview' && (
+          <Overview
+            supermarket={supermarket}
+            navigate={navigate}
+            onLocationUpdated={(patch) => setSM((prev) => ({ ...prev, ...patch }))}
+          />
+        )}
 
         {/* ── STAFF ── */}
         {tab === 'staff' && (
@@ -258,7 +264,7 @@ export default function SupermarketHub() {
 }
 
 // ─── OVERVIEW ────────────────────────────────────────────────────────────────
-function Overview({ supermarket, navigate }) {
+function Overview({ supermarket, navigate, onLocationUpdated }) {
   const [stats, setStats] = useState({ staff: 0, suppliers: 0, deliveries: 0, sales: 0 });
 
   useEffect(() => {
@@ -280,6 +286,8 @@ function Overview({ supermarket, navigate }) {
         <StatCard icon="🛵" label="Pending Deliveries" value={stats.deliveries} color="orange" />
         <StatCard icon="₡"  label="IcanEra Wallet"      value="Active"           color="emerald" />
       </div>
+
+      <PickupLocationCard supermarket={supermarket} onUpdated={onLocationUpdated} />
 
       <div className="grid md:grid-cols-2 gap-4">
         <InfoCard
@@ -317,6 +325,76 @@ function Overview({ supermarket, navigate }) {
           className="mt-4 px-5 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-semibold"
         >
           View My IcanEra Wallet →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── PICKUP LOCATION ──────────────────────────────────────────────────────────
+// Riders can only be matched to this store once it has a real GPS pickup
+// point — same getCurrentPosition-then-save flow BodaGoera riders already use
+// for their own areas (RiderLocationManager.tsx). Direct table write: RLS's
+// "supermarket_owner_all" policy already scopes it to owner_user_id = auth.uid().
+function PickupLocationCard({ supermarket, onUpdated }) {
+  const [locating, setLocating] = useState(false);
+  const hasLocation = supermarket?.latitude != null && supermarket?.longitude != null;
+
+  const captureAndSave = () => {
+    if (!navigator.geolocation) {
+      toast.error('Your browser does not support GPS location');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const latitude = pos.coords.latitude;
+        const longitude = pos.coords.longitude;
+        const { error } = await supabase
+          .from('supermarkets')
+          .update({ latitude, longitude })
+          .eq('id', supermarket.id);
+        setLocating(false);
+        if (error) {
+          toast.error(error.message || 'Failed to save location');
+          return;
+        }
+        onUpdated?.({ latitude, longitude });
+        toast.success('Pickup location saved — riders can now be matched to this store');
+      },
+      () => {
+        toast.error('Could not get your GPS location — make sure you’re physically at the store and location access is allowed');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  return (
+    <div className={`rounded-2xl p-5 border-2 ${hasLocation ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="font-semibold text-slate-800">📍 Delivery pickup location</p>
+          {hasLocation ? (
+            <p className="text-sm text-slate-600 mt-1">
+              {supermarket.latitude.toFixed(5)}, {supermarket.longitude.toFixed(5)} — riders are matched from here.
+            </p>
+          ) : (
+            <p className="text-sm text-amber-700 mt-1">
+              Not set yet — customers ordering delivery from this store can't be matched to a rider until you set this.
+              Stand at your store and tap the button (right).
+            </p>
+          )}
+        </div>
+        <button
+          onClick={captureAndSave}
+          disabled={locating}
+          className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50 ${
+            hasLocation ? 'bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                         : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:opacity-90'
+          }`}
+        >
+          {locating ? 'Getting GPS…' : hasLocation ? 'Update location' : 'Set my current location'}
         </button>
       </div>
     </div>

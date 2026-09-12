@@ -18,10 +18,36 @@ export default function SupermarketOnboarding() {
     storeName: '', description: '',
     storePhone: '', storeEmail: '',
     address: '', city: '', country: 'Uganda',
+    latitude: null, longitude: null,
     accountMode: 'new', existingBusinessProfileId: '',
   });
+  const [locating, setLocating] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Same GPS-capture pattern BodaGoera riders already use to tag their own
+  // areas (RiderLocationManager.tsx) — without a real pickup point here,
+  // dropship/mbg_find_available_riders() can never match a rider to this
+  // store (see ADD_SUPERMARKET_PICKUP_GPS_LOCATION.sql).
+  const captureLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Your browser does not support GPS location');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm(f => ({ ...f, latitude: pos.coords.latitude, longitude: pos.coords.longitude }));
+        toast.success('GPS location captured');
+        setLocating(false);
+      },
+      () => {
+        toast.error('Could not get your GPS location — you can add it later from your dashboard');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   useEffect(() => {
     const loadProfiles = async () => {
@@ -60,6 +86,8 @@ export default function SupermarketOnboarding() {
         p_city:        form.city,
         p_country:     form.country,
         p_business_type: form.businessType,
+        p_latitude:    form.latitude,
+        p_longitude:   form.longitude,
       });
 
       if (error) throw error;
@@ -244,6 +272,25 @@ export default function SupermarketOnboarding() {
               <option value="Rwanda">Rwanda</option>
               <option value="Other">Other</option>
             </select>
+            <div>
+              <button
+                type="button"
+                onClick={captureLocation}
+                disabled={locating}
+                className="flex items-center gap-2 text-sm font-medium text-cyan-600 hover:text-cyan-700 disabled:opacity-50"
+              >
+                📍 {locating ? 'Getting GPS location…' : 'Pin my store’s exact pickup location'}
+              </button>
+              {form.latitude != null && form.longitude != null ? (
+                <p className="text-xs text-slate-500 mt-1">
+                  📍 {form.latitude.toFixed(5)}, {form.longitude.toFixed(5)} captured
+                </p>
+              ) : (
+                <p className="text-xs text-amber-600 mt-1">
+                  Without this, delivery riders can't be matched to your store — you can also add it later from your dashboard.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
