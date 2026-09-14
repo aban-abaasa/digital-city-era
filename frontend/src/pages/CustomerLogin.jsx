@@ -59,6 +59,11 @@ const CustomerLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
+  const [showWalletLogin, setShowWalletLogin] = useState(false);
+  const [walletIdentifier, setWalletIdentifier] = useState('');
+  const [walletPin, setWalletPin] = useState('');
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState('');
 
   // Checks dev_operators (is_dev_operator()) before the normal role routing
   // below — role is unrelated to dev-panel access (see DevPanel.jsx), so a
@@ -254,6 +259,53 @@ const CustomerLogin = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Sign in with an ICANera wallet account number (or phone) + PIN. Verified
+  // server-side by the same wallet-login edge function ICAN and mybodaguy
+  // use (shared Supabase project, shared auth.users), which hands back a
+  // magic-link token_hash redeemed into a real session here — so one wallet
+  // account works across ICAN, digital-city-era and mybodaguy. mockData.jsx's
+  // login() auto-creates the `users` row (role 'customer') on first use.
+  const handleWalletLogin = async (e) => {
+    e.preventDefault();
+    setWalletError('');
+
+    if (!walletIdentifier.trim() || !/^\d{4,6}$/.test(walletPin.trim())) {
+      setWalletError('Enter your wallet account number (or phone) and 4-6 digit PIN');
+      return;
+    }
+
+    setWalletLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('wallet-login', {
+        body: { identifier: walletIdentifier.trim(), pin: walletPin.trim() },
+      });
+
+      if (error) {
+        // supabase-js only gives a generic "Edge Function returned a non-2xx
+        // status code" here — the real { success: false, error } body lives
+        // on error.context (the raw Response object).
+        const detail = await error.context?.json?.().catch(() => null);
+        throw new Error(detail?.error || error.message);
+      }
+      if (!data?.success) throw new Error(data?.error || 'Wallet sign-in failed');
+
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        token_hash: data.token_hash,
+        type: 'email',
+      });
+      if (otpError) throw otpError;
+
+      const signedInUser = await login(data.email);
+      toast.success('🎉 Welcome back!', { position: 'top-right', autoClose: 2000 });
+      navigate(await getSignedInRoute(signedInUser), { replace: true });
+    } catch (error) {
+      console.error('Wallet login error:', error);
+      setWalletError(error.message || 'Wallet sign-in failed');
+    } finally {
+      setWalletLoading(false);
     }
   };
 
@@ -486,6 +538,47 @@ const CustomerLogin = () => {
               <SiGoogle className="h-5 w-5 text-red-500" />
               {isLoading ? 'Connecting to Google...' : 'Continue with Google'}
             </button>
+
+            <button
+              type="button"
+              onClick={() => { setShowWalletLogin((prev) => !prev); setWalletError(''); }}
+              disabled={walletLoading}
+              className={`mb-6 flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 font-medium shadow-sm transition-all duration-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70 ${theme === 'dark' ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}
+            >
+              <span className="text-xl">💳</span>
+              Sign in with Wallet
+            </button>
+
+            {showWalletLogin && (
+              <form onSubmit={handleWalletLogin} className="mb-6 space-y-3">
+                <input
+                  type="text"
+                  value={walletIdentifier}
+                  onChange={(e) => { setWalletIdentifier(e.target.value); setWalletError(''); }}
+                  placeholder="Wallet account number or phone"
+                  autoComplete="off"
+                  className={`block w-full px-3 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 ${palette.input}`}
+                />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={walletPin}
+                  onChange={(e) => { setWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setWalletError(''); }}
+                  placeholder="Wallet PIN"
+                  maxLength={6}
+                  autoComplete="off"
+                  className={`block w-full px-3 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 ${palette.input}`}
+                />
+                {walletError && <p className="text-sm text-red-600">{walletError}</p>}
+                <button
+                  type="submit"
+                  disabled={walletLoading}
+                  className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${palette.button}`}
+                >
+                  {walletLoading ? 'Verifying...' : 'Sign In'}
+                </button>
+              </form>
+            )}
 
             <div className="relative mb-6">
               <div className="absolute inset-0 flex items-center">
