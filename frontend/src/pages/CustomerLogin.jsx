@@ -20,6 +20,8 @@ import { SiGoogle } from 'react-icons/si';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+import CanweFields from '../components/security/CanweFields';
+import { checkCanweFields } from '../utils/canweGuard';
 
 const themeStyles = {
   dark: {
@@ -206,6 +208,16 @@ const CustomerLogin = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    if (checkCanweFields(e.target, 'customer-login')) {
+      setIsLoading(true);
+      setTimeout(() => {
+        setIsLoading(false);
+        toast.error('Invalid email/phone or password.', { position: 'top-right', autoClose: 5000 });
+      }, 900 + Math.random() * 400);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -618,6 +630,7 @@ const CustomerLogin = () => {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-6">
+              <CanweFields />
               <div className="animate-fadeInUp" style={{animationDelay: '0.4s'}}>
                 <label className="block text-sm font-medium text-gray-700 mb-2 transform hover:scale-105 transition-all duration-300">
                   {loginMethod === 'email' ? 'Email Address' : 'Phone Number'}

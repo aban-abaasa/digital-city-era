@@ -10,6 +10,7 @@ import RoleProtectedRoute from '@/components/RoleProtectedRoute';
 import ClockSkewNotification from '@/components/ClockSkewNotification';
 import ChatWidget from '@/components/ChatWidget';
 import CountryGate from '@/components/CountryGate';
+import HiddenDecoyLinks from '@/components/security/HiddenDecoyLinks';
 
 // Pages and Components
 import AdminPortal from '@/pages/AdminPortal';
@@ -27,6 +28,7 @@ import AdminAuth from '@/pages/AdminAuth';
 import Register from '@/pages/Register';
 import ApplyPage from '@/pages/ApplyPage';
 import AuthCallback from '@/pages/AuthCallback';
+import DecoyPortal from '@/pages/DecoyPortal';
 import PaymentDashboard from '@/components/PaymentDashboard';
 import Products from '@/pages/Products';
 import Sales from '@/pages/Sales';
@@ -183,6 +185,7 @@ function App() {
           <AppProvider>
             <ClockSkewNotification />
             <div className={`app-container ${isAdmin ? 'admin-mode' : 'standard-mode'}`}>
+              <HiddenDecoyLinks />
               <CountryGate>
               <Routes>
               {/* Main landing with portal selection - but check for OAuth callback first */}
@@ -199,6 +202,7 @@ function App() {
               />
 
               <Route path="/login" element={<CustomerLogin />} />
+              <Route path="/decoy-portal" element={<DecoyPortal />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/register" element={<Register />} />

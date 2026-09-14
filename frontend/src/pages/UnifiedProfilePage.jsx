@@ -35,6 +35,7 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   const backgroundInputRef = useRef(null);
   const [pendingBusinessType, setPendingBusinessType] = useState(null);
   const [savingBusinessType, setSavingBusinessType] = useState(false);
+  const [locatingPickup, setLocatingPickup] = useState(false);
   const [resyncingProducts, setResyncingProducts] = useState(false);
 
   // Emoji avatars for selection
@@ -392,6 +393,47 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
     } finally {
       setSavingBusinessType(false);
     }
+  };
+
+  // Location/Address above are a free-text street address — never enough to
+  // route a real BodaGoera rider to this store. dropship_checkout requires
+  // real GPS coordinates and fails outright ('no delivery location
+  // configured') without them (see ADD_SUPERMARKET_PICKUP_GPS_LOCATION.sql).
+  // Same getCurrentPosition-then-save flow as SupermarketHub's pickup-
+  // location card, surfaced here too since this is where owners actually
+  // look when a dropship order fails.
+  const setPickupLocation = () => {
+    if (!supermarket?.id) return;
+    if (!navigator.geolocation) {
+      toast.error('Your browser does not support GPS location');
+      return;
+    }
+    setLocatingPickup(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const latitude = pos.coords.latitude;
+        const longitude = pos.coords.longitude;
+        try {
+          const { error } = await supabase
+            .from('supermarkets')
+            .update({ latitude, longitude, updated_at: new Date().toISOString() })
+            .eq('id', supermarket.id);
+          if (error) throw error;
+          setSupermarket(prev => ({ ...prev, latitude, longitude }));
+          toast.success('✅ Pickup location saved — dropship riders can now be matched to this store');
+        } catch (error) {
+          console.error('Error saving pickup location:', error);
+          toast.error(error.message || 'Failed to save pickup location');
+        } finally {
+          setLocatingPickup(false);
+        }
+      },
+      () => {
+        toast.error('Could not get your GPS location — stand at the store and allow location access, then try again');
+        setLocatingPickup(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   // One-off, admin-triggered fix for a store that drifted BEFORE
@@ -1051,6 +1093,27 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                       <p className="text-xs text-blue-700 mt-3">
                         Auto-attached from the supermarket created for your account — Business Name above is filled in from this automatically.
                       </p>
+
+                      <div className={`mt-3 pt-3 border-t border-blue-200 flex items-center justify-between gap-3 flex-wrap`}>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">📍 Delivery pickup location</p>
+                          {supermarket.latitude != null && supermarket.longitude != null ? (
+                            <p className="text-xs text-gray-500">{Number(supermarket.latitude).toFixed(5)}, {Number(supermarket.longitude).toFixed(5)} — riders are matched from here</p>
+                          ) : (
+                            <p className="text-xs text-amber-700">Not set — the Location/Address above are just text, dropship orders can't route a rider here yet</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={setPickupLocation}
+                          disabled={locatingPickup}
+                          className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 ${
+                            supermarket.latitude != null ? 'bg-white border border-blue-300 text-blue-700 hover:bg-blue-100' : 'bg-amber-500 text-white hover:bg-amber-600'
+                          }`}
+                        >
+                          {locatingPickup ? 'Getting GPS…' : supermarket.latitude != null ? 'Update location' : 'Set my current location'}
+                        </button>
+                      </div>
 
                       <div className="mt-4 pt-4 border-t border-blue-200">
                         <p className="text-sm font-medium text-blue-900 mb-2">Business Type</p>

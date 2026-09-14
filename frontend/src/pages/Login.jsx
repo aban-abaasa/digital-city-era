@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiUser, FiLock } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
+import CanweFields from '../components/security/CanweFields';
+import { checkCanweFields } from '../utils/canweGuard';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -12,6 +14,13 @@ const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    if (checkCanweFields(e.target, 'staff-login')) {
+      setIsLoading(true);
+      setTimeout(() => setIsLoading(false), 900 + Math.random() * 400);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -43,6 +52,7 @@ const Login = () => {
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          <CanweFields />
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="identifier" className="sr-only">

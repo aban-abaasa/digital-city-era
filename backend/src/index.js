@@ -10,6 +10,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import { ipReputationGate } from './middleware/canweShield.js';
+import { buildSecurityRoutes, buildDecoyTrap } from './routes/securityRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -25,6 +27,14 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+// Trust exactly one reverse-proxy hop so req.ip resolves the real client IP
+// from X-Forwarded-For instead of a value an attacker could spoof.
+app.set('trust proxy', 1);
+
+// Canwe Shield — mounted before everything else so a flagged IP is
+// tarpitted/redirected before it reaches any real route.
+app.use(ipReputationGate(supabase));
 
 // Middleware
 app.use(helmet({
@@ -46,6 +56,14 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Honeytoken report intake + decoy admin/debug endpoints. Paths below must
+// match frontend/public/robots.txt Disallow entries and the hidden sr-only
+// links byte-for-byte — that mismatch is the whole trap.
+app.use('/api/security', buildSecurityRoutes(supabase));
+const decoyTrap = buildDecoyTrap(supabase);
+app.all('/api/admin/export-transactions.json', decoyTrap);
+app.all('/api/v1/debug/pos-keys', decoyTrap);
 
 // Request logging middleware with color coding
 app.use((req, res, next) => {
