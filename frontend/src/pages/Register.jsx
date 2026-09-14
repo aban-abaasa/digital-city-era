@@ -453,7 +453,25 @@ const Register = () => {
       
     } catch (error) {
       console.error('Registration error:', error);
-      toast.error(error.message || 'Registration failed. Please try again.');
+      // auth.users is shared across ICAN, mybodaguy and digital-city-era, so
+      // this email/phone may already have an account from any of them —
+      // offer a direct way to sign in instead of a dead-end error.
+      if (/already exists|already registered/i.test(error.message || '')) {
+        toast.error(
+          <span>
+            {error.message}{' '}
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              style={{ textDecoration: 'underline', fontWeight: 600, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
+            >
+              Sign In
+            </button>
+          </span>
+        );
+      } else {
+        toast.error(error.message || 'Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

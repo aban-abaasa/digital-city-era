@@ -20,6 +20,15 @@ export const customerService = {
 
       if (authError) throw handleSupabaseError(authError);
 
+      // auth.users is shared across ICAN, mybodaguy and digital-city-era —
+      // Supabase silently "succeeds" a signUp for a phone/email that already
+      // has an account (in any of the three apps) by returning a user with
+      // no identities, instead of an error. Catch that here, before it goes
+      // on to create a duplicate customers record under someone else's id.
+      if (authUser.user && authUser.user.identities && authUser.user.identities.length === 0) {
+        throw new Error('An account with this phone number already exists. Please sign in instead.');
+      }
+
       // Then create customer record
       const customerRecord = {
         id: authUser.user.id,
