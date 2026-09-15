@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Share, PlusSquare } from 'lucide-react';
 
 const isStandalone = () => (
   window.matchMedia('(display-mode: standalone)').matches ||
   window.navigator.standalone === true
 );
+
+// iOS Safari and iOS Chrome (both WebKit) never fire beforeinstallprompt —
+// there is no programmatic install API on iOS at all. The Android-style
+// "open your browser menu" instructions below are wrong there, so this
+// detects iOS/iPadOS to swap in the real Share -> Add to Home Screen steps.
+const isIos = () => {
+  const ua = navigator.userAgent || '';
+  const isIpadOs13Plus = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return /iPad|iPhone|iPod/.test(ua) || isIpadOs13Plus;
+};
 
 export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -13,6 +23,7 @@ export default function PWAInstallPrompt() {
   const promptRef = useRef(null);
   const pendingInstallRef = useRef(false);
   const appIcon = '/images/supermarketera-apk.jpg';
+  const [iosDevice] = useState(isIos);
 
   useEffect(() => {
     setInstalled(isStandalone());
@@ -39,6 +50,12 @@ export default function PWAInstallPrompt() {
     const handleLandingInstallRequest = async () => {
       const prompt = promptRef.current;
       if (!prompt) {
+        // iOS never fires beforeinstallprompt, so waiting for one is
+        // pointless there — jump straight to the manual instructions.
+        if (isIos()) {
+          setInstructionsOpen(true);
+          return;
+        }
         pendingInstallRef.current = true;
         setTimeout(() => {
           if (pendingInstallRef.current) {
@@ -98,7 +115,24 @@ export default function PWAInstallPrompt() {
               <h2 className="text-lg font-bold text-slate-900">Install SupermartKera</h2>
               <button type="button" onClick={() => setInstructionsOpen(false)} aria-label="Close install instructions"><X size={20} /></button>
             </div>
-            <p className="text-sm leading-6 text-slate-600">Open your browser menu, choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</p>
+            {iosDevice ? (
+              <ol className="space-y-3 text-sm text-slate-600">
+                <li className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700">1</span>
+                  <span className="flex items-center gap-1.5">Tap the Share icon <Share size={16} className="inline text-emerald-700" /> in Safari or Chrome's toolbar</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700">2</span>
+                  <span className="flex items-center gap-1.5">Scroll down and tap <strong>Add to Home Screen</strong> <PlusSquare size={16} className="inline text-emerald-700" /></span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700">3</span>
+                  <span>Tap <strong>Add</strong> to confirm</span>
+                </li>
+              </ol>
+            ) : (
+              <p className="text-sm leading-6 text-slate-600">Open your browser menu, choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</p>
+            )}
             <button type="button" onClick={() => setInstructionsOpen(false)} className="mt-5 w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">Got it</button>
           </div>
         </div>
