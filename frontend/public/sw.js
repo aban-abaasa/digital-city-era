@@ -1,4 +1,4 @@
-const CACHE_NAME = 'supermartkera-v2';
+const CACHE_NAME = 'supermartkera-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/images/supermarketera-apk.jpg', '/icons/supermarketera-192.png', '/icons/supermarketera-512.png'];
 
 self.addEventListener('install', (event) => {

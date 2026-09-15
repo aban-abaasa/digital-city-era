@@ -11,7 +11,29 @@ import PWAInstallPrompt from './components/PWAInstallPrompt.jsx'
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
-      .then(() => console.log('[SupermartKera PWA] Service worker ready'))
+      .then((registration) => {
+        console.log('[SupermartKera PWA] Service worker ready');
+
+        // A tab left open across a deploy keeps running the JS/CSS it
+        // already loaded — the server's cache headers only force a fresh
+        // fetch on the *next* navigation, they can't reach into an
+        // already-rendered page. This till/POS app is typically left open
+        // for hours on shop computers, so without this a cashier would
+        // keep seeing a stale build until someone manually reloads.
+        // sw.js already calls skipWaiting()+clients.claim() on every
+        // install, so the moment a new deploy's service worker activates,
+        // 'controllerchange' fires here and we reload once to pick it up.
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+
+        // Proactively poll for a new deploy every 5 minutes instead of
+        // only checking when the browser happens to re-navigate.
+        setInterval(() => registration.update().catch(() => undefined), 5 * 60 * 1000);
+      })
       .catch((error) => console.error('[SupermartKera PWA] Service worker registration failed', error));
   })
 }
