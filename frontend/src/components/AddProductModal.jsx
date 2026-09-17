@@ -67,6 +67,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     manufacturer: '',
     prescription_required: false,
     controlled_medicine: false,
+    is_bookable: false,
+    booking_type: 'slot',
     expiry_date: '',
     batch_number: '',
     initial_stock: '0',
@@ -407,6 +409,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         manufacturer: formData.manufacturer?.trim() || null,
         prescription_required: Boolean(formData.prescription_required),
         controlled_medicine: Boolean(formData.controlled_medicine),
+        is_bookable: formData.inventory_mode === 'service_item' ? Boolean(formData.is_bookable) : false,
+        booking_type: formData.inventory_mode === 'service_item' && formData.is_bookable ? (formData.booking_type || 'slot') : 'slot',
         expiry_date: formData.expiry_date || null,
         batch_number: formData.batch_number?.trim() || null,
         initial_stock: parseInt(formData.initial_stock) || 0,
@@ -441,6 +445,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           manufacturer: productData.manufacturer,
           prescription_required: productData.prescription_required,
           controlled_medicine: productData.controlled_medicine,
+          is_bookable: productData.is_bookable,
+          booking_type: productData.booking_type,
           expiry_date: productData.expiry_date,
         };
         const updated = await inventoryService.updateProduct(editingProductId, productFields);
@@ -507,6 +513,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       manufacturer: '',
       prescription_required: false,
       controlled_medicine: false,
+      is_bookable: false,
+      booking_type: 'slot',
       expiry_date: '',
       batch_number: '',
       initial_stock: '0',
@@ -783,6 +791,34 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     <p className="text-xs text-gray-500 mt-1">
                       Listing-only products remain sellable without fixed quantities.
                     </p>
+                    {formData.inventory_mode === 'service_item' && (
+                      <>
+                        <label className="flex items-center gap-2 mt-3 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            name="is_bookable"
+                            checked={formData.is_bookable}
+                            onChange={e => setFormData(prev => ({ ...prev, is_bookable: e.target.checked }))}
+                          />
+                          📅 Customers can book this (shows up under the store's Bookings tab)
+                        </label>
+                        {formData.is_bookable && (
+                          <div className="mt-2">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Booking type</label>
+                            <select
+                              name="booking_type"
+                              value={formData.booking_type}
+                              onChange={e => setFormData(prev => ({ ...prev, booking_type: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="slot">🕒 Time slots — a customer picks a date & time (consultation, haircut…)</option>
+                              <option value="ticket">🎫 Tickets — a customer picks a date & quantity (event, class…)</option>
+                              <option value="room">🛏️ Rooms — a customer picks a date range & quantity (hotel room, hall…)</option>
+                            </select>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   {/* Wholesale quantity-tier pricing */}

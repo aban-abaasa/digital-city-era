@@ -14,6 +14,7 @@ import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import TransactionHistory from '../components/TransactionHistory';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
+import BookingsPanel from '../components/booking/BookingsPanel';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
 import {
@@ -7497,6 +7498,7 @@ const AdminPortal = () => {
     { id: 'business-operations', label: 'Payroll & Transport', icon: FiBriefcase },
     { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
+    { id: 'bookings', label: '📅 Bookings', icon: FiCalendar },
     { id: 'users', label: 'User Management', icon: FiUsers },
     { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign }
@@ -8163,7 +8165,15 @@ const AdminPortal = () => {
             {activeSection === 'inventory-pos' && (
               <OrderInventoryPOSControl />
             )}
-            
+
+            {/* 📅 SERVICE BOOKINGS */}
+            {activeSection === 'bookings' && (
+              <BookingsPanel
+                supermarketId={currentAdmin.supermarket_id}
+                staffIdentity={{ userId: currentAdmin.id, name: currentAdmin.full_name || 'Admin' }}
+              />
+            )}
+
             {/* 🧾 TRANSACTION HISTORY - Admin View */}
             {activeSection === 'transactions' && (
               <div>

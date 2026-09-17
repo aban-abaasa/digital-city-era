@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { FiPhoneOff, FiMic, FiMicOff, FiVideo, FiVideoOff } from 'react-icons/fi';
+import React, { useEffect, useRef, useState } from 'react';
+import { FiPhoneOff, FiMic, FiMicOff, FiVideo, FiVideoOff, FiMaximize2 } from 'react-icons/fi';
 
 const formatElapsed = (seconds) => {
   const m = Math.floor(seconds / 60);
@@ -20,15 +20,25 @@ const ToolbarButton = ({ icon, label, active = true, danger = false, onClick, bi
   </button>
 );
 
+// Whichever feed is "big" fills the whole stage; the other sits as a
+// tappable corner thumbnail. Tapping the thumbnail swaps which one is big —
+// the same interaction as any normal video-call app.
+const STAGE_WRAP = 'absolute inset-0';
+const PIP_WRAP = 'absolute bottom-4 right-4 z-10 h-24 w-20 overflow-hidden rounded-xl bg-black ring-2 ring-white/70 shadow-lg cursor-pointer transition-transform hover:scale-105 active:scale-95 sm:h-28 sm:w-24';
+
 /**
  * Full-page video call view — takes over the whole widget for as long as a
  * video call is ringing-out or active. Audio-only calls and an incoming
- * ring stay on the slim `CallDock` bar instead. Ported from ICAN's
+ * ring stay on the slim `CallDock` bar instead. Two-way by default: their
+ * feed fills the stage, yours is the corner thumbnail — tap it (or tap
+ * theirs once swapped) to flip which one is large. Ported from ICAN's
  * CallStage.jsx.
  */
 const CallStage = ({ call }) => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  // false = them big, you in the corner (normal); true = swapped.
+  const [swapped, setSwapped] = useState(false);
 
   useEffect(() => {
     if (localVideoRef.current) localVideoRef.current.srcObject = call.localStream || null;
@@ -41,13 +51,20 @@ const CallStage = ({ call }) => {
   const hasRemote = Boolean(call.remoteStream);
   const isRinging = call.callState === 'ringing-out';
 
+  // Nothing to swap to until their video actually arrives, and a stale
+  // "you're big" pick shouldn't survive into whoever calls next.
+  useEffect(() => {
+    if (!hasRemote) setSwapped(false);
+  }, [hasRemote]);
+
+  const remoteIsBig = hasRemote && !swapped;
+  const localIsBig = !hasRemote || swapped;
+
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-black">
-      <div className="relative flex-1 bg-slate-900">
-        {hasRemote ? (
-          <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-white">
+      <div className="relative flex-1 overflow-hidden bg-slate-900">
+        {!hasRemote && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
             <span className={`flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-violet-600 text-2xl font-bold ${isRinging ? 'animate-pulse' : ''}`}>
               {(call.peerName || '?').trim().slice(0, 1).toUpperCase()}
             </span>
@@ -55,7 +72,32 @@ const CallStage = ({ call }) => {
           </div>
         )}
 
-        <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 py-3">
+        {hasRemote && (
+          <div className={remoteIsBig ? STAGE_WRAP : PIP_WRAP} onClick={remoteIsBig ? undefined : () => setSwapped(false)}>
+            <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full object-cover" />
+            {!remoteIsBig && (
+              <span className="absolute bottom-1 left-1 rounded-full bg-black/60 p-1">
+                <FiMaximize2 className="h-2.5 w-2.5 text-white" />
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className={localIsBig ? STAGE_WRAP : PIP_WRAP} onClick={localIsBig ? undefined : () => setSwapped(true)}>
+          <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+          {!call.micOn && (
+            <span className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500">
+              <FiMicOff className="h-3 w-3 text-white" />
+            </span>
+          )}
+          {!localIsBig && call.micOn && (
+            <span className="absolute bottom-1 left-1 rounded-full bg-black/60 p-1">
+              <FiMaximize2 className="h-2.5 w-2.5 text-white" />
+            </span>
+          )}
+        </div>
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 py-3">
           <div className="flex items-center gap-2 rounded-full bg-black/40 px-2.5 py-1 backdrop-blur-sm">
             <span className={`h-2 w-2 rounded-full ${isRinging ? 'bg-amber-400' : 'bg-red-500'} animate-pulse`} />
             <span className="text-[11px] font-bold uppercase tracking-wider text-white">{isRinging ? 'Ringing' : 'Live'}</span>
@@ -65,17 +107,8 @@ const CallStage = ({ call }) => {
           </span>
         </div>
 
-        <div className="absolute bottom-4 left-4 max-w-[60%] rounded-lg bg-black/50 px-2.5 py-1 backdrop-blur-sm">
+        <div className="pointer-events-none absolute bottom-4 left-4 max-w-[60%] rounded-lg bg-black/50 px-2.5 py-1 backdrop-blur-sm">
           <p className="truncate text-sm font-medium text-white">{call.peerName || 'Call'}</p>
-        </div>
-
-        <div className="absolute bottom-4 right-4 h-24 w-20 overflow-hidden rounded-xl bg-black ring-2 ring-white/70 shadow-lg sm:h-28 sm:w-24">
-          <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
-          {!call.micOn && (
-            <span className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500">
-              <FiMicOff className="h-3 w-3 text-white" />
-            </span>
-          )}
         </div>
       </div>
 

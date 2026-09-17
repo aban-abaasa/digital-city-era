@@ -21,6 +21,8 @@ import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
+import AddProductModal from './AddProductModal';
+import BookingsPanel from './booking/BookingsPanel';
 import {
   SUPPORTED_IMPORT_EXTENSIONS,
   parseProductFile,
@@ -33,6 +35,23 @@ const OrderInventoryPOSControl = () => {
   const [userRole, setUserRole] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  // Products / Services / Bookings tabs — Products is the existing
+  // stock/pricing table below, unchanged; Services and Bookings are new.
+  const [activeTab, setActiveTab] = useState('products');
+  const [supermarketId, setSupermarketId] = useState(null);
+  // What this business actually offers (set by the admin in their profile —
+  // see UnifiedProfilePage's "What does this business offer?" toggle).
+  // Defaults match the DB column defaults so nothing flashes/hides
+  // incorrectly before the real values load.
+  const [offersProducts, setOffersProducts] = useState(true);
+  const [offersServices, setOffersServices] = useState(false);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [services, setServices] = useState([]);
+  const [loadingServices, setLoadingServices] = useState(false);
+  const [showAddServiceModal, setShowAddServiceModal] = useState(false);
+  // Set by a service row's "Configure booking" button — jumps to the
+  // Bookings tab with that exact service pre-selected in Availability.
+  const [focusBookingServiceId, setFocusBookingServiceId] = useState(null);
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -357,9 +376,11 @@ const OrderInventoryPOSControl = () => {
       // Check user role in database using auth_id (not id)
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('role, email, full_name')
+        .select('id, role, email, full_name, supermarket_id')
         .eq('auth_id', user.id)
         .maybeSingle();
+
+      if (userData) setCurrentUserProfile(userData);
 
       if (userError) {
         console.warn('⚠️ User role check error:', userError);
@@ -406,6 +427,19 @@ const OrderInventoryPOSControl = () => {
       // this isolation existed have supermarket_id NULL, so those are
       // included too rather than disappearing from view.
       const supermarketId = await inventoryService.getCurrentSupermarketId();
+      setSupermarketId(supermarketId);
+
+      if (supermarketId) {
+        const { data: offersRow } = await supabase
+          .from('supermarkets')
+          .select('offers_products, offers_services')
+          .eq('id', supermarketId)
+          .maybeSingle();
+        if (offersRow) {
+          setOffersProducts(offersRow.offers_products !== false);
+          setOffersServices(offersRow.offers_services === true);
+        }
+      }
 
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
       let productsQuery = supabase
@@ -526,6 +560,87 @@ const OrderInventoryPOSControl = () => {
         : 0
     };
     setStats(stats);
+  };
+
+  // Services tab — bookable/walk-in service_item products for this store.
+  // Deliberately a separate, simpler query from loadData()'s products query:
+  // service items never get an `inventory` row (see
+  // ADD_PHARMACY_FLEXIBLE_INVENTORY.sql), so the Products tab's
+  // "only show products that have inventory records" filter always excludes
+  // them — this loads them directly instead of trying to force them through
+  // that stock-shaped table.
+  const loadServices = async () => {
+    try {
+      setLoadingServices(true);
+      const smId = supermarketId || await inventoryService.getCurrentSupermarketId();
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, description, selling_price, price, is_active, is_bookable, booking_type, images')
+        .eq('supermarket_id', smId)
+        .eq('inventory_mode', 'service_item')
+        .order('name');
+      if (error) throw error;
+      setServices(data || []);
+    } catch (error) {
+      console.error('❌ Error loading services:', error);
+      toast.error('Failed to load services');
+    } finally {
+      setLoadingServices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'services' && supermarketId) loadServices();
+  }, [activeTab, supermarketId]);
+
+  // Keep activeTab pointed at something that's actually on offer — Products
+  // only shows if offers_products is on, Services/Bookings only if
+  // offers_services is on (set by the admin in their business profile).
+  // Whichever tab the admin lands on first bounces to whatever IS visible
+  // instead of showing a tab for something this store doesn't sell.
+  useEffect(() => {
+    const visible = [
+      offersProducts && 'products',
+      offersServices && 'services',
+      offersServices && 'bookings',
+    ].filter(Boolean);
+    if (visible.length && !visible.includes(activeTab)) setActiveTab(visible[0]);
+  }, [offersProducts, offersServices, activeTab]);
+
+  const updateServicePrice = async (serviceId, newPrice) => {
+    const price = parseFloat(newPrice);
+    if (isNaN(price) || price < 0) return;
+    try {
+      const { error } = await supabase.from('products').update({ selling_price: price, price }).eq('id', serviceId);
+      if (error) throw error;
+      setServices(prev => prev.map(s => (s.id === serviceId ? { ...s, selling_price: price, price } : s)));
+      toast.success('✅ Price updated');
+    } catch (error) {
+      console.error('❌ Error updating service price:', error);
+      toast.error('Failed to update price');
+    }
+  };
+
+  const toggleServiceField = async (serviceId, field, currentValue) => {
+    try {
+      const { error } = await supabase.from('products').update({ [field]: !currentValue }).eq('id', serviceId);
+      if (error) throw error;
+      setServices(prev => prev.map(s => (s.id === serviceId ? { ...s, [field]: !currentValue } : s)));
+    } catch (error) {
+      console.error(`❌ Error toggling ${field}:`, error);
+      toast.error('Failed to update service');
+    }
+  };
+
+  const updateServiceBookingType = async (serviceId, bookingType) => {
+    try {
+      const { error } = await supabase.from('products').update({ booking_type: bookingType }).eq('id', serviceId);
+      if (error) throw error;
+      setServices(prev => prev.map(s => (s.id === serviceId ? { ...s, booking_type: bookingType } : s)));
+    } catch (error) {
+      console.error('❌ Error updating booking type:', error);
+      toast.error('Failed to update booking type');
+    }
   };
 
   // Apply filters
@@ -1033,6 +1148,37 @@ const OrderInventoryPOSControl = () => {
         </div>
       </div>
 
+      {/* Products / Services / Bookings tabs — only shown for what this
+          business actually offers (set in the admin's business profile).
+          A products-only store never sees Services/Bookings, and a
+          services-only store never sees Products; the strip itself only
+          renders once there's more than one tab to choose between. */}
+      {(() => {
+        const visibleTabs = [
+          offersProducts && { id: 'products', label: '📦 Products' },
+          offersServices && { id: 'services', label: '🧾 Services' },
+          offersServices && { id: 'bookings', label: '📅 Bookings' },
+        ].filter(Boolean);
+        if (visibleTabs.length < 2) return null;
+        return (
+          <div className="flex gap-1 bg-white rounded-lg shadow-md p-1 w-fit">
+            {visibleTabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
+                  activeTab === tab.id ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
+      {activeTab === 'products' && offersProducts && (
+      <>
       {/* Statistics Cards - Mobile Optimized - COMPACT */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 lg:gap-4">
         <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-4 shadow-md border-l-4 border-blue-500 hover:shadow-lg transition-shadow">
@@ -1503,6 +1649,122 @@ const OrderInventoryPOSControl = () => {
           <p className="text-blue-800 font-semibold">No products found</p>
           <p className="text-sm text-blue-600 mt-1">Try adjusting your search filters</p>
         </div>
+      )}
+      </>
+      )}
+
+      {activeTab === 'services' && offersServices && (
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">🧾 Services</h2>
+              <p className="text-sm text-gray-500">
+                service_item products — no stock to track. Mark one "bookable" to let customers reserve a time slot from the Bookings tab.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddServiceModal(true)}
+              disabled={!isAdmin}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${
+                isAdmin ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+              }`}
+            >
+              <FiPlus className="h-4 w-4" /> Add Service
+            </button>
+          </div>
+
+          {loadingServices && <p className="text-sm text-gray-400">Loading services…</p>}
+          {!loadingServices && services.length === 0 && (
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-8 text-center">
+              <p className="text-blue-800 font-semibold">No services yet</p>
+              <p className="text-sm text-blue-600 mt-1">Add one, or switch a product's POS inventory mode to "Service item".</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {services.map(svc => (
+              <div key={svc.id} className="flex flex-wrap items-center justify-between gap-3 border border-gray-100 rounded-lg p-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-800 truncate">{svc.name}</p>
+                  {svc.description && <p className="text-xs text-gray-400 truncate">{svc.description}</p>}
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">UGX</span>
+                    <input
+                      type="number"
+                      defaultValue={svc.selling_price || svc.price || 0}
+                      disabled={!isAdmin}
+                      onBlur={(e) => updateServicePrice(svc.id, e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded-lg px-2 py-1 disabled:bg-gray-100"
+                    />
+                  </div>
+                  <label className="flex items-center gap-1 text-xs text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={!!svc.is_bookable}
+                      disabled={!isAdmin}
+                      onChange={() => toggleServiceField(svc.id, 'is_bookable', svc.is_bookable)}
+                    />
+                    📅 Bookable
+                  </label>
+                  <select
+                    value={svc.booking_type || 'slot'}
+                    disabled={!isAdmin || !svc.is_bookable}
+                    onChange={(e) => updateServiceBookingType(svc.id, e.target.value)}
+                    className="text-xs border border-gray-300 rounded-lg px-2 py-1 disabled:bg-gray-100 disabled:text-gray-400"
+                    title={svc.is_bookable ? 'How customers book this' : 'Check "Bookable" first'}
+                  >
+                    <option value="slot">🕒 Time slots</option>
+                    <option value="ticket">🎫 Tickets</option>
+                    <option value="room">🛏️ Rooms</option>
+                  </select>
+                  {svc.is_bookable && (
+                    <button
+                      onClick={() => {
+                        setFocusBookingServiceId(svc.id);
+                        setActiveTab('bookings');
+                      }}
+                      className="px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100"
+                      title="Set hours/tickets/rooms available for this service"
+                    >
+                      ⚙️ Configure booking →
+                    </button>
+                  )}
+                  <button
+                    onClick={() => toggleServiceField(svc.id, 'is_active', svc.is_active)}
+                    disabled={!isAdmin}
+                    className={`px-2 py-1 rounded text-xs font-semibold ${
+                      svc.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    } ${!isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    {svc.is_active ? '✅ Active' : '❌ Inactive'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'bookings' && offersServices && (
+        <BookingsPanel
+          supermarketId={supermarketId}
+          staffIdentity={{ userId: currentUserProfile?.id, name: currentUserProfile?.full_name || 'Admin' }}
+          focusServiceId={focusBookingServiceId}
+        />
+      )}
+
+      {showAddServiceModal && (
+        <AddProductModal
+          isOpen={showAddServiceModal}
+          onClose={() => setShowAddServiceModal(false)}
+          onProductAdded={() => {
+            setShowAddServiceModal(false);
+            loadServices();
+          }}
+          prefilledData={{ inventory_mode: 'service_item' }}
+        />
       )}
 
       {/* Add Product Modal */}

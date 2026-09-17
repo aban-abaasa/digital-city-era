@@ -37,6 +37,7 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   const [savingBusinessType, setSavingBusinessType] = useState(false);
   const [locatingPickup, setLocatingPickup] = useState(false);
   const [resyncingProducts, setResyncingProducts] = useState(false);
+  const [savingOffers, setSavingOffers] = useState(false);
 
   // Emoji avatars for selection
   const emojiAvatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼', '👨‍🔧', '👩‍🔧',
@@ -463,6 +464,29 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
       toast.error(error.message || 'Failed to resync products.');
     } finally {
       setResyncingProducts(false);
+    }
+  };
+
+  // Explicit "what does this business sell" toggle — independent of
+  // business_type, since a business can offer products, services, or both
+  // (e.g. a boutique that also does tailoring appointments). Turning
+  // offers_services on is what unlocks the Bookings tab in AdminPortal and
+  // the "bookable" checkbox on service_item products.
+  const saveOffers = async (field, value) => {
+    if (!supermarket?.id) return;
+    setSavingOffers(true);
+    try {
+      const { error } = await supabase
+        .from('supermarkets')
+        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .eq('id', supermarket.id);
+      if (error) throw error;
+      setSupermarket((prev) => ({ ...prev, [field]: value }));
+    } catch (error) {
+      console.error('Error updating offers toggle:', error);
+      toast.error('Failed to update.');
+    } finally {
+      setSavingOffers(false);
     }
   };
 
@@ -1171,6 +1195,36 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                             Use this if the POS still shows old products as "Service" (or vice versa) from before a past business type change.
                           </span>
                         </div>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-blue-200">
+                        <p className="text-sm font-medium text-blue-900 mb-2">What does this business offer?</p>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={!!supermarket.offers_products}
+                              disabled={savingOffers}
+                              onChange={(e) => saveOffers('offers_products', e.target.checked)}
+                            />
+                            📦 Products (inventory / listings)
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={!!supermarket.offers_services}
+                              disabled={savingOffers}
+                              onChange={(e) => saveOffers('offers_services', e.target.checked)}
+                            />
+                            📅 Services (customers book a time slot)
+                          </label>
+                        </div>
+                        {supermarket.offers_services && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Bookable services now show up under the "Bookings" tab in your admin portal — mark a service_item
+                            product as "bookable" there and set its available hours to start taking appointments.
+                          </p>
+                        )}
                       </div>
 
                       <div className="mt-4 pt-4 border-t border-blue-200">

@@ -50,6 +50,7 @@ import CustomerSelfCheckout from '../vendor/mybodaguy/components/CustomerSelfChe
 import RideTrackingModal from '../vendor/mybodaguy/components/RideTrackingModal';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import BrowseServicesAndBook from '../components/booking/BrowseServicesAndBook';
 
 const CustomerDashboard = () => {
   const navigate = useNavigate();
@@ -385,6 +386,7 @@ const CustomerDashboard = () => {
     { id: 'book-ride', label: 'Book Ride', emoji: '🏍️' },
     { id: 'journey', label: 'Book a Journey', emoji: '✈️' },
     { id: 'shop', label: 'Shop', emoji: '🛒' },
+    { id: 'book-service', label: 'Book', emoji: '📅' },
     { id: 'delivery', label: 'Delivery', emoji: '📦' },
     { id: 'rewards', label: 'Rewards', emoji: '🎁' },
     { id: 'profile', label: 'Profile', emoji: '👤' },
@@ -1169,6 +1171,21 @@ const CustomerDashboard = () => {
             {activeTab === 'shop' && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <CustomerSelfCheckout user={user} />
+              </div>
+            )}
+
+            {/* Book — appointment-style service bookings, reusing the
+                existing chat/call system for follow-up with the store */}
+            {activeTab === 'book-service' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <BrowseServicesAndBook
+                  identity={{
+                    userId: user?.id,
+                    name: customer?.full_name || user?.email || 'Customer',
+                    email: user?.email,
+                    phone: customer?.phone || '',
+                  }}
+                />
               </div>
             )}
 

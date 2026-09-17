@@ -328,6 +328,8 @@ class InventorySupabaseService {
         manufacturer,
         prescription_required = false,
         controlled_medicine = false,
+        is_bookable = false,
+        booking_type = 'slot',
         expiry_date,
         batch_number
       } = productData;
@@ -435,6 +437,8 @@ class InventorySupabaseService {
       if (manufacturer) productInsert.manufacturer = manufacturer;
       productInsert.prescription_required = Boolean(prescription_required);
       productInsert.controlled_medicine = Boolean(controlled_medicine);
+      productInsert.is_bookable = effectiveInventoryMode === 'service_item' ? Boolean(is_bookable) : false;
+      productInsert.booking_type = productInsert.is_bookable ? (booking_type || 'slot') : 'slot';
       if (expiry_date) productInsert.expiry_date = expiry_date;
 
       const { data: product, error: productError } = await supabase

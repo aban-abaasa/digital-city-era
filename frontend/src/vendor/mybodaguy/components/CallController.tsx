@@ -12,9 +12,15 @@
  * WebRTC signal messages (offer / answer / ice-candidate).
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, Maximize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../services/supabaseClient';
+
+// Video-call layout slots: whichever feed is "big" fills the whole stage,
+// the other sits as a tappable corner thumbnail — tapping it swaps which
+// one is big, same interaction as any normal video-call app.
+const STAGE_WRAP = 'absolute inset-0';
+const PIP_WRAP = 'absolute bottom-3 right-3 z-10 h-24 w-20 overflow-hidden rounded-lg bg-black ring-2 ring-white/70 shadow-lg cursor-pointer transition-transform hover:scale-105 active:scale-95 sm:h-28 sm:w-24';
 
 type CallMode = 'voice' | 'video';
 type CallPhase = 'idle' | 'outgoing' | 'incoming' | 'active';
@@ -86,6 +92,10 @@ export default function CallController({
   const [videoOn, setVideoOn] = useState(true);
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [callSeconds, setCallSeconds] = useState(0);
+  // false = them big, you in the corner (normal); true = swapped. Reset
+  // below the moment there's no remote feed to swap to, so a stale pick
+  // doesn't survive into the next call.
+  const [swapped, setSwapped] = useState(false);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -324,6 +334,10 @@ export default function CallController({
     localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = videoOn; });
   }, [videoOn]);
 
+  useEffect(() => {
+    if (!remoteConnected) setSwapped(false);
+  }, [remoteConnected]);
+
   useEffect(() => () => { resetToIdle(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const acceptIncoming = () => {
@@ -355,9 +369,16 @@ export default function CallController({
 
   if (phase === 'idle') return null;
 
+  // A connected video call takes over the whole screen edge-to-edge, like
+  // any normal video-call app, instead of being boxed into the small
+  // centered card the ringing states use.
+  const isFullBleedVideo = phase === 'active' && mode === 'video';
+  const remoteIsBig = remoteConnected && !swapped;
+  const localIsBig = !remoteConnected || swapped;
+
   return (
-    <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div className={isFullBleedVideo ? 'fixed inset-0 z-[60] bg-black' : 'fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4'}>
+      <div className={isFullBleedVideo ? 'flex h-full w-full flex-col bg-black' : 'bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden'}>
         {phase === 'incoming' && (
           <div className="p-8 text-center">
             <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-orange-400 to-yellow-400 flex items-center justify-center text-white text-3xl font-bold mb-4 animate-pulse">
@@ -392,19 +413,46 @@ export default function CallController({
         )}
 
         {phase === 'active' && (
-          <div>
+          <div className={isFullBleedVideo ? 'flex h-full flex-col' : ''}>
             {mode === 'video' ? (
-              <div className="relative bg-slate-900 h-72">
-                <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+              <div className="relative flex-1 overflow-hidden bg-slate-900">
                 {!remoteConnected && (
                   <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
                     Connecting…
                   </div>
                 )}
-                <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-3 right-3 w-20 h-28 object-cover rounded-lg border-2 border-white/70" />
+
+                {/* Remote feed — big by default, shrinks to a tappable corner thumbnail once swapped */}
+                <div className={remoteIsBig ? STAGE_WRAP : PIP_WRAP} onClick={remoteIsBig ? undefined : () => setSwapped(false)}>
+                  <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full object-cover" />
+                  {!remoteIsBig && remoteConnected && (
+                    <span className="absolute bottom-1 left-1 rounded-full bg-black/60 p-1">
+                      <Maximize2 size={10} className="text-white" />
+                    </span>
+                  )}
+                </div>
+
+                {/* Your feed — corner thumbnail by default, tap it to go big */}
+                <div className={localIsBig ? STAGE_WRAP : PIP_WRAP} onClick={localIsBig ? undefined : () => setSwapped(true)}>
+                  <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+                  {!micOn && (
+                    <span className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500">
+                      <MicOff size={9} className="text-white" />
+                    </span>
+                  )}
+                  {!localIsBig && micOn && (
+                    <span className="absolute bottom-1 left-1 rounded-full bg-black/60 p-1">
+                      <Maximize2 size={10} className="text-white" />
+                    </span>
+                  )}
+                </div>
+
                 <div className="absolute top-3 left-3 text-white text-sm font-semibold drop-shadow">
                   {peerName}{peerPhone && <span className="block text-xs font-normal text-white/70">{peerPhone}</span>}
                 </div>
+                <span className="absolute top-3 right-14 rounded-full bg-black/40 px-2.5 py-1 font-mono text-[11px] text-white/90">
+                  {remoteConnected ? formatDuration(callSeconds) : ''}
+                </span>
                 <button onClick={endActiveCall} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center">
                   <X size={16} />
                 </button>
@@ -421,23 +469,32 @@ export default function CallController({
               </div>
             )}
 
-            <div className="flex items-center justify-center gap-4 p-4 border-t border-slate-100">
+            <div className={isFullBleedVideo ? 'flex items-center justify-center gap-6 bg-slate-950/95 px-4 py-3.5 backdrop-blur' : 'flex items-center justify-center gap-4 p-4 border-t border-slate-100'}>
               <button
                 onClick={() => setMicOn(m => !m)}
-                className={`w-12 h-12 rounded-full flex items-center justify-center ${micOn ? 'bg-slate-200 text-slate-700' : 'bg-red-100 text-red-600'}`}
+                className={isFullBleedVideo
+                  ? `flex h-11 w-11 items-center justify-center rounded-full transition ${micOn ? 'bg-white/15 text-white hover:bg-white/25' : 'bg-red-500 text-white hover:bg-red-600'}`
+                  : `w-12 h-12 rounded-full flex items-center justify-center ${micOn ? 'bg-slate-200 text-slate-700' : 'bg-red-100 text-red-600'}`}
               >
                 {micOn ? <Mic size={18} /> : <MicOff size={18} />}
               </button>
               {mode === 'video' && (
                 <button
                   onClick={() => setVideoOn(v => !v)}
-                  className={`w-12 h-12 rounded-full flex items-center justify-center ${videoOn ? 'bg-slate-200 text-slate-700' : 'bg-red-100 text-red-600'}`}
+                  className={isFullBleedVideo
+                    ? `flex h-11 w-11 items-center justify-center rounded-full transition ${videoOn ? 'bg-white/15 text-white hover:bg-white/25' : 'bg-red-500 text-white hover:bg-red-600'}`
+                    : `w-12 h-12 rounded-full flex items-center justify-center ${videoOn ? 'bg-slate-200 text-slate-700' : 'bg-red-100 text-red-600'}`}
                 >
                   {videoOn ? <Video size={18} /> : <VideoOff size={18} />}
                 </button>
               )}
-              <button onClick={endActiveCall} className="w-12 h-12 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center">
-                <PhoneOff size={18} />
+              <button
+                onClick={endActiveCall}
+                className={isFullBleedVideo
+                  ? 'flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition hover:bg-red-600'
+                  : 'w-12 h-12 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center'}
+              >
+                <PhoneOff size={isFullBleedVideo ? 22 : 18} />
               </button>
             </div>
           </div>
