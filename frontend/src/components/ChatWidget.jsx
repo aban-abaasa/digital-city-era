@@ -30,6 +30,7 @@ import {
 import { useDirectCall } from '../hooks/useDirectCall';
 import { useCommunityLive } from '../hooks/useCommunityLive';
 import { uploadChatImage } from '../services/chatAttachmentService';
+import { ChatAvatar } from '../utils/avatar';
 import CallDock from './calls/CallDock';
 import CallStage from './calls/CallStage';
 import IncomingCallOverlay from './calls/IncomingCallOverlay';
@@ -380,11 +381,31 @@ const ChatWidget = () => {
   const activeMessages = channel === 'team' ? teamMessages : supportMessages;
   const selectedThread = communityThreads.find((t) => t.id === selectedThreadId) || null;
 
+  // Smart auto-scroll: always jump to the latest message on open/channel/
+  // thread switches (deliberate navigation), but once you've scrolled up to
+  // read older messages, a new one arriving shouldn't yank you back down —
+  // only re-pin to the bottom if you were already near it (tracked by
+  // handleListScroll below, which reflects your position BEFORE the new
+  // message renders).
+  const isNearBottomRef = useRef(true);
+  const handleListScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
   useEffect(() => {
     if (open && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      isNearBottomRef.current = true;
     }
-  }, [activeMessages, communityThreads, selectedThreadId, open, channel]);
+  }, [open, channel, selectedThreadId]);
+
+  useEffect(() => {
+    if (open && scrollRef.current && isNearBottomRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [activeMessages, communityThreads]);
 
   const markChannelRead = (ch) => {
     if (ch === 'support') {
@@ -446,8 +467,10 @@ const ChatWidget = () => {
     if (!who) return;
 
     setSending(true);
+    isNearBottomRef.current = true;
     try {
       const attachment = pendingAttachment;
+      const senderAvatarUrl = who.isGuest ? null : (who.avatarUrl || null);
       if (channel === 'community') {
         // The widget only ever posts/replies publicly — private posting (which
         // requires an active ICAN wallet) lives on the landing page's full form.
@@ -460,6 +483,7 @@ const ChatWidget = () => {
             authId: senderAuthId,
             message: body,
             attachment,
+            senderAvatarUrl,
           });
         } else {
           await createLandingMessage({
@@ -469,6 +493,7 @@ const ChatWidget = () => {
             message: body,
             isPublic: true,
             attachment,
+            senderAvatarUrl,
           });
         }
         setCommunityThreads(await fetchPublicThreads());
@@ -479,7 +504,7 @@ const ChatWidget = () => {
           convId = conv.id;
           setTeamConvId(convId);
         }
-        const msg = await sendMessage(convId, { senderRole: who.role || 'staff', senderName: who.name, body, attachment });
+        const msg = await sendMessage(convId, { senderRole: who.role || 'staff', senderName: who.name, senderAvatarUrl, body, attachment });
         setTeamMessages((prev) => dedupe(prev, msg));
       } else {
         const key = who.isGuest ? 'guest' : `user_${who.userId}`;
@@ -499,7 +524,7 @@ const ChatWidget = () => {
           setSupportConvId(convId);
         }
         const senderRole = who.isGuest ? 'guest' : (who.role || 'guest');
-        const msg = await sendMessage(convId, { senderRole, senderName: who.name, body, attachment });
+        const msg = await sendMessage(convId, { senderRole, senderName: who.name, senderAvatarUrl, body, attachment });
         setSupportMessages((prev) => dedupe(prev, msg));
       }
       setDraft('');
@@ -660,7 +685,7 @@ const ChatWidget = () => {
             </button>
           </div>
 
-          <div ref={scrollRef} className={`flex-1 space-y-2 overflow-y-auto px-3 py-3 ${dark ? 'bg-[#0b1220]' : 'bg-slate-50'}`}>
+          <div ref={scrollRef} onScroll={handleListScroll} className={`flex-1 space-y-2 overflow-y-auto px-3 py-3 ${dark ? 'bg-[#0b1220]' : 'bg-slate-50'}`}>
             {channel === 'community' ? (
               selectedThread ? (
                 <>
@@ -670,50 +695,55 @@ const ChatWidget = () => {
                   >
                     ← Back to Community
                   </button>
-                  <div className={`rounded-xl px-3 py-2 text-sm ${dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'}`}>
-                    <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
-                      {selectedThread.name || 'Website visitor'}
-                    </p>
-                    {selectedThread.attachment_url && (
-                      <img src={selectedThread.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
-                    )}
-                    {selectedThread.message && <p className="whitespace-pre-wrap break-words"><Linkify text={selectedThread.message} /></p>}
-                    <button
-                      onClick={() => handleCommunityLike(selectedThread.id)}
-                      disabled={selectedThread.likedByMe}
-                      className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        selectedThread.likedByMe ? 'text-cyan-400' : 'opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <FiThumbsUp className="h-3 w-3" /> {selectedThread.likeCount || 0}
-                    </button>
-                  </div>
-                  {selectedThread.replies.map((r) => (
-                    <div
-                      key={r.id}
-                      className={`ml-4 mt-2 rounded-xl px-3 py-2 text-sm ${
-                        r.sender_role === 'dev'
-                          ? 'bg-gradient-to-br from-cyan-500 to-violet-600 text-white'
-                          : dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'
-                      }`}
-                    >
-                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
-                        {r.sender_role === 'dev' ? 'Supermartkera Team' : (r.name || 'Website visitor')}
-                        {r.reward_reason && ' · 🪙'}
+                  <div className="flex items-start gap-2">
+                    <ChatAvatar id={selectedThread.user_id || selectedThread.email || selectedThread.name} name={selectedThread.name} url={selectedThread.sender_avatar_url} size="mt-0.5 h-7 w-7 text-[10px]" />
+                    <div className={`min-w-0 flex-1 rounded-xl px-3 py-2 text-sm ${dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'}`}>
+                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
+                        {selectedThread.name || 'Website visitor'}
                       </p>
-                      {r.attachment_url && (
-                        <img src={r.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                      {selectedThread.attachment_url && (
+                        <img src={selectedThread.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
                       )}
-                      {r.message && <p className="whitespace-pre-wrap break-words"><Linkify text={r.message} /></p>}
+                      {selectedThread.message && <p className="whitespace-pre-wrap break-words"><Linkify text={selectedThread.message} /></p>}
                       <button
-                        onClick={() => handleCommunityLike(r.id)}
-                        disabled={r.likedByMe}
-                        className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          r.likedByMe ? 'text-cyan-300' : 'opacity-70 hover:opacity-100'
+                        onClick={() => handleCommunityLike(selectedThread.id)}
+                        disabled={selectedThread.likedByMe}
+                        className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          selectedThread.likedByMe ? 'text-cyan-400' : 'opacity-70 hover:opacity-100'
                         }`}
                       >
-                        <FiThumbsUp className="h-3 w-3" /> {r.likeCount || 0}
+                        <FiThumbsUp className="h-3 w-3" /> {selectedThread.likeCount || 0}
                       </button>
+                    </div>
+                  </div>
+                  {selectedThread.replies.map((r) => (
+                    <div key={r.id} className="ml-4 mt-2 flex items-start gap-2">
+                      <ChatAvatar id={r.user_id || r.email || r.name} name={r.sender_role === 'dev' ? 'Supermartkera Team' : r.name} url={r.sender_avatar_url} size="mt-0.5 h-6 w-6 text-[9px]" />
+                      <div
+                        className={`min-w-0 flex-1 rounded-xl px-3 py-2 text-sm ${
+                          r.sender_role === 'dev'
+                            ? 'bg-gradient-to-br from-cyan-500 to-violet-600 text-white'
+                            : dark ? 'bg-white/10 text-slate-100' : 'bg-white text-slate-800 border border-slate-200'
+                        }`}
+                      >
+                        <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                          {r.sender_role === 'dev' ? 'Supermartkera Team' : (r.name || 'Website visitor')}
+                          {r.reward_reason && ' · 🪙'}
+                        </p>
+                        {r.attachment_url && (
+                          <img src={r.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                        )}
+                        {r.message && <p className="whitespace-pre-wrap break-words"><Linkify text={r.message} /></p>}
+                        <button
+                          onClick={() => handleCommunityLike(r.id)}
+                          disabled={r.likedByMe}
+                          className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            r.likedByMe ? 'text-cyan-300' : 'opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <FiThumbsUp className="h-3 w-3" /> {r.likeCount || 0}
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {selectedThread.replies.length === 0 && (
@@ -735,14 +765,19 @@ const ChatWidget = () => {
                       dark ? 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
                     }`}
                   >
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
-                      {t.name || 'Website visitor'}
-                    </p>
-                    <div className="mt-0.5 flex items-start gap-2">
-                      {t.attachment_url && (
-                        <img src={t.attachment_url} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
-                      )}
-                      <p className="line-clamp-2 whitespace-pre-wrap break-words">{t.message || (t.attachment_url ? 'Photo' : '')}</p>
+                    <div className="flex items-start gap-2">
+                      <ChatAvatar id={t.user_id || t.email || t.name} name={t.name} url={t.sender_avatar_url} size="mt-0.5 h-7 w-7 text-[10px]" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
+                          {t.name || 'Website visitor'}
+                        </p>
+                        <div className="mt-0.5 flex items-start gap-2">
+                          {t.attachment_url && (
+                            <img src={t.attachment_url} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
+                          )}
+                          <p className="line-clamp-2 whitespace-pre-wrap break-words">{t.message || (t.attachment_url ? 'Photo' : '')}</p>
+                        </div>
+                      </div>
                     </div>
                     {t.replies.length > 0 && (
                       <p className={`mt-1 text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -766,7 +801,8 @@ const ChatWidget = () => {
                     ? (identity && !identity.isGuest && m.sender_name === identity.name && m.sender_role === identity.role)
                     : m.sender_role !== 'dev';
                   return (
-                    <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div key={m.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      {!isMe && <ChatAvatar id={m.sender_name || m.sender_role} name={channel === 'team' ? (m.sender_name || m.sender_role) : 'Team'} url={m.sender_avatar_url} size="h-6 w-6 text-[9px]" />}
                       <div
                         className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
                           isMe

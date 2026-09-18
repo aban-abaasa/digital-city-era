@@ -75,21 +75,36 @@ const BrowseServicesAndBook = ({ identity }) => {
     return Array.from(seen.values());
   }, [services]);
 
+  // Marks *why* a result matched free-text search, purely so the card can
+  // show a small "business" badge — the underlying filter already treats a
+  // business-name/type/location hit the same as a service-name hit, it's
+  // just not visible at a glance which one fired.
+  const matchReason = (svc, q) => {
+    if (!q) return null;
+    const biz = svc.business || {};
+    if (norm(svc.name).includes(q) || norm(svc.description).includes(q)) return 'service';
+    if (
+      norm(biz.name).includes(q) ||
+      norm(biz.city).includes(q) ||
+      norm(biz.address).includes(q) ||
+      norm(businessTypeMeta(biz.business_type).label).includes(q)
+    ) {
+      return 'business';
+    }
+    return null;
+  };
+
   const filtered = useMemo(() => {
     const q = norm(search);
-    return services.filter((svc) => {
-      const biz = svc.business || {};
-      if (businessType !== 'all' && biz.business_type !== businessType) return false;
-      if (businessId && biz.id !== businessId) return false;
-      if (!q) return true;
-      return (
-        norm(svc.name).includes(q) ||
-        norm(svc.description).includes(q) ||
-        norm(biz.name).includes(q) ||
-        norm(biz.city).includes(q) ||
-        norm(biz.address).includes(q)
-      );
-    });
+    return services
+      .filter((svc) => {
+        const biz = svc.business || {};
+        if (businessType !== 'all' && biz.business_type !== businessType) return false;
+        if (businessId && biz.id !== businessId) return false;
+        if (!q) return true;
+        return Boolean(matchReason(svc, q));
+      })
+      .map((svc) => ({ ...svc, __matchedBy: matchReason(svc, q) }));
   }, [services, search, businessType, businessId]);
 
   const handleCancel = async (bookingId) => {
@@ -188,16 +203,23 @@ const BrowseServicesAndBook = ({ identity }) => {
                       {svc.booking_type === 'room' && <span title="Book a date range">🛏️</span>}
                       {svc.booking_type === 'ticket' && <span title="Book a quantity">🎫</span>}
                     </p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setBusinessId(biz.id);
-                      }}
-                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline truncate block"
-                    >
-                      {biz.name}
-                    </button>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBusinessId(biz.id);
+                        }}
+                        className="text-xs text-gray-500 hover:text-blue-600 hover:underline truncate"
+                      >
+                        {biz.name}
+                      </button>
+                      {svc.__matchedBy === 'business' && (
+                        <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600" title={`Matched "${search}" by business, not service name`}>
+                          matched business
+                        </span>
+                      )}
+                    </div>
                     {biz.city && (
                       <p className="text-xs text-gray-400 flex items-center gap-1">
                         <FiMapPin className="h-3 w-3 shrink-0" /> {biz.city}

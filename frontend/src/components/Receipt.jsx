@@ -295,6 +295,11 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
             <p className="text-green-100 mt-1 text-xs md:text-sm">
               #{receiptData.receiptNumber}
             </p>
+            {receiptData.pendingSync && (
+              <p className="mt-1 text-xs md:text-sm font-semibold text-amber-100">
+                📴 Recorded offline — a real receipt number is assigned once this syncs automatically.
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}

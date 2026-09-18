@@ -62,13 +62,14 @@ export const fetchMessages = async (conversationId) => {
   return data || [];
 };
 
-export const sendMessage = async (conversationId, { senderRole, senderName, body, attachment }) => {
+export const sendMessage = async (conversationId, { senderRole, senderName, senderAvatarUrl, body, attachment }) => {
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
       conversation_id: conversationId,
       sender_role: senderRole,
       sender_name: senderName || null,
+      sender_avatar_url: senderAvatarUrl || null,
       body,
       attachment_url: attachment?.url || null,
       attachment_type: attachment?.type || null,
@@ -193,7 +194,7 @@ export const resolveChatIdentity = async () => {
 
     const { data: profile } = await supabase
       .from('users')
-      .select('id, full_name, email, role, supermarket_id')
+      .select('id, full_name, email, role, supermarket_id, avatar_url')
       .eq('auth_id', user.id)
       .maybeSingle();
 
@@ -209,6 +210,7 @@ export const resolveChatIdentity = async () => {
       email: profile.email || user.email || '',
       role: profile.role || 'customer',
       supermarketId: profile.supermarket_id || null,
+      avatarUrl: profile.avatar_url || null,
     };
   } catch {
     return null;

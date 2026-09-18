@@ -29,6 +29,7 @@ import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
 import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
+import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount } from '../services/posOfflineQueue';
 import { supabase } from '../services/supabase';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
@@ -75,6 +76,9 @@ const CashierPortal = () => {
   // support. Reset with the cart via clearTransaction/removeItemFromTransaction.
   const [jobStatus, setJobStatus] = useState('pending');
   const [billLater, setBillLater] = useState(false);
+  // Cash sales recorded while offline, queued in posOfflineQueue's IndexedDB
+  // and not yet synced to Supabase — see processPayment's offline branch.
+  const [pendingSalesCount, setPendingSalesCount] = useState(0);
   const JOB_STATUS_STAGES = [
     { value: 'pending', label: 'Pending', icon: '🕓' },
     { value: 'in_progress', label: 'In Progress', icon: '🧺' },
@@ -252,6 +256,28 @@ const CashierPortal = () => {
       // Cleanup subscriptions
       inventoryService.unsubscribeAll();
     };
+  }, []);
+
+  // Cash sales recorded offline (see processPayment) sync automatically the
+  // moment the till is back online — no separate "sync now" button to
+  // remember to press, same auto-sync-on-reconnect pattern as ICAN's
+  // offlineAuthManager/syncManager.
+  useEffect(() => {
+    getPendingSalesCount().then(setPendingSalesCount).catch(() => {});
+    const stopSync = initPosOfflineSync({ transactionService, inventoryService });
+    const unsubscribe = onSyncStateChange((state) => {
+      if (state.status === 'synced' || state.status === 'sync-error') {
+        getPendingSalesCount().then(setPendingSalesCount).catch(() => {});
+        if (state.synced > 0) {
+          toast.success(`🔄 Synced ${state.synced} offline sale${state.synced !== 1 ? 's' : ''}.`);
+          loadProductsFromSupabase();
+        }
+        if (state.failed > 0) {
+          toast.warning(`⚠️ ${state.failed} offline sale${state.failed !== 1 ? 's' : ''} still pending sync — will retry.`);
+        }
+      }
+    });
+    return () => { stopSync(); unsubscribe(); };
   }, []);
 
   // The very first product load can race ahead of the cashier profile (and
@@ -1420,7 +1446,18 @@ const CashierPortal = () => {
 
   const processPayment = async (paymentMethodId) => {
     console.log('🔔 processPayment called with:', paymentMethodId);
-    
+
+    // Only a cash sale can go through with no connection — the money's
+    // already physically in hand, so recording it is the only thing left,
+    // and that can be queued (see the offline branch below). The IcanEra
+    // Wallet needs a live QR scan/verification round trip there's no way to
+    // fake or defer, so it's blocked outright while offline instead of
+    // opening a modal that can only fail.
+    if (paymentMethodId === 'icanera_wallet' && !navigator.onLine) {
+      toast.error('📴 IcanEra Wallet needs an internet connection. Cash sales still work offline.');
+      return;
+    }
+
     // IcanEra Wallet - Open receive modal instead of processing directly
     if (paymentMethodId === 'icanera_wallet') {
       console.log('💎 Opening IcanEra Wallet receive modal...');
@@ -1492,99 +1529,131 @@ const CashierPortal = () => {
       };
       
       setPaymentResult(result);
-      
-      // 🔥 NEW: Save transaction to database
-      try {
-        const saveResult = await transactionService.saveTransaction({
-          items: currentTransaction.items,
-          subtotal: currentTransaction.subtotal,
-          tax: currentTransaction.tax,
-          total: currentTransaction.total,
-          paymentMethod: paymentMethod,
-          paymentReference: result.transactionId,
-          paymentFee: fee,
-          amountPaid: amountPaidNow,
-          changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
-          jobStatus: hasServiceItem ? jobStatus : null,
-          customer: currentTransaction.customer || { name: 'Walk-in Customer' },
-          cashier: cashierProfile,
-          register: cashierProfile.register,
-          location: cashierProfile.location || 'Kampala Main Branch'
-        });
 
-        if (saveResult.success) {
-          console.log('✅ Transaction saved:', saveResult.receiptNumber);
-
-          // Set receipt data for display — an unpaid/partial sale renders
-          // as an INVOICE (see Receipt.jsx / receiptGeneratorService.js),
-          // a fully paid one renders as the usual RECEIPT.
-          setReceiptData({
-            ...result,
-            id: saveResult.transaction?.id,
-            receiptNumber: saveResult.receiptNumber,
-            transactionId: saveResult.transactionId,
-            amountPaid: amountPaidNow,
-            changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
-            paymentStatus: saveResult.paymentStatus,
-            balanceDue: saveResult.balanceDue,
-            jobStatus: hasServiceItem ? jobStatus : null
-          });
-
-          // Show receipt modal after a brief delay
-          setTimeout(() => {
-            setShowReceiptModal(true);
-          }, 500);
-
-          toast.success(
-            saveResult.paymentStatus === 'paid'
-              ? `✅ Payment successful! Receipt: ${saveResult.receiptNumber}`
-              : `🧾 Invoice created: ${saveResult.receiptNumber} — balance due ${formatUGX(saveResult.balanceDue)}`
-          );
-        } else {
-          console.error('❌ Failed to save transaction:', saveResult.error);
-          toast.warning('⚠️ Payment successful but receipt not saved');
-        }
-      } catch (saveError) {
-        console.error('❌ Error saving transaction:', saveError);
-        toast.warning('⚠️ Payment successful but receipt not saved');
-      }
-      
-      // 🔥 Update stock in Supabase after successful payment
-      // Services and listing-only items have no POS inventory row (see
-      // inventorySupabaseService.js) — skip them or adjustStockAfterSale's
-      // .single() lookup throws for every line in the sale. Variant items
-      // (boutique size/color) are also skipped here — the DB trigger
+      // Items with no POS inventory row (services, listing-only) are
+      // skipped, same as the online path below — adjustStockAfterSale's
+      // .single() lookup would throw for them. Variant items (boutique
+      // size/color) are also skipped: the DB trigger
       // (deduct_inventory_on_transaction) already deducts product_variants
       // stock for them; deducting the shared product's inventory row too
       // would double-count the sale.
-      try {
-        const itemsForStockUpdate = currentTransaction.items
-          .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
-          .map(item => ({
-            product_id: item.id,
-            quantity: item.quantity
-          }));
+      const itemsForStockUpdate = currentTransaction.items
+        .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
+        .map(item => ({
+          product_id: item.id,
+          quantity: item.quantity
+        }));
 
-        const stockUpdated = itemsForStockUpdate.length === 0
-          ? true
-          : await inventoryService.adjustStockAfterSale(itemsForStockUpdate, saleId);
+      const transactionPayload = {
+        items: currentTransaction.items,
+        subtotal: currentTransaction.subtotal,
+        tax: currentTransaction.tax,
+        total: currentTransaction.total,
+        paymentMethod: paymentMethod,
+        paymentReference: result.transactionId,
+        paymentFee: fee,
+        amountPaid: amountPaidNow,
+        changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+        jobStatus: hasServiceItem ? jobStatus : null,
+        customer: currentTransaction.customer || { name: 'Walk-in Customer' },
+        cashier: cashierProfile,
+        register: cashierProfile.register,
+        location: cashierProfile.location || 'Kampala Main Branch'
+      };
 
-        if (stockUpdated) {
-          console.log('✅ Stock updated successfully in Supabase');
-          
-          // Reload products to reflect updated stock
-          setTimeout(() => {
-            loadProductsFromSupabase();
-          }, 1000);
-        } else {
-          console.warn('⚠️ Stock update failed, but payment successful');
-          toast.warning('⚠️ Payment successful but stock update failed. Please check inventory.');
+      if (!navigator.onLine) {
+        // WhatsApp-style offline recording: the cash is already physically
+        // collected, so queue the exact payload the online path below would
+        // have sent (see posOfflineQueue.js) and replay it through the same
+        // transactionService.saveTransaction/inventoryService.adjustStockAfterSale
+        // once back online — no receipt number yet (generating one reads
+        // today's transaction count from Supabase), no stock deduction yet,
+        // both happen for real at sync time.
+        await queueSale(transactionPayload, itemsForStockUpdate.length ? {
+          items: itemsForStockUpdate, saleId, supermarketId: cashierProfile?.supermarket_id || null
+        } : null);
+        setPendingSalesCount((n) => n + 1);
+
+        setReceiptData({
+          ...result,
+          id: null,
+          receiptNumber: `PENDING-${saleId}`,
+          transactionId: result.transactionId,
+          amountPaid: amountPaidNow,
+          changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+          paymentStatus: amountPaidNow >= currentTransaction.total ? 'paid' : (amountPaidNow > 0 ? 'partial' : 'unpaid'),
+          balanceDue: Math.max(0, currentTransaction.total - amountPaidNow),
+          jobStatus: hasServiceItem ? jobStatus : null,
+          pendingSync: true
+        });
+
+        setTimeout(() => setShowReceiptModal(true), 500);
+        toast.success('📴 Sale recorded offline — will sync automatically when back online.');
+      } else {
+        // 🔥 Save transaction to database
+        try {
+          const saveResult = await transactionService.saveTransaction(transactionPayload);
+
+          if (saveResult.success) {
+            console.log('✅ Transaction saved:', saveResult.receiptNumber);
+
+            // Set receipt data for display — an unpaid/partial sale renders
+            // as an INVOICE (see Receipt.jsx / receiptGeneratorService.js),
+            // a fully paid one renders as the usual RECEIPT.
+            setReceiptData({
+              ...result,
+              id: saveResult.transaction?.id,
+              receiptNumber: saveResult.receiptNumber,
+              transactionId: saveResult.transactionId,
+              amountPaid: amountPaidNow,
+              changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+              paymentStatus: saveResult.paymentStatus,
+              balanceDue: saveResult.balanceDue,
+              jobStatus: hasServiceItem ? jobStatus : null
+            });
+
+            // Show receipt modal after a brief delay
+            setTimeout(() => {
+              setShowReceiptModal(true);
+            }, 500);
+
+            toast.success(
+              saveResult.paymentStatus === 'paid'
+                ? `✅ Payment successful! Receipt: ${saveResult.receiptNumber}`
+                : `🧾 Invoice created: ${saveResult.receiptNumber} — balance due ${formatUGX(saveResult.balanceDue)}`
+            );
+          } else {
+            console.error('❌ Failed to save transaction:', saveResult.error);
+            toast.warning('⚠️ Payment successful but receipt not saved');
+          }
+        } catch (saveError) {
+          console.error('❌ Error saving transaction:', saveError);
+          toast.warning('⚠️ Payment successful but receipt not saved');
         }
-      } catch (stockError) {
-        console.error('❌ Error updating stock:', stockError);
-        toast.warning('⚠️ Payment successful but stock update failed.');
+
+        // 🔥 Update stock in Supabase after successful payment
+        try {
+          const stockUpdated = itemsForStockUpdate.length === 0
+            ? true
+            : await inventoryService.adjustStockAfterSale(itemsForStockUpdate, saleId);
+
+          if (stockUpdated) {
+            console.log('✅ Stock updated successfully in Supabase');
+
+            // Reload products to reflect updated stock
+            setTimeout(() => {
+              loadProductsFromSupabase();
+            }, 1000);
+          } else {
+            console.warn('⚠️ Stock update failed, but payment successful');
+            toast.warning('⚠️ Payment successful but stock update failed. Please check inventory.');
+          }
+        } catch (stockError) {
+          console.error('❌ Error updating stock:', stockError);
+          toast.warning('⚠️ Payment successful but stock update failed.');
+        }
       }
-      
+
       // Clear transaction after successful payment
       setTimeout(() => {
         setCurrentTransaction({
@@ -2069,6 +2138,13 @@ const CashierPortal = () => {
                 <FiShoppingCart className="h-4 md:h-5 w-4 md:w-5 flex-shrink-0" />
                 <span>{cashierProfile.register}</span>
               </div>
+              {pendingSalesCount > 0 && (
+                <div className="flex items-center gap-1 md:gap-2">
+                  <span className="font-semibold text-amber-200" title="Cash sales recorded offline, syncing automatically once back online">
+                    📴 {pendingSalesCount} sale{pendingSalesCount !== 1 ? 's' : ''} pending sync
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <div className="text-center md:text-right flex-shrink-0">
