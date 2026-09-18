@@ -4,6 +4,7 @@ import { fetchMessages, sendMessage, subscribeToMessages } from '../../services/
 import { useDirectCall } from '../../hooks/useDirectCall';
 import CallDock from '../calls/CallDock';
 import CallStage from '../calls/CallStage';
+import { Linkify } from '../../utils/linkify';
 
 // Minimal message thread + call buttons for one booking. Reuses the same
 // chat_conversations/chat_messages tables and useDirectCall hook the
@@ -129,7 +130,7 @@ const BookingChatCallPanel = ({ bookingId, conversationId, selfId, selfName, sen
                 m.sender_role === senderRole ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'
               }`}
             >
-              {m.body}
+              <Linkify text={m.body} />
             </div>
           </div>
         ))}

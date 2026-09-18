@@ -12,6 +12,7 @@ import {
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+import { Linkify } from '../utils/linkify';
 import {
   listConversations,
   fetchMessages,
@@ -806,7 +807,7 @@ const MessagesTab = ({ p }) => {
                           {m.sender_name || selected.role}
                         </p>
                       )}
-                      <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                      <p className="whitespace-pre-wrap break-words"><Linkify text={m.body} /></p>
                     </div>
                   </div>
                 );
@@ -1029,7 +1030,7 @@ const PublicBoardTab = ({ p }) => {
                           )}
                           <span className={`text-[10px] ${p.muted}`}>{fmtChatTime(r.created_at)}</span>
                         </div>
-                        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm">{r.message}</p>
+                        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm"><Linkify text={r.message} /></p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           {r.sender_role !== 'dev' && r.user_id && !r.rewarded_at && (
                             <button

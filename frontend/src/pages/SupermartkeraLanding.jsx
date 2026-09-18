@@ -43,6 +43,7 @@ import {
   subscribeToPublicLandingMessages,
 } from '../services/landingMessagesService';
 import { getShowcaseProducts } from '../services/showcaseProductsService';
+import { Linkify } from '../utils/linkify';
 
 const SHOWCASE_VISIBLE_COUNT = 6;
 const SHOWCASE_ROTATE_MS = 4500;
@@ -853,7 +854,7 @@ const SupermartkeraLanding = () => {
                         </span>
                         <span className={`text-[10px] ${palette.muted}`}>{fmtBoardTime(m.created_at)}</span>
                       </div>
-                      <p className={`mt-2 text-sm leading-6 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>{m.message}</p>
+                      <p className={`mt-2 text-sm leading-6 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}><Linkify text={m.message} /></p>
                     </div>
                   ))}
                 </div>
@@ -1017,7 +1018,7 @@ const SupermartkeraLanding = () => {
                         </span>
                       )}
                     </div>
-                    <p className={`mt-4 text-sm leading-7 ${palette.muted}`}>{m.message}</p>
+                    <p className={`mt-4 text-sm leading-7 ${palette.muted}`}><Linkify text={m.message} /></p>
                   </div>
 
                   <button
@@ -1055,7 +1056,7 @@ const SupermartkeraLanding = () => {
                               <span className={`text-[10px] ${palette.muted}`}>{fmtBoardTime(r.created_at)}</span>
                             </div>
                           </div>
-                          <p className={`mt-1 text-sm leading-6 ${palette.muted}`}>{r.message}</p>
+                          <p className={`mt-1 text-sm leading-6 ${palette.muted}`}><Linkify text={r.message} /></p>
                           <button
                             type="button"
                             onClick={() => handleLike(r.id)}

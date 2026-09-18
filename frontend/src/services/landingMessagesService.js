@@ -8,7 +8,7 @@ export const ORIGIN_APP = 'digital-city-era';
 // the one identity space shared by all 4 apps — pass `authId` here, not a
 // local per-app profile-table id (e.g. NOT chatService's `identity.userId`,
 // which points at this app's own public.users.id for the chat/support tables).
-export const createLandingMessage = async ({ name, email, company, message, authId, isPublic }) => {
+export const createLandingMessage = async ({ name, email, company, message, authId, isPublic, attachment }) => {
   const { data, error } = await supabase
     .from('landing_messages')
     .insert({
@@ -22,6 +22,9 @@ export const createLandingMessage = async ({ name, email, company, message, auth
       // and the DB additionally requires an active ICAN wallet for is_public=false.
       is_public: authId ? !!isPublic : true,
       sender_role: authId ? 'user' : 'guest',
+      attachment_url: attachment?.url || null,
+      attachment_type: attachment?.type || null,
+      attachment_name: attachment?.name || null,
     })
     .select()
     .single();
@@ -31,7 +34,7 @@ export const createLandingMessage = async ({ name, email, company, message, auth
 
 // Replies are single-level (a reply can't itself be replied to) and always
 // public — you can only reply to a public top-level message in the first place.
-export const replyToLandingMessage = async ({ parentId, name, email, authId, message }) => {
+export const replyToLandingMessage = async ({ parentId, name, email, authId, message, attachment }) => {
   const { data, error } = await supabase
     .from('landing_messages')
     .insert({
@@ -43,6 +46,9 @@ export const replyToLandingMessage = async ({ parentId, name, email, authId, mes
       origin_app: ORIGIN_APP,
       is_public: true,
       sender_role: authId ? 'user' : 'guest',
+      attachment_url: attachment?.url || null,
+      attachment_type: attachment?.type || null,
+      attachment_name: attachment?.name || null,
     })
     .select()
     .single();

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio, FiMaximize2, FiMinimize2 } from 'react-icons/fi';
+import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio, FiMaximize2, FiMinimize2, FiImage, FiLoader } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
+import { Linkify } from '../utils/linkify';
 import {
   resolveChatIdentity,
   isDeveloperSession,
@@ -28,6 +29,7 @@ import {
 } from '../services/landingMessagesService';
 import { useDirectCall } from '../hooks/useDirectCall';
 import { useCommunityLive } from '../hooks/useCommunityLive';
+import { uploadChatImage } from '../services/chatAttachmentService';
 import CallDock from './calls/CallDock';
 import CallStage from './calls/CallStage';
 import IncomingCallOverlay from './calls/IncomingCallOverlay';
@@ -88,6 +90,10 @@ const ChatWidget = () => {
   const [channel, setChannel] = useState('support'); // 'support' | 'team' | 'community'
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
+  const fileInputRef = useRef(null);
   const [position, setPosition] = useState(() => getSavedPosition());
   const [dragging, setDragging] = useState(false);
 
@@ -415,15 +421,33 @@ const ChatWidget = () => {
     return guest;
   };
 
+  const handlePickImage = () => fileInputRef.current?.click();
+
+  const handleImageSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setAttachmentError('');
+    setAttachmentUploading(true);
+    try {
+      setPendingAttachment(await uploadChatImage(file));
+    } catch (err) {
+      setAttachmentError(err?.message || 'Could not upload image');
+    } finally {
+      setAttachmentUploading(false);
+    }
+  };
+
   const handleSend = async () => {
     const body = draft.trim();
-    if (!body || sending) return;
+    if ((!body && !pendingAttachment) || sending || attachmentUploading) return;
 
     const who = ensureIdentity();
     if (!who) return;
 
     setSending(true);
     try {
+      const attachment = pendingAttachment;
       if (channel === 'community') {
         // The widget only ever posts/replies publicly — private posting (which
         // requires an active ICAN wallet) lives on the landing page's full form.
@@ -435,6 +459,7 @@ const ChatWidget = () => {
             email: who.email,
             authId: senderAuthId,
             message: body,
+            attachment,
           });
         } else {
           await createLandingMessage({
@@ -443,6 +468,7 @@ const ChatWidget = () => {
             authId: senderAuthId,
             message: body,
             isPublic: true,
+            attachment,
           });
         }
         setCommunityThreads(await fetchPublicThreads());
@@ -453,7 +479,7 @@ const ChatWidget = () => {
           convId = conv.id;
           setTeamConvId(convId);
         }
-        const msg = await sendMessage(convId, { senderRole: who.role || 'staff', senderName: who.name, body });
+        const msg = await sendMessage(convId, { senderRole: who.role || 'staff', senderName: who.name, body, attachment });
         setTeamMessages((prev) => dedupe(prev, msg));
       } else {
         const key = who.isGuest ? 'guest' : `user_${who.userId}`;
@@ -473,10 +499,11 @@ const ChatWidget = () => {
           setSupportConvId(convId);
         }
         const senderRole = who.isGuest ? 'guest' : (who.role || 'guest');
-        const msg = await sendMessage(convId, { senderRole, senderName: who.name, body });
+        const msg = await sendMessage(convId, { senderRole, senderName: who.name, body, attachment });
         setSupportMessages((prev) => dedupe(prev, msg));
       }
       setDraft('');
+      setPendingAttachment(null);
     } catch (err) {
       console.error('[ChatWidget] send failed:', err);
     } finally {
@@ -647,7 +674,10 @@ const ChatWidget = () => {
                     <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
                       {selectedThread.name || 'Website visitor'}
                     </p>
-                    <p className="whitespace-pre-wrap break-words">{selectedThread.message}</p>
+                    {selectedThread.attachment_url && (
+                      <img src={selectedThread.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                    )}
+                    {selectedThread.message && <p className="whitespace-pre-wrap break-words"><Linkify text={selectedThread.message} /></p>}
                     <button
                       onClick={() => handleCommunityLike(selectedThread.id)}
                       disabled={selectedThread.likedByMe}
@@ -671,7 +701,10 @@ const ChatWidget = () => {
                         {r.sender_role === 'dev' ? 'Supermartkera Team' : (r.name || 'Website visitor')}
                         {r.reward_reason && ' · 🪙'}
                       </p>
-                      <p className="whitespace-pre-wrap break-words">{r.message}</p>
+                      {r.attachment_url && (
+                        <img src={r.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                      )}
+                      {r.message && <p className="whitespace-pre-wrap break-words"><Linkify text={r.message} /></p>}
                       <button
                         onClick={() => handleCommunityLike(r.id)}
                         disabled={r.likedByMe}
@@ -705,7 +738,12 @@ const ChatWidget = () => {
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400">
                       {t.name || 'Website visitor'}
                     </p>
-                    <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words">{t.message}</p>
+                    <div className="mt-0.5 flex items-start gap-2">
+                      {t.attachment_url && (
+                        <img src={t.attachment_url} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
+                      )}
+                      <p className="line-clamp-2 whitespace-pre-wrap break-words">{t.message || (t.attachment_url ? 'Photo' : '')}</p>
+                    </div>
                     {t.replies.length > 0 && (
                       <p className={`mt-1 text-[10px] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
                         {t.replies.length} {t.replies.length === 1 ? 'reply' : 'replies'}
@@ -741,7 +779,10 @@ const ChatWidget = () => {
                             {channel === 'team' ? (m.sender_name || m.sender_role) : 'Team'}
                           </p>
                         )}
-                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                        {m.attachment_url && (
+                          <img src={m.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                        )}
+                        {m.body && <p className="whitespace-pre-wrap break-words"><Linkify text={m.body} /></p>}
                       </div>
                     </div>
                   );
@@ -782,7 +823,35 @@ const ChatWidget = () => {
                 <button onClick={() => setSelectedThreadId(null)} className="flex-shrink-0 underline">Cancel</button>
               </div>
             )}
+            {(pendingAttachment || attachmentUploading) && (
+              <div className={`mb-2 flex items-center gap-2 rounded-lg border px-2 py-1.5 ${dark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}>
+                {attachmentUploading ? (
+                  <>
+                    <FiLoader className={`h-8 w-8 flex-shrink-0 animate-spin p-1.5 ${dark ? 'text-slate-500' : 'text-slate-400'}`} />
+                    <span className={`text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Uploading…</span>
+                  </>
+                ) : (
+                  <>
+                    <img src={pendingAttachment.url} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
+                    <span className={`flex-1 truncate text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{pendingAttachment.name}</span>
+                    <button onClick={() => setPendingAttachment(null)} className={dark ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} title="Remove image">
+                      <FiX className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {attachmentError && <p className="mb-1.5 text-[11px] text-red-400">{attachmentError}</p>}
             <div className="flex items-center gap-2">
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelected} className="hidden" />
+            <button
+              onClick={handlePickImage}
+              disabled={attachmentUploading}
+              className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition disabled:opacity-40 ${dark ? 'text-slate-500 hover:bg-white/10 hover:text-cyan-400' : 'text-slate-400 hover:bg-slate-100 hover:text-cyan-600'}`}
+              title="Attach an image"
+            >
+              <FiImage className="h-4 w-4" />
+            </button>
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -801,7 +870,7 @@ const ChatWidget = () => {
             />
             <button
               onClick={handleSend}
-              disabled={sending || !draft.trim()}
+              disabled={sending || attachmentUploading || (!draft.trim() && !pendingAttachment)}
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-violet-600 text-white shadow-lg transition disabled:opacity-40"
             >
               <FiSend className="h-4 w-4" />
