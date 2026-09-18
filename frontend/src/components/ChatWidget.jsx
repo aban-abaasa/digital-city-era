@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio, FiMaximize2, FiMinimize2, FiImage, FiLoader } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
 import { Linkify } from '../utils/linkify';
+import ImageLightbox from './common/ImageLightbox';
 import {
   resolveChatIdentity,
   isDeveloperSession,
@@ -108,6 +109,7 @@ const ChatWidget = () => {
 
   const [communityThreads, setCommunityThreads] = useState([]);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const [guestLikeKey] = useState(() => getOrCreateGuestLikeKey());
 
   const [liveChatDraft, setLiveChatDraft] = useState('');
@@ -551,6 +553,7 @@ const ChatWidget = () => {
   return (
     <>
       <IncomingCallOverlay call={supportCall} onAccept={() => { setOpen(true); setChannel('support'); supportCall.acceptCall(); }} />
+      {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       {showCommunityLiveStage && (
         <CommunityLiveStage
           live={communityLive}
@@ -702,7 +705,12 @@ const ChatWidget = () => {
                         {selectedThread.name || 'Website visitor'}
                       </p>
                       {selectedThread.attachment_url && (
-                        <img src={selectedThread.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                        <img
+                          src={selectedThread.attachment_url}
+                          alt=""
+                          className="mb-1.5 max-h-52 cursor-pointer rounded-lg object-cover"
+                          onClick={() => setLightboxSrc(selectedThread.attachment_url)}
+                        />
                       )}
                       {selectedThread.message && <p className="whitespace-pre-wrap break-words"><Linkify text={selectedThread.message} /></p>}
                       <button
@@ -731,7 +739,12 @@ const ChatWidget = () => {
                           {r.reward_reason && ' · 🪙'}
                         </p>
                         {r.attachment_url && (
-                          <img src={r.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                          <img
+                            src={r.attachment_url}
+                            alt=""
+                            className="mb-1.5 max-h-52 cursor-pointer rounded-lg object-cover"
+                            onClick={() => setLightboxSrc(r.attachment_url)}
+                          />
                         )}
                         {r.message && <p className="whitespace-pre-wrap break-words"><Linkify text={r.message} /></p>}
                         <button
@@ -816,7 +829,12 @@ const ChatWidget = () => {
                           </p>
                         )}
                         {m.attachment_url && (
-                          <img src={m.attachment_url} alt="" className="mb-1.5 max-h-52 rounded-lg object-cover" />
+                          <img
+                            src={m.attachment_url}
+                            alt=""
+                            className="mb-1.5 max-h-52 cursor-pointer rounded-lg object-cover"
+                            onClick={() => setLightboxSrc(m.attachment_url)}
+                          />
                         )}
                         {m.body && <p className="whitespace-pre-wrap break-words"><Linkify text={m.body} /></p>}
                       </div>
