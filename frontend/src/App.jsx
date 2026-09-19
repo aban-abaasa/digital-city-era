@@ -10,6 +10,7 @@ import RoleProtectedRoute from '@/components/RoleProtectedRoute';
 import ClockSkewNotification from '@/components/ClockSkewNotification';
 import ChatWidget from '@/components/ChatWidget';
 import CountryGate from '@/components/CountryGate';
+import ScrollToTop from '@/components/ScrollToTop';
 import HiddenDecoyLinks from '@/components/security/HiddenDecoyLinks';
 
 // Pages and Components
@@ -186,6 +187,7 @@ function App() {
             <ClockSkewNotification />
             <div className={`app-container ${isAdmin ? 'admin-mode' : 'standard-mode'}`}>
               <HiddenDecoyLinks />
+              <ScrollToTop />
               <CountryGate>
               <Routes>
               {/* Main landing with portal selection - but check for OAuth callback first */}
