@@ -34,6 +34,10 @@ import {
   FiArrowUpRight,
   FiMessageCircle,
   FiChevronDown,
+  FiVolume2,
+  FiMusic,
+  FiUpload,
+  FiTrash2,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { referralService } from '../services/referralService';
@@ -51,6 +55,107 @@ import RideTrackingModal from '../vendor/mybodaguy/components/RideTrackingModal'
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import BrowseServicesAndBook from '../components/booking/BrowseServicesAndBook';
+import {
+  RINGTONES,
+  CUSTOM_RINGTONE_ID,
+  getSelectedCallRingtoneId,
+  setSelectedCallRingtoneId,
+  getCustomCallRingtoneMeta,
+  saveCustomCallRingtone,
+  removeCustomCallRingtone,
+  playCallRingtonePreview,
+} from '../vendor/mybodaguy/services/notificationSound';
+
+/** Preset-grid + "upload your own song" picker for the incoming-call
+ * ringtone that rings while a rider's voice/video call (from RideTrackingModal's
+ * vendored CallController) is waiting to be answered — see notificationSound.ts. */
+function CallRingtonePicker() {
+  const [selectedId, setSelectedIdState] = useState(() => getSelectedCallRingtoneId());
+  const [customMeta, setCustomMeta] = useState(() => getCustomCallRingtoneMeta());
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const choose = (id) => {
+    setSelectedIdState(id);
+    setSelectedCallRingtoneId(id);
+    playCallRingtonePreview(id);
+  };
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      await saveCustomCallRingtone(file);
+      setCustomMeta({ name: file.name });
+      choose(CUSTOM_RINGTONE_ID);
+      toast.success('Ringtone uploaded');
+    } catch (error) {
+      toast.error(error.message || 'Could not use that file as a ringtone');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    await removeCustomCallRingtone();
+    setCustomMeta(null);
+    setSelectedIdState(getSelectedCallRingtoneId());
+  };
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {RINGTONES.map(tone => (
+          <button
+            key={tone.id}
+            type="button"
+            onClick={() => choose(tone.id)}
+            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${
+              selectedId === tone.id
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : 'border-gray-200 text-gray-600 hover:border-gray-300'
+            }`}
+          >
+            <span>{tone.label}</span>
+            <FiVolume2 className="h-4 w-4 flex-shrink-0" />
+          </button>
+        ))}
+      </div>
+
+      <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFile} />
+
+      {customMeta ? (
+        <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${
+          selectedId === CUSTOM_RINGTONE_ID ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'
+        }`}>
+          <button type="button" onClick={() => choose(CUSTOM_RINGTONE_ID)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
+            <FiMusic className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate">{customMeta.name}</span>
+          </button>
+          <button type="button" onClick={() => fileInputRef.current?.click()} title="Replace song" className="p-1 rounded hover:bg-black/5 flex-shrink-0">
+            <FiUpload className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={handleRemove} title="Remove" className="p-1 rounded hover:bg-red-50 text-red-500 flex-shrink-0">
+            <FiTrash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-gray-300 text-sm font-medium text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-colors disabled:opacity-50"
+        >
+          <FiMusic className="h-4 w-4" />
+          {uploading ? 'Uploading…' : 'Upload a song from your phone'}
+        </button>
+      )}
+      <p className="text-[11px] text-gray-400 mt-1">MP3, M4A or WAV, up to 8MB. Stays on this device only.</p>
+    </div>
+  );
+}
 
 const CustomerDashboard = () => {
   const navigate = useNavigate();
@@ -1341,6 +1446,16 @@ const CustomerDashboard = () => {
                     <FiEdit className="h-4 w-4 mr-2" />
                     Edit Profile
                   </button>
+                </div>
+
+                {/* Call Ringtone — rings while a rider's voice/video call
+                    (placed from the ride tracker) is waiting to be answered. */}
+                <div className="mt-8 pt-6 border-t border-gray-100">
+                  <h4 className="text-base font-semibold text-gray-900 mb-1">Call Ringtone</h4>
+                  <p className="text-sm text-gray-500 mb-3">
+                    Plays on repeat while a voice or video call from your ride is waiting for you to answer. Saved to this device.
+                  </p>
+                  <CallRingtonePicker />
                 </div>
               </div>
             )}
