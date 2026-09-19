@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import { supabase } from '../services/supabase';
+import { compressImageFile } from '../utils/imageCompression';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
@@ -357,12 +358,13 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     if (!imageFile) return;
     setUploadingImage(true);
     try {
-      const ext = imageFile.name.split('.').pop() || 'jpg';
+      const compressed = await compressImageFile(imageFile, 1280, 0.8);
+      const ext = compressed.name.split('.').pop() || 'jpg';
       const path = `${productId}/${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(PRODUCT_IMAGE_BUCKET)
-        .upload(path, imageFile, { upsert: true, cacheControl: '3600' });
+        .upload(path, compressed, { upsert: true, cacheControl: '31536000' });
       if (uploadError) throw uploadError;
 
       const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);

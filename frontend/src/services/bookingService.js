@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { compressImageFile } from '../utils/imageCompression';
 
 // A 'ticket' or 'room' product doesn't have a time-of-day — it's booked
 // against one pseudo-slot covering the whole day. Rather than teach
@@ -341,11 +342,12 @@ export const slugifyFieldKey = (label) =>
 const BOOKING_UPLOAD_BUCKET = 'booking-uploads';
 
 export const uploadBookingAttachment = async (productId, file) => {
-  const ext = file.name.split('.').pop() || 'bin';
+  const compressed = await compressImageFile(file, 1600, 0.8); // no-ops for non-image files (e.g. PDFs)
+  const ext = compressed.name.split('.').pop() || 'bin';
   const path = `${productId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
   const { error: uploadError } = await supabase.storage
     .from(BOOKING_UPLOAD_BUCKET)
-    .upload(path, file, { upsert: false, cacheControl: '3600' });
+    .upload(path, compressed, { upsert: false, cacheControl: '31536000' });
   if (uploadError) throw uploadError;
   const { data } = supabase.storage.from(BOOKING_UPLOAD_BUCKET).getPublicUrl(path);
   return data.publicUrl;

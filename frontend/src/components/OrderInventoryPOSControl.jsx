@@ -19,6 +19,7 @@ import {
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import { compressImageFile } from '../utils/imageCompression';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
@@ -114,12 +115,13 @@ const OrderInventoryPOSControl = () => {
 
   // Uploads to the shared product-photos bucket and points products.images at it
   const uploadProductPhoto = async (productId, file) => {
-    const ext = file.name.split('.').pop() || 'jpg';
+    const compressed = await compressImageFile(file, 1280, 0.8);
+    const ext = compressed.name.split('.').pop() || 'jpg';
     const path = `${productId}/${Date.now()}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from(PRODUCT_IMAGE_BUCKET)
-      .upload(path, file, { upsert: true, cacheControl: '3600' });
+      .upload(path, compressed, { upsert: true, cacheControl: '31536000' });
     if (uploadError) throw uploadError;
 
     const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
