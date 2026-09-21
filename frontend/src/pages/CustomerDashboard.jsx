@@ -38,6 +38,7 @@ import {
   FiMusic,
   FiUpload,
   FiTrash2,
+  FiExternalLink,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { referralService } from '../services/referralService';
@@ -1250,6 +1251,19 @@ const CustomerDashboard = () => {
             {/* Book Ride — mybodaguy ride booking */}
             {activeTab === 'book-ride' && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <a
+                  href="https://bodagoera.icanera.space"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100 transition-colors"
+                >
+                  <span className="text-lg" aria-hidden="true">🏍️</span>
+                  <span className="flex-1">
+                    <strong className="font-semibold">For a better experience, open BodaGoEra.</strong>{' '}
+                    It has the full ride booking experience.
+                  </span>
+                  <FiExternalLink className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                </a>
                 <EnhancedRideRequest customerId={user?.id} fixedServiceType="ride" />
               </div>
             )}
