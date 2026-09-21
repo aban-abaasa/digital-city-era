@@ -15,6 +15,7 @@ import {
 } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
 import BuyIcanModal from '@/components/BuyIcanModal';
+import SellIcanModal from '@/components/SellIcanModal';
 import SendIcanOutModal from '@/components/SendIcanOutModal';
 import PayMoneyModal from '@/components/PayMoneyModal';
 import ReceiveMoneyModal from '@/components/ReceiveMoneyModal';
@@ -410,7 +411,7 @@ export default function ICANWalletPage({
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | null
+  const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | 'sendout' | null
   const [paymentReceipt, setPaymentReceipt] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [selectedTx, setSelectedTx] = useState(null);
@@ -642,6 +643,7 @@ export default function ICANWalletPage({
             { label: 'Receive', icon: '↓', color: 'from-emerald-700 to-emerald-900', action: () => setModal('receive') },
             { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => setModal('buy') },
             { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => setModal('sell') },
+            { label: 'Send Out', icon: '📤', color: 'from-pink-700 to-pink-900', action: () => setModal('sendout') },
             { label: 'History', icon: '≡', color: 'from-blue-700 to-blue-900', action: () => document.getElementById('tx-section')?.scrollIntoView({ behavior: 'smooth' }) },
           ].map(btn => (
             <button key={btn.label} onClick={btn.action}
@@ -806,6 +808,9 @@ export default function ICANWalletPage({
         <BuyIcanModal userId={userId} onClose={() => setModal(null)} onSuccess={loadWallet} />
       )}
       {modal === 'sell' && (
+        <SellIcanModal userId={userId} balance={balance} onClose={() => setModal(null)} onSuccess={loadWallet} />
+      )}
+      {modal === 'sendout' && (
         <SendIcanOutModal userId={userId} balance={balance} onClose={() => setModal(null)} onSuccess={loadWallet} />
       )}
       {paymentReceipt && (

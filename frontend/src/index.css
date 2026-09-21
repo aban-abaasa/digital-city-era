@@ -80,3 +80,50 @@ textarea::placeholder {
     opacity: 0;
   }
 }
+
+/* Classic customer dashboard — serif display type, ivory/gold surfaces and a
+   bottom-sheet menu, shared by the phone Overview pieces. Colours are always
+   explicit (never inherited) because this app's body text defaults to a
+   near-white for its dark theme. */
+.font-classic-display {
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+
+.gold-rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #c4a052 25%, #c4a052 75%, transparent);
+}
+
+.classic-card {
+  background: #ffffff;
+  border: 1px solid rgba(196, 160, 82, 0.28);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(30, 27, 75, 0.05),
+    0 12px 28px -16px rgba(30, 27, 75, 0.25);
+}
+
+.classic-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #a17c28;
+}
+
+.safe-top { padding-top: env(safe-area-inset-top, 0px); }
+.safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes fade-soft {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-sheet-up { animation: sheet-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.animate-fade-soft { animation: fade-soft 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-up, .animate-fade-soft { animation: none; }
+}

@@ -38,6 +38,10 @@ import {
   FiMusic,
   FiUpload,
   FiTrash2,
+  FiHome,
+  FiNavigation,
+  FiSend,
+  FiGrid,
   FiExternalLink,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
@@ -45,6 +49,9 @@ import { referralService } from '../services/referralService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
+import { Greeting, LiveClock } from '../components/customerDashboard/LiveClock';
+import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
+import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
@@ -162,7 +169,6 @@ const CustomerDashboard = () => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
   const { user, customer, logout, loading: authLoading, isAuthenticated } = useAuth();
-  const [currentTime, setCurrentTime] = useState(new Date());
   // Lets the landing page's product showcase deep-link a signed-in visitor
   // straight into the Shop tab (?tab=shop) instead of always landing on
   // Overview — falls back to 'overview' for anything not a real tab id.
@@ -171,9 +177,6 @@ const CustomerDashboard = () => {
     const validTabs = ['overview', 'book-ride', 'journey', 'shop', 'delivery', 'rewards', 'profile'];
     return validTabs.includes(requested) ? requested : 'overview';
   });
-  // Small phones: collapse the membership/stats/actions blocks behind a
-  // compact tab switcher instead of stacking three tall sections.
-  const [heroTab, setHeroTab] = useState('actions');
   // Overview main column: Recent Orders / Recommended split into small tabs
   // instead of two stacked cards. Tabs stay visible; content collapses.
   const [overviewSubTab, setOverviewSubTab] = useState('orders');
@@ -215,7 +218,6 @@ const CustomerDashboard = () => {
 
   // Mobile 3-dot nav
   const [mobileMenuOpen, setMobileMenu] = useState(false);
-  const menuRef = useRef(null);
 
   // ICAN wallet for rewards tab
   const [icanBalance, setIcanBalance] = useState(null);
@@ -407,23 +409,6 @@ const CustomerDashboard = () => {
     fetchData();
   }, [customer, isAuthenticated]);
 
-  // Live time updates - MUST be before early returns to maintain hook order
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Close mobile menu on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setMobileMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   // Load ICAN wallet when rewards tab opens
   useEffect(() => {
     if (activeTab !== 'rewards' || !user?.id) return;
@@ -487,16 +472,22 @@ const CustomerDashboard = () => {
   // EnhancedRideRequest (the one real matching-engine implementation) but
   // each locks it to a single fixedServiceType so Book Ride never shows the
   // delivery toggle and vice versa.
+  // emoji drives the desktop tab strip; icon drives the phone menu sheet and
+  // section bar.
   const ALL_TABS = [
-    { id: 'overview', label: 'Overview', emoji: '🏠' },
-    { id: 'book-ride', label: 'Book Ride', emoji: '🏍️' },
-    { id: 'journey', label: 'Book a Journey', emoji: '✈️' },
-    { id: 'shop', label: 'Shop', emoji: '🛒' },
-    { id: 'book-service', label: 'Book', emoji: '📅' },
-    { id: 'delivery', label: 'Delivery', emoji: '📦' },
-    { id: 'rewards', label: 'Rewards', emoji: '🎁' },
-    { id: 'profile', label: 'Profile', emoji: '👤' },
+    { id: 'overview', label: 'Overview', emoji: '🏠', icon: FiHome },
+    { id: 'book-ride', label: 'Book Ride', emoji: '🏍️', icon: FiNavigation },
+    { id: 'journey', label: 'Book a Journey', emoji: '✈️', icon: FiSend },
+    { id: 'shop', label: 'Shop', emoji: '🛒', icon: FiShoppingBag },
+    { id: 'book-service', label: 'Book', emoji: '📅', icon: FiCalendar },
+    { id: 'delivery', label: 'Delivery', emoji: '📦', icon: FiPackage },
+    { id: 'rewards', label: 'Rewards', emoji: '🎁', icon: FiGift },
+    { id: 'profile', label: 'Profile', emoji: '👤', icon: FiUser },
   ];
+  const activeTabMeta =
+    ALL_TABS.find(t => t.id === activeTab) ||
+    (activeTab === 'ican-wallet' ? { label: 'IcanEra Wallet', icon: FiCreditCard } : ALL_TABS[0]);
+  const ActiveTabIcon = activeTabMeta.icon;
 
   // Authentication check for non-demo mode
   // For demo, we'll use fallback data
@@ -705,36 +696,44 @@ const CustomerDashboard = () => {
           .animate-wiggle:hover { animation: wiggle 0.5s ease-in-out; }
         `
       }} />
-      {/* Header — 2 rows: brand + nav */}
+      {/* Header — greeting + nav */}
       <div className="sticky top-0 z-50 shadow-md">
-        {/* Row 1 — brand + user + mobile 3-dot */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+        {/* Row 1 — greeting + actions. safe-top keeps it clear of the notch /
+            status bar when installed as a PWA (index.html sets a
+            black-translucent status bar). */}
+        <div className="safe-top bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between h-14">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  <FiUser className="h-4 w-4 text-white" />
+            <div className="flex items-center justify-between h-[68px] gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-white/15 font-classic-display text-lg font-bold ring-1 ring-[#f5dfa0]/70 shadow-inner">
+                  {(currentUser.firstName || 'C').charAt(0).toUpperCase()}
                 </div>
-                <div>
-                  <p className="font-bold leading-none text-sm">Hi, {currentUser.firstName}! 👋</p>
-                  <p className="text-[10px] opacity-75">{currentTime.toLocaleTimeString()}</p>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-semibold uppercase leading-none tracking-[0.24em] text-[#f3dc9b]">
+                    <Greeting />
+                  </p>
+                  <p className="mt-1.5 truncate font-classic-display text-[20px] font-bold leading-none">{currentUser.firstName}</p>
+                  <p className="mt-1.5 text-[10px] leading-none text-white/70"><LiveClock /></p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button className="p-1.5 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button aria-label="Notifications"
+                  className="grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 transition-colors hover:bg-white/25">
                   <FiBell className="h-4 w-4" />
                 </button>
-                <button className="p-1.5 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors hidden sm:flex">
+                <button aria-label="Settings"
+                  className="hidden sm:grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 transition-colors hover:bg-white/25">
                   <FiSettings className="h-4 w-4" />
                 </button>
-                <button onClick={handleLogout}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors">
-                  <FiLogOut className="h-3.5 w-3.5" />
+                <button onClick={handleLogout} aria-label="Logout"
+                  className="flex h-10 w-10 items-center justify-center gap-1.5 rounded-full bg-white/15 text-sm font-medium ring-1 ring-white/25 transition-colors hover:bg-white/25 sm:w-auto sm:px-4">
+                  <FiLogOut className="h-4 w-4" />
                   <span className="hidden sm:inline">Logout</span>
                 </button>
               </div>
             </div>
           </div>
+          <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
         </div>
 
         {/* Row 2 — nav tabs (desktop only) */}
@@ -754,8 +753,8 @@ const CustomerDashboard = () => {
               ))}
               <button onClick={() => setActiveTab('ican-wallet')}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  activeTab === 'ican-wallet' 
-                    ? 'bg-violet-100 text-violet-700 font-semibold' 
+                  activeTab === 'ican-wallet'
+                    ? 'bg-violet-100 text-violet-700 font-semibold'
                     : 'text-violet-600 hover:bg-violet-50'
                 }`}>
                 <span>₡</span> IcanEra Wallet
@@ -764,37 +763,40 @@ const CustomerDashboard = () => {
           </div>
         </div>
 
-        {/* Mobile active-tab bar — the one and only mobile menu trigger */}
-        <div className="sm:hidden bg-white border-b border-blue-100 px-4 py-2 flex items-center justify-between relative" ref={menuRef}>
-          <span className="text-sm font-semibold text-slate-700">
-            {ALL_TABS.find(t => t.id === activeTab)?.emoji}{' '}
-            {ALL_TABS.find(t => t.id === activeTab)?.label}
-          </span>
-          <button onClick={() => setMobileMenu(o => !o)}
-            className="text-xs text-blue-500 font-medium flex items-center gap-1">
-            {mobileMenuOpen ? <FiX className="h-3.5 w-3.5" /> : <FiMoreVertical className="h-3.5 w-3.5" />} Menu
-          </button>
-          {mobileMenuOpen && (
-            <div className="absolute right-4 top-full mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
-              {ALL_TABS.map(tab => (
-                <button key={tab.id} onClick={() => switchTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left
-                    ${activeTab === tab.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700 hover:bg-slate-50'}`}>
-                  <span>{tab.emoji}</span>
-                  {tab.label}
-                  {activeTab === tab.id && <FiCheckCircle className="ml-auto text-blue-500 h-3.5 w-3.5" />}
-                </button>
-              ))}
-              <button onClick={() => { setActiveTab('ican-wallet'); setMobileMenu(false); }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 border-t border-slate-100">
-                <span>₡</span> IcanEra Wallet
-              </button>
+        {/* Phone section bar — current section in serif + the one menu
+            trigger (opens the bottom sheet rendered just below the header). */}
+        <div className="sm:hidden border-b border-[#c4a052]/25 bg-white">
+          <div className="flex h-12 items-center justify-between gap-3 px-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <ActiveTabIcon className="h-[17px] w-[17px] flex-shrink-0 text-indigo-600" />
+              <h2 className="truncate font-classic-display text-[18px] font-semibold leading-none text-slate-800">
+                {activeTabMeta.label}
+              </h2>
             </div>
-          )}
+            <button type="button" onClick={() => setMobileMenu(true)}
+              aria-label="Open menu" aria-expanded={mobileMenuOpen}
+              className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-[#c4a052]/40 bg-[#faf8f3] px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition-transform active:scale-95">
+              <FiGrid className="h-3.5 w-3.5 text-indigo-600" /> Menu
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Role Banner — admin / manager / cashier */}
+      <MobileMenuSheet
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenu(false)}
+        tabs={ALL_TABS}
+        activeTab={activeTab}
+        onSelect={switchTab}
+        onWallet={() => switchTab('ican-wallet')}
+        name={currentUser.full_name || currentUser.firstName}
+        email={currentUser.email}
+        initial={(currentUser.firstName || 'C').charAt(0).toUpperCase()}
+      />
+
+      {/* Role Banner — admin / manager / cashier. On a phone it's an inset
+          rounded card with a compact "Open" arrow instead of an edge-to-edge
+          strip whose long button label crowded the text. */}
       {staffRole && (() => {
         const config = {
           admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin',   gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1d4ed8 100%)' },
@@ -802,186 +804,61 @@ const CustomerDashboard = () => {
           cashier: { path: '/cashier-portal', icon: '💰', label: 'Cashier', gradient: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)' },
         }[staffRole];
         return (
-          <div onClick={() => navigate(config.path)} className="cursor-pointer" style={{ background: config.gradient }}>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{config.icon}</span>
-                <div>
-                  <p className="text-white font-semibold text-sm">You have {config.label} access</p>
-                  <p className="text-white/80 text-xs">Tap to open your {config.label} Portal</p>
+          <div onClick={() => navigate(config.path)} role="link" tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter') navigate(config.path); }}
+            className="cursor-pointer mx-4 mt-3 overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 sm:mx-0 sm:mt-0 sm:rounded-none sm:shadow-none sm:ring-0"
+            style={{ background: config.gradient }}>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-white/20 text-xl ring-1 ring-white/40 sm:h-auto sm:w-auto sm:bg-transparent sm:text-2xl sm:ring-0">{config.icon}</span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">
+                    <span className="sm:hidden">{config.label} access</span>
+                    <span className="hidden sm:inline">You have {config.label} access</span>
+                  </p>
+                  <p className="truncate text-xs text-white/80">
+                    <span className="sm:hidden">Tap to open your portal</span>
+                    <span className="hidden sm:inline">Tap to open your {config.label} Portal</span>
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 bg-white/20 hover:bg-white/30 transition-colors rounded-lg px-4 py-2">
-                <FiZap className="text-white h-4 w-4" />
-                <span className="text-white font-bold text-sm">Open {config.label} Portal</span>
-                <FiArrowRight className="text-white h-4 w-4" />
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center gap-2 rounded-full bg-white/20 transition-colors hover:bg-white/30 sm:h-auto sm:w-auto sm:rounded-lg sm:px-4 sm:py-2">
+                <FiZap className="hidden h-4 w-4 text-white sm:block" />
+                <span className="hidden text-sm font-bold text-white sm:inline">Open {config.label} Portal</span>
+                <FiArrowRight className="h-4 w-4 text-white" />
               </div>
             </div>
           </div>
         );
       })()}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Small phones: membership / stats / actions collapsed behind a
-            small tab switcher — full real content per tab, just one
-            section visible at a time instead of three stacked full-height
-            blocks before any real page content. */}
-        <div className="sm:hidden mb-6">
-          <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1">
-            {[
-              { id: 'membership', label: '👑 Membership' },
-              { id: 'stats', label: '📊 Stats' },
-              { id: 'actions', label: '⚡ Actions' },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setHeroTab(t.id)}
-                className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                  heroTab === t.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8">
+        {/* Phone Overview — loyalty card, live counts, service shortcuts and
+            next steps as one scroll (used to be three tabs hiding each other,
+            and used to render above EVERY tab, not just Overview). */}
+        {activeTab === 'overview' && (
+          <div className="sm:hidden mb-6">
+            <PhoneOverviewHero
+              firstName={currentUser.firstName}
+              membershipLevel={currentUser.membershipLevel}
+              badge={getMembershipBadge(currentUser.membershipLevel)}
+              points={currentUser.loyaltyPoints}
+              visits={currentUser.totalVisits}
+              totalSpent={currentUser.totalSpent}
+              formatCurrency={formatCurrency}
+              memberSinceYear={memberSinceYear}
+              activeOrders={customerData.recentOrders.filter(o => o.status !== 'delivered').length}
+              availableRewards={customerData.loyaltyRewards.filter(r => r.is_available).length}
+              onNavigate={switchTab}
+              onTrackOrders={handleTrackOrders}
+              onRedeemRewards={handleRedeemRewards}
+              onRefer={handleReferFriends}
+              onWallet={() => switchTab('ican-wallet')}
+              onCreateBusiness={handleCreateBusiness}
+              onBecomeSupplier={handleBecomeSupplier}
+            />
           </div>
-
-          {heroTab === 'membership' && (
-            <div className={`bg-gradient-to-r ${getMembershipColor(currentUser.membershipLevel)} rounded-2xl p-5 text-white relative overflow-hidden`}>
-              <div className="absolute inset-0 bg-black/10"></div>
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-1">
-                  <h1 className="text-xl font-bold">
-                    Your {currentUser.membershipLevel.charAt(0).toUpperCase() + currentUser.membershipLevel.slice(1)} Membership
-                  </h1>
-                  <span className="inline-flex items-center gap-1 bg-white/25 backdrop-blur-sm rounded-full px-2 py-0.5 text-[11px] font-semibold flex-shrink-0">
-                    {getMembershipBadge(currentUser.membershipLevel).icon} {getMembershipBadge(currentUser.membershipLevel).label}
-                  </span>
-                </div>
-                <p className="text-white/90 text-sm mb-4">Enjoy exclusive benefits and rewards</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2.5 text-center">
-                    <div className="text-base mb-0.5">⭐</div>
-                    <div className="text-lg font-bold"><AnimatedCounter end={currentUser.loyaltyPoints} duration={2000} /></div>
-                    <div className="text-white/90 text-[10px] leading-tight">Loyalty Points</div>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2.5 text-center">
-                    <div className="text-base mb-0.5">🛍️</div>
-                    <div className="text-lg font-bold"><AnimatedCounter end={currentUser.totalVisits} duration={1500} /></div>
-                    <div className="text-white/90 text-[10px] leading-tight">Total Visits</div>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2.5 text-center">
-                    <div className="text-base mb-0.5">💰</div>
-                    <div className="text-sm font-bold">{formatCurrency(currentUser.totalSpent)}</div>
-                    <div className="text-white/90 text-[10px] leading-tight">Total Spent</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {heroTab === 'stats' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-gray-600 text-[11px] truncate">Active Orders</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      <AnimatedCounter end={customerData.recentOrders.filter(o => o.status !== 'delivered').length} duration={1000} />
-                    </p>
-                  </div>
-                  <FiPackage className="h-6 w-6 text-blue-500 flex-shrink-0" />
-                </div>
-              </div>
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-gray-600 text-[11px] truncate">Available Rewards</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.is_available).length} duration={1200} />
-                    </p>
-                  </div>
-                  <FiGift className="h-6 w-6 text-green-500 flex-shrink-0" />
-                </div>
-              </div>
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-gray-600 text-[11px] truncate">Member Since</p>
-                    <p className="text-xl font-bold text-gray-900">{memberSinceYear}</p>
-                  </div>
-                  <FiStar className="h-6 w-6 text-yellow-500 flex-shrink-0" />
-                </div>
-              </div>
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-gray-600 text-[11px] truncate">Next Reward</p>
-                    <p className="text-xl font-bold text-gray-900">{1000 - (currentUser.loyaltyPoints % 1000)} pts</p>
-                  </div>
-                  <FiTrendingUp className="h-6 w-6 text-purple-500 flex-shrink-0" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {heroTab === 'actions' && (
-            <div className="space-y-3">
-              <button
-                onClick={() => switchTab('shop')}
-                className="w-full text-left bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                    <FiShoppingBag className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-sm">Shop the Store</h3>
-                    <p className="text-blue-100 text-xs mt-0.5">
-                      Browse products, track orders, and start shopping right away.
-                    </p>
-                  </div>
-                  <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
-                </div>
-              </button>
-
-              <button
-                onClick={handleCreateBusiness}
-                className="w-full text-left bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                    <FiBriefcase className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-sm">Create Your Business</h3>
-                    <p className="text-emerald-100 text-xs mt-0.5">
-                      Supermarket, hotel, boutique, or restaurant/café — set up your store and assign managers or cashiers.
-                    </p>
-                  </div>
-                  <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
-                </div>
-              </button>
-
-              <button
-                onClick={handleBecomeSupplier}
-                className="w-full text-left bg-gradient-to-br from-purple-600 to-fuchsia-700 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                    <FiUserPlus className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-sm">Become a Supplier</h3>
-                    <p className="text-fuchsia-100 text-xs mt-0.5">
-                       Create a supplier account, or let your store supply other businesses through the live supplier network.
-                    </p>
-                  </div>
-                  <FiShare2 className="h-4 w-4 flex-shrink-0 mt-1" />
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
+        )}
 
         {/* sm and up: full stacked layout — there's room to show everything at once */}
         <div className="hidden sm:block">
@@ -1149,35 +1026,45 @@ const CustomerDashboard = () => {
           <div className="lg:col-span-2">
             {activeTab === 'overview' && (
               <div className="space-y-4">
+                {/* Section title (phone) — the hero above is a lot of colour, so
+                    this gives the activity area its own quiet heading. */}
+                <div className="flex items-center gap-3 sm:hidden">
+                  <h3 className="font-classic-display text-lg font-semibold text-slate-800">Your activity</h3>
+                  <div className="gold-rule flex-1" />
+                </div>
+
                 {/* Small sub-tabs instead of two stacked cards — tabs always
                     visible, the content panel below collapses to save space. */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-1 gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-[#c4a052]/25 sm:w-fit sm:flex-none">
                     <button
                       onClick={() => { setOverviewSubTab('orders'); setOverviewContentOpen(true); }}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      aria-pressed={overviewSubTab === 'orders' && overviewContentOpen}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[12px] font-semibold transition-colors min-[360px]:px-3 min-[360px]:text-[13px] sm:flex-none sm:px-4 sm:text-sm ${
                         overviewSubTab === 'orders' && overviewContentOpen
-                          ? 'bg-gradient-to-r from-green-600 to-yellow-500 text-white shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                          ? 'bg-gradient-to-r from-indigo-700 to-violet-700 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      <FiShoppingBag className="h-4 w-4" /> Recent Orders
+                      <FiShoppingBag className="hidden h-4 w-4 min-[360px]:block" /> Recent Orders
                     </button>
                     <button
                       onClick={() => { setOverviewSubTab('recommended'); setOverviewContentOpen(true); }}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      aria-pressed={overviewSubTab === 'recommended' && overviewContentOpen}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[12px] font-semibold transition-colors min-[360px]:px-3 min-[360px]:text-[13px] sm:flex-none sm:px-4 sm:text-sm ${
                         overviewSubTab === 'recommended' && overviewContentOpen
-                          ? 'bg-gradient-to-r from-green-600 to-yellow-500 text-white shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                          ? 'bg-gradient-to-r from-indigo-700 to-violet-700 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      <FiHeart className="h-4 w-4" /> Recommended
+                      <FiHeart className="hidden h-4 w-4 min-[360px]:block" /> Recommended
                     </button>
                   </div>
                   <button
                     type="button"
                     onClick={() => setOverviewContentOpen((o) => !o)}
-                    className="flex-shrink-0 p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                    aria-expanded={overviewContentOpen}
+                    className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-[#c4a052]/25 transition-colors hover:text-slate-600"
                     title={overviewContentOpen ? 'Collapse' : 'Expand'}
                   >
                     <FiChevronDown className={`h-5 w-5 transition-transform ${overviewContentOpen ? 'rotate-180' : ''}`} />
@@ -1185,35 +1072,34 @@ const CustomerDashboard = () => {
                 </div>
 
                 {overviewContentOpen && overviewSubTab === 'orders' && (
-                  <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                    <div className="space-y-4">
+                  <div className="classic-card p-3 sm:p-6">
+                    <div className="space-y-3">
                       {customerData.recentOrders.slice(0, 3).map((order) => (
-                        <div key={order.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                              <FiPackage className="h-6 w-6 text-green-600" />
+                        <div key={order.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3 sm:p-4">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 ring-1 ring-inset ring-black/5">
+                              <FiPackage className="h-5 w-5" />
                             </div>
-                            <div>
-                              <p className="font-medium text-gray-900">{order.order_number || order.id}</p>
-                              <p className="text-sm text-gray-600">
-                                {new Date(order.order_date || order.date).toLocaleDateString()} •
-                                {order.order_items?.length || order.items} items
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-slate-900">{order.order_number || order.id}</p>
+                              <p className="text-xs leading-snug text-slate-500 sm:text-sm">
+                                {new Date(order.order_date || order.date).toLocaleDateString()} · {order.order_items?.length || order.items} items
                               </p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-medium text-gray-900">
+                          <div className="flex-shrink-0 text-right">
+                            <p className="text-sm font-semibold text-slate-900 sm:text-base">
                               {formatCurrency(order.total_amount || order.total)}
                             </p>
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                            <span className={`mt-1 inline-flex px-2 py-0.5 text-[11px] font-semibold capitalize rounded-full ${getStatusColor(order.status)}`}>
                               {order.status}
                             </span>
                           </div>
                         </div>
                       ))}
                       {customerData.recentOrders.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">
-                          <FiPackage className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <div className="py-8 text-center text-slate-500">
+                          <FiPackage className="mx-auto mb-4 h-12 w-12 opacity-50" />
                           <p>No orders yet. Start shopping to see your orders here!</p>
                         </div>
                       )}
@@ -1222,23 +1108,30 @@ const CustomerDashboard = () => {
                 )}
 
                 {overviewContentOpen && overviewSubTab === 'recommended' && (
-                  <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {customerData.recommendations.slice(0, 3).map((product) => (
-                        <div key={product.id} className="p-4 border border-gray-200 rounded-lg hover:shadow-md hover:border-yellow-300 transition-all">
-                          <div className="text-3xl mb-2">
-                            {product.product_images?.[0]?.image_url || product.image || '📦'}
+                  <div className="classic-card p-3 sm:p-6">
+                    {/* Phone: a swipeable row of cards; md+: the original 3-up grid */}
+                    <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-1 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0">
+                      {customerData.recommendations.slice(0, 3).map((product) => {
+                        const visual = product.product_images?.[0]?.image_url || product.image || '📦';
+                        const isUrl = /^(https?:|\/|data:)/.test(visual);
+                        return (
+                          <div key={product.id} className="min-w-[68%] snap-start rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-indigo-300 hover:shadow-md md:min-w-0">
+                            {isUrl ? (
+                              <img src={visual} alt="" className="mb-2 h-16 w-16 rounded-xl object-cover" loading="lazy" />
+                            ) : (
+                              <div className="mb-2 text-3xl">{visual}</div>
+                            )}
+                            <h4 className="font-semibold text-slate-900">{product.name}</h4>
+                            <p className="text-sm text-slate-500">{product.categories?.name || product.category || 'Product'}</p>
+                            <p className="mt-2 font-classic-display text-lg font-bold text-emerald-600">
+                              {formatCurrency(product.selling_price || product.price)}
+                            </p>
                           </div>
-                          <h4 className="font-medium text-gray-900">{product.name}</h4>
-                          <p className="text-sm text-gray-600">{product.categories?.name || product.category || 'Product'}</p>
-                          <p className="text-lg font-bold text-green-600 mt-2">
-                            {formatCurrency(product.selling_price || product.price)}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {customerData.recommendations.length === 0 && (
-                        <div className="col-span-3 text-center py-8 text-gray-500">
-                          <FiHeart className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <div className="w-full py-8 text-center text-slate-500 md:col-span-3">
+                          <FiHeart className="mx-auto mb-4 h-12 w-12 opacity-50" />
                           <p>No recommendations available at the moment.</p>
                         </div>
                       )}
@@ -1478,8 +1371,9 @@ const CustomerDashboard = () => {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Quick Actions — no header/collapse, just the compact tab-style
-                grid, always visible */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                grid. On the phone Overview the new hero above already offers
+                all four, so it's hidden there (still shown on other tabs and sm+). */}
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-3 ${activeTab === 'overview' ? 'hidden sm:block' : ''}`}>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => switchTab('shop')}

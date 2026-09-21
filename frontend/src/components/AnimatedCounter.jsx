@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 
-const AnimatedCounter = ({ 
-  value, 
-  duration = 1000, 
-  prefix = '', 
-  suffix = '', 
-  className = '' 
+const AnimatedCounter = ({
+  value: valueProp,
+  // Every dashboard call site passes the target as `end`, not `value` — with
+  // only `value` read here they all animated toward undefined and sat at 0.
+  end,
+  duration = 1000,
+  prefix = '',
+  suffix = '',
+  className = ''
 }) => {
+  const value = valueProp ?? end;
   const [currentValue, setCurrentValue] = useState(0);
 
   useEffect(() => {
