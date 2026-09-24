@@ -29,7 +29,11 @@ import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
 import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
-import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount } from '../services/posOfflineQueue';
+import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount, generateTransactionId } from '../services/posOfflineQueue';
+import {
+  saveCatalog, loadCatalog, saveCachedProfile, loadCachedProfile,
+  getCachedIdentity, saveCachedIdentity, isNetworkFailure, precacheAppForOffline
+} from '../services/posOfflineCache';
 import { supabase } from '../services/supabase';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
@@ -78,6 +82,14 @@ const CashierPortal = () => {
   // Cash sales recorded while offline, queued in posOfflineQueue's IndexedDB
   // and not yet synced to Supabase — see processPayment's offline branch.
   const [pendingSalesCount, setPendingSalesCount] = useState(0);
+  // Browser's own connectivity flag — drives the offline banner. Whether the
+  // *backend* is reachable is decided per request (see isNetworkFailure).
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  // Effects below are set up once on mount, so their callbacks would otherwise
+  // keep calling the first render's loaders (which don't know the cashier's
+  // business type yet). Pointed at the latest ones after they're defined.
+  const loadersRef = useRef({});
+  const [catalogSavedAt, setCatalogSavedAt] = useState(null); // set while showing the on-device product copy
   const JOB_STATUS_STAGES = [
     { value: 'pending', label: 'Pending', icon: '🕓' },
     { value: 'in_progress', label: 'In Progress', icon: '🧺' },
@@ -257,6 +269,28 @@ const CashierPortal = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOnline(true);
+      // Swap the saved copies for live data the moment the connection is
+      // back (the sale queue syncs itself via initPosOfflineSync below).
+      loadersRef.current.loadProducts?.();
+      loadersRef.current.loadProfile?.();
+    };
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+  // Ask the service worker to keep this whole build on the device (every
+  // lazily-loaded chunk, not just the ones this session happened to open) so
+  // an installed till still launches and works after the connection is gone.
+  useEffect(() => { precacheAppForOffline(); }, []);
+
   // Cash sales recorded offline (see processPayment) sync automatically the
   // moment the till is back online — no separate "sync now" button to
   // remember to press, same auto-sync-on-reconnect pattern as ICAN's
@@ -269,7 +303,7 @@ const CashierPortal = () => {
         getPendingSalesCount().then(setPendingSalesCount).catch(() => {});
         if (state.synced > 0) {
           toast.success(`🔄 Synced ${state.synced} offline sale${state.synced !== 1 ? 's' : ''}.`);
-          loadProductsFromSupabase();
+          loadersRef.current.loadProducts?.();
         }
         if (state.failed > 0) {
           toast.warning(`⚠️ ${state.failed} offline sale${state.failed !== 1 ? 's' : ''} still pending sync — will retry.`);
@@ -298,8 +332,15 @@ const CashierPortal = () => {
       // The first product load can run before the profile request completes.
       // Resolve the authenticated user's supermarket directly so this query
       // always reads the catalog created by that supermarket's admin.
-      const supermarketId = cashierProfile?.supermarket_id ||
-        await inventoryService.getCurrentSupermarketId();
+      let supermarketId = cashierProfile?.supermarket_id;
+      if (!supermarketId && navigator.onLine) {
+        try {
+          supermarketId = await inventoryService.getCurrentSupermarketId();
+        } catch { /* backend unreachable — use the remembered one below */ }
+      }
+      // Offline, or the lookup couldn't reach the backend: the supermarket
+      // this till last loaded is the one it belongs to.
+      if (!supermarketId) supermarketId = getCachedIdentity()?.supermarketId;
       console.log('Loading products for supermarket:', supermarketId);
 
       if (!supermarketId) {
@@ -308,35 +349,81 @@ const CashierPortal = () => {
         return;
       }
 
-      // OPTIMIZED: Load products and inventory in parallel with timeouts
+      // The last good copy of this store's products, kept on the device. Used
+      // whenever the live load can't complete, so the till never goes blank.
+      const showSavedCatalog = async () => {
+        const saved = await loadCatalog(supermarketId);
+        if (!saved || saved.products.length === 0) return false;
+        setProducts(saved.products);
+        setCatalogSavedAt(saved.savedAt);
+        return true;
+      };
+
+      // No connection: don't wait out two 2s timeouts just to fail.
+      if (!navigator.onLine) {
+        if (!(await showSavedCatalog())) {
+          toast.info('📴 Offline and no saved products on this device yet. Open the till once while online to save them.');
+        }
+        return;
+      }
+
+      // Reads every row of a store's table (the API returns at most 1000 per
+      // request) — the saved offline copy has to hold the whole catalog, not
+      // the first 100 products. Ordered by id so pages can't overlap or skip.
+      const fetchAllRows = async (buildQuery) => {
+        const PAGE_SIZE = 1000;
+        const MAX_ROWS = 20000;
+        const rows = [];
+        for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+          const { data, error } = await buildQuery().order('id').range(from, from + PAGE_SIZE - 1);
+          if (error) return { data: [], error };
+          rows.push(...(data || []));
+          if (!data || data.length < PAGE_SIZE) break;
+        }
+        return { data: rows, error: null };
+      };
+      const LOAD_TIMEOUT_MS = 8000;
+
+      // Load products and inventory in parallel with timeouts
       const [productsResult, inventoryResult] = await Promise.all([
-        // Load products
         Promise.race([
-          supabase
+          fetchAllRows(() => supabase
             .from('products')
             .select('id, name, price, selling_price, cost_price, barcode, sku, is_active, inventory_mode')
             .eq('is_active', true)
-            .eq('supermarket_id', supermarketId)
-            .limit(100),
+            .eq('supermarket_id', supermarketId)),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout')), 2000)
+            setTimeout(() => reject(new Error('Timeout')), LOAD_TIMEOUT_MS)
           )
         ]).catch(err => ({ data: [], error: err })),
-        
-        // Load inventory data
+
         Promise.race([
-          supabase
+          fetchAllRows(() => supabase
             .from('inventory')
-            .select('product_id, current_stock, reserved_stock, minimum_stock, reorder_point')
-            .eq('supermarket_id', supermarketId),
+            .select('id, product_id, current_stock, reserved_stock, minimum_stock, reorder_point')
+            .eq('supermarket_id', supermarketId)),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout')), 2000)
+            setTimeout(() => reject(new Error('Timeout')), LOAD_TIMEOUT_MS)
           )
         ]).catch(err => ({ data: [], error: err }))
       ]);
 
       console.log(`📦 Products found: ${productsResult.data?.length || 0}`);
       console.log(`📊 Inventory records: ${inventoryResult.data?.length || 0}`);
+
+      // A failed/timed-out fetch comes back as empty data, which used to wipe
+      // the list and claim the store has no products. Products without their
+      // stock levels would show everything as out of stock, so either query
+      // failing counts. Keep selling from the saved copy instead.
+      if (productsResult.error || inventoryResult.error) {
+        console.warn('⚠️ Live product load failed, using saved copy:', productsResult.error || inventoryResult.error);
+        if (await showSavedCatalog()) {
+          toast.info("📴 Can't reach the server — showing products saved on this device.");
+          return;
+        }
+        toast.error("Couldn't load products and none are saved on this device yet.");
+        return;
+      }
 
       // Create stock map
       const stockMap = {};
@@ -394,6 +481,13 @@ const CashierPortal = () => {
 
       console.log(`✅ Total products to display: ${productsWithInventory.length}`);
       
+      // Live copy loaded: it replaces the saved one and clears the "saved
+      // copy" notice. Saved even when empty, so a store that really has no
+      // products doesn't resurrect deleted ones from an older copy.
+      setCatalogSavedAt(null);
+      saveCatalog(supermarketId, productsWithInventory);
+      saveCachedIdentity({ supermarketId });
+
       if (productsWithInventory.length > 0) {
         setProducts(productsWithInventory);
         toast.success(`✅ Loaded ${productsWithInventory.length} products`);
@@ -406,8 +500,9 @@ const CashierPortal = () => {
       }
     } catch (error) {
       console.error('❌ Error loading products:', error);
+      // Keep whatever is already on screen (live or saved) instead of blanking
+      // the till over a failed refresh.
       toast.error('Failed to load products: ' + error.message);
-      setProducts([]);
     } finally {
       setProductsLoading(false);
     }
@@ -415,11 +510,30 @@ const CashierPortal = () => {
 
   // Load cashier profile from Supabase
   const loadCashierProfile = async () => {
+    // Last profile loaded while online, kept on the device. Without it an
+    // offline till has no supermarket_id/cashier name, so it can't load
+    // products or stamp sales with who rang them up.
+    const useSavedProfile = async () => {
+      const saved = await loadCachedProfile();
+      if (!saved) return false;
+      setCashierProfile(prev => ({ ...prev, ...saved }));
+      if (saved.avatar_url) setProfilePicUrl(saved.avatar_url);
+      return true;
+    };
+
     try {
+      if (!navigator.onLine) {
+        await useSavedProfile();
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
+        // No user could be resolved: signed out, or (more often for a till)
+        // the backend just isn't reachable so getUser() couldn't confirm.
         console.error('No authenticated user');
+        await useSavedProfile();
         return;
       }
 
@@ -434,6 +548,7 @@ const CashierPortal = () => {
 
       if (error && error.code !== 'PGRST116') {
         console.error('Error loading cashier profile:', error);
+        if (isNetworkFailure(error)) await useSavedProfile();
         return;
       }
 
@@ -452,15 +567,18 @@ const CashierPortal = () => {
         // inventorySupabaseService.js's businessType lookup.
         let businessType = null;
         if (cashierData.supermarket_id) {
-          const { data: store } = await supabase
+          const { data: store, error: storeError } = await supabase
             .from('supermarkets')
             .select('business_type')
             .eq('id', cashierData.supermarket_id)
             .maybeSingle();
           businessType = store?.business_type || null;
+          // Couldn't ask (flaky link) — don't downgrade a known business type
+          // to "unknown", which would switch off wholesale/boutique behavior.
+          if (!businessType && storeError) businessType = (await loadCachedProfile())?.businessType || null;
         }
 
-        setCashierProfile({
+        const loadedProfile = {
           id: cashierData.id,
           user_id: user.id, // Auth user ID for wallet operations
           supermarket_id: cashierData.supermarket_id,
@@ -487,7 +605,10 @@ const CashierPortal = () => {
             foreignCurrency: true,
             loyaltyProgram: true
           }
-        });
+        };
+        setCashierProfile(loadedProfile);
+        saveCachedProfile(loadedProfile);
+        saveCachedIdentity({ userId: user.id, supermarketId: loadedProfile.supermarket_id });
         
         // Set profile pic URL state - always update, even if null
         setProfilePicUrl(profilePicture);
@@ -497,8 +618,11 @@ const CashierPortal = () => {
       }
     } catch (error) {
       console.error('Error loading cashier profile:', error);
+      if (isNetworkFailure(error)) await useSavedProfile();
     }
   };
+
+  loadersRef.current = { loadProducts: loadProductsFromSupabase, loadProfile: loadCashierProfile };
 
   // Handle profile picture upload
   const handleProfilePictureUpload = async (event) => {
@@ -1557,21 +1681,36 @@ const CashierPortal = () => {
         customer: currentTransaction.customer || { name: 'Walk-in Customer' },
         cashier: cashierProfile,
         register: cashierProfile.register,
-        location: cashierProfile.location || 'Kampala Main Branch'
+        location: cashierProfile.location || 'Kampala Main Branch',
+        // Fixed up front so that if this attempt fails halfway (request sent,
+        // answer never received) and the sale is queued, the replay can tell
+        // it's the same sale instead of inserting it twice. soldAt keeps the
+        // real time of sale on the record when it syncs later.
+        clientTransactionId: generateTransactionId(),
+        soldAt: result.timestamp
       };
 
-      if (!navigator.onLine) {
-        // WhatsApp-style offline recording: the cash is already physically
-        // collected, so queue the exact payload the online path below would
-        // have sent (see posOfflineQueue.js) and replay it through the same
-        // transactionService.saveTransaction/inventoryService.adjustStockAfterSale
-        // once back online — no receipt number yet (generating one reads
-        // today's transaction count from Supabase), no stock deduction yet,
-        // both happen for real at sync time.
+      // Records the sale on this device to be sent once the backend is
+      // reachable: the cash is already collected, so the sale is real now.
+      const recordSaleOffline = async () => {
         await queueSale(transactionPayload, itemsForStockUpdate.length ? {
           items: itemsForStockUpdate, saleId, supermarketId: cashierProfile?.supermarket_id || null
         } : null);
         setPendingSalesCount((n) => n + 1);
+
+        // The server's stock doesn't know about this sale yet, so take it off
+        // the on-device copy too — otherwise the same last unit could be sold
+        // again before anything syncs.
+        if (itemsForStockUpdate.length) {
+          const sold = new Map(itemsForStockUpdate.map(i => [i.product_id, i.quantity]));
+          const updated = products.map(p => sold.has(p.id)
+            ? { ...p, stock: Math.max(0, p.stock - sold.get(p.id)), available_stock: p.available_stock - sold.get(p.id) }
+            : p);
+          setProducts(updated);
+          if (cashierProfile?.supermarket_id) {
+            saveCatalog(cashierProfile.supermarket_id, updated, { keepSavedAt: true });
+          }
+        }
 
         setReceiptData({
           ...result,
@@ -1587,11 +1726,34 @@ const CashierPortal = () => {
         });
 
         setTimeout(() => setShowReceiptModal(true), 500);
-        toast.success('📴 Sale recorded offline — will sync automatically when back online.');
+        toast.success('📴 Sale recorded on this device — will sync automatically when the connection is back.');
+      };
+
+      // Set when the online attempt below couldn't reach the backend and the
+      // sale went to the queue instead (which also covers its stock update).
+      let queuedInstead = false;
+
+      if (!navigator.onLine) {
+        // WhatsApp-style offline recording (see posOfflineQueue.js): replayed
+        // through the same transactionService.saveTransaction /
+        // inventoryService.adjustStockAfterSale once back online — no receipt
+        // number yet (generating one reads today's transaction count from
+        // Supabase), no server-side stock deduction yet, both happen for real
+        // at sync time.
+        await recordSaleOffline();
       } else {
         // 🔥 Save transaction to database
         try {
-          const saveResult = await transactionService.saveTransaction(transactionPayload);
+          // "Online" per the browser can still mean a dead uplink where a
+          // request hangs for a minute+. Don't leave the cashier and customer
+          // staring at a spinner: past this, queue the sale (the fixed
+          // clientTransactionId makes a late-arriving original harmless).
+          const saveResult = await Promise.race([
+            transactionService.saveTransaction(transactionPayload),
+            new Promise((resolve) => setTimeout(
+              () => resolve({ success: false, error: 'Request timed out' }), 15000
+            ))
+          ]);
 
           if (saveResult.success) {
             console.log('✅ Transaction saved:', saveResult.receiptNumber);
@@ -1621,17 +1783,29 @@ const CashierPortal = () => {
                 ? `✅ Payment successful! Receipt: ${saveResult.receiptNumber}`
                 : `🧾 Invoice created: ${saveResult.receiptNumber} — balance due ${formatUGX(saveResult.balanceDue)}`
             );
+          } else if (isNetworkFailure(saveResult.error)) {
+            // The browser says it's online but the backend didn't answer.
+            // Previously this dropped the sale ("receipt not saved"); now it
+            // waits in the queue like any offline sale.
+            console.warn('⚠️ Backend unreachable, queueing sale:', saveResult.error);
+            await recordSaleOffline();
+            queuedInstead = true;
           } else {
             console.error('❌ Failed to save transaction:', saveResult.error);
             toast.warning('⚠️ Payment successful but receipt not saved');
           }
         } catch (saveError) {
           console.error('❌ Error saving transaction:', saveError);
-          toast.warning('⚠️ Payment successful but receipt not saved');
+          if (isNetworkFailure(saveError)) {
+            await recordSaleOffline();
+            queuedInstead = true;
+          } else {
+            toast.warning('⚠️ Payment successful but receipt not saved');
+          }
         }
 
         // 🔥 Update stock in Supabase after successful payment
-        try {
+        if (!queuedInstead) try {
           const stockUpdated = itemsForStockUpdate.length === 0
             ? true
             : await inventoryService.adjustStockAfterSale(itemsForStockUpdate, saleId);
@@ -2137,6 +2311,20 @@ const CashierPortal = () => {
                 <FiShoppingCart className="h-4 md:h-5 w-4 md:w-5 flex-shrink-0" />
                 <span>{cashierProfile.register}</span>
               </div>
+              {!isOnline && (
+                <div className="flex items-center gap-1 md:gap-2">
+                  <span className="font-semibold text-amber-200" title="No internet connection. Cash sales are saved on this device and sent automatically when it returns.">
+                    📴 Offline mode
+                  </span>
+                </div>
+              )}
+              {catalogSavedAt && (
+                <div className="flex items-center gap-1 md:gap-2">
+                  <span className="font-semibold text-amber-200" title="Products and stock levels shown are the last copy saved on this device, not live.">
+                    📦 Saved products (as of {new Date(catalogSavedAt).toLocaleString('en-UG', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })})
+                  </span>
+                </div>
+              )}
               {pendingSalesCount > 0 && (
                 <div className="flex items-center gap-1 md:gap-2">
                   <span className="font-semibold text-amber-200" title="Cash sales recorded offline, syncing automatically once back online">

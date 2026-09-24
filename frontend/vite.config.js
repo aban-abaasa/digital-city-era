@@ -6,6 +6,20 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Lists every JS/CSS file of the build so the service worker (public/sw.js)
+// can store the whole app on an installed till, including lazily-loaded
+// chunks that nothing has opened yet.
+const assetManifestPlugin = () => ({
+  name: 'asset-manifest',
+  apply: 'build',
+  generateBundle(_, bundle) {
+    const files = Object.keys(bundle)
+      .filter((name) => /\.(js|css)$/.test(name))
+      .map((name) => encodeURI(`/${name}`));
+    this.emitFile({ type: 'asset', fileName: 'asset-manifest.json', source: JSON.stringify({ files }) });
+  }
+});
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // Load environment variables
@@ -13,7 +27,7 @@ export default defineConfig(({ mode }) => {
   const isAdminMode = env.ADMIN_MODE === 'true';
   
   return {
-    plugins: [react()],
+    plugins: [react(), assetManifestPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

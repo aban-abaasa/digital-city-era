@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { getCachedIdentity, saveCachedIdentity, clearCachedIdentity, isNetworkFailure } from '../services/posOfflineCache';
+
+// An explicit sign-out (or a session supabase-js itself gave up on) must also
+// forget the remembered role below, or the next offline visit would let a
+// signed-out person straight back into the portal.
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') clearCachedIdentity();
+});
 
 // Where each role lands automatically when it hits a page it doesn't own.
 export const ROLE_HOME = {
@@ -75,9 +83,28 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         console.log('[ROLE-GUARD] path=', location.pathname, 'session user=', session?.user?.email || null, 'sessionError=', sessionError || null);
 
+        // No connection (or backend unreachable) is not the same as signed
+        // out: with an expired access token supabase-js can't refresh it and
+        // reports no session. The till has to keep opening in that state, so
+        // fall back to the role verified last time we were online — same
+        // trust as the session already sitting in localStorage, and every
+        // real write is still checked server-side by RLS.
+        const cachedIdentity = getCachedIdentity();
+        const backendUnreachable = !navigator.onLine || isNetworkFailure(sessionError);
+
         if (!session?.user) {
           if (!active) return;
+          if (backendUnreachable && cachedIdentity?.role) {
+            finishWithDecision(true, cachedIdentity.role);
+            return;
+          }
           finishWithDecision(false, null);
+          return;
+        }
+
+        if (!navigator.onLine && cachedIdentity?.userId === session.user.id && cachedIdentity.role) {
+          if (!active) return;
+          finishWithDecision(true, cachedIdentity.role);
           return;
         }
 
@@ -119,7 +146,17 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
           }
         }
 
+        // The users lookup itself failing on the network (as opposed to
+        // returning no row) must not read as "role unknown -> bounce to the
+        // customer dashboard".
+        if (!userRow && userError && isNetworkFailure(userError) && cachedIdentity?.userId === session.user.id && cachedIdentity.role) {
+          if (!active) return;
+          finishWithDecision(true, cachedIdentity.role);
+          return;
+        }
+
         const role = userRow?.role?.toLowerCase() || null;
+        if (role) saveCachedIdentity({ userId: session.user.id, email: session.user.email, role });
 
         console.log('[ROLE-GUARD] user_id=', session.user.id, 'userRow=', userRow, 'role=', role, 'userError=', userError || null);
 

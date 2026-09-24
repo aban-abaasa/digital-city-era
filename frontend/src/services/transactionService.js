@@ -57,11 +57,35 @@ class TransactionService {
         expenditureType = null,  // business or personal
         expenditureCategory = null,  // Category classification
         jobStatus = null,  // Service-ticket progress (e.g. laundry): pending/in_progress/ready_for_collection/collected
-        dueDate = null  // Optional invoice due date when the sale is not fully paid
+        dueDate = null,  // Optional invoice due date when the sale is not fully paid
+        clientTransactionId = null,  // Set by the offline queue (posOfflineQueue.js) so a replay can't double-insert
+        soldAt = null  // Original sale time when replaying a sale recorded offline
       } = transactionData;
 
       // Generate transaction ID and receipt number
-      const transactionId = `TXN_${Date.now()}_${Math.random().toString(36).substring(7).toUpperCase()}`;
+      const transactionId = clientTransactionId || `TXN_${Date.now()}_${Math.random().toString(36).substring(7).toUpperCase()}`;
+
+      // A queued sale may have already reached the database on an earlier
+      // attempt whose response never made it back (connection dropped after
+      // the insert committed). Recognize it instead of recording it twice.
+      if (clientTransactionId) {
+        const { data: existing } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('transaction_id', clientTransactionId)
+          .maybeSingle();
+        if (existing) {
+          return {
+            success: true,
+            transaction: existing,
+            receiptNumber: existing.receipt_number,
+            transactionId: existing.transaction_id,
+            paymentStatus: existing.payment_status,
+            balanceDue: existing.balance_due_ugx ?? 0
+          };
+        }
+      }
+
       const receiptNumber = await this.generateReceiptNumber();
 
       // Get current user ID (cashier)
@@ -148,7 +172,7 @@ class TransactionService {
 
         // Status
         status: 'completed',
-        created_at: new Date().toISOString(),
+        created_at: soldAt || new Date().toISOString(),
 
         // Invoice vs. receipt (see comment above) and service job progress
         payment_status: paymentStatus,

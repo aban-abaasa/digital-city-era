@@ -12,6 +12,15 @@ import ChatWidget from '@/components/ChatWidget';
 import CountryGate from '@/components/CountryGate';
 import ScrollToTop from '@/components/ScrollToTop';
 import HiddenDecoyLinks from '@/components/security/HiddenDecoyLinks';
+import { getCachedIdentity, isInstalledApp } from '@/services/posOfflineCache';
+
+// The installed till app opens straight into the till for a signed-in cashier
+// (the remembered sign-in survives the PC being switched off), instead of the
+// public landing page. The route guard still verifies the session, or falls
+// back to the remembered role when there's no connection. A normal browser
+// tab keeps showing the landing page.
+const opensStraightToTill = () =>
+  isInstalledApp() && ['cashier', 'employee'].includes(getCachedIdentity()?.role);
 
 // Portals are separate lazily-loaded pages (see utils/portalPages.js)
 import { PORTAL_LOADERS, loadCashierStation } from '@/utils/portalPages';
@@ -204,7 +213,9 @@ function App() {
                     ? <Navigate to="/auth/callback" replace />
                     : window.location.hash === '#admin' || window.location.hash === '#/admin' 
                       ? <Navigate to="/admin-login" replace /> 
-                      : <SupermartkeraLanding />
+                      : opensStraightToTill()
+                        ? <Navigate to="/cashier-portal" replace />
+                        : <SupermartkeraLanding />
                 } 
               />
 

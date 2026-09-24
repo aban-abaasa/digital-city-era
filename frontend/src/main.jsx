@@ -7,6 +7,7 @@ import App from './App.jsx'
 import setupMockAxios from './services/mockApi.jsx'
 import { initClockDiagnostic } from './utils/clockDiagnostic.js'
 import PWAInstallPrompt from './components/PWAInstallPrompt.jsx'
+import { startGlobalPosSync } from './services/posOfflineQueue.js'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -103,6 +104,11 @@ setupMockAxios();
 
 // Initialize clock diagnostic to detect time sync issues
 initClockDiagnostic();
+
+// Sales rung up while offline live in IndexedDB and outlive the page — send
+// them whenever the app is open and the backend is reachable, whichever
+// screen it happens to be on.
+startGlobalPosSync();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

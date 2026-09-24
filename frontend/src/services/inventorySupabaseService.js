@@ -115,7 +115,17 @@ class InventorySupabaseService {
       return userRow?.supermarket_id || null;
     })();
 
-    return this._supermarketIdPromise;
+    // Only a real answer is worth memoizing. A lookup that came back empty or
+    // threw (no connection, backend down) must be retried next call —
+    // otherwise one failed attempt while offline pins "no supermarket" for
+    // the rest of the page's life, even after the connection returns.
+    const pending = this._supermarketIdPromise;
+    pending.then(
+      (id) => { if (!id && this._supermarketIdPromise === pending) this._supermarketIdPromise = null; },
+      () => { if (this._supermarketIdPromise === pending) this._supermarketIdPromise = null; }
+    );
+
+    return pending;
   }
 
   // ============================================================================
