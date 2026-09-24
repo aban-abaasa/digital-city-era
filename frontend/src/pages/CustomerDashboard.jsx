@@ -49,7 +49,8 @@ import { referralService } from '../services/referralService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
-import { Greeting, LiveClock } from '../components/customerDashboard/LiveClock';
+import { Greeting } from '../components/customerDashboard/LiveClock';
+import PortalHeader from '../components/PortalHeader';
 import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import { orderService } from '../services/orderService';
@@ -225,7 +226,7 @@ const CustomerDashboard = () => {
   const [icanLoading, setIcanLoading] = useState(false);
 
   // Real role from Supabase (overrides mock AuthContext)
-  const [staffRole, setStaffRole] = useState(null); // 'manager' | 'cashier' | null
+  const [staffRole, setStaffRole] = useState(null); // 'admin' | 'manager' | 'cashier' | 'supplier' | null
 
   useEffect(() => {
     const fetchRealRole = async () => {
@@ -239,7 +240,7 @@ const CustomerDashboard = () => {
           .or(`auth_id.eq.${authUser.id},id.eq.${authUser.id}`)
           .single();
 
-        if (data?.role && ['admin', 'manager', 'cashier'].includes(data.role)) {
+        if (data?.role && ['admin', 'manager', 'cashier', 'supplier'].includes(data.role)) {
           setStaffRole(data.role);
         }
       } catch (_) {
@@ -698,42 +699,14 @@ const CustomerDashboard = () => {
       }} />
       {/* Header — greeting + nav */}
       <div className="sticky top-0 z-50 shadow-md">
-        {/* Row 1 — greeting + actions. safe-top keeps it clear of the notch /
-            status bar when installed as a PWA (index.html sets a
-            black-translucent status bar). */}
-        <div className="safe-top bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between h-[68px] gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-white/15 font-classic-display text-lg font-bold ring-1 ring-[#f5dfa0]/70 shadow-inner">
-                  {(currentUser.firstName || 'C').charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[9px] font-semibold uppercase leading-none tracking-[0.24em] text-[#f3dc9b]">
-                    <Greeting />
-                  </p>
-                  <p className="mt-1.5 truncate font-classic-display text-[20px] font-bold leading-none">{currentUser.firstName}</p>
-                  <p className="mt-1.5 text-[10px] leading-none text-white/70"><LiveClock /></p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button aria-label="Notifications"
-                  className="grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 transition-colors hover:bg-white/25">
-                  <FiBell className="h-4 w-4" />
-                </button>
-                <button aria-label="Settings"
-                  className="hidden sm:grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 transition-colors hover:bg-white/25">
-                  <FiSettings className="h-4 w-4" />
-                </button>
-                <button onClick={handleLogout} aria-label="Logout"
-                  className="flex h-10 w-10 items-center justify-center gap-1.5 rounded-full bg-white/15 text-sm font-medium ring-1 ring-white/25 transition-colors hover:bg-white/25 sm:w-auto sm:px-4">
-                  <FiLogOut className="h-4 w-4" />
-                  <span className="hidden sm:inline">Logout</span>
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
+        {/* Row 1 — shared Supermartkera header (BodaGoEra layout). safe-top keeps
+            it clear of the notch / status bar when installed as a PWA
+            (index.html sets a black-translucent status bar). */}
+        <div className="safe-top bg-[#1e3a8a]">
+          <PortalHeader
+            title={<><Greeting /> · {currentUser.firstName}</>}
+            onSignOut={handleLogout}
+          />
         </div>
 
         {/* Row 2 — nav tabs (desktop only) */}
@@ -794,7 +767,7 @@ const CustomerDashboard = () => {
         initial={(currentUser.firstName || 'C').charAt(0).toUpperCase()}
       />
 
-      {/* Role Banner — admin / manager / cashier. On a phone it's an inset
+      {/* Role Banner — admin / manager / cashier / supplier. On a phone it's an inset
           rounded card with a compact "Open" arrow instead of an edge-to-edge
           strip whose long button label crowded the text. */}
       {staffRole && (() => {
@@ -802,6 +775,7 @@ const CustomerDashboard = () => {
           admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin',   gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1d4ed8 100%)' },
           manager: { path: '/manager-portal', icon: '👔', label: 'Manager', gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)' },
           cashier: { path: '/cashier-portal', icon: '💰', label: 'Cashier', gradient: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)' },
+          supplier: { path: '/supplier-portal', icon: '🚚', label: 'Supplier', gradient: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 50%, #4f46e5 100%)' },
         }[staffRole];
         return (
           <div onClick={() => navigate(config.path)} role="link" tabIndex={0}

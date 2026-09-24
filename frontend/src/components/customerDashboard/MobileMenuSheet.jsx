@@ -1,11 +1,16 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { FiX, FiCreditCard } from 'react-icons/fi';
 
 // Phone navigation as a bottom sheet: profile header, then every section as a
 // big, thumb-sized tile. Replaces the small 3-dot dropdown, which was easy to
 // miss and had tiny tap targets. Rendered outside the sticky header by the
 // caller so its fixed positioning isn't affected by that stacking context.
-export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSelect, onWallet, name, email, initial }) {
+// `showWallet` (default on) adds the IcanEra Wallet tile; portals whose tabs
+// already include a wallet tab turn it off to avoid a duplicate. The sheet is
+// portaled to <body> so a portal's dark-mode repaint of white surfaces (see
+// supermartkera-portals.css) never turns this light sheet dark.
+export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSelect, onWallet, name, email, initial, showWallet = true }) {
   // Kept in a ref so callers can pass an inline handler without re-running
   // the effect (and re-toggling body scroll lock) on every parent render.
   const onCloseRef = useRef(onClose);
@@ -25,7 +30,7 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="sm:hidden fixed inset-0 z-[1000]" role="dialog" aria-modal="true" aria-label="Menu">
       <button
         type="button"
@@ -70,13 +75,16 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
                 }`}
               >
                 <span
-                  className={`grid h-11 w-11 place-items-center rounded-full ${
+                  className={`relative grid h-11 w-11 place-items-center rounded-full ${
                     active
                       ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/30'
                       : 'bg-white text-indigo-600 shadow-sm ring-1 ring-inset ring-slate-100'
                   }`}
                 >
                   <Icon className="h-5 w-5" />
+                  {tab.badge > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{tab.badge}</span>
+                  )}
                 </span>
                 <span className={`text-[11px] leading-tight ${active ? 'font-bold text-indigo-700' : 'font-medium text-slate-700'}`}>
                   {tab.label}
@@ -84,6 +92,7 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
               </button>
             );
           })}
+          {showWallet && (
           <button
             type="button"
             onClick={onWallet}
@@ -94,8 +103,10 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
             </span>
             <span className="text-[11px] font-semibold leading-tight text-violet-700">IcanEra Wallet</span>
           </button>
+          )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

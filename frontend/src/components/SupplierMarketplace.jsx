@@ -1,30 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import AddProductModal from './AddProductModal';
+import {
+  SUPPLIER_CATALOG_CATEGORIES as CATEGORIES,
+  catalogItemToFormData
+} from '../utils/supplierCatalog';
 
 // ── shared helpers ─────────────────────────────────────────────────────────────
 const fmtUGX = n => n ? 'UGX ' + Number(n).toLocaleString() : '—';
-const CATEGORIES = [
-  'Fresh Produce', 'Dairy', 'Meat & Poultry', 'Beverages', 'Bakery',
-  'Grains & Cereals', 'Snacks', 'Household', 'Personal Care', 'Frozen Foods',
-  'Spices & Condiments', 'Electronics', 'Clothing', 'Hardware & Tools',
-  'Building Materials', 'Raw Materials', 'Professional Services', 'Transport & Logistics', 'Other',
-];
-const UNITS = ['kg', 'piece', 'litre', 'box', 'bag', 'crate', 'dozen', 'pack'];
 
 // ─── MY CATALOG TAB ───────────────────────────────────────────────────────────
 export function SupplierCatalogTab({ userId }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [editId, setEditId]   = useState(null);
-  const [form, setForm]       = useState({
-    name: '', category: '', description: '',
-    unit: 'kg', min_order_qty: 1, price_per_unit: '', image_url: '',
-  });
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // Adding and editing both use the shared full Add Product form (the one the
+  // admin portal uses) in supplier mode; `modal.item` is null for a new item.
+  const [modal, setModal]     = useState({ open: false, item: null });
 
   useEffect(() => { load(); }, [userId]);
 
@@ -39,54 +31,9 @@ export function SupplierCatalogTab({ userId }) {
     setLoading(false);
   };
 
-  const openNew = () => {
-    setEditId(null);
-    setForm({ name: '', category: '', description: '', unit: 'kg', min_order_qty: 1, price_per_unit: '', image_url: '' });
-    setShowForm(true);
-  };
-
-  const openEdit = (item) => {
-    setEditId(item.id);
-    setForm({
-      name: item.name, category: item.category, description: item.description || '',
-      unit: item.unit || 'kg', min_order_qty: item.min_order_qty || 1,
-      price_per_unit: item.price_per_unit || '',
-      image_url: item.image_url || '',
-    });
-    setShowForm(true);
-  };
-
-  const save = async () => {
-    if (!form.name.trim() || !form.category) { toast.error('Name and category required'); return; }
-    setSaving(true);
-    try {
-      const payload = {
-        supplier_user_id: userId,
-        name:             form.name.trim(),
-        category:         form.category,
-        description:      form.description || null,
-        unit:             form.unit,
-        min_order_qty:    Number(form.min_order_qty) || 1,
-        price_per_unit:   form.price_per_unit ? Number(form.price_per_unit) : null,
-        is_available:     true,
-        image_url:        form.image_url.trim() || null,
-      };
-      let error;
-      if (editId) {
-        ({ error } = await supabase.from('supplier_catalog_items').update(payload).eq('id', editId));
-      } else {
-        ({ error } = await supabase.from('supplier_catalog_items').insert(payload));
-      }
-      if (error) throw error;
-      toast.success(editId ? 'Item updated' : 'Item added to catalog');
-      setShowForm(false);
-      load();
-    } catch (e) {
-      toast.error(e.message || 'Save failed');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const openNew = () => setModal({ open: true, item: null });
+  const openEdit = (item) => setModal({ open: true, item });
+  const closeModal = () => setModal({ open: false, item: null });
 
   const toggle = async (item) => {
     await supabase.from('supplier_catalog_items')
@@ -115,69 +62,6 @@ export function SupplierCatalogTab({ userId }) {
           + Add Item
         </button>
       </div>
-
-      {/* Add / Edit form */}
-      {showForm && (
-        <div className="bg-white rounded-2xl border border-purple-100 shadow-sm p-6">
-          <h3 className="font-semibold text-gray-700 mb-4">{editId ? 'Edit Item' : 'Add Catalog Item'}</h3>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Item name *</label>
-              <input value={form.name} onChange={e => set('name', e.target.value)}
-                placeholder="e.g. Fresh Tomatoes"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400" />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Product image URL (optional)</label>
-              <input value={form.image_url} onChange={e => set('image_url', e.target.value)} placeholder="https://..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Category *</label>
-              <select value={form.category} onChange={e => set('category', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400">
-                <option value="">Select category</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-              <textarea value={form.description} onChange={e => set('description', e.target.value)}
-                placeholder="Quality, origin, packaging details…"
-                rows={2}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400 resize-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Unit</label>
-              <select value={form.unit} onChange={e => set('unit', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400">
-                {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Min order qty</label>
-              <input type="number" min="1" value={form.min_order_qty} onChange={e => set('min_order_qty', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Price per unit (UGX, optional)</label>
-              <input type="number" min="0" value={form.price_per_unit} onChange={e => set('price_per_unit', e.target.value)}
-                placeholder="Leave blank if negotiable"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-purple-400" />
-            </div>
-          </div>
-          <div className="flex gap-3 mt-4">
-            <button onClick={save} disabled={saving}
-              className="px-6 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-semibold rounded-lg hover:opacity-90 disabled:opacity-40">
-              {saving ? 'Saving…' : editId ? 'Update Item' : 'Add to Catalog'}
-            </button>
-            <button onClick={() => setShowForm(false)}
-              className="px-6 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Catalog list */}
       {loading ? (
@@ -209,6 +93,15 @@ export function SupplierCatalogTab({ userId }) {
                 </div>
               </div>
               {item.description && <p className="text-xs text-gray-500 mb-2">{item.description}</p>}
+              {(item.brand || item.stock_quantity != null || (Array.isArray(item.price_tiers) && item.price_tiers.length > 0)) && (
+                <div className="flex flex-wrap gap-1.5 mb-1">
+                  {item.brand && <span className="text-[11px] bg-slate-50 text-slate-600 px-2 py-0.5 rounded-full">{item.brand}</span>}
+                  {item.stock_quantity != null && <span className="text-[11px] bg-slate-50 text-slate-600 px-2 py-0.5 rounded-full">{item.stock_quantity} in stock</span>}
+                  {Array.isArray(item.price_tiers) && item.price_tiers.length > 0 && (
+                    <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">Bulk prices ×{item.price_tiers.length}</span>
+                  )}
+                </div>
+              )}
               <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
                 <span>Min: {item.min_order_qty} {item.unit}</span>
                 <span>{item.price_per_unit ? fmtUGX(item.price_per_unit) + '/' + item.unit : 'Negotiable'}</span>
@@ -223,6 +116,17 @@ export function SupplierCatalogTab({ userId }) {
           ))}
         </div>
       )}
+
+      <AddProductModal
+        key={modal.item?.id || 'new-catalog-item'}
+        isOpen={modal.open}
+        onClose={closeModal}
+        mode="supplier"
+        supplierUserId={userId}
+        editingProductId={modal.item?.id || null}
+        prefilledData={modal.item ? catalogItemToFormData(modal.item) : {}}
+        onProductAdded={load}
+      />
     </div>
   );
 }

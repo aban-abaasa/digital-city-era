@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { SUPPLIER_CAPABLE_ROLES } from '../utils/supplierAccess';
 
 // ---------------------------------------------------------------------------
 // Auto-dispatches a delivery vehicle right after a purchase order is
@@ -36,7 +37,7 @@ export const resolvePickupAndDropoff = async (purchaseOrder) => {
       .from('users')
       .select('id')
       .or(`auth_id.eq.${purchaseOrder.supplier_id},id.eq.${purchaseOrder.supplier_id}`)
-      .eq('role', 'supplier')
+      .in('role', SUPPLIER_CAPABLE_ROLES)
       .maybeSingle();
 
     const { data: supplierRow } = await supabase

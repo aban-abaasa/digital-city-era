@@ -13,7 +13,7 @@ import {
   FiMaximize, FiMinimize, FiRotateCw, FiUpload, FiPrinter,
   FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiTruck,
   FiX, FiSend, FiFileText, FiCopy, FiExternalLink, FiCheck,
-  FiPlay, FiCpu, FiMonitor, FiDatabase, FiSun, FiMoon
+  FiPlay, FiCpu, FiMonitor, FiDatabase, FiSun, FiMoon, FiMenu
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -34,10 +34,9 @@ import ICANWalletPage from './ICANWalletPage';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
-import PortalSwitcher from '../components/PortalSwitcher';
+import PortalHeader from '../components/PortalHeader';
 import ProfileModal from '../components/ProfileModal';
 import BusinessOperationsHub from '../components/BusinessOperationsHub';
-import { useTheme } from '../contexts/ThemeContext';
 import '../styles/supermartkera-portals.css';
 
 // Lazy load the new components for better performance
@@ -234,9 +233,7 @@ const CHART_COLORS = {
 
 const ManagerPortal = () => {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Each supermarket's own name/background — auto-populated, no manual retyping
   const branding = useSupermarketBranding();
@@ -11256,253 +11253,34 @@ FAREDEAL Uganda Management Team
   
   // Component render function
 
-  // Creative Header Component with Unique Icon Containers
+  // Shared Supermartkera header (BodaGoEra layout). Manager-specific bits ride
+  // along as slots: the mobile menu button (with the unread badge), the
+  // supplier-wallet approval bell, and the avatar-menu entries.
   const renderCustomHeader = () => (
-    <div className="bg-gradient-to-r from-green-500 via-yellow-500 to-orange-500 shadow-xl relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-2 left-1/4 text-2xl animate-bounce">☀️</div>
-        <div className="absolute top-4 right-1/3 text-lg animate-pulse">🌟</div>
-        <div className="absolute bottom-3 left-1/2 text-xl animate-spin-slow">✨</div>
-      </div>
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="flex items-center justify-between h-16">
-          {/* Left side - Enhanced Logo/Brand */}
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-3 group cursor-pointer">
-              {/* Animated Uganda Flag Container */}
-              <div className="relative p-2 bg-white/10 rounded-full border-2 border-white/20 backdrop-blur-sm group-hover:bg-white/20 transition-all duration-300">
-                <div className="text-2xl animate-bounce group-hover:animate-spin">🇺🇬</div>
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full animate-ping"></div>
-              </div>
-              
-              {/* Brand Text with Creative Styling */}
-              <div className="text-white font-bold text-xl group-hover:scale-105 transition-transform duration-300">
-                <span className="bg-gradient-to-r from-white to-yellow-200 bg-clip-text text-transparent">
-                  {branding.name}
-                </span>
-                <div className="text-xs text-yellow-200 font-normal">Pearl of Africa</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right side - Creative Icon Containers */}
-          <div className="flex items-center space-x-4">
-            {/* Mobile Menu Button - Always visible on mobile, replaces all other buttons */}
-            {isMobile ? (
-              <>
-                <button
-                  type="button"
-                  onClick={toggleTheme}
-                  aria-label="Toggle theme"
-                  className="sk-portal-theme-toggle"
-                >
-                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-                </button>
-                <button
-                onClick={() => setShowMobileDropdown(!showMobileDropdown)}
-                className="relative group"
-                title="Mobile Menu"
-              >
-                <div className="relative p-3 bg-purple-600 rounded-xl shadow-lg hover:bg-purple-700 transition-all duration-300">
-                  {/* Modern Hamburger Icon - Three horizontal lines */}
-                  <div className="relative z-10 w-6 h-5 flex flex-col justify-between">
-                    <div className={`w-full h-0.5 bg-white rounded-full transition-all duration-300 ${
-                      showMobileDropdown ? 'rotate-45 translate-y-2' : ''
-                    }`}></div>
-                    <div className={`w-full h-0.5 bg-white rounded-full transition-all duration-300 ${
-                      showMobileDropdown ? 'opacity-0' : 'opacity-100'
-                    }`}></div>
-                    <div className={`w-full h-0.5 bg-white rounded-full transition-all duration-300 ${
-                      showMobileDropdown ? '-rotate-45 -translate-y-2' : ''
-                    }`}></div>
-                  </div>
-                  
-                  {/* Notification badge if there are updates */}
-                  {notificationCount > 0 && (
-                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">{notificationCount > 9 ? '9+' : notificationCount}</span>
-                    </div>
-                  )}
-                </div>
-                </button>
-              </>
-            ) : (
-              <>
-                {/* Separate from ordinary portal alerts: this opens only
-                    supplier-wallet requests and requires the wallet PIN. */}
-                <SupermarketaWalletApprovalBell />
-
-                {/* Switch to the cashier or customer portal — manager outranks both */}
-                <PortalSwitcher variant="dark" />
-
-                {/* Light/dark theme toggle for the portal */}
-                <button
-                  type="button"
-                  onClick={toggleTheme}
-                  aria-label="Toggle theme"
-                  className="sk-portal-theme-toggle"
-                >
-                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-                  <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-                </button>
-
-                {/* Profile — every profile-related action (notifications, account
-                    settings, quick actions, sign out) lives in this one dropdown
-                    instead of separate header icons. */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowProfileMenu((value) => !value)}
-                    className="relative group"
-                  >
-                    <div className="flex items-center space-x-3 bg-white/15 backdrop-blur-sm hover:bg-white/25 rounded-full pr-4 pl-2 py-2 transition-all duration-500 transform hover:scale-105 border-2 border-white/20 shadow-lg group-hover:shadow-2xl">
-                      {/* Animated avatar container with upload functionality */}
-                      <div className="relative">
-                        <label htmlFor="manager-profile-pic-upload" className="cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                          <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-sm group-hover:scale-110 transition-all duration-300 shadow-lg border-2 border-white/30 overflow-hidden">
-                            {profilePicUrl || managerProfile.avatar_url ? (
-                              <img
-                                src={profilePicUrl || managerProfile.avatar_url}
-                                alt="Profile"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <span className="text-lg group-hover:animate-bounce">{managerProfile.avatar}</span>
-                            )}
-                          </div>
-
-                          {/* Camera icon overlay on hover */}
-                          <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
-                            <FiCamera className="h-4 w-4 text-white" />
-                          </div>
-                        </label>
-
-                        {/* Hidden file input */}
-                        <input
-                          id="manager-profile-pic-upload"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleProfilePictureUpload}
-                          className="hidden"
-                        />
-
-                        {/* Upload progress indicator */}
-                        {uploadingProfilePic && (
-                          <div className="absolute inset-0 bg-black/80 rounded-full flex items-center justify-center">
-                            <div className="animate-spin text-white">
-                              <FiRefreshCw className="h-4 w-4" />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Unread-notification badge, now folded into the profile avatar */}
-                        {notificationCount > 0 && (
-                          <div className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold border-2 border-white shadow-lg">
-                            <span className="animate-pulse">{notificationCount > 9 ? '9+' : notificationCount}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Profile info with enhanced styling */}
-                      <div className="text-left text-white">
-                        <div className="text-sm font-bold group-hover:text-yellow-200 transition-colors">
-                          {managerProfile.name}
-                        </div>
-                        <div className="flex items-center space-x-2 text-xs">
-                          <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-sm"></div>
-                            <span className="text-green-200 font-medium">
-                              {managerProfile.status}
-                            </span>
-                          </div>
-                          <span className="text-white/70">•</span>
-                          <span className="text-orange-200 flex items-center space-x-1">
-                            <span>📍</span>
-                            <span>{managerProfile.location.split(',')[0]}</span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Chevron indicator */}
-                      <div className="ml-2">
-                        <FiChevronDown className={`h-4 w-4 text-white/70 transition-transform duration-300 ${showProfileMenu ? 'rotate-180' : ''}`} />
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Consolidated profile dropdown */}
-                  {showProfileMenu && (
-                    <div className="fixed inset-0 z-50" onClick={() => setShowProfileMenu(false)}>
-                      <div
-                        className="absolute right-4 top-20 w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="p-2">
-                          <button
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              handleNotificationClick();
-                            }}
-                            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
-                          >
-                            <FiBell className="h-5 w-5 text-blue-600" />
-                            <span className="font-medium flex-1 text-left">Notifications</span>
-                            {notificationCount > 0 && (
-                              <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
-                                {notificationCount}
-                              </span>
-                            )}
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              startEditingProfile();
-                            }}
-                            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-purple-50 rounded-xl transition-colors"
-                          >
-                            <FiSettings className="h-5 w-5 text-purple-600" />
-                            <span className="font-medium">Account Settings</span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              toast.success('🚀 Quick actions menu opened!');
-                            }}
-                            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-orange-50 rounded-xl transition-colors"
-                          >
-                            <FiZap className="h-5 w-5 text-orange-500" />
-                            <span className="font-medium">Quick Actions</span>
-                          </button>
-
-                          <hr className="my-2" />
-
-                          <button
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              handleManagerLogout();
-                            }}
-                            className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                          >
-                            <FiLogOut className="h-5 w-5" />
-                            <span className="font-medium">Sign Out</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Bottom accent line */}
-      <div className="h-1 bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-    </div>
+    <>
+      <input
+        id="manager-profile-pic-upload"
+        type="file"
+        accept="image/*"
+        onChange={handleProfilePictureUpload}
+        className="hidden"
+      />
+      <PortalHeader
+        rightSlot={!isMobile ? (
+          /* Separate from ordinary portal alerts: this opens only
+             supplier-wallet requests and requires the wallet PIN. */
+          <SupermarketaWalletApprovalBell />
+        ) : null}
+        avatarUrl={profilePicUrl || managerProfile.avatar_url}
+        badgeCount={notificationCount}
+        onProfile={startEditingProfile}
+        onSignOut={handleManagerLogout}
+        menuItems={[
+          { label: notificationCount > 0 ? `Notifications (${notificationCount})` : 'Notifications', icon: FiBell, onClick: handleNotificationClick },
+          { label: uploadingProfilePic ? 'Uploading photo…' : 'Change Profile Photo', icon: FiCamera, onClick: () => document.getElementById('manager-profile-pic-upload')?.click() }
+        ]}
+      />
+    </>
   );
 
   return (
@@ -11512,8 +11290,6 @@ FAREDEAL Uganda Management Team
         backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
-      {/* Always-reachable portal switcher on phones — pinned top-right, not buried in the hamburger drawer */}
-      <PortalSwitcher mobileFloating />
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -11706,164 +11482,10 @@ FAREDEAL Uganda Management Team
         <ManagerNavigation
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          isMobile={isMobile}
+          name={managerProfile.name}
+          email={managerProfile.email}
         />
       </Suspense>
-
-      {/* Modern Mobile Sidebar Menu - Slides from left */}
-      {isMobile && showMobileDropdown && (
-        <div className="fixed inset-0 z-50 flex" onClick={() => setShowMobileDropdown(false)}>
-          {/* Sidebar - slides from left */}
-          <div 
-            className="mobile-dropdown-container w-80 max-w-[85vw] bg-white shadow-2xl transform transition-all duration-300 ease-out animate-slideInLeft overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header with Profile */}
-            <div className="bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-600 text-white p-6">
-              {/* Close button */}
-              <button 
-                onClick={() => setShowMobileDropdown(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-lg transition-colors"
-              >
-                <FiX className="h-5 w-5" />
-              </button>
-
-              {/* Logo/Brand */}
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/30">
-                  <span className="text-2xl">🇺🇬</span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">{branding.name}</h2>
-                  <p className="text-blue-100 text-sm">Manager Portal</p>
-                </div>
-              </div>
-
-              {/* User Profile Card */}
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center text-2xl font-bold border-2 border-white shadow-lg">
-                    {managerProfile.avatar}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg">{managerProfile.name}</h3>
-                    <div className="flex items-center space-x-2 text-sm">
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        <span className="text-green-200">Online</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowMobileDropdown(false);
-                    startEditingProfile();
-                  }}
-                  className="w-full bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2 border border-white/30"
-                >
-                  <FiSettings className="h-4 w-4" />
-                  <span>Edit Profile</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Navigation Menu - Clean List Style */}
-            <div className="p-4 space-y-1">
-              <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Main Menu
-              </div>
-              {[
-                { id: 'overview', icon: '📊', label: 'Dashboard', desc: 'Business overview', gradient: 'from-blue-500 to-blue-600' },
-                { id: 'orders', icon: '📦', label: 'Orders', desc: 'Order management', gradient: 'from-cyan-500 to-cyan-600' },
-                { id: 'business-operations', icon: '🏢', label: 'Payroll & Transport', desc: 'Workforce operations', gradient: 'from-indigo-500 to-blue-600' },
-                { id: 'ican-wallet', icon: '₡', label: 'IcanEra Wallet', desc: 'Wallet & rewards', gradient: 'from-violet-500 to-fuchsia-600' }
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    if (item.href) { window.location.href = item.href; return; }
-                    setActiveTab(item.id);
-                    setShowMobileDropdown(false);
-                  }}
-                  className={`w-full group relative flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                    activeTab === item.id
-                      ? 'bg-gradient-to-r ' + item.gradient + ' text-white shadow-lg scale-[1.02]'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  {/* Icon */}
-                  <div className={`w-10 h-10 flex items-center justify-center rounded-lg text-xl transition-all ${
-                    activeTab === item.id ? 'bg-white/20' : 'bg-gray-100 group-hover:scale-110'
-                  }`}>
-                    {item.icon}
-                  </div>
-                  
-                  {/* Text */}
-                  <div className="flex-1 text-left">
-                    <h4 className="font-semibold text-sm">{item.label}</h4>
-                    <p className={`text-xs ${activeTab === item.id ? 'text-white/80' : 'text-gray-500'}`}>
-                      {item.desc}
-                    </p>
-                  </div>
-                  
-                  {/* Active indicator */}
-                  {activeTab === item.id && (
-                    <div className="absolute right-3">
-                      <FiChevronRight className="h-5 w-5" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Switch Portal */}
-            <div className="px-4 pt-4 border-t border-gray-200">
-              <PortalSwitcher variant="light" fullWidth onNavigate={() => setShowMobileDropdown(false)} />
-            </div>
-
-            {/* Settings / Logout */}
-            <div className="p-4">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    startEditingProfile();
-                    setShowMobileDropdown(false);
-                  }}
-                  className="p-3 bg-blue-50 hover:bg-blue-100 rounded-xl text-center border border-blue-200 transition-all"
-                >
-                  <div className="text-xl mb-1">⚙️</div>
-                  <div className="text-xs font-medium text-blue-800">Settings</div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    handleManagerLogout();
-                    setShowMobileDropdown(false);
-                  }}
-                  className="p-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-center border border-gray-300 transition-all"
-                >
-                  <div className="text-xl mb-1">🚪</div>
-                  <div className="text-xs font-medium text-gray-800">Logout</div>
-                </button>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="text-center">
-                <p className="text-xs text-gray-600">
-                  🇺🇬 <span className="font-semibold">Proudly serving Uganda</span>
-                </p>
-                <p className="text-xs text-gray-500 mt-1">"For God and My Country"</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Backdrop - dark overlay on the right */}
-          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowMobileDropdown(false)}></div>
-        </div>
-      )}
 
       {/* Enhanced Notifications Dropdown */}
       {showNotifications && (

@@ -33,15 +33,14 @@ import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount 
 import { supabase } from '../services/supabase';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
-import PortalSwitcher from '../components/PortalSwitcher';
+import PortalHeader from '../components/PortalHeader';
+import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
-import { useTheme } from '../contexts/ThemeContext';
 import '../styles/supermartkera-portals.css';
 
 const CashierPortal = () => {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Avatar dropdown - consolidates profile, notifications shortcut & logout
@@ -3009,8 +3008,6 @@ const CashierPortal = () => {
         backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
-      {/* Always-reachable portal switcher on phones — pinned top-right, not buried in the hamburger drawer */}
-      <PortalSwitcher mobileFloating />
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -3085,134 +3082,26 @@ const CashierPortal = () => {
         `
       }} />
       
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <div className="h-10 w-10 bg-gradient-to-r from-yellow-500 to-red-600 rounded-full flex items-center justify-center">
-                <span className="text-white font-bold text-lg">🛒</span>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Cashier Portal 🇺🇬</h1>
-                <p className="text-gray-600">Uganda Supermarket Cashier Workspace</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button
-                type="button"
-                onClick={toggleTheme}
-                aria-label="Toggle theme"
-                className="sk-portal-theme-toggle"
-              >
-                {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-                <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-              </button>
-              <button
-                ref={avatarButtonRef}
-                onClick={toggleAvatarMenu}
-                className="flex items-center space-x-2 hover:bg-gray-50 p-1.5 pr-2 rounded-full transition-all duration-300 cursor-pointer group"
-                title="Account"
-              >
-                <div className="relative h-9 w-9 rounded-full bg-gradient-to-r from-yellow-500 to-red-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {profilePicUrl ? (
-                    <img src={profilePicUrl} alt={cashierProfile.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-white font-semibold text-sm">
-                      {(cashierProfile.name || 'C').charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                  {unreadNotificationsCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-white" />
-                  )}
-                </div>
-                <span className="hidden md:block text-left">
-                  <p className="text-sm text-gray-700 group-hover:text-gray-900 font-medium leading-tight">{cashierProfile.name}</p>
-                  <p className="text-xs text-gray-500 group-hover:text-gray-700 leading-tight">{cashierProfile.role}</p>
-                </span>
-                <FiChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showAvatarMenu ? 'rotate-180' : ''}`} />
-              </button>
-              <PortalSwitcher />
-            </div>
+      {/* Shared Supermartkera header (BodaGoEra layout) */}
+      <PortalHeader
+        avatarUrl={profilePicUrl}
+        badgeCount={unreadNotificationsCount}
+        onProfile={() => setShowProfileModal(true)}
+        onSignOut={handleLogout}
+        menuItems={[
+          { label: unreadNotificationsCount > 0 ? `Notifications (${unreadNotificationsCount})` : 'Notifications', icon: FiBell, onClick: () => setActiveTab('notifications') }
+        ]}
+      />
 
-            {showAvatarMenu && createPortal(
-              <div
-                ref={avatarMenuRef}
-                style={{ position: 'fixed', top: avatarMenuPos.top, right: avatarMenuPos.right }}
-                className="w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-[9999]"
-              >
-                <div className="p-4 border-b border-gray-100 flex items-center space-x-3">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-r from-yellow-500 to-red-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {profilePicUrl ? (
-                      <img src={profilePicUrl} alt={cashierProfile.name} className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-white font-semibold">{(cashierProfile.name || 'C').charAt(0).toUpperCase()}</span>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm truncate">{cashierProfile.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{cashierProfile.employeeId} · {cashierProfile.role}</p>
-                  </div>
-                </div>
-                <div className="p-2">
-                  <button
-                    onClick={() => { setShowAvatarMenu(false); setShowProfileModal(true); }}
-                    className="w-full flex items-center space-x-3 p-2.5 rounded-xl hover:bg-gray-50 transition-all"
-                  >
-                    <FiUser className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm text-gray-700">Profile &amp; Settings</span>
-                  </button>
-                  <button
-                    onClick={() => { setShowAvatarMenu(false); setActiveTab('notifications'); }}
-                    className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-gray-50 transition-all"
-                  >
-                    <span className="flex items-center space-x-3">
-                      <FiBell className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-700">Notifications</span>
-                    </span>
-                    {unreadNotificationsCount > 0 && (
-                      <span className="text-xs font-bold text-white bg-red-500 rounded-full h-5 min-w-5 px-1.5 flex items-center justify-center">
-                        {unreadNotificationsCount}
-                      </span>
-                    )}
-                  </button>
-                  <div className="my-1 border-t border-gray-100" />
-                  <button
-                    onClick={() => { setShowAvatarMenu(false); handleLogout(); }}
-                    className="w-full flex items-center space-x-3 p-2.5 rounded-xl hover:bg-red-50 text-red-600 transition-all"
-                  >
-                    <FiLogOut className="h-4 w-4" />
-                    <span className="text-sm font-medium">Logout</span>
-                  </button>
-                </div>
-              </div>,
-              document.body
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
-                  activeTab === tab.id
-                    ? 'border-yellow-500 text-yellow-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <tab.icon className="h-5 w-5" />
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
+      {/* Section navigator: same as the customer dashboard */}
+      <PortalTabNavigator
+        tabs={tabs.map((t) => (t.id === 'notifications' ? { ...t, badge: unreadNotificationsCount } : t))}
+        activeTab={activeTab}
+        onSelect={setActiveTab}
+        name={cashierProfile.name}
+        email={cashierProfile.email}
+        initial={(cashierProfile.name || 'C').charAt(0).toUpperCase()}
+      />
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

@@ -32,21 +32,33 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
 import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 import { useTheme } from '../contexts/ThemeContext';
+import PortalHeader from '../components/PortalHeader';
+import PortalTabNavigator from '../components/PortalTabNavigator';
+import { ROLE_HOME } from '../components/RoleProtectedRoute';
+import { SUPPLIER_CAPABLE_ROLES, getSupplierAccess } from '../utils/supplierAccess';
 import '../styles/supermartkera-portals.css';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
   const { theme, toggleTheme } = useTheme();
-  const cachedRole = (() => {
-    try { return JSON.parse(localStorage.getItem('supermarket_user') || '{}').role?.toLowerCase(); } catch { return null; }
-  })();
 
+  // Admins can supply from their own account and suppliers always can; a
+  // manager only when their store is supply-enabled. Anyone else who reaches
+  // this page is sent home. Decided from the real users row — not the
+  // localStorage copy, which can carry a stale role — so an admin is never
+  // mistaken for a manager of a non-supply store.
   useEffect(() => {
-    if (!branding.loading && cachedRole !== 'supplier' && branding.supermarketId && !branding.supportsSupplyOrders) {
-      navigate('/manager-portal', { replace: true });
-    }
-  }, [branding.loading, branding.supermarketId, branding.supportsSupplyOrders, cachedRole, navigate]);
+    let active = true;
+    getSupplierAccess()
+      .then((access) => {
+        if (active && access && !access.canSupply) {
+          navigate(ROLE_HOME[access.role] || '/manager-portal', { replace: true });
+        }
+      })
+      .catch((err) => console.warn('[SupplierPortal] Supplier access check failed:', err));
+    return () => { active = false; };
+  }, [navigate]);
   const [activeTab, setActiveTab] = useState('overview');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -139,7 +151,6 @@ const SupplierPortal = () => {
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Edit Profile States
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -196,7 +207,7 @@ const SupplierPortal = () => {
       }
 
       // Wrong role (fully set up as something else) → redirect
-      if (existingUser && existingUser.role && existingUser.role !== 'supplier' && existingUser.role !== 'customer') {
+      if (existingUser && existingUser.role && !SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && existingUser.role !== 'customer') {
         const redirectPath = existingUser.role === 'manager' ? '/manager-portal'
                            : existingUser.role === 'admin'   ? '/admin-portal'
                            : existingUser.role === 'cashier' ? '/cashier-portal'
@@ -211,7 +222,7 @@ const SupplierPortal = () => {
         .from('users')
         .select('*')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
-        .eq('role', 'supplier')
+        .in('role', SUPPLIER_CAPABLE_ROLES)
         .maybeSingle();
 
       if (suppError && suppError.code !== 'PGRST116') {
@@ -357,8 +368,8 @@ const SupplierPortal = () => {
       console.log('✅ User found:', existingUser);
 
       // Ensure we're updating a supplier record only
-      if (existingUser.role !== 'supplier') {
-        console.error('❌ Existing user role is not supplier:', existingUser.role);
+      if (!SUPPLIER_CAPABLE_ROLES.includes(existingUser.role)) {
+        console.error('❌ Existing user role cannot act as a supplier:', existingUser.role);
         alert('Failed to save: Authenticated account is not registered as a supplier.');
         return;
       }
@@ -368,7 +379,7 @@ const SupplierPortal = () => {
         .from('users')
         .update(updateData)
         .eq('auth_id', user.id)
-        .eq('role', 'supplier')
+        .in('role', SUPPLIER_CAPABLE_ROLES)
         .select();
 
       if (error) {
@@ -467,7 +478,7 @@ const SupplierPortal = () => {
         .from('users')
         .update(updateData)
         .eq('auth_id', user.id)
-        .eq('role', 'supplier');
+        .in('role', SUPPLIER_CAPABLE_ROLES);
 
       if (error) {
         console.error('Error saving financial details:', error);
@@ -567,7 +578,7 @@ const SupplierPortal = () => {
               updated_at: new Date().toISOString()
             })
             .eq('auth_id', user.id)
-            .eq('role', 'supplier');
+            .in('role', SUPPLIER_CAPABLE_ROLES);
 
           if (error) {
             console.error('❌ Error saving to database:', error);
@@ -582,7 +593,7 @@ const SupplierPortal = () => {
             .from('users')
             .select('avatar_url')
             .eq('auth_id', user.id)
-            .eq('role', 'supplier')
+            .in('role', SUPPLIER_CAPABLE_ROLES)
             .single();
           
           if (fetchError) {
@@ -773,7 +784,7 @@ const SupplierPortal = () => {
         .from('users')
         .select('id')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
-        .eq('role', 'supplier')
+        .in('role', SUPPLIER_CAPABLE_ROLES)
         .maybeSingle();
 
       if (!userRow?.id) {
@@ -1170,7 +1181,7 @@ const SupplierPortal = () => {
       }
 
       // Wrong role (fully set up as something else) → redirect
-      if (existingUser.role && existingUser.role !== 'supplier' && existingUser.role !== 'customer') {
+      if (existingUser.role && !SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && existingUser.role !== 'customer') {
         const redirectPath = existingUser.role === 'manager' ? '/manager-portal'
                            : existingUser.role === 'admin'   ? '/admin-portal'
                            : existingUser.role === 'cashier' ? '/cashier-portal'
@@ -1411,8 +1422,8 @@ const SupplierPortal = () => {
         </div>
 
         {/* Stats Bar */}
-        <div className="bg-black/30 backdrop-blur-sm px-8 py-4">
-          <div className="grid grid-cols-5 gap-6">
+        <div className="bg-black/30 backdrop-blur-sm px-4 sm:px-8 py-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 sm:gap-6">
             <div className="text-center">
               <p className="text-purple-200 text-sm mb-1">Total Revenue</p>
               <p className="text-white text-2xl font-bold">UGX {(performanceMetrics.totalRevenue / 1000000).toFixed(1)}M</p>
@@ -1864,57 +1875,58 @@ const SupplierPortal = () => {
   );
 
   const renderOverview = () => (
-    <div className="space-y-6 animate-fadeInUp">
-      {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl p-6 text-white shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">
-              {getGreeting()}, {supplierProfile.contactPerson}! 👋
+    <div className="space-y-4 sm:space-y-6 animate-fadeInUp">
+      {/* Welcome Section: classic indigo + gold, wraps cleanly on a phone */}
+      <div className="classic-drawer-head rounded-2xl p-4 sm:p-6 shadow-lg">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="classic-eyebrow !text-[#f3dc9b]">{getGreeting()}</p>
+            <h1 className="text-2xl sm:text-3xl font-bold mt-1 break-words">
+              {supplierProfile.contactPerson || 'Supplier'} 👋
             </h1>
-            <p className="text-purple-100 text-lg">
-              Welcome to your supplier dashboard - {supplierProfile.name}
+            <p className="text-indigo-100 text-sm sm:text-lg mt-1 break-words">
+              {supplierProfile.name}
             </p>
-            <div className="flex items-center mt-4 space-x-4">
-              <div className="flex items-center space-x-2">
-                <FiClock className="h-5 w-5" />
-                <span>{currentTime.toLocaleTimeString()}</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <FiCalendar className="h-5 w-5" />
-                <span>{currentTime.toLocaleDateString()}</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <FiStar className="h-5 w-5" />
-                <span>{supplierProfile.rating} Rating</span>
-              </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 sm:mt-4 text-xs sm:text-base text-white/90">
+              <span className="flex items-center gap-1.5">
+                <FiClock className="h-4 w-4 flex-shrink-0" />
+                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <FiCalendar className="h-4 w-4 flex-shrink-0" />
+                {currentTime.toLocaleDateString()}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <FiStar className="h-4 w-4 flex-shrink-0 text-[#f5dfa0]" />
+                {supplierProfile.rating} Rating
+              </span>
             </div>
           </div>
-          <div className="text-right">
+          <div className="hidden sm:block text-right flex-shrink-0">
             <div className="text-4xl mb-2">🏢</div>
-            <p className="text-purple-100">Partnership Strong!</p>
+            <p className="text-indigo-100">Partnership Strong!</p>
           </div>
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Key Metrics: two across on a phone, four on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         {[
           { title: 'Total Revenue', value: formatCurrency(performanceMetrics.totalRevenue), icon: FiDollarSign, color: 'from-green-500 to-green-600', change: '+18.5%', detail: `${performanceMetrics.totalOrders} orders` },
           { title: 'Total Orders', value: formatNumber(performanceMetrics.totalOrders), icon: FiPackage, color: 'from-blue-500 to-blue-600', change: '+12.3%', detail: `${performanceMetrics.pendingOrders} pending` },
           { title: 'On-Time Delivery', value: `${performanceMetrics.onTimeDelivery}%`, icon: FiTruck, color: 'from-purple-500 to-purple-600', change: '+2.1%', detail: 'On schedule' },
           { title: 'Quality Rating', value: performanceMetrics.qualityRating, icon: FiStar, color: 'from-yellow-500 to-yellow-600', change: '+0.3', detail: 'Customer satisfaction' }
         ].map((metric, index) => (
-          <div key={index} className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <p className="text-gray-600 text-sm font-medium">{metric.title}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{metric.value}</p>
-                <p className="text-xs text-gray-500 mt-1">{metric.detail}</p>
-                <p className="text-green-600 text-sm font-medium mt-1">{metric.change}</p>
+          <div key={index} className="bg-white rounded-xl p-3 sm:p-6 shadow-lg sm:hover:shadow-xl transition-all duration-300 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-gray-600 text-[11px] sm:text-sm font-medium truncate">{metric.title}</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1 break-words">{metric.value}</p>
+                <p className="text-[11px] sm:text-xs text-gray-500 mt-1 truncate">{metric.detail}</p>
+                <p className="text-green-600 text-xs sm:text-sm font-medium mt-0.5 sm:mt-1">{metric.change}</p>
               </div>
-              <div className={`p-3 rounded-lg bg-gradient-to-r ${metric.color}`}>
-                <metric.icon className="h-6 w-6 text-white" />
+              <div className={`p-2 sm:p-3 rounded-lg bg-gradient-to-r ${metric.color} flex-shrink-0`}>
+                <metric.icon className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
               </div>
             </div>
           </div>
@@ -1922,9 +1934,9 @@ const SupplierPortal = () => {
       </div>
 
       {/* Payment Summary Bar */}
-      <div className="mt-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6 shadow-md border border-purple-100">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">💳 Payment Summary</h3>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-3 sm:p-6 shadow-md border border-purple-100">
+        <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4">💳 Payment Summary</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-4">
           <div className="text-center p-4 bg-white rounded-lg shadow-sm">
             <p className="text-xs text-gray-600 font-semibold mb-1">FULLY PAID</p>
             <p className="text-2xl font-bold text-green-600">{performanceMetrics.paidOrders || 0}</p>
@@ -1949,7 +1961,7 @@ const SupplierPortal = () => {
             <p className="text-xs text-gray-500 mt-1">Cash In</p>
           </div>
           
-          <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+          <div className="col-span-2 md:col-span-1 text-center p-3 sm:p-4 bg-white rounded-lg shadow-sm">
             <p className="text-xs text-gray-600 font-semibold mb-1">OUTSTANDING</p>
             <p className="text-2xl font-bold text-purple-600">{formatCurrency(performanceMetrics.totalOutstanding || 0)}</p>
             <p className="text-xs text-gray-500 mt-1">Balance Due</p>
@@ -2030,9 +2042,9 @@ const SupplierPortal = () => {
       </div>
 
       {/* Revenue Chart */}
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-gray-900">Revenue Trends</h3>
+      <div className="bg-white rounded-xl p-3 sm:p-6 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4 sm:mb-6">
+          <h3 className="text-lg sm:text-xl font-bold text-gray-900">Revenue Trends</h3>
           <div className="flex space-x-2">
             {['6m', '1y', '2y'].map((range) => (
               <button
@@ -2044,11 +2056,11 @@ const SupplierPortal = () => {
             ))}
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={isMobile ? 220 : 300}>
           <ComposedChart data={revenueData}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis width={isMobile ? 44 : 60} tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
             <Tooltip />
             <Area type="monotone" dataKey="revenue" fill="#8B5CF6" fillOpacity={0.3} />
             <Line type="monotone" dataKey="revenue" stroke="#8B5CF6" strokeWidth={3} />
@@ -2766,7 +2778,7 @@ const SupplierPortal = () => {
 
   return (
     <div
-      className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed"
+      className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed overflow-x-clip"
       style={branding.backgroundUrl ? {
         backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
@@ -2796,362 +2808,27 @@ const SupplierPortal = () => {
         `
       }} />
       
-      {/* Enhanced Header */}
-      <div className="bg-gradient-to-r from-purple-600 via-blue-600 to-indigo-700 shadow-2xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Main Header Content */}
-          <div className="flex justify-between items-center py-4 sm:py-6">
-            {/* Mobile: Show only hamburger button */}
-            {isMobile ? (
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center space-x-3">
-                  <button
-                    onClick={() => setShowMobileMenu(!showMobileMenu)}
-                    className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
-                  >
-                    <div className="space-y-1.5">
-                      <div className="w-6 h-0.5 bg-white"></div>
-                      <div className="w-6 h-0.5 bg-white"></div>
-                      <div className="w-6 h-0.5 bg-white"></div>
-                    </div>
-                  </button>
+      {/* Shared Supermartkera header (BodaGoEra layout): portal tabs for admins/managers who also supply */}
+      <PortalHeader
+        onProfile={() => setActiveTab('profile')}
+        onWalletClick={() => setActiveTab('ican-wallet')}
+        walletActive={activeTab === 'ican-wallet'}
+        onCurrentPortalClick={() => { if (activeTab === 'ican-wallet') setActiveTab('overview'); }}
+        avatarUrl={profilePicUrl}
+      />
 
-                  <div className="flex items-center space-x-2">
-                    <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                      <span className="text-2xl">🏢</span>
-                    </div>
-                    <h1 className="text-xl font-bold text-white">Supplier Portal</h1>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={toggleTheme}
-                    aria-label="Toggle theme"
-                    className="sk-portal-theme-toggle"
-                  >
-                    {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-                  </button>
-
-                  <button
-                    onClick={() => { setActiveTab('profile'); setShowMobileMenu(false); }}
-                    className="p-3 bg-white/20 hover:bg-white/30 rounded-xl border-2 border-white/30 transition-all"
-                    title="My Profile"
-                  >
-                    <FiUser className="h-5 w-5 text-white" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Desktop: Full Header */}
-                <div className="flex items-center space-x-6">
-                  {/* Animated Logo */}
-                  <div className="relative">
-                    <div className="h-16 w-16 bg-white rounded-2xl flex items-center justify-center shadow-xl transform hover:scale-110 transition-all duration-300">
-                      <span className="text-4xl animate-bounce">🏢</span>
-                    </div>
-                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white animate-pulse"></div>
-                  </div>
-                  
-                  <div>
-                    <h1 className="text-3xl font-bold text-white mb-1 flex items-center space-x-3">
-                      Supplier Portal
-                      <span className="px-3 py-1 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full">
-                        PREMIUM
-                      </span>
-                    </h1>
-                    <p className="text-purple-100 text-lg">Partnership Management Hub</p>
-                  </div>
-                </div>
-                
-                {/* Right Side - Profile & Actions */}
-                <div className="flex items-center space-x-4">
-              {/* Quick Stats Container */}
-              <div className="hidden lg:flex items-center space-x-4 mr-4">
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/20">
-                  <div className="flex items-center space-x-2 text-white">
-                    <FiTrendingUp className="h-5 w-5 text-green-300" />
-                    <div>
-                      <p className="text-xs text-purple-200">Monthly Growth</p>
-                      <p className="text-sm font-bold">+{performanceMetrics.monthlyGrowth}%</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/20">
-                  <div className="flex items-center space-x-2 text-white">
-                    <FiPackage className="h-5 w-5 text-yellow-300" />
-                    <div>
-                      <p className="text-xs text-purple-200">Pending Orders</p>
-                      <p className="text-sm font-bold">{performanceMetrics.pendingOrders}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Profile Container - Clickable */}
-              <button 
-                onClick={() => setActiveTab('profile')}
-                className="bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl px-4 py-3 border border-white/20 transition-all duration-300 group"
-              >
-                <div className="text-right">
-                  <p className="text-sm text-white font-semibold group-hover:text-yellow-300 transition-colors">
-                    {supplierProfile.name}
-                  </p>
-                  <p className="text-xs text-purple-200">{supplierProfile.contactPerson}</p>
-                </div>
-              </button>
-
-              {/* Action Buttons Container */}
-              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-xl px-2 py-2 border border-white/20">
-                {/* Theme Toggle */}
-                <button
-                  type="button"
-                  onClick={toggleTheme}
-                  aria-label="Toggle theme"
-                  className="sk-portal-theme-toggle"
-                >
-                  {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-                  <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-                </button>
-
-                {/* Notifications with Badge */}
-                <button className="relative p-2 text-white hover:bg-white/20 rounded-lg transition-all duration-300 group">
-                  <FiBell className="h-6 w-6 group-hover:animate-bounce" />
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
-                    {performanceMetrics.pendingOrders}
-                  </span>
-                </button>
-                
-                {/* Settings */}
-                <button 
-                  onClick={() => setActiveTab('profile')}
-                  className="p-2 text-white hover:bg-white/20 rounded-lg transition-all duration-300 group"
-                  title="Settings & Profile"
-                >
-                  <FiSettings className="h-6 w-6 group-hover:rotate-90 transition-transform duration-300" />
-                </button>
-                
-                {/* Logout */}
-                <button className="p-2 text-white hover:bg-red-500/50 rounded-lg transition-all duration-300 group">
-                  <FiLogOut className="h-6 w-6 group-hover:translate-x-1 transition-transform" />
-                </button>
-              </div>
-            </div>
-            </>
-            )}
-          </div>
-
-          {/* Status Bar with Live Stats - Hidden on mobile */}
-          {!isMobile && (
-          <div className="pb-4">
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                {/* Total Revenue */}
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-                    <FiDollarSign className="h-5 w-5 text-green-300" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-purple-200">Total Revenue</p>
-                    <p className="text-sm font-bold text-white">
-                      UGX {(performanceMetrics.totalRevenue / 1000000).toFixed(1)}M
-                    </p>
-                  </div>
-                </div>
-
-                {/* Total Orders */}
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <FiShoppingCart className="h-5 w-5 text-blue-300" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-purple-200">Total Orders</p>
-                    <p className="text-sm font-bold text-white">{performanceMetrics.totalOrders}</p>
-                  </div>
-                </div>
-
-                {/* Quality Rating */}
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-                    <FiStar className="h-5 w-5 text-yellow-300" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-purple-200">Quality Rating</p>
-                    <p className="text-sm font-bold text-white flex items-center">
-                      {supplierProfile.rating} 
-                      <FiStar className="h-3 w-3 text-yellow-300 ml-1 fill-current" />
-                    </p>
-                  </div>
-                </div>
-
-                {/* On-Time Delivery */}
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                    <FiTruck className="h-5 w-5 text-purple-300" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-purple-200">On-Time</p>
-                    <p className="text-sm font-bold text-white">{performanceMetrics.onTimeDelivery}%</p>
-                  </div>
-                </div>
-
-                {/* Active Products */}
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">
-                    <FiPackage className="h-5 w-5 text-orange-300" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-purple-200">Products</p>
-                    <p className="text-sm font-bold text-white">{performanceMetrics.activeProducts}</p>
-                  </div>
-                </div>
-
-                {/* Partnership Years */}
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-pink-500/20 rounded-lg flex items-center justify-center">
-                    <FiAward className="h-5 w-5 text-pink-300" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-purple-200">Partnership</p>
-                    <p className="text-sm font-bold text-white">{supplierProfile.partnershipYears} Years</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          )}
-        </div>
-      </div>
-
-      {/* Mobile Sidebar Menu */}
-      {isMobile && showMobileMenu && (
-        <div className="fixed inset-0 z-50 flex" onClick={() => setShowMobileMenu(false)}>
-          <div 
-            className="w-80 max-w-[85vw] bg-white shadow-2xl transform transition-all duration-300 ease-out overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-600 text-white p-6">
-              <button 
-                onClick={() => setShowMobileMenu(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-lg transition-colors"
-              >
-                <FiX className="h-5 w-5" />
-              </button>
-
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/30">
-                  <span className="text-2xl">🏢</span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">{branding.name}</h2>
-                  <p className="text-blue-100 text-sm">Supplier Portal</p>
-                </div>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center text-2xl font-bold border-2 border-white shadow-lg">
-                    {supplierProfile.avatar}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg">{supplierProfile.name}</h3>
-                    <div className="flex items-center space-x-2 text-sm">
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        <span className="text-green-200">Active</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Navigation Menu */}
-            <div className="p-4 space-y-1">
-              <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Main Menu
-              </div>
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    if (tab.href) { window.location.href = tab.href; return; }
-                    setActiveTab(tab.id);
-                    setShowMobileMenu(false);
-                  }}
-                  className={`w-full group relative flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                    activeTab === tab.id 
-                      ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg scale-[1.02]' 
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
-                    activeTab === tab.id ? 'bg-white/20' : 'bg-gray-100 group-hover:scale-110'
-                  }`}>
-                    <tab.icon className="h-5 w-5" />
-                  </div>
-                  
-                  <div className="flex-1 text-left">
-                    <h4 className="font-semibold text-sm">{tab.label}</h4>
-                  </div>
-                  
-                  {activeTab === tab.id && (
-                    <FiChevronRight className="h-5 w-5" />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <button
-                onClick={() => {
-                  // Handle logout
-                  navigate('/supplier-auth');
-                }}
-                className="w-full p-3 bg-red-50 hover:bg-red-100 rounded-xl text-center border border-red-200 transition-all flex items-center justify-center gap-2"
-              >
-                <FiLogOut className="h-4 w-4 text-red-600" />
-                <span className="text-red-600 font-medium">Logout</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)}></div>
-        </div>
-      )}
-
-      {/* Navigation Tabs - Desktop Only */}
-      {!isMobile && (
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav className="flex space-x-8">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => { if (tab.href) { window.location.href = tab.href; return; } setActiveTab(tab.id); }}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
-                    activeTab === tab.id
-                      ? 'border-purple-500 text-purple-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <tab.icon className="h-5 w-5" />
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
-      )}
-      )
+      {/* Section navigator: same as the customer dashboard (pill tabs on desktop, section bar + bottom-sheet menu on phones) */}
+      <PortalTabNavigator
+        tabs={tabs}
+        activeTab={activeTab}
+        onSelect={setActiveTab}
+        name={supplierProfile.name || supplierProfile.contactPerson}
+        email={supplierProfile.email}
+        initial={(supplierProfile.contactPerson || supplierProfile.name || 'S').charAt(0).toUpperCase()}
+      />
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-24 sm:py-8">
         {(loading && ['overview','orders','products','payments'].includes(activeTab)) ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">
@@ -3200,18 +2877,15 @@ const SupplierPortal = () => {
         )}
       </div>
 
-      {/* Add Product Modal - Supplier Specific */}
+      {/* Add Product Modal: the shared admin form in supplier mode, saving to the supplier's own catalog */}
       <AddProductModal
         isOpen={showAddProductModal}
         onClose={() => setShowAddProductModal(false)}
-        onProductAdded={(newProduct) => {
-          console.log('✅ Supplier added new product:', newProduct);
-          alert(`🎉 Product "${newProduct.name}" added successfully!`);
+        mode="supplier"
+        supplierUserId={supplierProfile.auth_id || supplierProfile.id}
+        onProductAdded={() => {
           setShowAddProductModal(false);
-        }}
-        prefilledData={{
-          // Supplier can have their supplier_id pre-filled if known
-          // brand: supplierProfile.name
+          setActiveTab('my-catalog');
         }}
       />
 

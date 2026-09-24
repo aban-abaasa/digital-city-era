@@ -2,6 +2,12 @@
  * Add Product Modal - Supabase Connected
  * Reusable component for adding products across all portals
  * Works with Manager, Employee, and Supplier portals
+ *
+ * mode="store" (default) adds a product to the signed-in store's inventory.
+ * mode="supplier" is the SAME form, but the item goes to the supplier's own
+ * catalog (what supermarkets see when they order) instead of any store's
+ * stock: store-only sections (POS mode, pharmacy, warehouse) are swapped for
+ * supply terms (unit, minimum order) and bulk price tiers.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -14,10 +20,14 @@ import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import { supabase } from '../services/supabase';
 import { compressImageFile } from '../utils/imageCompression';
+import {
+  SUPPLIER_CATALOG_CATEGORIES, SUPPLIER_CATALOG_UNITS, saveSupplierCatalogItem
+} from '../utils/supplierCatalog';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
-const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null }) => {
+const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null }) => {
+  const isSupplierMode = mode === 'supplier';
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -78,6 +88,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     reorder_point: '20',
     location: 'Main Storage',
     warehouse: 'Main Warehouse',
+    unit: 'kg',
+    min_order_qty: '1',
     ...prefilledData
   });
 
@@ -115,6 +127,17 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const loadFormData = async () => {
     try {
       setLoadingData(true);
+
+      if (isSupplierMode) {
+        // Nothing here touches a store: no default categories/suppliers get
+        // created, and wholesale tier pricing is always on for a supplier.
+        setBusinessType('wholesale');
+        setCategories(SUPPLIER_CATALOG_CATEGORIES.map((name) => ({ id: name, name })));
+        setSuppliers([]);
+        setPriceTiers(Array.isArray(prefilledData.price_tiers) ? prefilledData.price_tiers : []);
+        setVariants([]);
+        return;
+      }
 
       const supermarketId = await inventoryService.getCurrentSupermarketId();
       if (supermarketId) {
@@ -283,6 +306,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   // Handle barcode scanned from scanner
   const handleBarcodeScanned = async (barcode) => {
     setShowBarcodeScanner(false);
+
+    if (isSupplierMode) {
+      setFormData(prev => ({ ...prev, barcode }));
+      toast.success(`✅ Barcode scanned: ${barcode}`);
+      return;
+    }
     
     try {
       // Check if product with this barcode already exists
@@ -326,20 +355,21 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.sku?.trim()) newErrors.sku = 'SKU is required';
+    if (!isSupplierMode && !formData.sku?.trim()) newErrors.sku = 'SKU is required';
     if (!formData.name?.trim()) newErrors.name = 'Product name is required';
     // Category and supplier are now optional
     
     const costPrice = parseFloat(formData.cost_price);
     const sellingPrice = parseFloat(formData.selling_price);
     
-    if (isNaN(costPrice) || costPrice < 0) {
+    // A supplier may not track cost; blank counts as 0 there.
+    if ((isNaN(costPrice) && !isSupplierMode) || costPrice < 0) {
       newErrors.cost_price = 'Valid cost price is required';
     }
     if (isNaN(sellingPrice) || sellingPrice < 0) {
       newErrors.selling_price = 'Valid selling price is required';
     }
-    if (sellingPrice < costPrice) {
+    if (sellingPrice < (costPrice || 0)) {
       newErrors.selling_price = 'Selling price should be greater than cost price';
     }
 
@@ -391,6 +421,27 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     setLoading(true);
 
     try {
+      if (isSupplierMode) {
+        const { id, extrasSaved } = await saveSupplierCatalogItem({
+          supplierUserId,
+          editingId: editingProductId,
+          form: formData,
+          priceTiers,
+          imageFile,
+          existingImageUrl: Array.isArray(prefilledData.images) ? prefilledData.images[0] || null : null
+        });
+        toast.success(isEditMode
+          ? `✅ "${formData.name.trim()}" updated`
+          : `✅ "${formData.name.trim()}" added to your catalog`);
+        if (!extrasSaved) {
+          toast.info('Saved. SKU, cost, stock and bulk prices need ADD_SUPPLIER_CATALOG_FULL_PRODUCT_FIELDS.sql to be kept.', { autoClose: 8000 });
+        }
+        if (onProductAdded) onProductAdded({ id, name: formData.name.trim() });
+        resetForm();
+        onClose();
+        return;
+      }
+
       // Prepare data for submission
       const productData = {
         sku: formData.sku.trim() || null,
@@ -524,7 +575,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       maximum_stock: '1000',
       reorder_point: '20',
       location: 'Main Storage',
-      warehouse: 'Main Warehouse'
+      warehouse: 'Main Warehouse',
+      unit: 'kg',
+      min_order_qty: '1'
     });
     setErrors({});
     setCalculatedMarkup(0);
@@ -546,9 +599,15 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <FiPackage className="h-6 w-6 sm:h-8 sm:w-8 flex-shrink-0" />
             <div className="min-w-0">
-              <h2 className="text-base sm:text-2xl font-bold truncate">{isEditMode ? 'Edit Product' : 'Add New Product'}</h2>
+              <h2 className="text-base sm:text-2xl font-bold truncate">
+                {isSupplierMode
+                  ? (isEditMode ? 'Edit Catalog Item' : 'Add to Supply Catalog')
+                  : (isEditMode ? 'Edit Product' : 'Add New Product')}
+              </h2>
               <p className="text-blue-100 text-[11px] sm:text-sm truncate">
-                {isEditMode ? 'Update product details and photo' : 'Add product to inventory with real-time sync'}
+                {isSupplierMode
+                  ? 'Supermarkets see this when they order from you'
+                  : (isEditMode ? 'Update product details and photo' : 'Add product to inventory with real-time sync')}
               </p>
             </div>
           </div>
@@ -598,7 +657,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   >
                     {uploadingImage ? 'Uploading…' : imagePreview ? 'Change photo' : 'Add photo (optional)'}
                   </button>
-                  <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">Shown to customers browsing this product</p>
+                  <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">{isSupplierMode ? 'Shown to supermarkets browsing your catalog' : 'Shown to customers browsing this product'}</p>
                 </div>
               </div>
 
@@ -774,6 +833,35 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     </select>
                   </div>
 
+                  {isSupplierMode ? (
+                    <>
+                  {/* Supply terms: replaces the store-only POS mode in supplier mode */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Sold by (unit)</label>
+                    <select
+                      name="unit"
+                      value={formData.unit}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      {SUPPLIER_CATALOG_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                    <label className="block text-sm font-medium text-gray-700 mt-3 mb-2">Minimum order</label>
+                    <input
+                      type="number"
+                      min="1"
+                      name="min_order_qty"
+                      value={formData.min_order_qty}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Buyers order in {formData.unit || 'units'}, at least {formData.min_order_qty || 1} at a time.
+                    </p>
+                  </div>
+                    </>
+                  ) : (
+                    <>
                   {/* POS inventory behavior */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -822,12 +910,14 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       </>
                     )}
                   </div>
+                    </>
+                  )}
 
                   {/* Wholesale quantity-tier pricing */}
                   {businessType === 'wholesale' && (
                     <div className="md:col-span-2 border border-blue-200 bg-blue-50 rounded-lg p-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        📦 Quantity price tiers <span className="text-xs text-gray-500">(optional — bulk pricing applied automatically in POS)</span>
+                        📦 Quantity price tiers <span className="text-xs text-gray-500">{isSupplierMode ? '(optional — buyers see these bulk prices when they order more)' : '(optional — bulk pricing applied automatically in POS)'}</span>
                       </label>
                       <div className="space-y-2">
                         {priceTiers.map((tier, index) => (
@@ -927,6 +1017,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     </div>
                   )}
 
+                  {!isSupplierMode && (
+                    <>
                   {/* Supplier */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -947,6 +1039,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       ))}
                     </select>
                   </div>
+                    </>
+                  )}
 
                   {/* Description */}
                   <div className="md:col-span-2">
@@ -963,6 +1057,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     />
                   </div>
 
+                  {!isSupplierMode && (
+                    <>
                   {/* Optional pharmacy fields. The database applies these only
                       to pharmacy products and keeps other business types safe. */}
                   <div className="md:col-span-2 border-t pt-4">
@@ -985,6 +1081,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       </label>
                     </div>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1079,7 +1177,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
                   <FiBox className="mr-2" />
-                  Inventory Settings
+                  {isSupplierMode ? 'Stock on hand' : 'Inventory Settings'}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Initial Stock */}
@@ -1116,6 +1214,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     />
                   </div>
 
+                  {!isSupplierMode && (
+                    <>
                   {/* Maximum Stock */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1179,6 +1279,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       <option value="Jinja Branch">Jinja Branch</option>
                     </select>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1206,12 +1308,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                 {loading || uploadingImage ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    <span>{isEditMode ? 'Saving…' : 'Adding Product…'}</span>
+                    <span>{isEditMode ? 'Saving…' : (isSupplierMode ? 'Adding to Catalog…' : 'Adding Product…')}</span>
                   </>
                 ) : (
                   <>
                     <FiSave className="h-4 w-4" />
-                    <span>{isEditMode ? 'Save Changes' : 'Add Product'}</span>
+                    <span>{isEditMode ? 'Save Changes' : (isSupplierMode ? 'Add to Catalog' : 'Add Product')}</span>
                   </>
                 )}
               </button>

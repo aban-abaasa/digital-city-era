@@ -1,53 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { FiShield, FiBriefcase, FiCreditCard, FiShoppingBag, FiChevronDown } from 'react-icons/fi';
-import { supabase } from '../services/supabase';
-import { ROLE_LEVEL } from './RoleProtectedRoute';
-
-// Same ladder as RoleProtectedRoute/role_level() in the database:
-// customer < cashier < manager < admin. Each entry's `level` decides who
-// can switch into it — admin sees all four, manager sees manager+cashier+
-// customer, cashier sees cashier+customer, customer sees only itself (so
-// the switcher hides entirely for a plain customer, nothing to switch to).
-const PORTALS = [
-  { id: 'admin', name: 'Admin Portal', icon: FiShield, route: '/admin-portal', level: 3, color: 'from-red-600 to-pink-600' },
-  { id: 'manager', name: 'Manager Portal', icon: FiBriefcase, route: '/manager-portal', level: 2, color: 'from-blue-600 to-purple-600' },
-  { id: 'cashier', name: 'Cashier Portal', icon: FiCreditCard, route: '/employee-portal', level: 1, color: 'from-green-600 to-emerald-600' },
-  { id: 'customer', name: 'Customer Portal', icon: FiShoppingBag, route: '/customer-dashboard', level: 0, color: 'from-orange-600 to-amber-600' }
-];
-
-const PORTAL_ROUTES = {
-  admin: ['/admin-portal', '/system-admin', '/admin-dashboard'],
-  manager: ['/manager-portal', '/manager'],
-  cashier: ['/cashier-portal', '/cashier', '/employee-portal', '/employee'],
-  customer: ['/customer-dashboard', '/customer', '/customer-portal']
-};
+import { FiChevronDown } from 'react-icons/fi';
+import { usePortalAccess } from '../hooks/usePortalAccess';
 
 const PortalSwitcher = ({ variant = 'light', fullWidth = false, onNavigate, mobileFloating = false, mobileFloatingPositionClass = 'top-3 right-3 z-40' }) => {
   const navigate = useNavigate();
-  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
-  const [role, setRole] = useState(null);
+  const { accessiblePortals, currentPortal } = usePortalAccess();
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
-      const { data } = await supabase
-        .from('users')
-        .select('role')
-        .eq('auth_id', session.user.id)
-        .maybeSingle();
-      if (active) setRole(data?.role?.toLowerCase() || null);
-    })();
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -81,20 +45,9 @@ const PortalSwitcher = ({ variant = 'light', fullWidth = false, onNavigate, mobi
     setIsOpen((prev) => !prev);
   };
 
-  if (!role) return null;
-
-  const myLevel = role === 'admin' ? Infinity : (ROLE_LEVEL[role] ?? -1);
-  const accessiblePortals = PORTALS.filter((p) => p.level <= myLevel);
-
-  // Nothing lower to switch to (e.g. a plain customer) — hide entirely.
+  // Nothing to switch to (e.g. a plain customer or supplier) — hide entirely.
   if (accessiblePortals.length <= 1) return null;
 
-  // If the current path doesn't match any known portal route, don't guess —
-  // showing the wrong "current" portal previously caused clicks on that
-  // portal to silently no-op (see handleSwitch), which looked like the
-  // switcher did nothing at all.
-  const currentId = Object.entries(PORTAL_ROUTES).find(([, routes]) => routes.includes(location.pathname))?.[0];
-  const currentPortal = accessiblePortals.find((p) => p.id === currentId) || null;
   const CurrentIcon = (currentPortal || accessiblePortals[0]).icon;
 
   const handleSwitch = (portal) => {
@@ -148,6 +101,7 @@ const PortalSwitcher = ({ variant = 'light', fullWidth = false, onNavigate, mobi
                     </div>
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-gray-900 text-sm">{portal.name}</p>
+                      {portal.subtitle && <p className="text-xs text-gray-500">{portal.subtitle}</p>}
                     </div>
                     {isActive && (
                       <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Active</span>
@@ -207,6 +161,7 @@ const PortalSwitcher = ({ variant = 'light', fullWidth = false, onNavigate, mobi
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-semibold text-gray-900 text-sm">{portal.name}</p>
+                    {portal.subtitle && <p className="text-xs text-gray-500">{portal.subtitle}</p>}
                   </div>
                   {isActive && (
                     <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Active</span>

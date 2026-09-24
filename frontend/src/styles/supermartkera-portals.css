@@ -615,3 +615,94 @@
 [data-theme="dark"] .sk-portal-theme-toggle:hover {
   background: rgba(16, 185, 129, 0.22);
 }
+
+/* ==========================================================================
+   Classic layer — the customer dashboard's ivory / gold / serif look, applied
+   to every portal (admin, manager, cashier, supplier) from one place instead
+   of restyling each multi-thousand-line page. Tokens match index.css
+   (.font-classic-display, .classic-card, .gold-rule): Playfair Display for
+   headings, ivory page, indigo ink, gold #c4a052 hairlines.
+   ========================================================================== */
+.sk-portal-themed {
+  background: linear-gradient(180deg, #fdfcf8 0%, #f8f4ea 100%);
+}
+
+/* Serif headings. Playfair defaults to old-style figures, which make prices
+   and counts look uneven — force lining, tabular numerals. */
+.sk-portal-themed h1,
+.sk-portal-themed h2,
+.sk-portal-themed h3 {
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+/* Cards: the soft indigo-tinted lift the customer's classic cards use,
+   instead of a hard grey drop shadow. Only large rounded white panels, so
+   inputs and small chips are left alone. */
+.sk-portal-themed .bg-white.rounded-xl,
+.sk-portal-themed .bg-white.rounded-2xl {
+  box-shadow:
+    0 1px 2px rgba(30, 27, 75, 0.05),
+    0 12px 28px -18px rgba(30, 27, 75, 0.28);
+}
+
+/* Section tab bar — gold-underlined tabs (replaces the per-portal
+   purple/yellow underline styles). */
+.classic-tabbar {
+  background: #ffffff;
+  border-bottom: 1px solid rgba(196, 160, 82, 0.35);
+}
+.classic-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.95rem 0.25rem;
+  border-bottom: 2px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.classic-tab:hover {
+  color: #312e81;
+  border-bottom-color: rgba(196, 160, 82, 0.5);
+}
+.classic-tab-active,
+.classic-tab-active:hover {
+  color: #312e81;
+  border-bottom-color: #c4a052;
+  font-weight: 600;
+}
+
+/* Filled "pill" nav item (admin's compact nav, drawers) — indigo with a gold
+   hairline ring, the classic counterpart of the old blue→purple gradient. */
+.classic-pill-active {
+  background: #312e81;
+  color: #ffffff;
+  box-shadow: 0 6px 16px -8px rgba(49, 46, 129, 0.6);
+  outline: 1px solid rgba(196, 160, 82, 0.55);
+  outline-offset: -1px;
+}
+
+/* Drawer / panel header — the same indigo as PortalHeader, gold hairline. */
+.classic-drawer-head {
+  background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 55%, #6d28d9 100%);
+  color: #ffffff;
+  border-bottom: 1px solid #f5dfa0;
+}
+
+[data-theme="dark"] .classic-tabbar {
+  background: #0c231b;
+  border-bottom-color: rgba(196, 160, 82, 0.3);
+}
+[data-theme="dark"] .classic-tab { color: rgba(209, 250, 229, 0.6); }
+[data-theme="dark"] .classic-tab:hover,
+[data-theme="dark"] .classic-tab-active,
+[data-theme="dark"] .classic-tab-active:hover { color: #f5dfa0; }
+[data-theme="dark"] .classic-pill-active { background: #4338ca; }
+
+/* Horizontal tab rows that scroll on phones without a visible scrollbar. */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

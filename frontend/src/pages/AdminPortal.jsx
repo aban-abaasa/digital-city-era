@@ -7,7 +7,8 @@ import { portalConfigService } from '../services/portalConfigService';
 import { supabase } from '../services/supabase';
 import inventoryService from '../services/inventorySupabaseService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
-import PortalSwitcher from '../components/PortalSwitcher';
+import PortalHeader from '../components/PortalHeader';
+import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import BusinessOperationsHub from '../components/BusinessOperationsHub';
 import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
@@ -33,12 +34,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
-import { useTheme } from '../contexts/ThemeContext';
 import '../styles/supermartkera-portals.css';
 
 const AdminPortal = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
-  const { theme, toggleTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [systemData, setSystemData] = useState({
     analytics: {},
@@ -47,12 +46,9 @@ const AdminPortal = () => {
   });
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showQuickRegister, setShowQuickRegister] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [moreNavPos, setMoreNavPos] = useState({ top: 0, right: 0 });
   const moreNavButtonRef = useRef(null);
-  const [profileMenuPos, setProfileMenuPos] = useState({ top: 0, right: 0 });
-  const profileMenuButtonRef = useRef(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoFileInputRef = useRef(null);
   const [adminForm, setAdminForm] = useState({
@@ -7598,11 +7594,6 @@ const AdminPortal = () => {
       ) : (
         <>
       <NotificationCenter />
-      <div className="fixed right-4 top-4 z-50 rounded-xl bg-indigo-700 shadow-xl">
-        <SupermarketaWalletApprovalBell />
-      </div>
-      {/* Always-reachable portal switcher on phones — pinned top-right, above the fixed mobile header bar and clear of the wallet-approval bell */}
-      <PortalSwitcher mobileFloating mobileFloatingPositionClass="top-4 right-16 z-[60]" />
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -7706,98 +7697,41 @@ const AdminPortal = () => {
         `
       }} />
 
-      {/* Mobile Header with Hamburger */}
-      {isMobile && (
-        <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg z-50 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg border-2 border-white/30 transition-all"
-            >
-              <FiMenu className="h-6 w-6 text-white" />
-            </button>
-            
-            <div className="flex items-center space-x-2">
-              <FiShield className="h-6 w-6 text-white" />
-              <h1 className="text-lg font-bold text-white">Admin Portal</h1>
-            </div>
+      {/* Shared Supermartkera header (BodaGoEra layout) — portal tabs, theme toggle and the avatar menu for every screen size */}
+      <PortalHeader
+        rightSlot={(
+          <div className="rounded-xl bg-indigo-700 shadow-md">
+            <SupermarketaWalletApprovalBell />
           </div>
-        </div>
-      )}
+        )}
+        avatarUrl={currentAdmin.avatar_url}
+        badgeCount={pendingUsers.length}
+        onProfile={() => setShowProfileModal(true)}
+        onSignOut={handleLogout}
+        menuItems={[
+          { label: pendingUsers.length > 0 ? `Notifications (${pendingUsers.length} pending)` : 'Notifications', icon: FiBell, onClick: () => setActiveSection('users') },
+          ...(!isMobile ? [{ label: 'Store Logo', icon: FiUpload, onClick: () => logoFileInputRef.current?.click() }] : []),
+          { label: 'Settings', icon: FiSettings, onClick: () => setActiveSection('settings') },
+          { label: 'Security', icon: FiLock, onClick: () => setActiveSection('security') }
+        ]}
+      />
 
-      {/* Mobile Sidebar Menu */}
-      {isMobile && showMobileMenu && (
-        <div className="fixed inset-0 z-50 flex" onClick={() => setShowMobileMenu(false)}>
-          <div 
-            className="w-80 max-w-[85vw] bg-white shadow-2xl overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
-              <button 
-                onClick={() => setShowMobileMenu(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-lg transition-colors"
-              >
-                <FiX className="h-5 w-5" />
-              </button>
-
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/30">
-                  <FiShield className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">{branding.typeEmoji} {branding.name}</h2>
-                  <p className="text-blue-100 text-sm">System Administrator · {branding.typeLabel}</p>
-                </div>
-              </div>
-            </div>
-
-            <nav className="p-4 space-y-1">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  if (item.href) { window.location.href = item.href; return; }
-                  setActiveSection(item.id);
-                  setShowMobileMenu(false);
-                }}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-300 relative ${
-                  activeSection === item.id 
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.id === 'users' && pendingUsers.length > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-2 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                    {pendingUsers.length}
-                  </span>
-                )}
-                {activeSection === item.id && (
-                  <FiChevronRight className="h-5 w-5" />
-                )}
-              </button>
-            ))}
-            
-            <div className="p-4 border-t border-gray-200 mt-4 space-y-2">
-              <PortalSwitcher variant="light" fullWidth onNavigate={() => setShowMobileMenu(false)} />
-              <button
-                onClick={handleLogout}
-                className="w-full p-3 bg-red-50 hover:bg-red-100 rounded-xl text-center border border-red-200 transition-all flex items-center justify-center gap-2"
-              >
-                <FiLogOut className="h-4 w-4 text-red-600" />
-                <span className="text-red-600 font-medium">Logout</span>
-              </button>
-            </div>
-          </nav>
-          </div>
-
-          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)}></div>
-        </div>
-      )}
+      {/* Section navigator: same as the customer dashboard (pill tabs on desktop, section bar + bottom-sheet menu on phones) */}
+      <PortalTabNavigator
+        tabs={navItems.map((item) => (item.id === 'users' ? { ...item, badge: pendingUsers.length } : item))}
+        activeTab={activeSection}
+        onSelect={(id) => {
+          const item = navItems.find((n) => n.id === id);
+          if (item?.href) { window.location.href = item.href; return; }
+          setActiveSection(id);
+        }}
+        name={currentAdmin.full_name || 'Administrator'}
+        email={currentAdmin.email}
+        initial={(currentAdmin.full_name || 'A').charAt(0).toUpperCase()}
+      />
 
       {/* Main Content Area */}
-      <div className={`${isMobile ? 'pt-16' : ''} p-3 md:p-4 lg:p-8`}>
+      <div className="p-3 md:p-4 lg:p-8">
         {/* Header - Compact for mobile */}
         <div className="container-glass rounded-lg md:rounded-2xl shadow-lg p-3 md:p-4 lg:p-6 mb-4 md:mb-6 lg:mb-8 animate-fadeInUp">
           {!isMobile && (
@@ -7836,284 +7770,12 @@ const AdminPortal = () => {
                   <span className="hidden lg:block text-[11px] text-gray-500 font-medium tracking-wide uppercase">{branding.typeLabel}</span>
                 </div>
               </div>
-              <nav className="flex items-center gap-1">
-                {primaryNavItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => { if (item.href) { window.location.href = item.href; return; } setActiveSection(item.id); }}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-300 relative ${
-                      activeSection === item.id
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                    {item.id === 'users' && pendingUsers.length > 0 && (
-                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                        {pendingUsers.length}
-                      </span>
-                    )}
-                  </button>
-                ))}
-
-                {moreNavItems.length > 0 && (
-                  <div className="relative">
-                    <button
-                      ref={moreNavButtonRef}
-                      onClick={() => {
-                        if (!showMoreNav && moreNavButtonRef.current) {
-                          const rect = moreNavButtonRef.current.getBoundingClientRect();
-                          setMoreNavPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-                        }
-                        setShowMoreNav((prev) => !prev);
-                      }}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-300 ${
-                        activeMoreItem
-                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
-                          : 'text-gray-600 hover:bg-gray-50'
-                      }`}
-                    >
-                      {activeMoreItem ? <activeMoreItem.icon className="h-4 w-4" /> : null}
-                      <span>{activeMoreItem ? activeMoreItem.label : 'More'}</span>
-                      {moreNavItems.some((item) => item.id === 'users') && pendingUsers.length > 0 && (
-                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                          {pendingUsers.length}
-                        </span>
-                      )}
-                      <FiChevronDown className={`h-4 w-4 transition-transform duration-300 ${showMoreNav ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showMoreNav && createPortal(
-                      <div className="sk-portal-themed">
-                        <div className="fixed inset-0 z-[9998]" onClick={() => setShowMoreNav(false)}></div>
-                        <div
-                          style={{ position: 'fixed', top: moreNavPos.top, right: moreNavPos.right }}
-                          className="w-64 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] overflow-hidden py-2"
-                        >
-                          {moreNavItems.map((item) => (
-                            <button
-                              key={item.id}
-                              onClick={() => {
-                                if (item.href) { window.location.href = item.href; return; }
-                                setActiveSection(item.id);
-                                setShowMoreNav(false);
-                              }}
-                              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors ${
-                                activeSection === item.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <item.icon className="h-4 w-4" />
-                              <span className="flex-1 text-left">{item.label}</span>
-                              {item.id === 'users' && pendingUsers.length > 0 && (
-                                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full">
-                                  {pendingUsers.length}
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>,
-                      document.body
-                    )}
-                  </div>
-                )}
-              </nav>
-              <PortalSwitcher />
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-all flex-shrink-0"
-              >
-                <FiLogOut className="h-4 w-4" />
-                <span className="hidden md:inline">Logout</span>
-              </button>
             </div>
           )}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
             <div className="flex-1 min-w-0">
               <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 truncate">Admin Portal - System Administration</h1>
               <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Welcome back to {branding.name}, admin</p>
-            </div>
-            <div className="flex items-center justify-end w-full md:w-auto gap-1 md:gap-2 lg:gap-4 flex-shrink-0">
-              <button
-                type="button"
-                onClick={toggleTheme}
-                aria-label="Toggle theme"
-                className="sk-portal-theme-toggle"
-              >
-                {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
-                <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-              </button>
-              {/* Everything about the signed-in admin — notifications, settings, profile — lives behind one avatar */}
-              <div className="relative">
-                <button
-                  ref={profileMenuButtonRef}
-                  onClick={() => {
-                    if (!showProfileMenu && profileMenuButtonRef.current) {
-                      const rect = profileMenuButtonRef.current.getBoundingClientRect();
-                      const menuWidth = 288; // matches the dropdown's w-72
-                      const margin = 8;
-                      const rawRight = window.innerWidth - rect.right;
-                      const clampedRight = Math.min(
-                        Math.max(rawRight, margin),
-                        Math.max(window.innerWidth - menuWidth - margin, margin)
-                      );
-                      setProfileMenuPos({ top: rect.bottom + 8, right: clampedRight });
-                    }
-                    setShowProfileMenu(!showProfileMenu);
-                  }}
-                  className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 md:px-3 py-1.5 md:py-2 hover:bg-gray-100 transition-colors cursor-pointer"
-                  title="Account"
-                >
-                  <div className="relative w-8 md:w-10 h-8 md:h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white flex-shrink-0 overflow-hidden">
-                    {currentAdmin.avatar_url ? (
-                      <img src={currentAdmin.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <FiShield className="h-4 md:h-5 w-4 md:w-5" />
-                    )}
-                    {pendingUsers.length > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full ring-2 ring-gray-50 animate-pulse">
-                        {pendingUsers.length}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs md:text-sm text-left hidden md:block">
-                    <div className="font-medium text-gray-900">{currentAdmin.full_name || 'Administrator'}</div>
-                    <div className="text-gray-500 text-xs capitalize">{currentAdmin.role || 'Administrator'}</div>
-                  </div>
-                  <FiChevronDown className={`h-4 w-4 text-gray-400 hidden md:block transition-transform duration-300 ${showProfileMenu ? 'rotate-180' : ''}`} />
-                </button>
-
-                {/* Dropdown Menu */}
-                {showProfileMenu && createPortal(
-                  <div className="sk-portal-themed">
-                    <div
-                      className="fixed inset-0 z-[9998]"
-                      onClick={() => setShowProfileMenu(false)}
-                    ></div>
-                    <div
-                      style={{ position: 'fixed', top: profileMenuPos.top, right: profileMenuPos.right }}
-                      className="w-72 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] overflow-hidden"
-                    >
-                      {/* Profile Header */}
-                      <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 text-white">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
-                            {currentAdmin.avatar_url ? (
-                              <img src={currentAdmin.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <FiShield className="h-6 w-6" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold truncate">{currentAdmin.full_name || 'Administrator'}</div>
-                            <div className="text-xs text-white/80 truncate">{currentAdmin.email || ''}</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Menu Items */}
-                      <div className="py-2 max-h-[70vh] overflow-y-auto">
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
-                            setActiveSection('users');
-                          }}
-                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-yellow-50 transition-colors"
-                        >
-                          <FiBell className="h-5 w-5 text-yellow-600" />
-                          <div className="text-left flex-1">
-                            <div className="font-medium text-sm">Notifications</div>
-                            <div className="text-xs text-gray-500">
-                              {pendingUsers.length > 0 ? `${pendingUsers.length} pending approval${pendingUsers.length === 1 ? '' : 's'}` : 'You\'re all caught up'}
-                            </div>
-                          </div>
-                          {pendingUsers.length > 0 && (
-                            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full">
-                              {pendingUsers.length}
-                            </span>
-                          )}
-                        </button>
-
-                        <div className="border-t border-gray-200 my-2"></div>
-
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
-                            setShowProfileModal(true);
-                          }}
-                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 transition-colors"
-                        >
-                          <FiUser className="h-5 w-5 text-blue-600" />
-                          <div className="text-left">
-                            <div className="font-medium text-sm">My Profile</div>
-                            <div className="text-xs text-gray-500">View and edit profile</div>
-                          </div>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
-                            logoFileInputRef.current?.click();
-                          }}
-                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-indigo-50 transition-colors"
-                        >
-                          <FiUpload className="h-5 w-5 text-indigo-600" />
-                          <div className="text-left">
-                            <div className="font-medium text-sm">Store Logo</div>
-                            <div className="text-xs text-gray-500">Upload the logo shown on your header & receipts</div>
-                          </div>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
-                            setActiveSection('settings');
-                          }}
-                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-purple-50 transition-colors"
-                        >
-                          <FiSettings className="h-5 w-5 text-purple-600" />
-                          <div className="text-left">
-                            <div className="font-medium text-sm">Settings</div>
-                            <div className="text-xs text-gray-500">System configuration</div>
-                          </div>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
-                            setActiveSection('security');
-                          }}
-                          className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-green-50 transition-colors"
-                        >
-                          <FiLock className="h-5 w-5 text-green-600" />
-                          <div className="text-left">
-                            <div className="font-medium text-sm">Security</div>
-                            <div className="text-xs text-gray-500">Password & 2FA</div>
-                          </div>
-                        </button>
-
-                        <div className="border-t border-gray-200 my-2"></div>
-
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
-                            handleLogout();
-                          }}
-                          className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                          <FiPower className="h-5 w-5" />
-                          <div className="text-left">
-                            <div className="font-medium text-sm">Logout</div>
-                            <div className="text-xs text-red-400">Sign out of account</div>
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-                  </div>,
-                  document.body
-                )}
-              </div>
             </div>
           </div>
         </div>

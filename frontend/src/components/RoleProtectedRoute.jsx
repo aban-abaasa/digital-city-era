@@ -16,8 +16,10 @@ export const ROLE_HOME = {
 // the database. A role automatically gets into its own portal and every
 // portal at or below its level (manager can walk into the cashier and
 // customer portals; cashier can walk into the customer portal; admin gets
-// everywhere). Supplier sits outside this ladder as its own silo.
-export const ROLE_LEVEL = { customer: 0, cashier: 1, employee: 1, manager: 2, admin: 3 };
+// everywhere). Supplier is level 0: it owns its supplier portal (via
+// exactRoles) and, like anyone, may also use the customer portal — but
+// gets no staff portals.
+export const ROLE_LEVEL = { customer: 0, supplier: 0, cashier: 1, employee: 1, manager: 2, admin: 3 };
 
 // Circuit breaker: AuthContext (mock, localStorage-based) and the real
 // Supabase session this component checks are two separate, uncoordinated

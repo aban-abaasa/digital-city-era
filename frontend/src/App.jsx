@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -13,16 +13,21 @@ import CountryGate from '@/components/CountryGate';
 import ScrollToTop from '@/components/ScrollToTop';
 import HiddenDecoyLinks from '@/components/security/HiddenDecoyLinks';
 
+// Portals are separate lazily-loaded pages (see utils/portalPages.js)
+import { PORTAL_LOADERS, loadCashierStation } from '@/utils/portalPages';
+import PortalPageFallback from '@/components/PortalPageFallback';
+const AdminPortal = lazy(PORTAL_LOADERS.admin);
+const ManagerPortal = lazy(PORTAL_LOADERS.manager);
+const CashierPortal = lazy(loadCashierStation);
+const EmployeePortal = lazy(PORTAL_LOADERS.cashier);
+const SupplierPortal = lazy(PORTAL_LOADERS.supplier);
+const CustomerDashboard = lazy(PORTAL_LOADERS.customer);
+
 // Pages and Components
-import AdminPortal from '@/pages/AdminPortal';
 import CustomerLogin from '@/pages/CustomerLogin';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import EmployeeAuth from '@/pages/EmployeeAuth';
-import ManagerPortal from '@/pages/ManagerPortal';
-import CashierPortal from '@/pages/CushierPortal';
-import EmployeePortal from '@/pages/cashier portal';
-import SupplierPortal from '@/pages/SupplierPortal';
 import SupplierAuth from '@/pages/SupplierAuth';
 import SupermartkeraLanding from '@/pages/SupermartkeraLanding';
 import AdminAuth from '@/pages/AdminAuth';
@@ -39,7 +44,6 @@ import Suppliers from '@/pages/Suppliers';
 import Inventory from '@/pages/Inventory';
 import Reports from '@/pages/Reports';
 import POS from '@/pages/POS';
-import CustomerDashboard from '@/pages/CustomerDashboard';
 import CustomerPayment from '@/pages/CustomerPayment';
 import CustomerDelivery from '@/pages/CustomerDelivery';
 import ICANWalletPage from '@/pages/ICANWalletPage';
@@ -189,6 +193,7 @@ function App() {
               <HiddenDecoyLinks />
               <ScrollToTop />
               <CountryGate>
+              <Suspense fallback={<PortalPageFallback />}>
               <Routes>
               {/* Main landing with portal selection - but check for OAuth callback first */}
               <Route 
@@ -338,6 +343,7 @@ function App() {
                 } 
               />
               </Routes>
+              </Suspense>
               </CountryGate>
 
               <ChatWidget />
