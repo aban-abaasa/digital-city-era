@@ -18,6 +18,7 @@ import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import BookingsPanel from '../components/booking/BookingsPanel';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
+import AdminDashboardHome from '../components/adminDashboard/AdminDashboardHome';
 import {
   FiUsers, FiUser, FiShield, FiSettings, FiBarChart, FiActivity,
   FiGlobe, FiServer, FiDatabase, FiLock, FiAlertTriangle,
@@ -28,7 +29,7 @@ import {
   FiUpload, FiTrash2, FiEdit, FiEye, FiRotateCw, FiX,
   FiMoreVertical, FiMail, FiPhone, FiBriefcase, FiFileText,
   FiChevronDown, FiMenu, FiChevronUp, FiChevronRight, FiLogOut, FiInfo,
-  FiSun, FiMoon
+  FiSun, FiMoon, FiShoppingCart, FiPackage
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -57,17 +58,6 @@ const AdminPortal = () => {
     full_name: '',
     phone: ''
   });
-
-  // Date range for revenue metrics
-  const [revenueDateRange, setRevenueDateRange] = useState({
-    type: 'today', // 'today', '7days', '30days', '90days', '1year', 'custom'
-    startDate: new Date(new Date().setHours(0, 0, 0, 0)),
-    endDate: new Date(new Date().setHours(23, 59, 59, 999))
-  });
-
-  // Business metrics trend (Users / Revenue / Orders / Growth) for the Live Business Metrics line chart
-  const [businessTrend, setBusinessTrend] = useState([]);
-  const [businessTrendLoading, setBusinessTrendLoading] = useState(false);
 
   // Real-time state management - Initialize with zeros, will be loaded from Supabase
   const [realTimeData, setRealTimeData] = useState({
@@ -136,7 +126,6 @@ const AdminPortal = () => {
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [showRecentActivities, setShowRecentActivities] = useState(false);
   const [showInventoryControl, setShowInventoryControl] = useState(false);
   const [showPaymentControl, setShowPaymentControl] = useState(false);
   const [showFinancialControl, setShowFinancialControl] = useState(false);
@@ -992,154 +981,6 @@ const AdminPortal = () => {
     }
   }, []);
 
-  // Build the Users / Revenue / Orders / Growth trend used by the Live Business Metrics line chart.
-  // Buckets transactions + user signups into a handful of points spanning the selected range, then
-  // indexes each series to 0-100 so wildly different units (money, counts, %) can share one chart.
-  const loadBusinessTrend = useCallback(async (type) => {
-    setBusinessTrendLoading(true);
-    try {
-      const endDate = new Date();
-      const startDate = new Date(endDate);
-      let bucketCount = 7;
-      let bucketUnit = 'day';
-
-      switch (type) {
-        case 'today':
-          startDate.setHours(0, 0, 0, 0);
-          bucketCount = 12;
-          bucketUnit = 'hour2';
-          break;
-        case '7days':
-          startDate.setDate(startDate.getDate() - 7);
-          bucketCount = 7;
-          bucketUnit = 'day';
-          break;
-        case '30days':
-          startDate.setDate(startDate.getDate() - 30);
-          bucketCount = 10;
-          bucketUnit = 'day3';
-          break;
-        case '90days':
-          startDate.setDate(startDate.getDate() - 90);
-          bucketCount = 13;
-          bucketUnit = 'week';
-          break;
-        case '1year':
-          startDate.setFullYear(startDate.getFullYear() - 1);
-          bucketCount = 12;
-          bucketUnit = 'month';
-          break;
-        default:
-          startDate.setDate(startDate.getDate() - 7);
-      }
-
-      const bucketMs = {
-        hour2: 2 * 60 * 60 * 1000,
-        day: 24 * 60 * 60 * 1000,
-        day3: 3 * 24 * 60 * 60 * 1000,
-        week: 7 * 24 * 60 * 60 * 1000,
-        month: null // handled separately below
-      }[bucketUnit];
-
-      const bucketStart = (i) => {
-        if (bucketUnit === 'month') {
-          const d = new Date(startDate);
-          d.setMonth(d.getMonth() + i);
-          return d;
-        }
-        return new Date(startDate.getTime() + i * bucketMs);
-      };
-      const bucketLabel = (d) => {
-        if (bucketUnit === 'hour2') return d.toLocaleTimeString([], { hour: '2-digit' });
-        if (bucketUnit === 'month') return d.toLocaleDateString([], { month: 'short' });
-        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      };
-
-      const buckets = Array.from({ length: bucketCount }, (_, i) => {
-        const start = bucketStart(i);
-        const end = bucketUnit === 'month' ? bucketStart(i + 1) : new Date(start.getTime() + bucketMs);
-        return { start, end, label: bucketLabel(start), revenue: 0, orders: 0, newUsers: 0 };
-      });
-
-      const findBucket = (dateStr) => {
-        const t = new Date(dateStr).getTime();
-        return buckets.find(b => t >= b.start.getTime() && t < b.end.getTime());
-      };
-
-      const [{ data: transactions }, { data: newUsers }] = await Promise.all([
-        supabase
-          .from('transactions')
-          .select('total_amount, created_at')
-          .gte('created_at', startDate.toISOString())
-          .lte('created_at', endDate.toISOString()),
-        supabase
-          .from('users')
-          .select('created_at')
-          .gte('created_at', startDate.toISOString())
-          .lte('created_at', endDate.toISOString())
-      ]);
-
-      (transactions || []).forEach(t => {
-        const bucket = findBucket(t.created_at);
-        if (bucket) {
-          bucket.revenue += parseFloat(t.total_amount) || 0;
-          bucket.orders += 1;
-        }
-      });
-      (newUsers || []).forEach(u => {
-        const bucket = findBucket(u.created_at);
-        if (bucket) bucket.newUsers += 1;
-      });
-
-      // Baseline users = current total minus everyone who joined inside the window,
-      // so the cumulative line ends at today's real total user count.
-      const totalNewInWindow = buckets.reduce((sum, b) => sum + b.newUsers, 0);
-      const baselineUsers = Math.max(0, (realTimeData.totalUsers || 0) - totalNewInWindow);
-      let runningUsers = baselineUsers;
-
-      let previousRevenue = null;
-      const withRaw = buckets.map(b => {
-        runningUsers += b.newUsers;
-        const growth = previousRevenue ? ((b.revenue - previousRevenue) / previousRevenue) * 100 : 0;
-        previousRevenue = b.revenue || previousRevenue || 1;
-        return {
-          label: b.label,
-          revenueRaw: Math.round(b.revenue),
-          ordersRaw: b.orders,
-          usersRaw: runningUsers,
-          growthRaw: Math.round(growth * 10) / 10
-        };
-      });
-
-      // Index every series to a shared 0-100 scale so revenue (millions), orders (tens),
-      // users (thousands) and growth (%) can be plotted as comparable lines on one axis.
-      const indexSeries = (key) => {
-        const values = withRaw.map(d => d[key]);
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const range = max - min;
-        return values.map(v => (range === 0 ? 50 : Math.round(((v - min) / range) * 100)));
-      };
-      const revenueIdx = indexSeries('revenueRaw');
-      const ordersIdx = indexSeries('ordersRaw');
-      const usersIdx = indexSeries('usersRaw');
-      const growthIdx = indexSeries('growthRaw');
-
-      setBusinessTrend(withRaw.map((d, i) => ({
-        ...d,
-        revenueIdx: revenueIdx[i],
-        ordersIdx: ordersIdx[i],
-        usersIdx: usersIdx[i],
-        growthIdx: growthIdx[i]
-      })));
-    } catch (error) {
-      console.error('Error loading business metrics trend:', error);
-      setBusinessTrend([]);
-    } finally {
-      setBusinessTrendLoading(false);
-    }
-  }, [realTimeData.totalUsers]);
-
   // Load detailed orders from Supabase (real data from manager portal)
   const loadDetailedOrders = useCallback(async () => {
     try {
@@ -1396,7 +1237,6 @@ const AdminPortal = () => {
   useEffect(() => {
     loadSystemData();
     loadOrderStats(); // Also load order stats immediately for dashboard metrics
-    loadBusinessTrend(revenueDateRange.type); // Populate the Live Business Metrics line chart
     const stopRealTimeUpdates = initializeRealTimeUpdates();
     simulateWebSocketConnection();
     loadPortalConfiguration();
@@ -2923,810 +2763,14 @@ const AdminPortal = () => {
   );
 
   const renderDashboard = () => (
-    <div className="space-y-3 md:space-y-4 lg:space-y-8">
-      {/* Enhanced Master Dashboard Header - Mobile Optimized with Accordion */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-lg md:rounded-2xl p-3 md:p-4 lg:p-8 text-white shadow-xl md:shadow-2xl">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjA1IiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-30"></div>
-        
-        <div className="relative">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-4 lg:gap-6">
-            <div className="flex-1">
-              <h2 className="text-lg md:text-2xl lg:text-4xl font-bold mb-1 md:mb-2 lg:mb-3 flex items-center gap-1 md:gap-2 lg:gap-4">
-                <span className="text-xl md:text-2xl lg:text-5xl animate-bounce flex-shrink-0">🎯</span>
-                <span className="leading-tight">Master Admin Dashboard</span>
-              </h2>
-              <p className="text-blue-100 text-xs md:text-sm lg:text-lg mb-1 md:mb-2 lg:mb-3">Complete system oversight and operational control</p>
-              
-              {/* Mobile: Ultra-compact badges - Hidden on mobile, shown on sm+ */}
-              <div className="flex flex-wrap gap-0.5 md:gap-2 lg:gap-4 hidden sm:flex">
-                <div className="flex items-center gap-0.5 md:gap-1 bg-white/10 backdrop-blur-sm px-1.5 md:px-2.5 py-0.5 md:py-1 rounded-full border border-white/20">
-                  <div className="w-1 md:w-1.5 h-1 md:h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-blue-100 text-xs font-medium">All Systems</span>
-                </div>
-                <div className="flex items-center gap-0.5 md:gap-1 bg-white/10 backdrop-blur-sm px-1.5 md:px-2.5 py-0.5 md:py-1 rounded-full border border-white/20">
-                  <FiDatabase className="h-2.5 md:h-3 w-2.5 md:w-3 text-purple-300" />
-                  <span className="text-purple-100 text-xs font-medium">Real-time</span>
-                </div>
-                <div className="flex items-center gap-0.5 md:gap-1 bg-white/10 backdrop-blur-sm px-1.5 md:px-2.5 py-0.5 md:py-1 rounded-full border border-white/20">
-                  <FiShield className="h-2.5 md:h-3 w-2.5 md:w-3 text-pink-300" />
-                  <span className="text-pink-100 text-xs font-medium">Secure</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Mobile: Compact power indicator */}
-            <div className="flex md:block items-center gap-2 md:gap-3 lg:text-right flex-shrink-0">
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl lg:rounded-2xl p-1.5 md:p-2 lg:p-4 border-2 border-white/20">
-                <div className="text-2xl md:text-3xl lg:text-6xl font-bold animate-pulse">∞</div>
-                <div className="text-blue-200 text-xs md:text-xs lg:text-xl font-semibold mt-0.5">Admin Power</div>
-                <div className="text-blue-300 text-xs hidden md:block">Unlimited Access</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Admin Access Status Banner - Ultra Mobile Optimized */}
-      <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-lg md:rounded-xl p-2 md:p-4 shadow-md">
-        <div className="flex items-start gap-1.5 md:gap-3">
-          <div className="flex items-center gap-0.5 md:gap-1 flex-shrink-0 text-base md:text-lg">
-            <span>✅</span>
-            <span>🛡️</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-xs md:text-base font-bold text-green-900 leading-tight">Admin Access Enabled</h3>
-            <p className="text-xs text-green-700 mt-0.5 line-clamp-2 md:line-clamp-none">Full control. Edit pricing, manage stock, apply bulk updates.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Employee & Manager Sign-in Control Center - COMMENTED OUT */}
-      {/* <div className="bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-3xl font-bold mb-3 flex items-center">
-              <span className="mr-4 text-4xl">🔐</span>
-              Employee & Manager Access Control
-            </h3>
-            <p className="text-cyan-100 text-lg">Complete control over employee and manager authentication</p>
-          </div>
-          <div className="flex space-x-4">
-            <div className="bg-white/20 rounded-xl p-4 text-center">
-              <div className="text-3xl font-bold">156</div>
-              <div className="text-cyan-200 text-sm">Active Employees</div>
-            </div>
-            <div className="bg-white/20 rounded-xl p-4 text-center">
-              <div className="text-3xl font-bold">24</div>
-              <div className="text-blue-200 text-sm">Active Managers</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            {
-              title: 'Employee Login Control',
-              description: 'Enable/disable employee access',
-              icon: '👨‍💼',
-              action: showEmployeeControlInterface,
-              status: realTimeData.isEmployeeLoginEnabled ? 'enabled' : 'disabled',
-              count: `${accessControlStats.activeEmployees || realTimeData.activeUsers} Active`
-            },
-            {
-              title: 'Manager Login Control',
-              description: 'Enable/disable manager access',
-              icon: '👔',
-              action: toggleManagerLogin,
-              status: realTimeData.isManagerLoginEnabled ? 'enabled' : 'disabled',
-              count: '24 Active'
-            },
-            {
-              title: 'Bulk Account Actions',
-              description: 'Mass enable/disable accounts',
-              icon: '⚡',
-              action: () => {
-                const action = window.confirm('Enable (OK) or Disable (Cancel) accounts?') ? 'enable' : 'disable';
-                performBulkAccountAction(action);
-              },
-              status: 'ready',
-              count: 'Mass Actions'
-            },
-            {
-              title: 'Access Audit Log',
-              description: 'View all login attempts',
-              icon: '📋',
-              action: viewAccessAuditLog,
-              status: 'active',
-              count: 'Live Tracking'
-            }
-          ].map((control, index) => (
-            <div key={index} className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:bg-white/20 transition-all duration-300">
-              <div className="text-4xl mb-4">{control.icon}</div>
-              <h4 className="text-xl font-bold mb-2">{control.title}</h4>
-              <p className="text-cyan-100 text-sm mb-4">{control.description}</p>
-              <div className="flex items-center justify-between mb-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  control.status === 'enabled' ? 'bg-green-500/20 text-green-300' :
-                  control.status === 'ready' ? 'bg-blue-500/20 text-blue-300' :
-                  'bg-purple-500/20 text-purple-300'
-                }`}>
-                  {control.status}
-                </span>
-                <span className="text-white/80 text-xs">{control.count}</span>
-              </div>
-              <button
-                onClick={control.action}
-                className="w-full bg-white/20 hover:bg-white/30 text-white py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-105"
-              >
-                Access Control
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-            <h4 className="text-xl font-bold mb-4 flex items-center">
-              <span className="mr-3 text-2xl">🎛️</span>
-              Advanced Controls
-            </h4>
-            <div className="space-y-3">
-              {[
-                { 
-                  action: 'Force Password Reset', 
-                  icon: '🔑', 
-                  description: 'Reset all employee passwords',
-                  onClick: forcePasswordReset
-                },
-                { 
-                  action: 'Session Management', 
-                  icon: '⏱️', 
-                  description: 'Control active sessions',
-                  onClick: () => {
-                    showNotification(`Managing ${realTimeData.activeSessions} active sessions...`, 'info');
-                    setTimeout(() => showNotification('Session management completed', 'success'), 2000);
-                  }
-                },
-                { 
-                  action: 'Role Assignment', 
-                  icon: '👤', 
-                  description: 'Modify user roles and permissions',
-                  onClick: () => {
-                    const roles = ['Employee', 'Manager', 'Supervisor'];
-                    showNotification(`Role assignment system opened - ${roles.length} roles available`, 'info');
-                  }
-                },
-                { 
-                  action: 'Account Lockout', 
-                  icon: '🔒', 
-                  description: 'Lock/unlock specific accounts',
-                  onClick: () => {
-                    const action = window.confirm('Lock (OK) or Unlock (Cancel) accounts?') ? 'lock' : 'unlock';
-                    showNotification(`Account ${action} operation initiated...`, 'warning');
-                    setTimeout(() => showNotification(`Account ${action} completed`, 'success'), 1500);
-                  }
-                }
-              ].map((item, index) => (
-                <button
-                  key={index}
-                  onClick={item.onClick}
-                  className="w-full bg-white/5 hover:bg-white/15 p-4 rounded-lg text-left transition-all duration-300 flex items-center"
-                >
-                  <span className="text-2xl mr-4">{item.icon}</span>
-                  <div>
-                    <div className="font-semibold">{item.action}</div>
-                    <div className="text-cyan-200 text-sm">{item.description}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-            <h4 className="text-xl font-bold mb-4 flex items-center">
-              <span className="mr-3 text-2xl">📊</span>
-              Access Statistics
-            </h4>
-            <div className="space-y-4">
-              {[
-                { label: 'Today\'s Logins', value: realTimeData.employeeLogins.toString(), change: '+12%', type: 'employees' },
-                { label: 'Failed Attempts', value: realTimeData.failedAttempts.toString(), change: '-67%', type: 'security' },
-                { label: 'Active Sessions', value: realTimeData.activeSessions.toString(), change: '+5%', type: 'live' },
-                { label: 'Manager Access', value: realTimeData.managerAccess.toString(), change: '+3%', type: 'managers' }
-              ].map((stat, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                  <div>
-                    <div className="font-medium">{stat.label}</div>
-                    <div className="text-cyan-200 text-sm">{stat.type}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold">{stat.value}</div>
-                    <div className={`text-sm ${stat.change.startsWith('+') ? 'text-green-300' : 'text-red-300'}`}>
-                      {stat.change}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div> */}
-
-      {/* Quick Stats with Enhanced Animations - COMMENTED OUT */}
-      {/* <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { 
-            title: 'Total Users', 
-            value: realTimeData.activeUsers + 1145,
-            icon: FiUsers, 
-            color: 'from-blue-500 to-blue-600',
-            animation: 'animate-fadeInUp delay-100'
-          },
-          { 
-            title: 'Active Sessions', 
-            value: realTimeData.activeSessions, 
-            icon: FiActivity, 
-            color: 'from-green-500 to-green-600',
-            animation: 'animate-fadeInUp delay-200'
-          },
-          { 
-            title: 'System Load', 
-            value: `${realTimeData.systemLoad}%`, 
-            icon: FiCpu, 
-            color: 'from-purple-500 to-purple-600',
-            animation: 'animate-fadeInUp delay-300'
-          },
-          { 
-            title: 'Memory Usage', 
-            value: `${realTimeData.memoryUsage}%`, 
-            icon: FiShield, 
-            color: 'from-yellow-500 to-red-600',
-            animation: 'animate-fadeInUp delay-400'
-          }
-        ].map((stat, index) => (
-          <div 
-            key={index} 
-            className={`${stat.animation} transform hover:scale-105 transition-all duration-500 container-glass rounded-xl p-6 shadow-lg hover:shadow-2xl group`}
-          >
-            <div className="flex items-center justify-between relative overflow-hidden">
-              <div className="z-10">
-                <p className="text-gray-600 text-sm font-medium mb-1 group-hover:text-blue-600 transition-colors duration-300">
-                  {stat.title}
-                </p>
-                <p className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 group-hover:from-blue-600 group-hover:to-purple-600 transition-all duration-300">
-                  {stat.value}
-                </p>
-                <div className="h-1 w-0 group-hover:w-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 mt-2 rounded-full" />
-              </div>
-              <div className={`p-4 rounded-xl bg-gradient-to-r ${stat.color} transform group-hover:scale-110 group-hover:rotate-12 transition-all duration-500`}>
-                <stat.icon className="h-8 w-8 text-white animate-pulse" />
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-purple-50 opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-xl" />
-            </div>
-          </div>
-        ))}
-      </div> */}
-
-      {showQuickRegister && renderQuickAdminRegister()}
-
-      {/* Dashboard Secondary Content */}
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* API Health - COMMENTED OUT */}
-        {/* <div className="container-glass rounded-xl p-6 shadow-lg transform hover:scale-[1.02] transition-all duration-500">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 flex items-center space-x-3">
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <FiServer className="h-6 w-6 text-blue-600 animate-pulse" />
-              </div>
-              <span>API Health Status</span>
-            </h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { label: 'Response Time', value: '45ms', trend: '↓ 5ms', up: true },
-              { label: 'Success Rate', value: '99.9%', trend: '↑ 0.1%', up: true },
-              { label: 'Error Rate', value: '0.1%', trend: '↓ 0.2%', up: true },
-              { label: 'Throughput', value: '850/s', trend: '↑ 50/s', up: true }
-            ].map((item, index) => (
-              <div key={index} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-300">
-                <div className="text-sm text-gray-600 mb-1">{item.label}</div>
-                <div className="text-2xl font-bold text-gray-900">{item.value}</div>
-                <div className={`text-sm ${item.up ? 'text-green-600' : 'text-red-600'}`}>
-                  {item.trend}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-6">
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full w-[99.9%] bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transform origin-left scale-x-0 animate-widthExpand"></div>
-            </div>
-          </div>
-        </div> */}
-
-        {/* Recent System Logs - COMMENTED OUT */}
-        {/* <div className="container-glass rounded-xl p-6 shadow-lg transform hover:scale-[1.02] transition-all duration-500">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 flex items-center space-x-3">
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <FiTerminal className="h-6 w-6 text-blue-600" />
-              </div>
-              <span>System Logs</span>
-            </h3>
-            <button className="p-2 hover:bg-blue-50 rounded-lg transition-all duration-300">
-              <FiRefreshCw className="h-5 w-5 text-blue-600" />
-            </button>
-          </div>
-          <div className="space-y-3">
-            {[
-              { type: 'info', message: 'System backup completed successfully', time: '2 mins ago' },
-              { type: 'warning', message: 'High CPU usage detected', time: '5 mins ago' },
-              { type: 'error', message: 'Failed login attempt', time: '10 mins ago' },
-              { type: 'info', message: 'New user registration', time: '15 mins ago' }
-            ].map((log, index) => (
-              <div 
-                key={index}
-                className="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-all duration-300"
-              >
-                <div className={`w-2 h-2 rounded-full ${
-                  log.type === 'info' ? 'bg-blue-500' :
-                  log.type === 'warning' ? 'bg-yellow-500' :
-                  'bg-red-500'
-                }`}></div>
-                <div className="flex-1">
-                  <p className="text-gray-900">{log.message}</p>
-                  <p className="text-sm text-gray-500">{log.time}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div> */}
-
-      {/* Comprehensive System Overview - COMMENTED OUT */}
-      {/* <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-xl p-8">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
-            <span className="mr-3 text-3xl">📡</span>
-            Real-time System Overview
-          </h3>
-          <div className="mb-8 p-6 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border-2 border-indigo-200">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                  <span className="bg-indigo-500 text-white p-3 rounded-xl">🏛️</span>
-                  Admin Data Intelligence Center
-                </h3>
-                <p className="text-indigo-700 mt-2">Real-time business intelligence and comprehensive data analytics</p>
-              </div>
-              <button
-                onClick={() => {
-                  if (adminDataService) {
-                    setDataLoading(true);
-                    setShowDataDashboard(true);
-                    showNotification('Loading Data Intelligence Center...', 'info');
-                  } else {
-                    showNotification('Data service not ready. Please wait...', 'warning');
-                  }
-                }}
-                disabled={!adminDataService}
-                className={`px-6 py-3 rounded-xl transition-all duration-300 font-medium flex items-center gap-2 ${
-                  !adminDataService 
-                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-lg hover:scale-105'
-                }`}
-              >
-                <span className={`text-xl ${!adminDataService ? '⏳' : '🏛️'}`}>
-                  {!adminDataService ? '⏳' : '🏛️'}
-                </span>
-                {!adminDataService ? 'Loading System...' : 'Open Data Intelligence Center'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { 
-                  title: 'Data Records', 
-                  value: dashboardData.systemHealth?.totalRecords || 0, 
-                  icon: '📁',
-                  color: 'blue',
-                  description: 'Total stored records'
-                },
-                { 
-                  title: 'Data Quality', 
-                  value: `${dashboardData.systemHealth?.dataQuality || 95}%`, 
-                  icon: '✨',
-                  color: 'green',
-                  description: 'Data integrity score'
-                },
-                { 
-                  title: 'Active Insights', 
-                  value: dataInsights.length || 0, 
-                  icon: '🧠',
-                  color: 'purple',
-                  description: 'Generated insights'
-                },
-                { 
-                  title: 'System Performance', 
-                  value: `${dashboardData.systemHealth?.performance || 87}%`, 
-                  icon: '⚡',
-                  color: 'orange',
-                  description: 'Performance score'
-                }
-              ].map((metric, index) => (
-                <div key={index} className={`bg-white p-4 rounded-lg border-l-4 border-${metric.color}-500 hover:shadow-lg transition-shadow`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-2xl">{metric.icon}</span>
-                    <div className={`text-2xl font-bold text-${metric.color}-600`}>{metric.value}</div>
-                  </div>
-                  <h4 className="font-semibold text-gray-900 text-sm">{metric.title}</h4>
-                  <p className="text-xs text-gray-600 mt-1">{metric.description}</p>
-                </div>
-              ))}
-            </div>
-
-            {dataInsights.length > 0 && (
-              <div className="mt-6 p-4 bg-white/60 rounded-lg border border-indigo-200">
-                <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <span>💡</span>
-                  Latest Business Insights
-                </h4>
-                <div className="space-y-2">
-                  {dataInsights.slice(0, 3).map((insight, index) => (
-                    <div key={index} className="text-sm flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full ${
-                        insight.impact === 'high' ? 'bg-red-500' :
-                        insight.impact === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
-                      }`}></span>
-                      <span className="text-gray-700">{insight.title}</span>
-                      <span className="text-xs text-gray-500">({insight.type})</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            {[
-              { title: 'Orders Today', value: realTimeData.todaysOrders.toString(), icon: '📋', color: 'blue', status: 'active' },
-              { title: 'Revenue Today', value: `$${(realTimeData.dailyRevenue / 1000).toFixed(1)}K`, icon: '💰', color: 'green', status: 'active' },
-              { title: 'Active Users', value: (dashboardData.realTimeMetrics?.activeUsers || realTimeData.activeUsers).toString(), icon: '👥', color: 'purple', status: 'active' },
-              { title: 'System Health', value: `${dashboardData.realTimeMetrics?.systemHealth?.uptime?.toFixed(1) || realTimeData.systemHealth}%`, icon: '❤️', color: 'red', status: 'healthy' }
-            ].map((metric, index) => (
-              <div key={index} className={`bg-gradient-to-br from-${metric.color}-50 to-${metric.color}-100 p-4 rounded-xl border border-${metric.color}-200`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl">{metric.icon}</span>
-                  <div className={`w-2 h-2 rounded-full ${metric.status === 'active' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
-                </div>
-                <div className={`text-${metric.color}-900 text-xs font-medium mb-1`}>{metric.title}</div>
-                <div className="text-2xl font-bold text-gray-900">{metric.value}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="bg-gray-50 rounded-xl p-6">
-            <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-              <span className="mr-2 text-xl">🔔</span>
-              Live Activity Feed
-            </h4>
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {realTimeData.recentActivities.length > 0 ? realTimeData.recentActivities.map((activity, index) => (
-                <div key={index} className={`flex items-start space-x-3 p-3 rounded-lg ${
-                  activity.severity === 'warning' ? 'bg-yellow-50 border-l-4 border-yellow-400' :
-                  activity.severity === 'success' ? 'bg-green-50 border-l-4 border-green-400' :
-                  'bg-blue-50 border-l-4 border-blue-400'
-                }`}>
-                  <div className={`w-2 h-2 rounded-full mt-2 ${
-                    activity.severity === 'warning' ? 'bg-yellow-500' :
-                    activity.severity === 'success' ? 'bg-green-500' :
-                    'bg-blue-500'
-                  }`}></div>
-                  <div className="flex-1">
-                    <p className="text-gray-900 text-sm font-medium">{activity.message}</p>
-                    <p className="text-gray-500 text-xs">{activity.time}</p>
-                  </div>
-                </div>
-              )) : (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-3">🕒</div>
-                  <p className="text-gray-500">Waiting for real-time activities...</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div> */}
-
-        {/* Quick Control Panel - COMMENTED OUT */}
-        {/* <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
-            <span className="mr-3 text-3xl">⚡</span>
-            Quick Controls
-          </h3>
-          <div className="space-y-4">
-            {[
-              { 
-                title: 'Emergency Stop', 
-                icon: '🚨', 
-                color: 'red', 
-                action: () => {
-                  if (window.confirm('Are you sure you want to initiate emergency stop? This will affect all users.')) {
-                    performSystemAction('emergency_stop', 'Emergency system shutdown');
-                  }
-                }
-              },
-              { 
-                title: 'System Backup', 
-                icon: '💾', 
-                color: 'blue', 
-                action: () => performSystemAction('backup', 'System backup')
-              },
-              { 
-                title: 'Employee Broadcast', 
-                icon: '📢', 
-                color: 'green', 
-                action: () => {
-                  const message = window.prompt('Enter broadcast message for all employees and managers:');
-                  if (message) {
-                    showNotification(`Broadcasting: "${message}" to all users`, 'info');
-                    setTimeout(() => showNotification('Broadcast sent successfully', 'success'), 2000);
-                  }
-                }
-              },
-              { 
-                title: 'Security Scan', 
-                icon: '🔍', 
-                color: 'purple', 
-                action: () => performSystemAction('security_scan', 'Security vulnerability scan')
-              },
-              { 
-                title: 'Performance Boost', 
-                icon: '🚀', 
-                color: 'yellow', 
-                action: () => {
-                  performSystemAction('performance_boost', 'Performance optimization');
-                  setRealTimeData(prev => ({
-                    ...prev,
-                    systemLoad: Math.max(10, prev.systemLoad - 10)
-                  }));
-                }
-              }
-            ].map((control, index) => (
-              <button
-                key={index}
-                onClick={control.action}
-                className={`w-full bg-gradient-to-r from-${control.color}-500 to-${control.color}-600 hover:from-${control.color}-600 hover:to-${control.color}-700 text-white p-4 rounded-xl transition-all duration-300 transform hover:scale-105 flex items-center space-x-3`}
-              >
-                <span className="text-2xl">{control.icon}</span>
-                <span className="font-semibold">{control.title}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-8 space-y-3">
-            <h4 className="text-lg font-bold text-gray-900 flex items-center">
-              <span className="mr-2 text-xl">📊</span>
-              System Status
-            </h4>
-            {realTimeData.systemServices.map((service, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${service.status === 'online' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
-                  <span className="font-medium text-gray-900">{service.name}</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-green-600">{service.uptime.toFixed(1)}%</div>
-                  <div className="text-xs text-gray-500">uptime</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div> */}
-      </div>
-
-      {/* Enhanced Dashboard Stats - Real-time Supabase Data */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 rounded-3xl shadow-2xl p-8 mb-8 border-2 border-purple-200">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl -mr-48 -mt-48 animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-pink-400/10 to-yellow-400/10 rounded-full blur-3xl -ml-32 -mb-32 animate-pulse" style={{ animationDelay: '1s' }}></div>
-        
-        <div className="relative">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent flex items-center gap-3">
-              <span className="text-3xl animate-bounce">📊</span>
-              Live Business Metrics
-            </h3>
-            
-            {/* Date Range Selector */}
-            <div className="flex gap-2 flex-wrap">
-              {['today', '7days', '30days', '90days', '1year'].map((type) => (
-                <button
-                  key={type}
-                  onClick={() => {
-                    setRevenueDateRange({ ...revenueDateRange, type });
-                    loadBusinessTrend(type);
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    revenueDateRange.type === type
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  {type === 'today' ? '1D' : type === '7days' ? '7D' : type === '30days' ? '30D' : type === '90days' ? '90D' : '1Y'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* KPI headline row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            {[
-              {
-                title: 'Total Users',
-                value: realTimeData.totalUsers || (pendingUsers.length + allUsers.length) || 0,
-                icon: '👥',
-                gradient: 'from-blue-500 to-indigo-600',
-                trend: '+5.2%'
-              },
-              {
-                title: 'Daily Revenue',
-                value: realTimeData.dailyRevenue
-                  ? `UGX ${(realTimeData.dailyRevenue / 1000000).toFixed(1)}M`
-                  : 'UGX 0',
-                icon: '💰',
-                gradient: 'from-green-500 to-emerald-600',
-                trend: '+12.5%'
-              },
-              {
-                title: 'Active Orders',
-                value: realTimeData.todaysOrders || orderStats.today || 0,
-                icon: '📋',
-                gradient: 'from-orange-500 to-red-500',
-                trend: '+8.3%'
-              },
-              {
-                title: 'Growth Rate',
-                value: `${realTimeData.growthRate || 0}%`,
-                icon: '📈',
-                gradient: 'from-purple-500 to-pink-500',
-                trend: '+3.1%'
-              }
-            ].map((stat, index) => (
-              <div
-                key={index}
-                className="relative bg-white/70 backdrop-blur-sm rounded-xl p-4 border-2 border-white/50 shadow-lg animate-fadeInUp"
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${stat.gradient} text-white`}>{stat.icon}</span>
-                  <span className="text-xs font-bold text-green-600">↑ {stat.trend}</span>
-                </div>
-                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide truncate">{stat.title}</p>
-                <p className={`text-xl font-black bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>{stat.value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Trend line chart - all four metrics indexed to a shared 0-100 scale so they can share one axis */}
-          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border-2 border-white/50 shadow-lg">
-            {businessTrendLoading ? (
-              <div className="h-72 flex items-center justify-center text-gray-500 text-sm">Loading trend…</div>
-            ) : businessTrend.length === 0 ? (
-              <div className="h-72 flex items-center justify-center text-gray-500 text-sm">No trend data yet</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={businessTrend} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis dataKey="label" stroke="#6B7280" tick={{ fill: '#6B7280', fontSize: 12 }} axisLine={{ stroke: '#E5E7EB' }} />
-                  <YAxis domain={[0, 100]} stroke="#6B7280" tick={{ fill: '#6B7280', fontSize: 12 }} axisLine={{ stroke: '#E5E7EB' }} label={{ value: 'Indexed trend', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 12 }} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: 'rgba(255,255,255,0.97)', border: 'none', borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                    formatter={(_value, name, item) => {
-                      const raw = item.payload;
-                      if (name === 'Users') return [raw.usersRaw.toLocaleString(), name];
-                      if (name === 'Revenue') return [`UGX ${(raw.revenueRaw / 1000000).toFixed(2)}M`, name];
-                      if (name === 'Orders') return [raw.ordersRaw.toLocaleString(), name];
-                      if (name === 'Growth') return [`${raw.growthRaw}%`, name];
-                      return [_value, name];
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="usersIdx" name="Users" stroke="#3B82F6" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="revenueIdx" name="Revenue" stroke="#10B981" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="ordersIdx" name="Orders" stroke="#F97316" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="growthIdx" name="Growth" stroke="#A855F7" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Enhanced Recent Activities */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 rounded-2xl shadow-lg p-6 border-2 border-purple-200 animate-fadeInUp" style={{ animationDelay: '400ms' }}>
-        <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-purple-400/10 to-pink-400/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-40 h-40 bg-gradient-to-tr from-blue-400/10 to-purple-400/10 rounded-full blur-3xl -ml-20 -mb-20 animate-pulse" style={{ animationDelay: '1s' }}></div>
-        
-        <div 
-          className="relative flex items-center justify-between cursor-pointer hover:bg-white/50 p-3 rounded-xl transition-all duration-300 backdrop-blur-sm group"
-          onClick={() => setShowRecentActivities(!showRecentActivities)}
-        >
-          <h3 className="text-xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 bg-clip-text text-transparent flex items-center gap-3">
-            <span className="text-2xl animate-bounce">📋</span>
-            Recent Activities
-          </h3>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                window.location.reload();
-              }}
-              className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
-            >
-              <FiRefreshCw className="h-5 w-5 text-purple-600" />
-            </button>
-            <div className="bg-gradient-to-r from-purple-500 to-pink-500 p-2 rounded-lg shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
-              {showRecentActivities ? (
-                <FiChevronUp className="h-5 w-5 text-white" />
-              ) : (
-                <FiChevronDown className="h-5 w-5 text-white" />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {showRecentActivities && (
-          <div className="relative mt-6 space-y-2 animate-fadeIn">
-            {systemData.analytics?.recentActivities?.length > 0 ? (
-              systemData.analytics.recentActivities.map((activity, index) => {
-                const activityColors = [
-                  { gradient: 'from-green-500 to-emerald-500', bg: 'bg-green-50/80', border: 'border-green-300', bullet: 'text-green-500' },
-                  { gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-50/80', border: 'border-blue-300', bullet: 'text-blue-500' },
-                  { gradient: 'from-purple-500 to-pink-500', bg: 'bg-purple-50/80', border: 'border-purple-300', bullet: 'text-purple-500' },
-                  { gradient: 'from-orange-500 to-amber-500', bg: 'bg-orange-50/80', border: 'border-orange-300', bullet: 'text-orange-500' },
-                  { gradient: 'from-indigo-500 to-blue-500', bg: 'bg-indigo-50/80', border: 'border-indigo-300', bullet: 'text-indigo-500' }
-                ];
-                const colorScheme = activityColors[index % activityColors.length];
-                
-                return (
-                  <div
-                    key={index}
-                    className={`relative flex items-start gap-3 p-3 ${colorScheme.bg} backdrop-blur-sm rounded-xl border ${colorScheme.border} hover:shadow-lg transition-all duration-300 group transform hover:scale-[1.02] animate-fadeInUp overflow-hidden`}
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <div className={`absolute inset-0 bg-gradient-to-r ${colorScheme.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}></div>
-                    <div className="relative">
-                      <span className={`${colorScheme.bullet} text-xl font-bold animate-pulse`}>•</span>
-                    </div>
-                    <div className="relative flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-gray-900 font-semibold text-sm flex-1">{activity.description}</p>
-                        <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${colorScheme.gradient} animate-ping flex-shrink-0 mt-1`}></div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-gray-600 font-medium">{activity.time}</span>
-                        <span className="text-xs text-gray-400">•</span>
-                        <span className={`text-xs ${colorScheme.bullet} font-semibold`}>Live</span>
-                      </div>
-                    </div>
-                    <FiChevronRight className={`h-4 w-4 ${colorScheme.bullet} opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 flex-shrink-0`} />
-                  </div>
-                );
-              })
-            ) : (
-              <div className="text-center py-12 bg-white/60 rounded-xl backdrop-blur-sm">
-                <div className="text-5xl mb-4 animate-bounce">🕒</div>
-                <p className="text-gray-600 font-medium mb-4">No recent activities to display</p>
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 font-semibold"
-                >
-                  🔄 Refresh Activities
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    <AdminDashboardHome
+      adminName={currentAdmin.full_name}
+      storeName={branding.name}
+      supermarketId={currentAdmin.supermarket_id}
+      businessProfileId={currentAdmin.pichin_business_profile_id}
+      pendingApprovals={pendingUsers.length}
+      onOpen={openSection}
+    />
   );
 
   const renderPendingApprovals = () => {
@@ -7488,12 +6532,23 @@ const AdminPortal = () => {
     </div>
   );
 
+  // Dashboard cards and shortcuts open the real tab. Some tabs (Users) have
+  // sub-views, chosen through viewMode.
+  const openSection = useCallback((section, mode) => {
+    if (mode) setViewMode(mode);
+    setActiveSection(section);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
     { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
     { id: 'business-operations', label: 'Payroll & Transport', icon: FiBriefcase },
     { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
+    { id: 'orders', label: 'Orders', icon: FiShoppingCart },
+    // Hidden for now (Master Inventory Control):
+    // { id: 'inventory', label: 'Inventory Control', icon: FiPackage },
     { id: 'bookings', label: '📅 Bookings', icon: FiCalendar },
     { id: 'users', label: 'User Management', icon: FiUsers },
     { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
@@ -7731,52 +6786,44 @@ const AdminPortal = () => {
       />
 
       {/* Main Content Area */}
-      <div className="p-3 md:p-4 lg:p-8">
-        {/* Header - Compact for mobile */}
-        <div className="container-glass rounded-lg md:rounded-2xl shadow-lg p-3 md:p-4 lg:p-6 mb-4 md:mb-6 lg:mb-8 animate-fadeInUp">
+      <div className="p-3 md:p-4 lg:p-8" style={{ overflowX: 'clip' }}>
+        {/* Page title — a slim classic heading line (no card); the tabs above do the navigating */}
+        <div className="flex items-center gap-3 pb-2 md:pb-3 mb-3 md:mb-5 border-b border-gray-200 animate-fadeInUp">
           {!isMobile && (
-            <div className="flex items-center justify-between gap-3 pb-3 md:pb-4 mb-3 md:mb-4 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <input
-                  ref={logoFileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoUpload}
-                />
-                <button
-                  onClick={() => logoFileInputRef.current?.click()}
-                  disabled={uploadingLogo}
-                  title="Upload store logo"
-                  className="relative w-11 h-11 md:w-12 md:h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md overflow-hidden group"
-                >
-                  {branding.logoUrl ? (
-                    <img src={branding.logoUrl} alt={branding.name} className="w-full h-full object-cover" />
+            <>
+              <input
+                ref={logoFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleLogoUpload}
+              />
+              <button
+                onClick={() => logoFileInputRef.current?.click()}
+                disabled={uploadingLogo}
+                title="Upload store logo"
+                className="relative w-9 h-9 bg-gray-900 rounded-md flex items-center justify-center flex-shrink-0 overflow-hidden group"
+              >
+                {branding.logoUrl ? (
+                  <img src={branding.logoUrl} alt={branding.name} className="w-full h-full object-cover" />
+                ) : (
+                  <FiShield className="h-5 w-5 text-white" />
+                )}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center">
+                  {uploadingLogo ? (
+                    <FiRefreshCw className="h-4 w-4 text-white animate-spin" />
                   ) : (
-                    <FiShield className="h-6 w-6 text-white" />
+                    <FiUpload className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                   )}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center">
-                    {uploadingLogo ? (
-                      <FiRefreshCw className="h-4 w-4 text-white animate-spin" />
-                    ) : (
-                      <FiUpload className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                    )}
-                  </div>
-                </button>
-                <div className="hidden sm:block leading-tight">
-                  <span className="block text-lg md:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent truncate max-w-[220px]">
-                    {branding.typeEmoji} {branding.name}
-                  </span>
-                  <span className="hidden lg:block text-[11px] text-gray-500 font-medium tracking-wide uppercase">{branding.typeLabel}</span>
                 </div>
-              </div>
-            </div>
+              </button>
+            </>
           )}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 truncate">Admin Portal - System Administration</h1>
-              <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Welcome back to {branding.name}, admin</p>
-            </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg md:text-2xl font-bold text-gray-900 truncate leading-tight">
+              Admin Portal <span className="font-normal text-gray-400">· System Administration</span>
+            </h1>
+            <p className="text-xs md:text-sm text-gray-500 truncate">Welcome back to {branding.name}, admin</p>
           </div>
         </div>
 
@@ -7814,7 +6861,9 @@ const AdminPortal = () => {
               />
             )}
             {activeSection === 'approvals' && renderPendingApprovals()}
+            {/* Hidden for now: Master Inventory Control
             {activeSection === 'inventory' && renderInventoryControl()}
+            */}
             {activeSection === 'orders' && renderOrderManagement()}
             {activeSection === 'payments' && renderPaymentControl()}
             {activeSection === 'suppliers' && renderSupplierNetwork()}

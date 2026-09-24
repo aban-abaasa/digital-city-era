@@ -95,3 +95,53 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(networkFirst(event.request));
 });
+
+// ---- Push alerts (ICANera relay) --------------------------------------------
+// The relay sends { title, body, tag, url, urgent, data }. Like a chat app, a
+// system banner is only shown when the person is NOT looking at the app - when
+// the portal is in front it gets a message instead and shows its own banner.
+// (iPhone requires every push to show a notification, so it always does.)
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch { payload = { body: event.data ? event.data.text() : '' }; }
+
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    windows.forEach((client) => client.postMessage({ type: 'PUSH_RECEIVED', ...payload }));
+
+    const inFront = windows.some((client) => client.visibilityState === 'visible' && client.focused);
+    const isIos = /iPhone|iPad|iPod/i.test(self.navigator.userAgent || '');
+    if (inFront && !isIos) return;
+
+    await self.registration.showNotification(payload.title || 'SupermartKera', {
+      body: payload.body || 'You have a new notification.',
+      icon: '/icons/supermarketera-192.png',
+      badge: '/icons/supermarketera-192.png',
+      tag: payload.tag || 'supermartkera-notification',
+      renotify: true,
+      requireInteraction: Boolean(payload.urgent),
+      vibrate: payload.urgent ? [300, 150, 300, 150, 300] : [200, 100, 200],
+      data: { url: payload.url || '/', ...(payload.data || {}) }
+    });
+  })());
+});
+
+// Tapping a notification brings the portal forward (or opens it) and tells it
+// what was tapped, so a supplier-payment alert can open the approvals panel.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  const target = data.url || '/';
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (!open) return self.clients.openWindow(target);
+    try {
+      if ('navigate' in open && new URL(target, self.location.origin).pathname !== new URL(open.url).pathname) {
+        await open.navigate(target);
+      }
+    } catch { /* cross-page navigation not allowed - just focus */ }
+    open.postMessage({ type: 'NOTIFICATION_CLICK', ...data, url: target });
+    return open.focus();
+  })());
+});

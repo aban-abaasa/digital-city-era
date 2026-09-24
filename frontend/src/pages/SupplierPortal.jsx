@@ -157,6 +157,11 @@ const SupplierPortal = () => {
   const [editedProfile, setEditedProfile] = useState({});
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
+  // Business location pin (lets buyers find the nearest supplier and lets
+  // BodaGoera price and dispatch the pickup)
+  const [pinnedLocation, setPinnedLocation] = useState(null);
+  const [pinningLocation, setPinningLocation] = useState(false);
+
   // Edit Financial Details States
   const [isEditingFinancial, setIsEditingFinancial] = useState(false);
   const [editedFinancial, setEditedFinancial] = useState({});
@@ -179,6 +184,66 @@ const SupplierPortal = () => {
     if (!createdAt) return 0;
     const years = Math.floor((new Date() - new Date(createdAt)) / (1000 * 60 * 60 * 24 * 365));
     return years;
+  };
+
+  // Best effort: the latitude/longitude columns only exist once the geocoding
+  // migration has been run, so a failure here just means "no pin yet".
+  useEffect(() => {
+    if (!supplierProfile?.id) return;
+    supabase
+      .from('suppliers')
+      .select('latitude, longitude')
+      .eq('user_id', supplierProfile.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data?.latitude != null && data?.longitude != null) {
+          setPinnedLocation({ latitude: Number(data.latitude), longitude: Number(data.longitude) });
+        }
+      });
+  }, [supplierProfile?.id]);
+
+  const pinBusinessLocation = () => {
+    if (!navigator.geolocation) {
+      notificationService.show('Your device does not support location.', 'error');
+      return;
+    }
+    setPinningLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        let saved = false;
+        let failure = null;
+
+        if (supplierProfile.supplier_business_profile_id) {
+          const { error } = await supabase.rpc('cmms_set_supplier_location', {
+            p_business_profile_id: supplierProfile.supplier_business_profile_id,
+            p_latitude: latitude,
+            p_longitude: longitude,
+            p_address: supplierProfile.address || null,
+            p_city: null
+          });
+          if (error) failure = error; else saved = true;
+        }
+        const { error: rowError } = await supabase
+          .from('suppliers')
+          .update({ latitude, longitude })
+          .eq('user_id', supplierProfile.id);
+        if (!rowError) saved = true; else if (!failure) failure = rowError;
+
+        if (saved) {
+          setPinnedLocation({ latitude, longitude });
+          notificationService.show('Business location saved. Buyers can now see how far you are and get delivery prices.', 'success');
+        } else {
+          notificationService.show(failure?.message || 'Could not save your location.', 'error');
+        }
+        setPinningLocation(false);
+      },
+      () => {
+        notificationService.show('Could not get your location. Stand at your business, allow location access and try again.', 'error');
+        setPinningLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
   };
 
   // Load supplier profile from database
@@ -1512,6 +1577,26 @@ const SupplierPortal = () => {
             <div>
               <p className="text-sm text-gray-500">Business Address</p>
               <p className="text-base font-semibold text-gray-900">{supplierProfile.address}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Map Location</p>
+              <p className="text-base font-semibold text-gray-900">
+                {pinnedLocation
+                  ? `${pinnedLocation.latitude.toFixed(5)}, ${pinnedLocation.longitude.toFixed(5)}`
+                  : 'Not pinned yet'}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Buyers see how close you are and BodaGoera prices your pickups from this point.
+              </p>
+              <button
+                type="button"
+                onClick={pinBusinessLocation}
+                disabled={pinningLocation}
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+              >
+                <FiMapPin />
+                {pinningLocation ? 'Getting location…' : pinnedLocation ? 'Update location' : 'Pin my business location'}
+              </button>
             </div>
             <div>
               <p className="text-sm text-gray-500">Languages</p>

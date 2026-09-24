@@ -1099,233 +1099,163 @@ const OrderInventoryPOSControl = () => {
     );
   }
 
+  // Classic, flat look: hairline borders, small radii, one accent. Shared button styles keep the toolbar uniform.
+  const toolBtn = 'px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm rounded border transition-colors flex items-center justify-center gap-1 font-medium whitespace-nowrap';
+  const toolBtnOn = 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400';
+  const toolBtnOff = 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed';
+
+  const visibleTabs = [
+    offersProducts && { id: 'products', label: '📦 Products' },
+    offersServices && { id: 'services', label: '🧾 Services' },
+    offersServices && { id: 'bookings', label: '📅 Bookings' },
+  ].filter(Boolean);
+
   return (
-    <div className="bg-gray-50 min-h-screen p-6 space-y-6">
-      {/* Authorization Banner */}
-      {!isAdmin && (
-        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 flex items-start gap-3">
-          <FiAlertCircle className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <div>
-            <h3 className="font-bold text-yellow-900">⚠️ Read-Only Mode</h3>
-            <p className="text-sm text-yellow-800 mt-1">
-              You are viewing in read-only mode. Only admins can edit pricing, manage stock, and bulk update prices.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 flex items-start gap-3">
-          <FiCheckCircle className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
-                  <div>
-            <h3 className="font-bold text-green-900">✅ Admin Access Enabled</h3>
-            <p className="text-sm text-green-800 mt-1">
-              Full control granted. You can edit product pricing, manage stock levels, and apply bulk updates.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">📦 Order Inventory - POS Control</h1>
-            <p className="text-blue-100">Real-time POS inventory data • Manage Uganda supermarket products pricing, stock levels, and order settings • 🔄 Live updates from Manager Portal</p>
-          </div>
-          <div className="flex items-center gap-3">
+    <div className="space-y-3">
+      {/* Title row + section tabs in one strip. Products / Services / Bookings only show for
+          what this business offers (business profile); the strip needs 2+ tabs to render. */}
+      <div className="border-b border-gray-300">
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-gray-900 pb-1.5">
+            <span>Order Inventory</span>
+            <span className="text-sm font-normal text-gray-400">· POS Control</span>
             {isAdmin ? (
-              <div className="flex items-center gap-1 bg-green-500 px-3 py-1 rounded-full text-sm font-bold">
-                <FiCheckCircle className="h-4 w-4" />
-                Admin
-              </div>
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded" title="Full control: edit pricing, manage stock, bulk updates">
+                <FiCheckCircle className="h-3 w-3" /> Admin
+              </span>
             ) : (
-              <div className="flex items-center gap-1 bg-yellow-600 px-3 py-1 rounded-full text-sm font-bold">
-                <FiLock className="h-4 w-4" />
-                Read-Only
-              </div>
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-yellow-800 bg-yellow-50 border border-yellow-200 px-1.5 py-0.5 rounded" title="Only admins can edit pricing, manage stock, and bulk update prices">
+                <FiLock className="h-3 w-3" /> Read-only
+              </span>
             )}
-            <div className="text-4xl">🇺🇬</div>
-          </div>
+          </h2>
+          {visibleTabs.length > 1 && (
+            <div className="flex gap-4 -mb-px">
+              {visibleTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-1 pb-2 pt-1 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-gray-900 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Products / Services / Bookings tabs — only shown for what this
-          business actually offers (set in the admin's business profile).
-          A products-only store never sees Services/Bookings, and a
-          services-only store never sees Products; the strip itself only
-          renders once there's more than one tab to choose between. */}
-      {(() => {
-        const visibleTabs = [
-          offersProducts && { id: 'products', label: '📦 Products' },
-          offersServices && { id: 'services', label: '🧾 Services' },
-          offersServices && { id: 'bookings', label: '📅 Bookings' },
-        ].filter(Boolean);
-        if (visibleTabs.length < 2) return null;
-        return (
-          <div className="flex gap-1 bg-white rounded-lg shadow-md p-1 w-fit">
-            {visibleTabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
-                  activeTab === tab.id ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        );
-      })()}
 
       {activeTab === 'products' && offersProducts && (
       <>
-      {/* Statistics Cards - Mobile Optimized - COMPACT */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 lg:gap-4">
-        <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-4 shadow-md border-l-4 border-blue-500 hover:shadow-lg transition-shadow">
-          <p className="text-xs text-gray-600 font-semibold truncate leading-tight">Total</p>
-          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-blue-600 mt-0.5 sm:mt-1">{stats.total}</p>
-          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">{stats.active} active</p>
+      {/* One flat toolbar: figures, actions, then search — instead of three separate boxes */}
+      <div className="bg-white border border-gray-200 rounded-md p-2.5 sm:p-3 space-y-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-gray-500">
+          <span>Products <b className="text-gray-900 text-sm tabular-nums">{stats.total}</b> <span className="text-gray-400">({stats.active} active)</span></span>
+          <span>Stock value <b className="text-gray-900 text-sm tabular-nums">{formatCurrency(stats.totalValue)}</b></span>
+          <span>Avg margin <b className="text-gray-900 text-sm tabular-nums">{stats.avgMargin}%</b></span>
+          <span>Low stock <b className={`text-sm tabular-nums ${stats.lowStock > 0 ? 'text-orange-600' : 'text-gray-900'}`}>{stats.lowStock}</b></span>
+          <span>Inactive <b className={`text-sm tabular-nums ${stats.inactive > 0 ? 'text-red-600' : 'text-gray-900'}`}>{stats.inactive}</b></span>
         </div>
 
-        <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-4 shadow-md border-l-4 border-green-500 hover:shadow-lg transition-shadow">
-          <p className="text-xs text-gray-600 font-semibold truncate leading-tight">Value</p>
-          <p className="text-sm sm:text-lg lg:text-2xl font-bold text-green-600 mt-0.5 sm:mt-1 truncate">{formatCurrency(stats.totalValue)}</p>
-          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Cost</p>
-        </div>
-
-        <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-4 shadow-md border-l-4 border-purple-500 hover:shadow-lg transition-shadow">
-          <p className="text-xs text-gray-600 font-semibold truncate leading-tight">Margin</p>
-          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-purple-600 mt-0.5 sm:mt-1">{stats.avgMargin}%</p>
-          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Avg</p>
-        </div>
-
-        <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-4 shadow-md border-l-4 border-orange-500 hover:shadow-lg transition-shadow col-span-2 sm:col-span-1">
-          <p className="text-xs text-gray-600 font-semibold truncate leading-tight">Low Stock</p>
-          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-orange-600 mt-0.5 sm:mt-1">{stats.lowStock}</p>
-          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Need</p>
-        </div>
-
-        <div className="hidden lg:flex bg-white rounded-lg p-2 sm:p-3 lg:p-4 shadow-md border-l-4 border-red-500 hover:shadow-lg transition-shadow items-center flex-col justify-center">
-          <p className="text-xs text-gray-600 font-semibold">Inactive</p>
-          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-red-600 mt-0.5 sm:mt-1">{stats.inactive}</p>
-        </div>
-      </div>
-
-      {/* Controls and Filters */}
-      <div className="bg-white rounded-lg p-2 sm:p-3 lg:p-6 shadow-md space-y-2 sm:space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 mb-2 sm:mb-4">
-          <h2 className="text-base sm:text-lg lg:text-xl font-bold text-gray-800 w-full sm:w-auto">🔍 Products</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => {
-                if (!isAdmin) {
-                  toast.error('❌ Admin access required to add products');
-                  return;
-                }
-                setShowAddProductModal(true);
-              }}
-              className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-all flex items-center justify-center gap-1 font-semibold whitespace-nowrap ${
-                isAdmin
-                  ? 'bg-green-500 text-white hover:bg-green-600 shadow-lg hover:shadow-xl'
-                  : 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300 cursor-default'
-              }`}
-              title={!isAdmin ? 'Admin access required' : 'Add new product to inventory'}
-            >
-              <FiPlus className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4 lg:w-4 flex-shrink-0" />
-              <span className="hidden sm:inline">Add</span>
-            </button>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls,.xlsm,.pdf"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <input
-              type="file"
-              accept="image/*"
-              ref={quickPhotoInputRef}
-              onChange={handleQuickPhotoChange}
-              className="hidden"
-            />
-            <button
-              onClick={() => {
-                if (!isAdmin) {
-                  toast.error('❌ Admin access required to import products');
-                  return;
-                }
-                fileInputRef.current?.click();
-              }}
-              disabled={uploadingProducts}
-              className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-all flex items-center justify-center gap-1 font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
-                isAdmin
-                  ? 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-lg hover:shadow-xl'
-                  : 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300 cursor-default'
-              }`}
-              title={!isAdmin ? 'Admin access required' : 'Import products from a CSV, Excel, or PDF file'}
-            >
-              {uploadingProducts ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              ) : (
-                <FiUpload className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4 lg:w-4 flex-shrink-0" />
-              )}
-              <span className="hidden sm:inline">{uploadingProducts ? 'Importing...' : 'Import'}</span>
-            </button>
-            <button
-              onClick={() => {
-                loadData().then(() => {
-                  toast.success('✅ Inventory synced from Admin Portal!');
-                });
-              }}
-              disabled={refreshing}
-              className={`${refreshing ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'} text-white px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-colors flex items-center justify-center gap-1 font-semibold whitespace-nowrap`}
-            >
-              <FiRefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Syncing...' : 'Refresh'}
-            </button>
-            <button
-              onClick={deleteAllProducts}
-              disabled={!isAdmin || refreshing || products.length === 0}
-              title="Permanently delete all products for this supermarket"
-              className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-colors flex items-center justify-center gap-1 font-semibold whitespace-nowrap ${
-                isAdmin ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-              }`}
-            >
-              <FiTrash2 className="h-4 w-4" />
-              Delete All
-            </button>
-            <select
-              value=""
-              onChange={(e) => { if (e.target.value) exportInventory(e.target.value); e.target.value = ''; }}
-              title="Export current inventory"
-              className="bg-green-500 text-white px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg hover:bg-green-600 transition-colors font-semibold whitespace-nowrap border-none"
-            >
-              <option value="" className="text-gray-700">📤 Export</option>
-              <option value="csv" className="text-gray-700">Export as CSV</option>
-              <option value="xlsx" className="text-gray-700">Export as Excel</option>
-              <option value="pdf" className="text-gray-700">Export as PDF</option>
-            </select>
-            <button
-              onClick={() => {
-                if (!isAdmin) {
-                  toast.error('❌ Only Admins can update pricing');
-                  return;
-                }
-                setShowBulkPricing(!showBulkPricing);
-              }}
-              disabled={!isAdmin}
-              className={`px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-xs sm:text-sm lg:text-base rounded-lg transition-colors flex items-center justify-center gap-1 font-semibold whitespace-nowrap ${
-                isAdmin 
-                  ? 'bg-purple-500 text-white hover:bg-purple-600' 
-                  : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-              }`}
-            >
-              <FiDollarSign className="h-3 w-3 sm:h-4 sm:w-4 lg:h-4 lg:w-4 flex-shrink-0" />
-              <span className="hidden sm:inline">Bulk</span>
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                toast.error('❌ Admin access required to add products');
+                return;
+              }
+              setShowAddProductModal(true);
+            }}
+            className={`${toolBtn} ${isAdmin ? 'bg-gray-900 text-white border-gray-900 hover:bg-gray-700' : toolBtnOff}`}
+            title={!isAdmin ? 'Admin access required' : 'Add new product to inventory'}
+          >
+            <FiPlus className="h-4 w-4 flex-shrink-0" />
+            <span>Add</span>
+          </button>
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls,.xlsm,.pdf"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <input
+            type="file"
+            accept="image/*"
+            ref={quickPhotoInputRef}
+            onChange={handleQuickPhotoChange}
+            className="hidden"
+          />
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                toast.error('❌ Admin access required to import products');
+                return;
+              }
+              fileInputRef.current?.click();
+            }}
+            disabled={uploadingProducts}
+            className={`${toolBtn} disabled:opacity-50 disabled:cursor-not-allowed ${isAdmin ? toolBtnOn : toolBtnOff}`}
+            title={!isAdmin ? 'Admin access required' : 'Import products from a CSV, Excel, or PDF file'}
+          >
+            {uploadingProducts ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600" />
+            ) : (
+              <FiUpload className="h-4 w-4 flex-shrink-0" />
+            )}
+            <span>{uploadingProducts ? 'Importing...' : 'Import'}</span>
+          </button>
+          <select
+            value=""
+            onChange={(e) => { if (e.target.value) exportInventory(e.target.value); e.target.value = ''; }}
+            title="Export current inventory"
+            className={`${toolBtn} ${toolBtnOn}`}
+          >
+            <option value="">📤 Export</option>
+            <option value="csv">Export as CSV</option>
+            <option value="xlsx">Export as Excel</option>
+            <option value="pdf">Export as PDF</option>
+          </select>
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                toast.error('❌ Only Admins can update pricing');
+                return;
+              }
+              setShowBulkPricing(!showBulkPricing);
+            }}
+            disabled={!isAdmin}
+            className={`${toolBtn} ${isAdmin ? (showBulkPricing ? 'bg-gray-100 text-gray-900 border-gray-400' : toolBtnOn) : toolBtnOff}`}
+          >
+            <FiDollarSign className="h-4 w-4 flex-shrink-0" />
+            <span>Bulk price</span>
+          </button>
+          <button
+            onClick={() => {
+              loadData().then(() => {
+                toast.success('✅ Inventory synced from Admin Portal!');
+              });
+            }}
+            disabled={refreshing}
+            title="Refresh from the live POS data"
+            className={`${toolBtn} ${toolBtnOn} disabled:opacity-60`}
+          >
+            <FiRefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Syncing...' : 'Refresh'}</span>
+          </button>
+          <button
+            onClick={deleteAllProducts}
+            disabled={!isAdmin || refreshing || products.length === 0}
+            title="Permanently delete all products for this supermarket"
+            className={`${toolBtn} sm:ml-auto ${isAdmin ? 'bg-white text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 disabled:opacity-50' : toolBtnOff}`}
+          >
+            <FiTrash2 className="h-4 w-4" />
+            <span>Delete all</span>
+          </button>
         </div>
 
         {/* Bulk Pricing Section */}
@@ -1366,27 +1296,23 @@ const OrderInventoryPOSControl = () => {
           </div>
         )}
 
-        {/* Search and Filters - Mobile Optimized - COMPACT */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2 lg:gap-4">
-          <div className="sm:col-span-2 lg:col-span-2 relative">
-            <FiSearch className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+        {/* Search and filters */}
+        <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
+          <div className="relative flex-1">
+            <FiSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              className="w-full pl-8 pr-3 py-1.5 sm:py-2 text-xs sm:text-sm border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+              placeholder="Search products..."
+              className="w-full pl-8 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded focus:border-gray-900 focus:outline-none"
             />
           </div>
 
           <select
             value={filterCategory}
-            onChange={(e) => {
-              const selectedValue = e.target.value;
-              setFilterCategory(selectedValue);
-              console.log('Category filter changed to:', selectedValue);
-            }}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none bg-white"
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded focus:border-gray-900 focus:outline-none bg-white"
           >
             <option value="all">All Categories</option>
             {categories && categories.length > 0 ? (
@@ -1401,7 +1327,7 @@ const OrderInventoryPOSControl = () => {
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value)}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded focus:border-gray-900 focus:outline-none bg-white"
           >
             <option value="name">Sort by Name</option>
             <option value="margin">Sort by Margin</option>
@@ -1410,20 +1336,20 @@ const OrderInventoryPOSControl = () => {
           </select>
         </div>
 
-        <p className="text-sm text-gray-600">
-          Showing <span className="font-bold text-blue-600">{filteredProducts.length}</span> of <span className="font-bold">{products.length}</span> products
+        <p className="text-xs text-gray-500">
+          Showing <span className="font-semibold text-gray-800">{filteredProducts.length}</span> of <span className="font-semibold text-gray-800">{products.length}</span> products
         </p>
       </div>
 
       {/* Products List — a div-based (not <table>) layout so rows genuinely
           restack into cards on small phones instead of squeezing table
           columns or relying on horizontal scroll. */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-md overflow-hidden">
         {/* Column header — only makes sense once there's room for a row */}
-        <div className="hidden sm:flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-gray-100 to-gray-200 border-b-2 border-gray-300">
-          <div className="flex-1 font-bold text-gray-800 text-xs md:text-sm">Product</div>
-          <div className="w-24 text-center font-bold text-gray-800 text-xs md:text-sm">Stock</div>
-          <div className="w-36 text-center font-bold text-gray-800 text-xs md:text-sm">Actions</div>
+        <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200">
+          <div className="flex-1 font-semibold uppercase tracking-wider text-gray-500 text-[11px]">Product</div>
+          <div className="w-24 text-center font-semibold uppercase tracking-wider text-gray-500 text-[11px]">Stock</div>
+          <div className="w-36 text-center font-semibold uppercase tracking-wider text-gray-500 text-[11px]">Actions</div>
         </div>
 
         <div className="divide-y divide-gray-200">
@@ -1522,43 +1448,43 @@ const OrderInventoryPOSControl = () => {
             if (expandedId === product.id) {
               // EXPANDED VIEW
               return (
-                <div key={product.id} className="bg-gradient-to-r from-blue-50 to-blue-100 border-t-2 border-blue-300 p-3 md:p-4 space-y-3">
+                <div key={product.id} className="bg-gray-50 p-3 md:p-4 space-y-3">
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="font-bold text-sm md:text-base text-gray-800">{product.name}</h3>
                     <button onClick={() => setExpandedId(null)} className="text-blue-600 hover:text-blue-800 font-bold text-lg px-2 -mr-2" title="Collapse">▼</button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">COST</p>
                       <p className="text-sm md:text-base font-bold text-orange-600">{formatCurrency(product.cost_price)}</p>
                     </div>
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">WHOLESALE</p>
                       <p className="text-sm md:text-base font-bold text-purple-600">{formatCurrency(product.wholesale_price)}</p>
                     </div>
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">POS SELLING</p>
                       <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
                     </div>
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">MARGIN</p>
                       <p className="text-sm md:text-base font-bold text-purple-600">{calculateMargin(product.cost_price, product.selling_price)}%</p>
                     </div>
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">TAX</p>
                       <p className="text-sm md:text-base font-bold text-yellow-600">{product.tax_rate || 18}%</p>
                     </div>
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">MIN/RO</p>
                       <p className="text-sm md:text-base font-bold text-gray-700">{inventoryMap[product.id]?.minimum_stock || 10}/{inventoryMap[product.id]?.reorder_point || 20}</p>
                     </div>
-                    <div className="bg-white rounded p-2">
+                    <div className="bg-white border border-gray-200 rounded p-2">
                       <p className="text-xs font-semibold text-gray-600">SKU</p>
                       <p className="text-xs md:text-sm font-mono text-gray-700 truncate">{product.sku || 'N/A'}</p>
                     </div>
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 ${ isAdmin ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-300 text-gray-600 cursor-not-allowed' }`}>
+                    <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 ${ isAdmin ? 'bg-white text-gray-800 border border-gray-300 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
                       <FiEdit className="h-3.5 w-3.5" /> Edit
                     </button>
                     <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
@@ -1631,7 +1557,7 @@ const OrderInventoryPOSControl = () => {
                 </div>
 
                 <div className="flex gap-2 sm:w-36 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ isAdmin ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-300 text-gray-600 cursor-not-allowed' }`}>
+                  <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ isAdmin ? 'bg-white text-gray-800 border border-gray-300 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
                     <FiEdit className="h-3 w-3 inline mr-1" />
                     Edit
                   </button>
@@ -1646,20 +1572,20 @@ const OrderInventoryPOSControl = () => {
       </div>
 
       {filteredProducts.length === 0 && (
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-8 text-center">
-          <FiBox className="h-12 w-12 text-blue-500 mx-auto mb-3" />
-          <p className="text-blue-800 font-semibold">No products found</p>
-          <p className="text-sm text-blue-600 mt-1">Try adjusting your search filters</p>
+        <div className="bg-white border border-gray-200 rounded-md p-8 text-center">
+          <FiBox className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-800 font-semibold">No products found</p>
+          <p className="text-sm text-gray-500 mt-1">Try adjusting your search filters</p>
         </div>
       )}
       </>
       )}
 
       {activeTab === 'services' && offersServices && (
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 space-y-4">
+        <div className="bg-white border border-gray-200 rounded-md p-3 sm:p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h2 className="text-lg font-bold text-gray-800">🧾 Services</h2>
+              <h3 className="text-base font-bold text-gray-800">🧾 Services</h3>
               <p className="text-sm text-gray-500">
                 service_item products — no stock to track. Mark one "bookable" to let customers reserve a time slot from the Bookings tab.
               </p>

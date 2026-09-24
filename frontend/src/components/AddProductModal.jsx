@@ -592,8 +592,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-none sm:rounded-xl shadow-2xl max-w-4xl w-full h-full sm:h-auto max-h-full sm:max-h-[90vh] overflow-y-auto">
+      {/* z-[120]: above the floating chat widget (z-[999]) and "Install app" button, which otherwise cover the footer buttons on phones */}
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-0 sm:p-4">
+      <div className="bg-white rounded-none sm:rounded-xl shadow-2xl max-w-4xl w-full h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-3 sm:p-6 rounded-t-none sm:rounded-t-xl flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -604,7 +605,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   ? (isEditMode ? 'Edit Catalog Item' : 'Add to Supply Catalog')
                   : (isEditMode ? 'Edit Product' : 'Add New Product')}
               </h2>
-              <p className="text-blue-100 text-[11px] sm:text-sm truncate">
+              <p className="text-blue-100 text-[11px] sm:text-sm leading-tight line-clamp-2 sm:truncate">
                 {isSupplierMode
                   ? 'Supermarkets see this when they order from you'
                   : (isEditMode ? 'Update product details and photo' : 'Add product to inventory with real-time sync')}
@@ -732,13 +733,13 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       SKU * <span className="text-xs text-gray-500">(Product Code)</span>
                     </label>
-                    <div className="flex space-x-2">
+                    <div className="flex gap-2">
                       <input
                         type="text"
                         name="sku"
                         value={formData.sku}
                         onChange={handleChange}
-                        className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                        className={`min-w-0 flex-1 px-3 sm:px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
                           errors.sku ? 'border-red-500' : 'border-gray-300'
                         }`}
                         placeholder="e.g., PROD-0001"
@@ -746,7 +747,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       <button
                         type="button"
                         onClick={generateSKU}
-                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                        className="flex-shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 active:scale-95"
                         title="Generate SKU"
                       >
                         Auto
@@ -761,23 +762,23 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       <FiHash className="inline mr-1" />
                       Barcode <span className="text-xs text-gray-500">(Optional)</span>
                     </label>
-                    <div className="flex space-x-2">
+                    <div className="flex gap-2">
                       <input
                         type="text"
                         name="barcode"
                         value={formData.barcode}
                         onChange={handleChange}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="min-w-0 flex-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         placeholder="e.g., 1234567890123"
                       />
                       <button
                         type="button"
                         onClick={() => setShowBarcodeScanner(true)}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                        className="flex-shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 active:scale-95"
                         title="Scan barcode with camera or barcode gun"
                       >
                         <FiCamera className="h-4 w-4" />
-                        <span className="text-xs">Scan</span>
+                        <span className="text-xs sm:text-sm">Scan</span>
                       </button>
                     </div>
                   </div>
@@ -928,21 +929,21 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                               placeholder="Min qty"
                               value={tier.min_quantity}
                               onChange={(e) => setPriceTiers(prev => prev.map((t, i) => i === index ? { ...t, min_quantity: e.target.value } : t))}
-                              className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                              className="w-20 sm:w-28 min-w-0 px-2 sm:px-3 py-2 border border-gray-300 rounded-lg text-sm"
                             />
-                            <span className="text-sm text-gray-500">units @</span>
+                            <span className="text-sm text-gray-500 whitespace-nowrap">units @</span>
                             <input
                               type="number"
                               min="0"
                               placeholder="Unit price"
                               value={tier.unit_price}
                               onChange={(e) => setPriceTiers(prev => prev.map((t, i) => i === index ? { ...t, unit_price: e.target.value } : t))}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                              className="min-w-0 flex-1 px-2 sm:px-3 py-2 border border-gray-300 rounded-lg text-sm"
                             />
                             <button
                               type="button"
                               onClick={() => setPriceTiers(prev => prev.filter((_, i) => i !== index))}
-                              className="text-red-500 hover:text-red-700 px-2"
+                              className="text-red-500 hover:text-red-700 px-2 flex-shrink-0"
                             >
                               <FiX />
                             </button>
@@ -1287,23 +1288,23 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           )}
 
           {/* Footer Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6 sm:mt-8 pt-4 sm:pt-6 border-t sticky bottom-0 bg-white pb-1">
-            <div className="text-xs sm:text-sm text-gray-500 order-2 sm:order-1">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mt-6 sm:mt-8 pt-3 sm:pt-6 border-t sticky bottom-0 bg-white pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+            <div className="text-[11px] sm:text-sm text-gray-500 order-2 sm:order-1">
               <FiAlertCircle className="inline mr-1" />
               Fields marked with * are required
             </div>
-            <div className="flex gap-3 order-1 sm:order-2">
+            <div className="flex gap-2 sm:gap-3 order-1 sm:order-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 sm:py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm sm:text-base"
+                className="flex-1 sm:flex-initial min-w-0 whitespace-nowrap px-3 sm:px-6 py-3 sm:py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm sm:text-base active:scale-95"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading || loadingData || uploadingImage}
-                className="flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 sm:py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                className="flex-[2] sm:flex-initial min-w-0 whitespace-nowrap px-3 sm:px-6 py-3 sm:py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
               >
                 {loading || uploadingImage ? (
                   <>

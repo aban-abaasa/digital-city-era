@@ -901,6 +901,15 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     toast.info('🗑️ Item removed from transaction');
   };
 
+  // +/- buttons on a line; dropping to 0 removes the line
+  const changeQuantity = (productId, delta) => {
+    setCurrentTransaction(prev => prev
+      .map(item => item.id === productId
+        ? { ...item, quantity: item.quantity + delta, subtotal: (item.quantity + delta) * item.price }
+        : item)
+      .filter(item => item.quantity > 0));
+  };
+
   const clearTransaction = () => {
     setCurrentTransaction([]);
     toast.info('🧹 Transaction cleared');
@@ -1343,6 +1352,39 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const isCameraMode = scanMode === 'camera' || scanMode === 'smart';
   const totalUnits = currentTransaction.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Each role gets its own look and wording. 'cashier' is the default (POS) for callers that pass no context.
+  const VIEWS = {
+    admin: {
+      title: 'Scan a product',
+      subtitle: 'Add a new item or find an existing one',
+      accent: 'bg-blue-600',
+      button: 'bg-blue-600 hover:bg-blue-700',
+      panelTitle: 'LAST SCANNED',
+      manualPlaceholder: 'Type a barcode number'
+    },
+    cashier: {
+      title: 'Point of Sale',
+      subtitle: 'Every scan is added to the sale',
+      accent: 'bg-green-600',
+      button: 'bg-green-600 hover:bg-green-700',
+      panelTitle: 'SALE',
+      emptyText: 'Scan an item to add it to the sale',
+      payLabel: 'Complete Sale',
+      manualPlaceholder: 'Enter barcode or SKU'
+    },
+    customer: {
+      title: 'Scan your items',
+      subtitle: "Point the camera at each item's barcode",
+      accent: 'bg-orange-500',
+      button: 'bg-orange-500 hover:bg-orange-600',
+      panelTitle: 'YOUR BASKET',
+      emptyText: 'Scan an item to begin',
+      payLabel: 'Done',
+      manualPlaceholder: "Can't scan? Type the number"
+    }
+  };
+  const view = VIEWS[context] || VIEWS.cashier;
+
   const cornerColor = scanFlash === 'ok' ? 'border-green-400' : scanFlash === 'error' ? 'border-red-400' : 'border-white';
 
   const manualEntryForm = (
@@ -1360,34 +1402,45 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="Type a barcode number"
+        placeholder={view.manualPlaceholder}
         className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
       />
       <button
         type="submit"
-        className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white active:scale-95"
+        className={`rounded-md px-4 py-2 text-sm font-semibold text-white active:scale-95 ${view.button}`}
       >
         Add
       </button>
     </form>
   );
 
-  // Root z-index sits above the floating chat bubble / "Install app" button (z-50 / z-100)
+  // Root z-index sits above the floating chat widget (z-[999]) and "Install app" button (z-[100])
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 sm:p-4">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 sm:p-4">
       <style>{`@keyframes ican-scan-line { from { top: 4%; } to { top: 96%; } }`}</style>
 
       <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-[640px] sm:max-h-[92vh] sm:rounded-2xl">
-        {/* Header — title, how to scan, close. Compact on phones so the close button always fits. */}
-        <div className="flex flex-shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
-          <div className="min-w-0 flex-1 truncate font-sans text-base font-bold text-gray-900 sm:text-lg">
-            {context === 'admin' ? 'Scan a product' : 'Scan your items'}
+        {/* Header — role accent bar, title, mode switch, close. On phones the switch gets its own
+            full-width row so the title is never cut off and the close button always fits. */}
+        <div className={`h-1 flex-shrink-0 ${view.accent}`} />
+        <div className="flex flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-gray-200 px-3 py-2.5 sm:flex-nowrap sm:gap-3 sm:px-4 sm:py-3">
+          <div className="order-1 min-w-0 flex-1 font-sans">
+            <div className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{view.title}</div>
+            <div className="text-xs leading-tight text-gray-500">{view.subtitle}</div>
           </div>
 
-          <div className="flex flex-shrink-0 rounded-lg bg-gray-100 p-0.5 text-xs font-semibold sm:p-1 sm:text-sm">
+          <button
+            onClick={onClose}
+            aria-label="Close scanner"
+            className="order-2 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-90 sm:order-3"
+          >
+            <FiX className="h-5 w-5" />
+          </button>
+
+          <div className="order-3 flex w-full rounded-lg bg-gray-100 p-0.5 text-sm font-semibold sm:order-2 sm:w-auto sm:flex-shrink-0 sm:p-1">
             <button
               onClick={() => setScanMode('camera')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors sm:gap-1.5 sm:px-3 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 transition-colors sm:flex-none sm:py-1.5 ${
                 isCameraMode ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
@@ -1396,7 +1449,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             </button>
             <button
               onClick={() => setScanMode('gun')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors sm:gap-1.5 sm:px-3 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 transition-colors sm:flex-none sm:py-1.5 ${
                 !isCameraMode ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
@@ -1404,14 +1457,6 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
               Scanner
             </button>
           </div>
-
-          <button
-            onClick={onClose}
-            aria-label="Close scanner"
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-90"
-          >
-            <FiX className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -1550,10 +1595,10 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
           {/* Side container — a classic till receipt */}
           <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 bg-[#fffdf5] font-mono pb-[env(safe-area-inset-bottom)] lg:w-96 lg:flex-none lg:border-l lg:border-t-0 lg:pb-0">
-            {context === 'cashier' ? (
+            {context !== 'admin' ? (
               <>
                 <div className="flex-shrink-0 px-4 pt-3 text-center">
-                  <p className="text-sm font-bold tracking-[0.3em] text-gray-800">YOUR ITEMS</p>
+                  <p className="text-sm font-bold tracking-[0.3em] text-gray-800">{view.panelTitle}</p>
                   <div className="mt-2 border-t-2 border-dashed border-gray-300" />
                 </div>
 
@@ -1561,7 +1606,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
                   {currentTransaction.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center text-gray-400">
                       <FiCamera className="h-8 w-8" />
-                      <p className="text-sm">Scan an item to begin</p>
+                      <p className="text-sm">{view.emptyText}</p>
                     </div>
                   ) : (
                     <ul className="divide-y divide-dashed divide-gray-200">
@@ -1577,8 +1622,25 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
                               ×
                             </button>
                           </div>
-                          <div className="flex items-baseline text-xs text-gray-600">
-                            <span>{item.quantity} × ₱{item.price.toFixed(2)}</span>
+                          <div className="mt-1 flex items-center text-xs text-gray-600">
+                            <div className="flex items-center overflow-hidden rounded border border-gray-300 bg-white">
+                              <button
+                                onClick={() => changeQuantity(item.id, -1)}
+                                aria-label={`One less ${item.name}`}
+                                className="h-8 w-8 text-lg font-bold leading-none text-gray-700 active:bg-gray-100"
+                              >
+                                −
+                              </button>
+                              <span className="w-8 text-center text-sm font-bold text-gray-900">{item.quantity}</span>
+                              <button
+                                onClick={() => changeQuantity(item.id, 1)}
+                                aria-label={`One more ${item.name}`}
+                                className="h-8 w-8 text-lg font-bold leading-none text-gray-700 active:bg-gray-100"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <span className="ml-2">× ₱{item.price.toFixed(2)}</span>
                             <span className="mx-2 flex-1 border-b border-dotted border-gray-400" />
                             <span className="font-bold text-gray-900">₱{item.subtotal.toFixed(2)}</span>
                           </div>
@@ -1605,9 +1667,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
                       <button
                         onClick={saveTransactionToSupabase}
                         disabled={isSavingTransaction}
-                        className="flex-1 rounded-md bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 active:scale-95 disabled:opacity-60"
+                        className={`flex-1 rounded-md py-3 text-sm font-bold text-white active:scale-95 disabled:opacity-60 ${view.button}`}
                       >
-                        {isSavingTransaction ? 'Saving…' : 'Save & Submit'}
+                        {isSavingTransaction ? 'Saving…' : view.payLabel}
                       </button>
                       <button
                         onClick={clearTransaction}
@@ -1624,7 +1686,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             ) : (
               <>
                 <div className="flex-shrink-0 px-4 pt-3 text-center">
-                  <p className="text-sm font-bold tracking-[0.3em] text-gray-800">LAST SCANNED</p>
+                  <p className="text-sm font-bold tracking-[0.3em] text-gray-800">{view.panelTitle}</p>
                   <div className="mt-2 border-t-2 border-dashed border-gray-300" />
                 </div>
 
