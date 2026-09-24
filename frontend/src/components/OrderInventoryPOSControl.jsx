@@ -31,6 +31,171 @@ import {
   exportRowsToFile
 } from '../utils/inventoryFileIO';
 
+// ---------------------------------------------------------------------
+// Classic ledger look: midnight navy + antique gold on ivory, hairline
+// double rules, serif headings (inherited), and calm, purposeful motion.
+// All motion is switched off for people who prefer reduced motion.
+// ---------------------------------------------------------------------
+const OI_STYLES = `
+.oi-root {
+  --oi-ink: #14213d;
+  --oi-ink-2: #1f3260;
+  --oi-gold: #b8912f;
+  --oi-gold-2: #d9b955;
+  --oi-gold-soft: #f4ead0;
+  --oi-ivory: #fbf8f1;
+  --oi-line: #e7dfcc;
+  --oi-wine: #7a1f2b;
+  --oi-green: #1f6f4a;
+  --oi-amber: #b45f06;
+}
+@keyframes oi-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes oi-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes oi-sheen { from { background-position: 160% 0; } to { background-position: -60% 0; } }
+@keyframes oi-glint { 0%, 100% { transform: rotate(0) scale(1); opacity: .9; } 50% { transform: rotate(45deg) scale(1.25); opacity: 1; } }
+@keyframes oi-beacon { 0%, 100% { box-shadow: 0 0 0 0 rgba(122, 31, 43, .38); } 60% { box-shadow: 0 0 0 6px rgba(122, 31, 43, 0); } }
+@keyframes oi-pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+
+/* Title strip: a classic double rule that draws itself in */
+.oi-head { position: relative; padding-bottom: 2px; animation: oi-rise .5s both; }
+.oi-head::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px;
+  border-top: 1px solid var(--oi-ink); border-bottom: 2px solid var(--oi-gold);
+  transform-origin: left; animation: oi-draw .9s .1s cubic-bezier(.2, .8, .2, 1) both;
+}
+.oi-orn { display: inline-block; color: var(--oi-gold); font-size: .7em; animation: oi-glint 4.5s ease-in-out infinite; }
+.oi-title { color: var(--oi-ink); letter-spacing: -.01em; }
+.oi-sub { color: var(--oi-gold); }
+.oi-badge { color: #7a5c12; background: var(--oi-gold-soft); border: 1px solid #e3d2a0; }
+.oi-badge-warn { color: var(--oi-wine); background: #f8e8ea; border: 1px solid #e8c3c8; }
+
+/* Tabs: gold underline that slides in on hover and locks on the active tab */
+.oi-tab { position: relative; color: #6b7280; transition: color .2s; }
+.oi-tab::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 3px; z-index: 1; border-radius: 2px;
+  background: linear-gradient(90deg, var(--oi-gold), var(--oi-gold-2)); transform: scaleX(0); transform-origin: left;
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1);
+}
+.oi-tab:hover { color: var(--oi-ink); }
+.oi-tab:hover::after { transform: scaleX(.45); }
+.oi-tab[aria-selected='true'] { color: var(--oi-ink); }
+.oi-tab[aria-selected='true']::after { transform: scaleX(1); }
+
+/* Panels */
+.oi-panel {
+  background: linear-gradient(180deg, #fff 0%, var(--oi-ivory) 100%);
+  border: 1px solid var(--oi-line); border-top: 3px solid var(--oi-ink); border-radius: 4px;
+  box-shadow: 0 10px 24px -18px rgba(20, 33, 61, .55); animation: oi-rise .5s .05s both;
+}
+.oi-list {
+  background: #fff; border: 1px solid var(--oi-line); border-radius: 4px; overflow: hidden;
+  box-shadow: 0 10px 24px -18px rgba(20, 33, 61, .45); animation: oi-rise .5s .15s both;
+}
+.oi-thead { background: linear-gradient(90deg, var(--oi-ink), var(--oi-ink-2)); color: #e9dfc0; border-bottom: 2px solid var(--oi-gold); }
+
+/* Figures strip */
+.oi-figs { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 12px; color: #6b7280; }
+.oi-fig { display: inline-flex; align-items: baseline; gap: 6px; animation: oi-pop .5s both; }
+.oi-fig:nth-child(2) { animation-delay: .06s; } .oi-fig:nth-child(3) { animation-delay: .12s; }
+.oi-fig:nth-child(4) { animation-delay: .18s; } .oi-fig:nth-child(5) { animation-delay: .24s; }
+.oi-fig::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--oi-gold)); align-self: center; }
+.oi-fig b { font-size: 15px; color: var(--oi-ink); font-variant-numeric: tabular-nums; }
+
+/* Buttons */
+.oi-btn { position: relative; overflow: hidden; transition: transform .15s, box-shadow .2s, background-color .2s, border-color .2s, color .2s; }
+.oi-btn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 14px -8px rgba(20, 33, 61, .6); }
+.oi-btn:not(:disabled):active { transform: translateY(0) scale(.97); box-shadow: none; }
+.oi-btn-primary { background: var(--oi-ink); color: #fff; border-color: var(--oi-ink); }
+.oi-btn-primary:not(:disabled):hover { background: var(--oi-ink-2); border-color: var(--oi-gold); }
+.oi-btn-primary::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgba(217, 185, 85, .55) 50%, transparent 65%); background-size: 250% 100%; background-position: 160% 0;
+}
+.oi-btn-primary:hover::before { animation: oi-sheen .9s ease-out; }
+.oi-btn-ghost { background: #fff; color: var(--oi-ink); border-color: #d8cfb8; }
+.oi-btn-ghost:not(:disabled):hover { background: var(--oi-gold-soft); border-color: var(--oi-gold); }
+.oi-btn-on { background: var(--oi-gold-soft); border-color: var(--oi-gold); color: var(--oi-ink); }
+.oi-btn-danger { background: #fff; color: var(--oi-wine); border-color: #e3bcc1; }
+.oi-btn-danger:not(:disabled):hover { background: #f8e8ea; border-color: var(--oi-wine); }
+.oi-input { background: #fff; border: 1px solid #d8cfb8; transition: border-color .2s, box-shadow .2s; }
+.oi-input, .oi-input option { color: #0f172a; }
+[data-theme='dark'] .sk-portal-themed .oi-input::placeholder { color: #94a3b8 !important; }
+.oi-input:focus { outline: none; border-color: var(--oi-gold); box-shadow: 0 0 0 3px rgba(184, 145, 47, .2); }
+
+/* Product rows: staggered entrance, gold rail on hover */
+.oi-row { position: relative; animation: oi-rise .45s both; animation-delay: calc(var(--i, 0) * 40ms); transition: background-color .2s; }
+.oi-row::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(var(--oi-gold-2), var(--oi-gold));
+  transform: scaleY(0); transform-origin: center; transition: transform .25s cubic-bezier(.2, .8, .2, 1);
+}
+.oi-row:hover { background: var(--oi-ivory); }
+.oi-row:hover::before { transform: scaleY(1); }
+.oi-row:active { background: var(--oi-gold-soft); }
+.oi-avatar { box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--oi-line); transition: box-shadow .2s, transform .2s; }
+.oi-row:hover .oi-avatar { box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--oi-gold); transform: scale(1.04); }
+.oi-pill-ok { background: #e4f3ea; color: var(--oi-green); border: 1px solid #bfe0cd; }
+.oi-pill-low { background: #fdf0d9; color: var(--oi-amber); border: 1px solid #f1d59e; }
+.oi-pill-out { background: #f8e8ea; color: var(--oi-wine); border: 1px solid #e8c3c8; animation: oi-beacon 2.2s ease-out infinite; }
+.oi-expanded { background: var(--oi-ivory); border-top: 1px solid var(--oi-gold); border-bottom: 1px solid var(--oi-line); animation: oi-pop .3s both; }
+.oi-card { background: #fff; border: 1px solid var(--oi-line); border-top: 2px solid var(--oi-gold); border-radius: 3px; transition: transform .2s, box-shadow .2s; }
+.oi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px -12px rgba(20, 33, 61, .6); }
+.oi-empty { animation: oi-pop .4s both; }
+
+/* Dark theme: surfaces go deep green like every other portal card; the title strip and tabs sit on the (always light) page, so they keep their ink colours. */
+.oi-name { color: var(--oi-ink); }
+[data-theme='dark'] .oi-root { --oi-line: rgba(196, 160, 82, .3); --oi-ivory: #0f2a20; --oi-gold-soft: rgba(184, 145, 47, .2); }
+[data-theme='dark'] .oi-panel { background: linear-gradient(180deg, #0f2a20 0%, #0c231b 100%); border-color: var(--oi-line); border-top-color: var(--oi-gold); box-shadow: 0 10px 24px -16px rgba(0, 0, 0, .7); }
+[data-theme='dark'] .oi-list { background: #0c231b; border-color: var(--oi-line); box-shadow: 0 10px 24px -16px rgba(0, 0, 0, .7); }
+[data-theme='dark'] .oi-thead { background: linear-gradient(90deg, #0a1f18, #123024); color: #f1e6c4; }
+[data-theme='dark'] .oi-figs { color: rgba(209, 250, 229, .65); }
+[data-theme='dark'] .oi-fig b, [data-theme='dark'] .oi-name { color: #f5ecd0; }
+[data-theme='dark'] .oi-btn-primary { background: var(--oi-gold); color: #14213d; border-color: var(--oi-gold-2); }
+[data-theme='dark'] .oi-btn-primary:not(:disabled):hover { background: var(--oi-gold-2); border-color: #f1d98a; }
+[data-theme='dark'] .oi-btn-ghost { background: rgba(255, 255, 255, .05); color: #ecfdf5; border-color: rgba(196, 160, 82, .4); }
+[data-theme='dark'] .oi-btn-ghost:not(:disabled):hover { background: rgba(184, 145, 47, .22); border-color: var(--oi-gold-2); }
+[data-theme='dark'] .oi-btn-on { background: rgba(184, 145, 47, .28); color: #f5ecd0; border-color: var(--oi-gold-2); }
+[data-theme='dark'] .oi-btn-danger { background: rgba(239, 68, 68, .1); color: #fca5a5; border-color: rgba(248, 113, 113, .4); }
+[data-theme='dark'] .oi-btn-danger:not(:disabled):hover { background: rgba(239, 68, 68, .22); border-color: #f87171; }
+[data-theme='dark'] .oi-row:hover { background: rgba(255, 255, 255, .04); }
+[data-theme='dark'] .oi-row:active { background: rgba(184, 145, 47, .16); }
+[data-theme='dark'] .oi-avatar { box-shadow: 0 0 0 2px #0c231b, 0 0 0 3px var(--oi-line); }
+[data-theme='dark'] .oi-row:hover .oi-avatar { box-shadow: 0 0 0 2px #0c231b, 0 0 0 3px var(--oi-gold); }
+[data-theme='dark'] .oi-pill-ok { background: rgba(34, 197, 94, .16); color: #86efac; border-color: rgba(34, 197, 94, .35); }
+[data-theme='dark'] .oi-pill-low { background: rgba(245, 158, 11, .16); color: #fcd34d; border-color: rgba(245, 158, 11, .35); }
+[data-theme='dark'] .oi-pill-out { background: rgba(239, 68, 68, .18); color: #fca5a5; border-color: rgba(248, 113, 113, .4); }
+[data-theme='dark'] .oi-expanded { background: #0f2a20; }
+[data-theme='dark'] .oi-card { background: #0c231b; border-color: var(--oi-line); border-top-color: var(--oi-gold); }
+
+@media (prefers-reduced-motion: reduce) {
+  .oi-root *, .oi-root *::before, .oi-root *::after { animation: none !important; transition: none !important; }
+}
+`;
+
+// Counts a figure up to its value (and re-counts from the old value when it changes).
+const CountUp = ({ value, decimals = 0, format }) => {
+  const target = Number(value) || 0;
+  const [shown, setShown] = useState(0);
+  const fromRef = useRef(0);
+  useEffect(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { fromRef.current = target; setShown(target); return undefined; }
+    const from = fromRef.current;
+    const start = performance.now();
+    let raf;
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / 800);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const cur = from + (target - from) * eased;
+      fromRef.current = cur;
+      setShown(cur);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+  return format ? format(shown) : shown.toFixed(decimals);
+};
+
 const OrderInventoryPOSControl = () => {
   // Admin Authorization Check
   const [userRole, setUserRole] = useState(null);
@@ -1100,8 +1265,8 @@ const OrderInventoryPOSControl = () => {
   }
 
   // Classic, flat look: hairline borders, small radii, one accent. Shared button styles keep the toolbar uniform.
-  const toolBtn = 'px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm rounded border transition-colors flex items-center justify-center gap-1 font-medium whitespace-nowrap';
-  const toolBtnOn = 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400';
+  const toolBtn = 'px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm rounded border oi-btn flex items-center justify-center gap-1 font-medium whitespace-nowrap';
+  const toolBtnOn = 'oi-btn-ghost';
   const toolBtnOff = 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed';
 
   const visibleTabs = [
@@ -1111,35 +1276,35 @@ const OrderInventoryPOSControl = () => {
   ].filter(Boolean);
 
   return (
-    <div className="space-y-3">
+    <div className="oi-root space-y-3">
+      <style>{OI_STYLES}</style>
       {/* Title row + section tabs in one strip. Products / Services / Bookings only show for
           what this business offers (business profile); the strip needs 2+ tabs to render. */}
-      <div className="border-b border-gray-300">
+      <div className="oi-head">
         <div className="flex items-end justify-between gap-3 flex-wrap">
-          <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-gray-900 pb-1.5">
-            <span>Order Inventory</span>
-            <span className="text-sm font-normal text-gray-400">· POS Control</span>
+          <h2 className="flex items-center gap-2 oi-title text-lg sm:text-xl font-bold pb-2">
+            <span className="oi-orn">◆</span>
+            <span className="whitespace-nowrap">Order Inventory</span>
+            <span className="oi-sub hidden sm:inline text-sm font-normal whitespace-nowrap">· POS Control</span>
             {isAdmin ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded" title="Full control: edit pricing, manage stock, bulk updates">
+              <span className="inline-flex items-center gap-1 oi-badge text-[11px] font-semibold px-1.5 py-0.5 rounded" title="Full control: edit pricing, manage stock, bulk updates">
                 <FiCheckCircle className="h-3 w-3" /> Admin
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-yellow-800 bg-yellow-50 border border-yellow-200 px-1.5 py-0.5 rounded" title="Only admins can edit pricing, manage stock, and bulk update prices">
+              <span className="inline-flex items-center gap-1 oi-badge-warn text-[11px] font-semibold px-1.5 py-0.5 rounded" title="Only admins can edit pricing, manage stock, and bulk update prices">
                 <FiLock className="h-3 w-3" /> Read-only
               </span>
             )}
           </h2>
           {visibleTabs.length > 1 && (
-            <div className="flex gap-4 -mb-px">
+            <div className="flex gap-3 sm:gap-5 w-full sm:w-auto overflow-x-auto">
               {visibleTabs.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-1 pb-2 pt-1 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? 'border-gray-900 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
-                  }`}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  className="oi-tab px-0.5 pb-2 pt-1 text-[13px] sm:text-sm font-semibold whitespace-nowrap"
                 >
                   {tab.label}
                 </button>
@@ -1152,13 +1317,13 @@ const OrderInventoryPOSControl = () => {
       {activeTab === 'products' && offersProducts && (
       <>
       {/* One flat toolbar: figures, actions, then search — instead of three separate boxes */}
-      <div className="bg-white border border-gray-200 rounded-md p-2.5 sm:p-3 space-y-2.5">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-gray-500">
-          <span>Products <b className="text-gray-900 text-sm tabular-nums">{stats.total}</b> <span className="text-gray-400">({stats.active} active)</span></span>
-          <span>Stock value <b className="text-gray-900 text-sm tabular-nums">{formatCurrency(stats.totalValue)}</b></span>
-          <span>Avg margin <b className="text-gray-900 text-sm tabular-nums">{stats.avgMargin}%</b></span>
-          <span>Low stock <b className={`text-sm tabular-nums ${stats.lowStock > 0 ? 'text-orange-600' : 'text-gray-900'}`}>{stats.lowStock}</b></span>
-          <span>Inactive <b className={`text-sm tabular-nums ${stats.inactive > 0 ? 'text-red-600' : 'text-gray-900'}`}>{stats.inactive}</b></span>
+      <div className="oi-panel p-2.5 sm:p-3 space-y-2.5">
+        <div className="oi-figs">
+          <span className="oi-fig" style={{ '--dot': '#1f3260' }}>Products <b><CountUp value={stats.total} /></b> <span className="text-gray-400">(<CountUp value={stats.active} /> active)</span></span>
+          <span className="oi-fig" style={{ '--dot': '#1f6f4a' }}>Stock value <b><CountUp value={stats.totalValue} format={(n) => formatCurrency(Math.round(n))} /></b></span>
+          <span className="oi-fig" style={{ '--dot': '#b8912f' }}>Avg margin <b><CountUp value={stats.avgMargin} decimals={1} />%</b></span>
+          <span className="oi-fig" style={{ '--dot': stats.lowStock > 0 ? '#b45f06' : '#9ca3af' }}>Low stock <b style={stats.lowStock > 0 ? { color: '#b45f06' } : undefined}><CountUp value={stats.lowStock} /></b></span>
+          <span className="oi-fig" style={{ '--dot': stats.inactive > 0 ? '#7a1f2b' : '#9ca3af' }}>Inactive <b style={stats.inactive > 0 ? { color: '#7a1f2b' } : undefined}><CountUp value={stats.inactive} /></b></span>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -1170,7 +1335,7 @@ const OrderInventoryPOSControl = () => {
               }
               setShowAddProductModal(true);
             }}
-            className={`${toolBtn} ${isAdmin ? 'bg-gray-900 text-white border-gray-900 hover:bg-gray-700' : toolBtnOff}`}
+            className={`${toolBtn} ${isAdmin ? 'oi-btn-primary' : toolBtnOff}`}
             title={!isAdmin ? 'Admin access required' : 'Add new product to inventory'}
           >
             <FiPlus className="h-4 w-4 flex-shrink-0" />
@@ -1229,7 +1394,7 @@ const OrderInventoryPOSControl = () => {
               setShowBulkPricing(!showBulkPricing);
             }}
             disabled={!isAdmin}
-            className={`${toolBtn} ${isAdmin ? (showBulkPricing ? 'bg-gray-100 text-gray-900 border-gray-400' : toolBtnOn) : toolBtnOff}`}
+            className={`${toolBtn} ${isAdmin ? (showBulkPricing ? 'oi-btn-on' : toolBtnOn) : toolBtnOff}`}
           >
             <FiDollarSign className="h-4 w-4 flex-shrink-0" />
             <span>Bulk price</span>
@@ -1251,7 +1416,7 @@ const OrderInventoryPOSControl = () => {
             onClick={deleteAllProducts}
             disabled={!isAdmin || refreshing || products.length === 0}
             title="Permanently delete all products for this supermarket"
-            className={`${toolBtn} sm:ml-auto ${isAdmin ? 'bg-white text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 disabled:opacity-50' : toolBtnOff}`}
+            className={`${toolBtn} sm:ml-auto ${isAdmin ? 'oi-btn-danger disabled:opacity-50' : toolBtnOff}`}
           >
             <FiTrash2 className="h-4 w-4" />
             <span>Delete all</span>
@@ -1260,8 +1425,8 @@ const OrderInventoryPOSControl = () => {
 
         {/* Bulk Pricing Section */}
         {showBulkPricing && isAdmin && (
-          <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
-            <h3 className="font-bold text-purple-900 mb-3">💰 Bulk Price Update (Admin Only)</h3>
+          <div className="oi-expanded rounded p-4">
+            <h3 className="font-bold oi-name mb-3">💰 Bulk Price Update (Admin Only)</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1305,14 +1470,14 @@ const OrderInventoryPOSControl = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search products..."
-              className="w-full pl-8 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded focus:border-gray-900 focus:outline-none"
+              className="w-full pl-8 pr-3 py-1.5 sm:py-2 text-sm oi-input rounded"
             />
           </div>
 
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded focus:border-gray-900 focus:outline-none bg-white"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
           >
             <option value="all">All Categories</option>
             {categories && categories.length > 0 ? (
@@ -1327,7 +1492,7 @@ const OrderInventoryPOSControl = () => {
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value)}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded focus:border-gray-900 focus:outline-none bg-white"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
           >
             <option value="name">Sort by Name</option>
             <option value="margin">Sort by Margin</option>
@@ -1344,16 +1509,16 @@ const OrderInventoryPOSControl = () => {
       {/* Products List — a div-based (not <table>) layout so rows genuinely
           restack into cards on small phones instead of squeezing table
           columns or relying on horizontal scroll. */}
-      <div className="bg-white border border-gray-200 rounded-md overflow-hidden">
+      <div className="oi-list">
         {/* Column header — only makes sense once there's room for a row */}
-        <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200">
-          <div className="flex-1 font-semibold uppercase tracking-wider text-gray-500 text-[11px]">Product</div>
-          <div className="w-24 text-center font-semibold uppercase tracking-wider text-gray-500 text-[11px]">Stock</div>
-          <div className="w-36 text-center font-semibold uppercase tracking-wider text-gray-500 text-[11px]">Actions</div>
+        <div className="oi-thead hidden sm:flex items-center gap-3 px-4 py-2">
+          <div className="flex-1 font-semibold uppercase tracking-wider text-[11px]">Product</div>
+          <div className="w-24 text-center font-semibold uppercase tracking-wider text-[11px]">Stock</div>
+          <div className="w-36 text-center font-semibold uppercase tracking-wider text-[11px]">Actions</div>
         </div>
 
-        <div className="divide-y divide-gray-200">
-          {filteredProducts.map((product) => {
+        <div className="divide-y divide-[#e7dfcc]">
+          {filteredProducts.map((product, rowIndex) => {
             if (editingId === product.id) {
               // EDIT MODE
               return (
@@ -1448,43 +1613,43 @@ const OrderInventoryPOSControl = () => {
             if (expandedId === product.id) {
               // EXPANDED VIEW
               return (
-                <div key={product.id} className="bg-gray-50 p-3 md:p-4 space-y-3">
+                <div key={product.id} className="oi-expanded p-3 md:p-4 space-y-3">
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="font-bold text-sm md:text-base text-gray-800">{product.name}</h3>
                     <button onClick={() => setExpandedId(null)} className="text-blue-600 hover:text-blue-800 font-bold text-lg px-2 -mr-2" title="Collapse">▼</button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">COST</p>
                       <p className="text-sm md:text-base font-bold text-orange-600">{formatCurrency(product.cost_price)}</p>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">WHOLESALE</p>
                       <p className="text-sm md:text-base font-bold text-purple-600">{formatCurrency(product.wholesale_price)}</p>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">POS SELLING</p>
                       <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">MARGIN</p>
                       <p className="text-sm md:text-base font-bold text-purple-600">{calculateMargin(product.cost_price, product.selling_price)}%</p>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">TAX</p>
                       <p className="text-sm md:text-base font-bold text-yellow-600">{product.tax_rate || 18}%</p>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">MIN/RO</p>
                       <p className="text-sm md:text-base font-bold text-gray-700">{inventoryMap[product.id]?.minimum_stock || 10}/{inventoryMap[product.id]?.reorder_point || 20}</p>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded p-2">
+                    <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">SKU</p>
                       <p className="text-xs md:text-sm font-mono text-gray-700 truncate">{product.sku || 'N/A'}</p>
                     </div>
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 ${ isAdmin ? 'bg-white text-gray-800 border border-gray-300 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
+                    <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 ${ isAdmin ? 'oi-btn oi-btn-ghost border' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
                       <FiEdit className="h-3.5 w-3.5" /> Edit
                     </button>
                     <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
@@ -1506,7 +1671,8 @@ const OrderInventoryPOSControl = () => {
               <div
                 key={product.id}
                 onClick={() => setExpandedId(product.id)}
-                className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-blue-50 cursor-pointer transition-colors active:bg-blue-100"
+                style={{ '--i': Math.min(rowIndex, 12) }}
+                className="oi-row flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 px-3 sm:px-4 py-3 cursor-pointer"
               >
                 {/* Photo + name/SKU — always a single row, even on mobile */}
                 <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
@@ -1514,7 +1680,7 @@ const OrderInventoryPOSControl = () => {
                     type="button"
                     onClick={(e) => { e.stopPropagation(); if (isAdmin) openQuickPhotoPicker(product.id); }}
                     title={isAdmin ? 'Tap to add/change photo' : 'Product photo'}
-                    className="relative flex-shrink-0 w-11 h-11 sm:w-10 sm:h-10 rounded-lg overflow-hidden group"
+                    className="relative flex-shrink-0 w-11 h-11 sm:w-10 sm:h-10 rounded-lg overflow-hidden group oi-avatar"
                   >
                     {product.images?.[0] ? (
                       <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
@@ -1522,7 +1688,7 @@ const OrderInventoryPOSControl = () => {
                       (() => {
                         const { gradient, initials } = productAvatar(product.name);
                         return (
-                          <span className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${gradient} text-white text-xs font-bold animate-pulse`}>
+                          <span className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${gradient} text-white text-xs font-bold`}>
                             {initials}
                           </span>
                         );
@@ -1540,7 +1706,7 @@ const OrderInventoryPOSControl = () => {
                     )}
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="font-bold text-gray-800 text-sm sm:text-base truncate">{product.name}</p>
+                    <p className="font-bold oi-name text-sm sm:text-base truncate">{product.name}</p>
                     <p className="text-xs text-gray-600 truncate">SKU: {product.sku || 'N/A'}</p>
                   </div>
                   <span className="text-gray-300 flex-shrink-0 sm:hidden">▶</span>
@@ -1550,14 +1716,14 @@ const OrderInventoryPOSControl = () => {
                 <div className="flex items-center justify-between sm:justify-center sm:w-24 flex-shrink-0">
                   <span className="text-[11px] text-gray-400 sm:hidden">Stock</span>
                   <span className={`inline-block px-2.5 sm:px-3 py-1 rounded-full font-bold text-xs sm:text-sm whitespace-nowrap ${
-                    isOutOfStock ? 'bg-red-100 text-red-700' : isLow ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                    isOutOfStock ? 'oi-pill-out' : isLow ? 'oi-pill-low' : 'oi-pill-ok'
                   }`}>
                     {qty} {isOutOfStock && '❌'} {isLow && '⚠️'}
                   </span>
                 </div>
 
                 <div className="flex gap-2 sm:w-36 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ isAdmin ? 'bg-white text-gray-800 border border-gray-300 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
+                  <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ isAdmin ? 'oi-btn oi-btn-ghost border' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
                     <FiEdit className="h-3 w-3 inline mr-1" />
                     Edit
                   </button>
@@ -1572,8 +1738,8 @@ const OrderInventoryPOSControl = () => {
       </div>
 
       {filteredProducts.length === 0 && (
-        <div className="bg-white border border-gray-200 rounded-md p-8 text-center">
-          <FiBox className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+        <div className="oi-list oi-empty p-8 text-center">
+          <FiBox className="h-10 w-10 text-[#b8912f] mx-auto mb-3" />
           <p className="text-gray-800 font-semibold">No products found</p>
           <p className="text-sm text-gray-500 mt-1">Try adjusting your search filters</p>
         </div>
@@ -1582,7 +1748,7 @@ const OrderInventoryPOSControl = () => {
       )}
 
       {activeTab === 'services' && offersServices && (
-        <div className="bg-white border border-gray-200 rounded-md p-3 sm:p-4 space-y-4">
+        <div className="oi-list p-3 sm:p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h3 className="text-base font-bold text-gray-800">🧾 Services</h3>

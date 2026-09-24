@@ -5168,23 +5168,6 @@ const AdminPortal = () => {
 
   const renderBusinessAnalytics = () => (
     <div className="space-y-8">
-      {/* Analytics Header */}
-      <div className="bg-gradient-to-r from-pink-500 via-rose-600 to-red-700 rounded-2xl p-8 text-white shadow-2xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold mb-3 flex items-center">
-              <span className="mr-4 text-4xl">📈</span>
-              Business Intelligence Center
-            </h2>
-            <p className="text-pink-100 text-lg">Advanced analytics and business intelligence dashboard</p>
-          </div>
-          <div className="text-right">
-            <div className="text-5xl font-bold">+22%</div>
-            <div className="text-pink-200 text-lg">Growth Rate</div>
-          </div>
-        </div>
-      </div>
-
       {/* KPI Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
@@ -6551,7 +6534,6 @@ const AdminPortal = () => {
     // { id: 'inventory', label: 'Inventory Control', icon: FiPackage },
     { id: 'bookings', label: '📅 Bookings', icon: FiCalendar },
     { id: 'users', label: 'User Management', icon: FiUsers },
-    { id: 'analytics', label: 'Business Analytics', icon: FiPieChart },
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign }
   ];
 
@@ -6787,45 +6769,14 @@ const AdminPortal = () => {
 
       {/* Main Content Area */}
       <div className="p-3 md:p-4 lg:p-8" style={{ overflowX: 'clip' }}>
-        {/* Page title — a slim classic heading line (no card); the tabs above do the navigating */}
-        <div className="flex items-center gap-3 pb-2 md:pb-3 mb-3 md:mb-5 border-b border-gray-200 animate-fadeInUp">
-          {!isMobile && (
-            <>
-              <input
-                ref={logoFileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleLogoUpload}
-              />
-              <button
-                onClick={() => logoFileInputRef.current?.click()}
-                disabled={uploadingLogo}
-                title="Upload store logo"
-                className="relative w-9 h-9 bg-gray-900 rounded-md flex items-center justify-center flex-shrink-0 overflow-hidden group"
-              >
-                {branding.logoUrl ? (
-                  <img src={branding.logoUrl} alt={branding.name} className="w-full h-full object-cover" />
-                ) : (
-                  <FiShield className="h-5 w-5 text-white" />
-                )}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center">
-                  {uploadingLogo ? (
-                    <FiRefreshCw className="h-4 w-4 text-white animate-spin" />
-                  ) : (
-                    <FiUpload className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                  )}
-                </div>
-              </button>
-            </>
-          )}
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg md:text-2xl font-bold text-gray-900 truncate leading-tight">
-              Admin Portal <span className="font-normal text-gray-400">· System Administration</span>
-            </h1>
-            <p className="text-xs md:text-sm text-gray-500 truncate">Welcome back to {branding.name}, admin</p>
-          </div>
-        </div>
+        {/* Hidden file input for the header menu's "Store Logo" item */}
+        <input
+          ref={logoFileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleLogoUpload}
+        />
 
         {/* Main Content */}
         <div className="space-y-8">

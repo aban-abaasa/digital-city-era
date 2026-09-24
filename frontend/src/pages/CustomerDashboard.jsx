@@ -53,6 +53,7 @@ import { Greeting } from '../components/customerDashboard/LiveClock';
 import PortalHeader from '../components/PortalHeader';
 import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
+import DesktopOverview from '../components/customerDashboard/DesktopOverview';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
@@ -709,26 +710,24 @@ const CustomerDashboard = () => {
           />
         </div>
 
-        {/* Row 2 — nav tabs (desktop only) */}
-        <div className="hidden sm:block bg-white border-b border-blue-100">
+        {/* Row 2 — nav tabs (desktop only): ivory bar, ink text, gold underline that slides in */}
+        <div className="hidden sm:block border-b border-[#c4a052]/40 bg-[#fdfaf2]">
           <div className="max-w-7xl mx-auto px-2">
-            <nav className="flex overflow-x-auto scrollbar-hide gap-0.5 py-1 items-center">
+            <nav className="flex overflow-x-auto scrollbar-hide gap-1 items-center">
               {ALL_TABS.map(tab => (
                 <button key={tab.id} onClick={() => switchTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                    activeTab === tab.id
-                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  className={`classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
+                    activeTab === tab.id ? 'font-semibold text-[#1e1b4b]' : 'font-medium text-slate-500 hover:text-[#1e1b4b]'
                   }`}>
                   <span>{tab.emoji}</span>
                   {tab.label}
                 </button>
               ))}
               <button onClick={() => setActiveTab('ican-wallet')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  activeTab === 'ican-wallet'
-                    ? 'bg-violet-100 text-violet-700 font-semibold'
-                    : 'text-violet-600 hover:bg-violet-50'
+                aria-current={activeTab === 'ican-wallet' ? 'page' : undefined}
+                className={`classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
+                  activeTab === 'ican-wallet' ? 'font-semibold text-[#1e1b4b]' : 'font-medium text-[#a17c28] hover:text-[#1e1b4b]'
                 }`}>
                 <span>₡</span> IcanEra Wallet
               </button>
@@ -767,40 +766,33 @@ const CustomerDashboard = () => {
         initial={(currentUser.firstName || 'C').charAt(0).toUpperCase()}
       />
 
-      {/* Role Banner — admin / manager / cashier / supplier. On a phone it's an inset
-          rounded card with a compact "Open" arrow instead of an edge-to-edge
-          strip whose long button label crowded the text. */}
+      {/* Role Banner — admin / manager / cashier / supplier. One slim ink bar with a
+          gold hairline (an inset rounded pill on phones) instead of a tall
+          gradient card; the long label only appears where there's room. */}
       {staffRole && (() => {
         const config = {
-          admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin',   gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1d4ed8 100%)' },
-          manager: { path: '/manager-portal', icon: '👔', label: 'Manager', gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)' },
-          cashier: { path: '/cashier-portal', icon: '💰', label: 'Cashier', gradient: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)' },
-          supplier: { path: '/supplier-portal', icon: '🚚', label: 'Supplier', gradient: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 50%, #4f46e5 100%)' },
+          admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin' },
+          manager: { path: '/manager-portal', icon: '👔', label: 'Manager' },
+          cashier: { path: '/cashier-portal', icon: '💰', label: 'Cashier' },
+          supplier: { path: '/supplier-portal', icon: '🚚', label: 'Supplier' },
         }[staffRole];
         return (
           <div onClick={() => navigate(config.path)} role="link" tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter') navigate(config.path); }}
-            className="cursor-pointer mx-4 mt-3 overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 sm:mx-0 sm:mt-0 sm:rounded-none sm:shadow-none sm:ring-0"
-            style={{ background: config.gradient }}>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-white/20 text-xl ring-1 ring-white/40 sm:h-auto sm:w-auto sm:bg-transparent sm:text-2xl sm:ring-0">{config.icon}</span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">
-                    <span className="sm:hidden">{config.label} access</span>
-                    <span className="hidden sm:inline">You have {config.label} access</span>
-                  </p>
-                  <p className="truncate text-xs text-white/80">
-                    <span className="sm:hidden">Tap to open your portal</span>
-                    <span className="hidden sm:inline">Tap to open your {config.label} Portal</span>
-                  </p>
-                </div>
+            className="group cursor-pointer mx-4 mt-3 overflow-hidden rounded-xl bg-gradient-to-r from-[#14122f] via-[#1e1b4b] to-[#2b2760] ring-1 ring-[#c4a052]/50 transition-shadow hover:shadow-lg sm:mx-0 sm:mt-0 sm:rounded-none sm:ring-0 sm:border-b sm:border-[#c4a052]/50">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="text-lg leading-none">{config.icon}</span>
+                <p className="truncate text-[13px] font-semibold text-[#f3dc9b] sm:text-sm">
+                  <span className="sm:hidden">{config.label} portal</span>
+                  <span className="hidden sm:inline">You have {config.label} access</span>
+                  <span className="ml-1.5 hidden font-normal text-white/60 min-[400px]:inline">· tap to open</span>
+                </p>
               </div>
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center gap-2 rounded-full bg-white/20 transition-colors hover:bg-white/30 sm:h-auto sm:w-auto sm:rounded-lg sm:px-4 sm:py-2">
-                <FiZap className="hidden h-4 w-4 text-white sm:block" />
-                <span className="hidden text-sm font-bold text-white sm:inline">Open {config.label} Portal</span>
-                <FiArrowRight className="h-4 w-4 text-white" />
-              </div>
+              <span className="flex flex-shrink-0 items-center gap-2 rounded-full border border-[#c4a052]/60 px-2.5 py-1 text-xs font-semibold text-[#f3dc9b] transition-colors group-hover:bg-[#c4a052]/20">
+                <span className="hidden sm:inline">Open {config.label} Portal</span>
+                <FiArrowRight className="classic-arrow h-3.5 w-3.5" />
+              </span>
             </div>
           </div>
         );
@@ -834,165 +826,28 @@ const CustomerDashboard = () => {
           </div>
         )}
 
-        {/* sm and up: full stacked layout — there's room to show everything at once */}
-        <div className="hidden sm:block">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <div className={`bg-gradient-to-r ${getMembershipColor(currentUser.membershipLevel)} rounded-3xl p-8 text-white relative overflow-hidden`}>
-            <div className="absolute inset-0 bg-black/10"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-3xl font-bold">
-                      Your {currentUser.membershipLevel.charAt(0).toUpperCase() + currentUser.membershipLevel.slice(1)} Membership
-                    </h1>
-                    <span className="inline-flex items-center gap-1.5 bg-white/25 backdrop-blur-sm rounded-full px-3 py-1 text-sm font-semibold">
-                      {getMembershipBadge(currentUser.membershipLevel).icon} {getMembershipBadge(currentUser.membershipLevel).label}
-                    </span>
-                  </div>
-                  <p className="text-white/90 text-lg">
-                    Enjoy exclusive benefits and rewards
-                  </p>
-                </div>
-                <div className="hidden md:block">
-                  <div className="text-6xl opacity-20">{getMembershipBadge(currentUser.membershipLevel).icon}</div>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                  <div className="text-xl mb-1">⭐</div>
-                  <div className="text-2xl font-bold">
-                    <AnimatedCounter end={currentUser.loyaltyPoints} duration={2000} />
-                  </div>
-                  <div className="text-white/90 text-sm">Loyalty Points</div>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                  <div className="text-xl mb-1">🛍️</div>
-                  <div className="text-2xl font-bold">
-                    <AnimatedCounter end={currentUser.totalVisits} duration={1500} />
-                  </div>
-                  <div className="text-white/90 text-sm">Total Visits</div>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                  <div className="text-xl mb-1">💰</div>
-                  <div className="text-2xl font-bold">
-                    {formatCurrency(currentUser.totalSpent)}
-                  </div>
-                  <div className="text-white/90 text-sm">Total Spent</div>
-                </div>
-              </div>
-            </div>
+        {/* Web: membership card + ledger + next steps, on the Overview tab only */}
+        {activeTab === 'overview' && (
+          <div className="hidden sm:block">
+            <DesktopOverview
+              firstName={currentUser.firstName}
+              membershipLevel={currentUser.membershipLevel}
+              badge={getMembershipBadge(currentUser.membershipLevel)}
+              points={currentUser.loyaltyPoints}
+              visits={currentUser.totalVisits}
+              totalSpent={currentUser.totalSpent}
+              formatCurrency={formatCurrency}
+              memberSinceYear={memberSinceYear}
+              activeOrders={customerData.recentOrders.filter(o => o.status !== 'delivered').length}
+              availableRewards={customerData.loyaltyRewards.filter(r => r.is_available).length}
+              onNavigate={switchTab}
+              onTrackOrders={handleTrackOrders}
+              onRedeemRewards={handleRedeemRewards}
+              onCreateBusiness={handleCreateBusiness}
+              onBecomeSupplier={handleBecomeSupplier}
+            />
           </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm">Active Orders</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  <AnimatedCounter end={customerData.recentOrders.filter(o => o.status !== 'delivered').length} duration={1000} />
-                </p>
-              </div>
-              <FiPackage className="h-8 w-8 text-blue-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm">Available Rewards</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  <AnimatedCounter end={customerData.loyaltyRewards.filter(r => r.is_available).length} duration={1200} />
-                </p>
-              </div>
-              <FiGift className="h-8 w-8 text-green-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm">Member Since</p>
-                <p className="text-2xl font-bold text-gray-900">{memberSinceYear}</p>
-              </div>
-              <FiStar className="h-8 w-8 text-yellow-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm">Next Reward</p>
-                                  <p className="text-2xl font-bold text-gray-900">
-                    {1000 - (currentUser.loyaltyPoints % 1000)} pts
-                  </p>
-              </div>
-              <FiTrendingUp className="h-8 w-8 text-purple-500" />
-            </div>
-          </div>
-        </div>
-
-        {/* Primary Hub Actions */}
-        <div className="mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button
-              onClick={() => switchTab('shop')}
-              className="group text-left bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
-                <FiShoppingBag className="h-6 w-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-2">Shop the Store</h3>
-              <p className="text-blue-100 text-sm mb-4">
-                Browse products, track orders, and start shopping right away.
-              </p>
-              <span className="inline-flex items-center text-sm font-semibold">
-                Start Now
-                <FiShare2 className="ml-2 h-4 w-4" />
-              </span>
-            </button>
-
-            <button
-              onClick={handleCreateBusiness}
-              className="group text-left bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
-                <FiBriefcase className="h-6 w-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-2">Create Your Business</h3>
-              <p className="text-emerald-100 text-sm mb-4">
-                Supermarket, hotel, boutique, or restaurant/café — set up your store and assign managers or cashiers.
-              </p>
-              <span className="inline-flex items-center text-sm font-semibold">
-                Admin Setup
-                <FiShare2 className="ml-2 h-4 w-4" />
-              </span>
-            </button>
-
-            <button
-              onClick={handleBecomeSupplier}
-              className="group text-left bg-gradient-to-br from-purple-600 to-fuchsia-700 rounded-3xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
-                <FiUserPlus className="h-6 w-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-2">Become a Supplier</h3>
-              <p className="text-fuchsia-100 text-sm mb-4">
-                 Create a supplier account, or let your store supply other businesses through the live supplier network.
-              </p>
-              <span className="inline-flex items-center text-sm font-semibold">
-                Open Supplier Flow
-                <FiShare2 className="ml-2 h-4 w-4" />
-              </span>
-            </button>
-          </div>
-        </div>
-        </div>
-        {/* end sm-and-up hero/stats/actions wrapper */}
+        )}
 
         {/* Tab Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1000,13 +855,6 @@ const CustomerDashboard = () => {
           <div className="lg:col-span-2">
             {activeTab === 'overview' && (
               <div className="space-y-4">
-                {/* Section title (phone) — the hero above is a lot of colour, so
-                    this gives the activity area its own quiet heading. */}
-                <div className="flex items-center gap-3 sm:hidden">
-                  <h3 className="font-classic-display text-lg font-semibold text-slate-800">Your activity</h3>
-                  <div className="gold-rule flex-1" />
-                </div>
-
                 {/* Small sub-tabs instead of two stacked cards — tabs always
                     visible, the content panel below collapses to save space. */}
                 <div className="flex items-center gap-2">
@@ -1344,63 +1192,41 @@ const CustomerDashboard = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Quick Actions — no header/collapse, just the compact tab-style
-                grid. On the phone Overview the new hero above already offers
-                all four, so it's hidden there (still shown on other tabs and sm+). */}
-            <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-3 ${activeTab === 'overview' ? 'hidden sm:block' : ''}`}>
+            {/* Quick Actions — hidden on the phone Overview (the hero already offers
+                them), shown on every other tab and on web. */}
+            <div className={`classic-card p-4 ${activeTab === 'overview' ? 'hidden sm:block' : ''}`}>
+              <p className="classic-eyebrow mb-3">Quick actions</p>
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => switchTab('shop')}
-                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-100 transition-colors"
-                >
-                  <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <FiShoppingBag className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Start Shopping</span>
-                </button>
-
-                <button
-                  onClick={handleTrackOrders}
-                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-green-50 hover:bg-green-100 border border-green-100 transition-colors"
-                >
-                  <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
-                    <FiTruck className="h-4 w-4 text-green-600" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Track Orders</span>
-                </button>
-
-                <button
-                  onClick={handleRedeemRewards}
-                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-100 transition-colors"
-                >
-                  <div className="w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <FiGift className="h-4 w-4 text-purple-600" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Redeem Rewards</span>
-                </button>
-
-                <button
-                  onClick={handleReferFriends}
-                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-100 transition-colors"
-                >
-                  <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <FiShare2 className="h-4 w-4 text-orange-600" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight">Refer Friends</span>
-                </button>
+                {[
+                  { label: 'Start Shopping', icon: FiShoppingBag, onClick: () => switchTab('shop') },
+                  { label: 'Track Orders', icon: FiTruck, onClick: handleTrackOrders },
+                  { label: 'Redeem Rewards', icon: FiGift, onClick: handleRedeemRewards },
+                  { label: 'Refer Friends', icon: FiShare2, onClick: handleReferFriends },
+                ].map((a) => (
+                  <button
+                    key={a.label}
+                    onClick={a.onClick}
+                    className="classic-lift flex flex-col items-center gap-1.5 rounded-xl border border-[#c4a052]/25 bg-[#fdfaf2] px-2 py-3"
+                  >
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-[#1e1b4b] text-[#e6c980]">
+                      <a.icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-center text-xs font-semibold leading-tight text-slate-700">{a.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* Contact Support — opens the real support chat (ChatWidget),
                 not a static phone number nobody's answering */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                <FiMessageCircle className="h-5 w-5 text-green-600" /> Need Help?
+            <div className="classic-card p-6">
+              <h3 className="font-classic-display mb-1 flex items-center gap-2 text-lg font-semibold text-[#1e1b4b]">
+                <FiMessageCircle className="h-5 w-5 text-[#a17c28]" /> Need Help?
               </h3>
-              <p className="text-sm text-gray-500 mb-4">Chat live with our support team — real people, real answers.</p>
+              <p className="mb-4 text-sm text-slate-500">Chat live with our support team — real people, real answers.</p>
               <button
                 onClick={() => window.dispatchEvent(new Event('faredeal:open-support-chat'))}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-yellow-500 text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity shadow-sm"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e1b4b] py-3 font-semibold text-[#f3dc9b] shadow-sm ring-1 ring-[#c4a052]/50 transition-colors hover:bg-[#28246b]"
               >
                 <FiMessageCircle className="h-4 w-4" /> Chat with Support
               </button>

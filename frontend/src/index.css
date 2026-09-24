@@ -127,3 +127,42 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .animate-sheet-up, .animate-fade-soft { animation: none; }
 }
+
+/* Classic Overview motion + desktop tabs (customer dashboard). Calm, one-shot
+   entrances; the loyalty card gets a slow glint like light crossing metal. */
+@keyframes classic-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes classic-glint {
+  0%, 55% { transform: translateX(-160%) skewX(-14deg); }
+  100%    { transform: translateX(520%) skewX(-14deg); }
+}
+.classic-rise { animation: classic-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: var(--d, 0ms); }
+.classic-glint {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 30%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  animation: classic-glint 7s ease-in-out 1.2s infinite;
+}
+.classic-lift { transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease; }
+.classic-lift:hover {
+  transform: translateY(-3px);
+  border-color: rgba(196, 160, 82, 0.75);
+  box-shadow: 0 18px 30px -18px rgba(30, 27, 75, 0.45);
+}
+.classic-arrow { transition: transform 0.25s ease; }
+.group:hover .classic-arrow { transform: translateX(4px); }
+
+.classic-tab { position: relative; transition: color 0.2s ease; }
+.classic-tab::after {
+  content: ''; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, #c4a052, #e6c980);
+  transform: scaleX(0); transform-origin: left; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.classic-tab:hover::after { transform: scaleX(0.4); }
+.classic-tab[aria-current='page']::after { transform: scaleX(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .classic-rise, .classic-glint { animation: none; }
+  .classic-lift, .classic-arrow, .classic-tab, .classic-tab::after { transition: none; }
+}

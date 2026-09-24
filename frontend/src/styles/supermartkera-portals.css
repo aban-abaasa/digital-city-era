@@ -490,6 +490,17 @@
 [data-theme="dark"] .sk-portal-themed .bg-gray-800,
 [data-theme="dark"] .sk-portal-themed .bg-gray-900 { background-color: #0a1f18 !important; }
 
+/* `.container-glass` (Admin/Cashier portal cards) is defined with a hard-coded
+   white rgba() background, so the text-gray-* repaint below turned its text
+   near-white ON a white card — washed out. Give it the same dark surface as
+   every other repainted card. */
+[data-theme="dark"] .sk-portal-themed .container-glass {
+  background: rgba(12, 35, 27, 0.94);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #ecfdf5;
+}
+[data-theme="dark"] .sk-portal-themed .container-glass:hover { background: rgba(15, 42, 32, 0.97); }
+
 [data-theme="dark"] .sk-portal-themed .hover\:bg-gray-50:hover,
 [data-theme="dark"] .sk-portal-themed .hover\:bg-gray-100:hover { background-color: #143026 !important; }
 [data-theme="dark"] .sk-portal-themed .hover\:bg-gray-200:hover,
