@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiX, FiCamera, FiZap, FiVolume2, FiCheck, FiAlertCircle, FiClock, FiSmartphone, FiCpu } from 'react-icons/fi';
+import { FiX, FiCamera, FiZap, FiCheck, FiAlertCircle, FiCpu, FiSun, FiZoomIn, FiZoomOut, FiRefreshCw } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import jsQR from 'jsqr';
 import Quagga from '@ericblade/quagga2';
@@ -11,8 +11,8 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const [cameraActive, setCameraActive] = useState(false);
   const [gunListening, setGunListening] = useState(true); // GUN SCANNER LISTENING BY DEFAULT
   const [recentScans, setRecentScans] = useState([]);
-  const [usbDeviceConnected, setUSBDeviceConnected] = useState(false); // Track USB device connection
-  const [usbDeviceName, setUSBDeviceName] = useState(''); // Store USB device name
+  const [, setUSBDeviceConnected] = useState(false); // USB connect/disconnect events (no longer shown in the UI)
+  const [, setUSBDeviceName] = useState('');
   const [scanBuffer, setScanBuffer] = useState('');
   const [lastScanTime, setLastScanTime] = useState(null);
   const [scanStats, setScanStats] = useState({ total: 0, gunScans: 0, cameraScans: 0 });
@@ -21,9 +21,13 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const [showScanningIndicator, setShowScanningIndicator] = useState(false);
   const [supabaseProducts, setSupabaseProducts] = useState([]); // Products loaded from Supabase
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [noActivityTimer, setNoActivityTimer] = useState(null); // 4-second timer
-  const [showNoActivityWarning, setShowNoActivityWarning] = useState(false);
-  const [inactivityProduct, setInactivityProduct] = useState(null); // Product to show after 4 seconds
+  const [cameraError, setCameraError] = useState(''); // Friendly message shown over the viewfinder
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [zoomRange, setZoomRange] = useState(null); // { min, max, step, value } when the camera supports zoom
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
+  const [showTip, setShowTip] = useState(false); // nudge shown when nothing has scanned for a while
+  const [scanFlash, setScanFlash] = useState(null); // 'ok' | 'error' — brief result flash on the viewfinder
   const [showAIAnalysis, setShowAIAnalysis] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState(null);
@@ -42,42 +46,33 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const lastProcessedBarcodeRef = useRef(null); // 🔒 Cooldown tracker
   const barcodeProcessingTimeRef = useRef(0); // 🔒 Last processing time
   const audioContextRef = useRef(null); // Reused AudioContext (was recreated on every beep)
+  const facingModeRef = useRef('environment'); // which camera to open: rear ('environment') or front ('user')
+  const lastSeenTimeRef = useRef(0); // last frame the current barcode was visible — used to stop re-counting a held item
+  const stopDetectionRef = useRef(null); // Stops the running barcode detection loop
+  const cameraRequestRef = useRef(0); // Bumped to discard an in-flight camera request
+  const scanFlashTimeoutRef = useRef(null);
+  const handleScannedBarcodeRef = useRef(() => {}); // always points at the latest handleScannedBarcode
 
   //  Initialize Camera Scanner
   useEffect(() => {
-    if (scanMode === 'camera' || scanMode === 'smart') {
-      // Small delay to ensure video element is mounted
-      const initDelay = setTimeout(() => {
-        initializeCamera();
-      }, 100);
-      
-      return () => {
-        clearTimeout(initDelay);
-        // Stop detection if running
-        if (videoRef.current?._stopDetection) {
-          videoRef.current._stopDetection();
-        }
-      };
-    }
+    if (scanMode !== 'camera' && scanMode !== 'smart') return undefined;
+
+    // Small delay to ensure video element is mounted
+    const initDelay = setTimeout(initializeCamera, 100);
+
     return () => {
-      // Stop detection and clean up stream when switching away from camera
-      if (videoRef.current?._stopDetection) {
-        videoRef.current._stopDetection();
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        setCameraActive(false);
-      }
+      clearTimeout(initDelay);
+      cameraRequestRef.current++; // any request still waiting on the browser is now stale
+      releaseCamera();
     };
   }, [scanMode]);
 
   // � Load products from Supabase on mount
   useEffect(() => {
     loadProductsFromSupabase();
-    startNoActivityTimer();
 
     return () => {
-      if (noActivityTimer) clearTimeout(noActivityTimer);
+      if (scanFlashTimeoutRef.current) clearTimeout(scanFlashTimeoutRef.current);
       // Close the shared AudioContext when the scanner unmounts entirely
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(() => {});
@@ -88,344 +83,180 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
   // �🔫 Initialize Gun Scanner Listener
   useEffect(() => {
-    if (scanMode === 'gun' || scanMode === 'smart') {
-      initializeGunScanner();
-    }
-    return () => {
-      if (gunInputRef.current) {
-        gunInputRef.current.removeEventListener('keydown', handleGunInput);
-      }
-    };
+    if (scanMode !== 'gun' && scanMode !== 'smart') return undefined;
+    return initializeGunScanner();
   }, [scanMode]);
 
-  const initializeCamera = async () => {
-    try {
-      // Check if video element exists
-      if (!videoRef.current) {
-        console.error('❌ Video element not ready');
-        toast.error('❌ Video element not initialized');
-        return;
-      }
+  // If nothing has scanned for a few seconds, tell the person what to try
+  useEffect(() => {
+    setShowTip(false);
+    if (!cameraActive) return undefined;
+    const tipTimer = setTimeout(() => setShowTip(true), 6000);
+    return () => clearTimeout(tipTimer);
+  }, [cameraActive, scanFlash]);
 
-      // Check if getUserMedia is supported
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera API not supported on this device');
-      }
+  // Stop detection and free the camera hardware. Safe to call at any time.
+  const releaseCamera = () => {
+    if (stopDetectionRef.current) {
+      stopDetectionRef.current();
+      stopDetectionRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+    setTorchOn(false);
+    setTorchSupported(false);
+    setZoomRange(null);
+  };
 
-      console.log('📸 Requesting camera permissions...');
-      
-      // Try with ideal constraints first, but fail gracefully
-      let stream = null;
-      let constraintsFailed = false;
-      
+  // Ask the browser for a camera, loosening constraints if the device can't meet them.
+  // There is deliberately NO timeout here: getUserMedia waits on the permission prompt
+  // and on slow webcams, and racing it against a timer left the abandoned request
+  // grabbing the camera in the background — which made every retry fail as "busy".
+  const openCameraStream = async () => {
+    const attempts = [
+      { facingMode: { ideal: facingModeRef.current }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      { facingMode: { ideal: facingModeRef.current } },
+      true
+    ];
+    let lastError;
+    for (const video of attempts) {
       try {
-        // Attempt 1: Mobile-optimized constraints - back camera with reasonable size
-        stream = await Promise.race([
-          navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: 'environment' },
-              width: { ideal: 1280, min: 480 },
-              height: { ideal: 720, min: 320 }
-            },
-            audio: false
-          }),
-          // Faster timeout - 3 seconds for mobile
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout')), 3000)
-          )
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Full HD constraints failed, trying VGA...');
-        constraintsFailed = true;
-        
-        try {
-          // Attempt 2: VGA resolution with basic constraints
-          stream = await Promise.race([
-            navigator.mediaDevices.getUserMedia({
-              video: {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-              },
-              audio: false
-            }),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout')), 2000)
-            )
-          ]);
-        } catch (error2) {
-          console.warn('⚠️ VGA constraints failed, trying any camera...');
-          
-          // Attempt 3: Absolutely minimal constraints with fast timeout
-          stream = await Promise.race([
-            navigator.mediaDevices.getUserMedia({
-              video: { facingMode: { ideal: 'environment' } },
-              audio: false
-            }),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout')), 2000)
-            )
-          ]);
+        return await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      } catch (err) {
+        lastError = err;
+        // Looser constraints can't fix these — stop and report right away
+        if (['NotAllowedError', 'SecurityError', 'NotFoundError', 'NotReadableError'].includes(err.name)) {
+          throw err;
         }
       }
-      
-      if (!stream || !stream.active) {
-        throw new Error('Failed to get active camera stream');
-      }
+    }
+    throw lastError;
+  };
 
-      console.log('✅ Camera stream obtained' + (constraintsFailed ? ' (with fallback constraints)' : ''));
-      
-      // Double-check video ref still exists
-      if (!videoRef.current) {
-        console.error('❌ Video reference lost after stream request');
-        stream.getTracks().forEach(track => track.stop());
-        return;
-      }
-      
-      // Prepare video element BEFORE attaching stream
-      const video = videoRef.current;
-      video.playsInline = true;
-      video.muted = true;
-      
-      // Attach stream to video element
-      video.srcObject = stream;
-      streamRef.current = stream;
-      
-      console.log('✅ Stream attached to video element');
-      
-      let metadataHandler;
-      let canplayHandler;
-      let timeoutId;
-      let handlerCleanup = false;
-      
-      const cleanupHandlers = () => {
-        if (handlerCleanup) return;
-        handlerCleanup = true;
-        if (video) {
-          video.removeEventListener('loadedmetadata', metadataHandler);
-          video.removeEventListener('canplay', canplayHandler);
-          if (timeoutId) clearTimeout(timeoutId);
-        }
-      };
-      
-      // Wait for video metadata to load
-      metadataHandler = () => {
-        console.log('📹 Video metadata loaded, attempting playback...');
-        if (!videoRef.current) {
-          console.error('❌ Video reference lost during metadata load');
-          cleanupHandlers();
-          return;
-        }
-
-        videoRef.current.play()
-          .then(() => {
-            console.log('✅ Video playback started');
-            setCameraActive(true);
-            console.log('✅ Camera initialized and ready for barcode detection');
-            toast.success('📸 Camera activated - point at barcode');
-            startBarcodeDetection();
-            cleanupHandlers();
-          })
-          .catch(err => {
-            console.error('❌ Video play error:', err);
-            toast.error('Failed to play video: ' + (err.message || 'Unknown error'));
-            setCameraActive(false);
-            cleanupHandlers();
-          });
-      };
-      
-      // Fallback: use canplay event if metadata doesn't fire
-      canplayHandler = () => {
-        console.log('📹 Video canplay event triggered');
-        if (!videoRef.current) {
-          cleanupHandlers();
-          return;
-        }
-
-        videoRef.current.play()
-          .then(() => {
-            console.log('✅ Video playback started (canplay fallback)');
-            setCameraActive(true);
-            console.log('✅ Camera initialized and ready for barcode detection');
-            toast.success('📸 Camera activated - point at barcode');
-            startBarcodeDetection();
-            cleanupHandlers();
-          })
-          .catch(err => {
-            console.error('❌ Video play error (canplay):', err);
-            setCameraActive(false);
-            cleanupHandlers();
-          });
-      };
-      
-      video.addEventListener('loadedmetadata', metadataHandler);
-      video.addEventListener('canplay', canplayHandler);
-      
-      console.log('📺 Video element ready, waiting for media to load...');
-      
-      // Timeout if neither event fires within 5 seconds (faster for mobile)
-      timeoutId = setTimeout(() => {
-        if (!cameraActive) {
-          console.error('❌ Camera initialization timeout - no media event fired');
-          console.warn('⚠️ Force-starting video playback...');
-          cleanupHandlers();
-          
-          // Try to play anyway - sometimes video plays without events
-          video.play()
-            .then(() => {
-              console.log('✅ Video playback started (forced)');
-              setCameraActive(true);
-              toast.success('📸 Camera activated - point at barcode');
-              startBarcodeDetection();
-            })
-            .catch(err => {
-              console.error('❌ Force-play failed:', err);
-              toast.error('Camera timeout - please try again');
-              setCameraActive(false);
-              
-              // Clean up current stream
-              if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-                streamRef.current = null;
-              }
-            });
-        }
-      }, 5000);
-      
-    } catch (error) {
-      console.error('📸 Camera Error:', error);
-      
-      // Provide specific error messages
-      if (error.name === 'NotAllowedError') {
-        toast.error('❌ Camera permission denied. Please allow camera access.');
-      } else if (error.name === 'NotFoundError') {
-        toast.error('❌ No camera found on this device.');
-      } else if (error.name === 'NotSupportedError') {
-        toast.error('❌ Camera access not supported. Use HTTPS connection.');
-      } else if (error.name === 'OverconstrainedError') {
-        console.warn('⚠️ Camera constraints not supported, retrying with fallback...');
-        toast.error('❌ Camera constraints not supported. Retrying...');
-        retryWithFallbackConstraints();
-        return;
-      } else if (error.name === 'AbortError') {
-        console.error('❌ Camera timeout or aborted:', error.message);
-        toast.error('❌ Camera timeout - device may be busy. Please try again.');
-      } else {
-        toast.error('❌ Camera error: ' + (error.message || 'Unknown error'));
-      }
-      
-      setCameraActive(false);
+  const describeCameraError = (error) => {
+    switch (error?.name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return 'Camera access is blocked. Allow the camera in your browser, then tap Try again.';
+      case 'NotFoundError':
+        return 'No camera was found on this device.';
+      case 'NotReadableError':
+        return 'The camera is being used by another app or browser tab. Close it, then tap Try again.';
+      case 'NotSupportedError':
+        return 'Camera needs a secure (https) connection.';
+      default:
+        return 'The camera could not start. Tap Try again, or use a barcode scanner.';
     }
   };
 
-  const retryWithFallbackConstraints = async () => {
+  const initializeCamera = async () => {
+    const requestId = ++cameraRequestRef.current;
+    setCameraError('');
+    releaseCamera(); // never hold two streams at once
+
     try {
-      console.log('🔄 Retrying with fallback camera constraints (basic video only)...');
-      
-      if (!videoRef.current) {
-        console.error('❌ Video element not available for fallback');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const unsupported = new Error('Camera API not supported on this device');
+        unsupported.name = 'NotSupportedError';
+        throw unsupported;
+      }
+
+      const stream = await openCameraStream();
+
+      // The user switched mode / closed the scanner while the browser was still working
+      if (requestId !== cameraRequestRef.current || !videoRef.current) {
+        stream.getTracks().forEach(track => track.stop());
         return;
       }
 
-      // Request with NO constraints - let browser choose
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false
-      });
-      
-      if (!stream || !stream.active) {
-        throw new Error('Fallback stream failed');
-      }
-
-      console.log('✅ Fallback stream obtained');
-
       const video = videoRef.current;
-      video.srcObject = stream;
-      streamRef.current = stream;
       video.playsInline = true;
       video.muted = true;
+      video.srcObject = stream;
+      streamRef.current = stream;
 
-      let metadataHandler;
-      let canplayHandler;
-      let timeoutId;
-      let handlerCleanup = false;
+      await video.play();
+      if (requestId !== cameraRequestRef.current) return;
 
-      const cleanupHandlers = () => {
-        if (handlerCleanup) return;
-        handlerCleanup = true;
-        if (video) {
-          video.removeEventListener('loadedmetadata', metadataHandler);
-          video.removeEventListener('canplay', canplayHandler);
-          if (timeoutId) clearTimeout(timeoutId);
-        }
-      };
-
-      metadataHandler = () => {
-        console.log('📹 Fallback: Video metadata loaded');
-        if (!videoRef.current) {
-          cleanupHandlers();
-          return;
-        }
-        
-        videoRef.current.play()
-          .then(() => {
-            setCameraActive(true);
-            console.log('✅ Camera fallback initialized');
-            toast.success('📸 Camera activated (fallback mode)');
-            startBarcodeDetection();
-            cleanupHandlers();
-          })
-          .catch(err => {
-            console.error('❌ Fallback playback error:', err);
-            setCameraActive(false);
-            cleanupHandlers();
-          });
-      };
-
-      canplayHandler = () => {
-        console.log('📹 Fallback: Video canplay event triggered');
-        if (!videoRef.current) {
-          cleanupHandlers();
-          return;
-        }
-        
-        videoRef.current.play()
-          .then(() => {
-            setCameraActive(true);
-            console.log('✅ Camera fallback initialized (canplay)');
-            toast.success('📸 Camera activated (fallback mode)');
-            startBarcodeDetection();
-            cleanupHandlers();
-          })
-          .catch(err => {
-            console.error('❌ Fallback playback error (canplay):', err);
-            setCameraActive(false);
-            cleanupHandlers();
-          });
-      };
-
-      video.addEventListener('loadedmetadata', metadataHandler);
-      video.addEventListener('canplay', canplayHandler);
-
-      timeoutId = setTimeout(() => {
-        if (!cameraActive) {
-          console.error('❌ Fallback camera initialization timeout');
-          toast.error('❌ Unable to initialize camera');
-          cleanupHandlers();
-          setCameraActive(false);
-          
-          if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-          }
-        }
-      }, 3000);
-
+      setCameraActive(true);
+      setupCameraControls(stream);
+      startBarcodeDetection();
     } catch (error) {
-      console.error('❌ Fallback camera initialization failed:', error);
-      toast.error('❌ Unable to access camera: ' + (error.message || 'Unknown error'));
-      setCameraActive(false);
+      if (requestId !== cameraRequestRef.current) return; // superseded — ignore
+      console.error('📸 Camera Error:', error);
+      releaseCamera();
+      setCameraError(describeCameraError(error));
     }
+  };
+
+  // Ease-of-use controls. Each is optional: browsers/cameras only expose what the hardware has.
+  const setupCameraControls = (stream) => {
+    const track = stream.getVideoTracks()[0];
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+
+    setTorchSupported(!!caps.torch);
+    if (caps.zoom) {
+      const current = track.getSettings?.().zoom ?? caps.zoom.min;
+      setZoomRange({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1, value: current });
+    }
+    // Keep barcodes sharp as the item moves closer/further, instead of locking focus once
+    if (caps.focusMode && caps.focusMode.includes('continuous')) {
+      track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+    }
+    if (navigator.mediaDevices.enumerateDevices) {
+      navigator.mediaDevices.enumerateDevices()
+        .then(devices => setHasMultipleCameras(devices.filter(d => d.kind === 'videoinput').length > 1))
+        .catch(() => {});
+    }
+  };
+
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next }] });
+      setTorchOn(next);
+    } catch (e) {
+      toast.error('Could not switch the light on this camera');
+    }
+  };
+
+  const changeZoom = async (direction) => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || !zoomRange) return;
+    const stepSize = Math.max(zoomRange.step, (zoomRange.max - zoomRange.min) / 6);
+    const value = Math.min(zoomRange.max, Math.max(zoomRange.min, zoomRange.value + direction * stepSize));
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: value }] });
+      setZoomRange(prev => ({ ...prev, value }));
+    } catch (e) {
+      console.warn('Zoom not applied:', e.message);
+    }
+  };
+
+  const flipCamera = () => {
+    facingModeRef.current = facingModeRef.current === 'environment' ? 'user' : 'environment';
+    initializeCamera();
+  };
+
+  // Whole-frame snapshot (unlike the cropped canvas used for decoding) — for AI product identification
+  const captureFullFrame = () => {
+    const video = videoRef.current;
+    const snap = document.createElement('canvas');
+    const w = video?.videoWidth || 640;
+    const h = video?.videoHeight || 480;
+    const scale = Math.min(1, 1280 / w);
+    snap.width = Math.round(w * scale);
+    snap.height = Math.round(h * scale);
+    if (video) snap.getContext('2d').drawImage(video, 0, 0, snap.width, snap.height);
+    return snap;
   };
 
   const startBarcodeDetection = () => {
@@ -473,6 +304,38 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     // resolution than QR modules do), capped well below native to stay fast.
     const QUAGGA_PROCESS_WIDTH = 960;
 
+    // Browsers with the native BarcodeDetector (Chrome/Edge on Android, Safari) decode all
+    // formats straight from the video at full resolution — faster and more forgiving than
+    // the JS decoders, which stay as the fallback everywhere else.
+    let nativeDetector = null;
+    if ('BarcodeDetector' in window) {
+      try {
+        nativeDetector = new window.BarcodeDetector();
+      } catch (e) {
+        nativeDetector = null;
+      }
+    }
+
+    // Only decode what's inside the on-screen scan frame (plus a little slack). The video is
+    // shown with object-cover, so work out which part of the camera image is actually visible.
+    // Cropping means fewer pixels to search and more resolution on the barcode itself.
+    const getScanRegion = (sourceWidth, sourceHeight) => {
+      const cw = video.clientWidth;
+      const ch = video.clientHeight;
+      if (!cw || !ch) return { sx: 0, sy: 0, sw: sourceWidth, sh: sourceHeight };
+      const coverScale = Math.max(cw / sourceWidth, ch / sourceHeight);
+      const visW = cw / coverScale;
+      const visH = ch / coverScale;
+      const insetX = 0.06; // frame is 10% in from the sides; decode slightly wider
+      const insetY = 0.16; // frame is 22% in from top/bottom; decode slightly taller
+      return {
+        sx: (sourceWidth - visW) / 2 + visW * insetX,
+        sy: (sourceHeight - visH) / 2 + visH * insetY,
+        sw: visW * (1 - 2 * insetX),
+        sh: visH * (1 - 2 * insetY)
+      };
+    };
+
     console.log('🎬 Starting barcode detection loop...');
 
     const detectFrame = async () => {
@@ -486,12 +349,13 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
           const sourceWidth = video.videoWidth || MAX_PROCESS_WIDTH;
           const sourceHeight = video.videoHeight || Math.round(MAX_PROCESS_WIDTH * 0.75);
-          const scale = Math.min(1, MAX_PROCESS_WIDTH / sourceWidth);
-          canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-          canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+          const region = getScanRegion(sourceWidth, sourceHeight);
+          const scale = Math.min(1, MAX_PROCESS_WIDTH / region.sw);
+          canvas.width = Math.max(1, Math.round(region.sw * scale));
+          canvas.height = Math.max(1, Math.round(region.sh * scale));
 
-          // Draw video frame to canvas (downscaled for fast analysis)
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          // Draw the scan-frame region to canvas (downscaled for fast analysis)
+          ctx.drawImage(video, region.sx, region.sy, region.sw, region.sh, 0, 0, canvas.width, canvas.height);
 
           // Get image data for barcode detection
           let imageData;
@@ -505,28 +369,46 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             return;
           }
 
-          // Try jsQR detection FIRST (fastest for QR codes)
           let detectedBarcode = null;
           let detectedFormat = 'QR';
-          try {
-            const code = jsQR(imageData.data, imageData.width, imageData.height);
-            if (code && code.data && code.data.trim()) {
-              detectedBarcode = code.data.trim();
-              detectedFormat = 'QR Code';
-              console.log('✅ QR Code Detected:', detectedBarcode);
+
+          // Native detector first (all formats, full resolution) where the browser has it
+          if (nativeDetector) {
+            try {
+              const found = await nativeDetector.detect(video);
+              const value = found && found[0] && found[0].rawValue && found[0].rawValue.trim();
+              if (value) {
+                detectedBarcode = value;
+                detectedFormat = found[0].format;
+                console.log(`✅ ${detectedFormat} detected (native):`, detectedBarcode);
+              }
+            } catch (e) {
+              nativeDetector = null; // unsupported for this stream — fall back to the JS decoders
             }
-          } catch (e) {
-            console.warn('⚠️ jsQR detection error:', e.message);
+          }
+
+          // jsQR next (fast for QR codes)
+          if (!detectedBarcode) {
+            try {
+              const code = jsQR(imageData.data, imageData.width, imageData.height);
+              if (code && code.data && code.data.trim()) {
+                detectedBarcode = code.data.trim();
+                detectedFormat = 'QR Code';
+                console.log('✅ QR Code Detected:', detectedBarcode);
+              }
+            } catch (e) {
+              console.warn('⚠️ jsQR detection error:', e.message);
+            }
           }
 
           // If no QR found, try Quagga2 for other barcode formats (time-throttled to save CPU).
           // Uses its own higher-resolution capture — see quaggaCanvas note above.
           if (!detectedBarcode && now - lastQuaggaTime >= QUAGGA_INTERVAL_MS) {
             lastQuaggaTime = now;
-            const qScale = Math.min(1, QUAGGA_PROCESS_WIDTH / sourceWidth);
-            quaggaCanvas.width = Math.max(1, Math.round(sourceWidth * qScale));
-            quaggaCanvas.height = Math.max(1, Math.round(sourceHeight * qScale));
-            quaggaCtx.drawImage(video, 0, 0, quaggaCanvas.width, quaggaCanvas.height);
+            const qScale = Math.min(1, QUAGGA_PROCESS_WIDTH / region.sw);
+            quaggaCanvas.width = Math.max(1, Math.round(region.sw * qScale));
+            quaggaCanvas.height = Math.max(1, Math.round(region.sh * qScale));
+            quaggaCtx.drawImage(video, region.sx, region.sy, region.sw, region.sh, 0, 0, quaggaCanvas.width, quaggaCanvas.height);
             const quaggaResult = await detectBarcodeWithQuagga(quaggaCanvas);
             if (quaggaResult && quaggaResult.barcode) {
               detectedBarcode = quaggaResult.barcode;
@@ -544,14 +426,17 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
           // Process detected barcode (from jsQR or Quagga2)
           if (detectedBarcode) {
             const now = Date.now();
-            const timeSinceLastDetection = now - lastDetectionTimeRef.current;
             
             // Reset no-detection timer on successful barcode
             noDetectionStartTime = Date.now();
             aiTriggered = false;
             
-            // IMMEDIATE feedback if different barcode or enough time passed
-            if (lastDetectedRef.current !== detectedBarcode || timeSinceLastDetection > 300) {
+            // Count a barcode once per "showing": a different code counts straight away, but the
+            // same code only counts again after it has left the frame (~0.7s unseen). Before, an
+            // item held steady in front of the camera was added again every second.
+            const unseenMs = now - lastSeenTimeRef.current;
+            lastSeenTimeRef.current = now;
+            if (lastDetectedRef.current !== detectedBarcode || unseenMs > 700) {
               console.log('✅ QR Code detected:', detectedBarcode);
               lastDetectedRef.current = detectedBarcode;
               lastDetectionTimeRef.current = now;
@@ -565,7 +450,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
               playSound('detect');
               
               // Process the barcode (inventory check + transaction)
-              handleScannedBarcode(detectedBarcode, 'camera');
+              // Via ref: this loop was created when the camera started, so calling the
+              // handler directly would use that render's (possibly empty) product list.
+              handleScannedBarcodeRef.current(detectedBarcode, 'camera');
             }
           }
           // Pattern detection only for feedback, not for transaction
@@ -592,19 +479,21 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
           // ✨ AUTO-TRIGGER AI ANALYSIS if no barcode detected for 3 seconds (more aggressive)
           else {
             const noDetectionDuration = Date.now() - noDetectionStartTime;
-            // Reduced from 10 seconds to 3 seconds for faster AI reading on first try
-            if (noDetectionDuration > 3000 && !aiTriggered && geminiAIService.isInitialized()) {
-              console.log('⏰ No barcode detected for 3 seconds, triggering AI analysis...');
+            // 10 seconds: long enough that pointing the camera around doesn't pop the AI screen
+            // open, short enough to rescue an item with a damaged or missing barcode.
+            if (noDetectionDuration > 10000 && !aiTriggered && geminiAIService.isInitialized()) {
+              console.log('No barcode detected for 10 seconds, triggering AI analysis...');
               aiTriggered = true;
-              
-              // Save current frame for AI analysis
-              setLastFrameData(canvas.toDataURL('image/jpeg', 0.95));
-              
+
+              // AI gets the whole camera view, not just the cropped decode region
+              const fullFrame = captureFullFrame();
+              setLastFrameData(fullFrame.toDataURL('image/jpeg', 0.95));
+
               // Auto-trigger AI analysis with a small delay
               setTimeout(() => {
-                if (canvas && canvasRef.current) {
-                  toast.info('💡 Analyzing image with AI to identify the product...');
-                   analyzeImageWithAI(canvas);
+                if (canvasRef.current) {
+                  toast.info('Analyzing image with AI to identify the product...');
+                  analyzeImageWithAI(fullFrame);
                 }
               }, 100);
             }
@@ -620,13 +509,13 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       }
     };
 
-    // Store cleanup function on video element
-    if (videoRef.current) {
-      videoRef.current._stopDetection = () => {
-        isDetecting = false;
-        console.log('🛑 Barcode detection stopped');
-      };
-    }
+    // Keep the stop function in a ref (not on the <video> node): on unmount React
+    // detaches the node before effect cleanups run, so it would be unreachable.
+    if (stopDetectionRef.current) stopDetectionRef.current();
+    stopDetectionRef.current = () => {
+      isDetecting = false;
+      console.log('🛑 Barcode detection stopped');
+    };
 
     detectFrame();
   };
@@ -788,19 +677,20 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     setGunListening(true);
     console.log('🔫 Gun Scanner Initializing...');
     
-    // Focus on hidden input to capture gun scanner input
+    // Focus on hidden input to capture gun scanner input (keys arrive via its onKeyDown)
     if (gunInputRef.current) {
       gunInputRef.current.focus();
       console.log('✅ Gun input focused and ready');
-      gunInputRef.current.addEventListener('keydown', handleGunInput);
     }
-    
-    // Auto-refocus every 100ms to ensure scanner stays focused
+
+    // Keep the scanner input focused — but never steal focus from the manual-entry box
     const refocusInterval = setInterval(() => {
-      if (gunInputRef.current && scanMode === 'gun') {
+      const active = document.activeElement;
+      const typingElsewhere = active && active !== gunInputRef.current && active.tagName === 'INPUT';
+      if (gunInputRef.current && !typingElsewhere) {
         gunInputRef.current.focus();
       }
-    }, 100);
+    }, 300);
 
     // 📱 USB MOBILE DEVICE SUPPORT
     initializeUSBScanner();
@@ -847,8 +737,6 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     toast.info(`📱 Device connected: ${deviceName}`);
     toast.info('🎥 You can now use Phone Camera scanning!');
     
-    // NOTE: Don't call requestUSBPermission here - it requires a user gesture!
-    // User must click the "Connect USB" button instead
   };
 
   const handleUSBDeviceDisconnect = (event) => {
@@ -857,94 +745,6 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     setUSBDeviceConnected(false);
     setUSBDeviceName('');
     toast.warning(`📱 Device disconnected`);
-  };
-
-  const requestUSBPermission = async () => {
-    try {
-      if (!navigator.usb) {
-        toast.error('❌ WebUSB not supported in this browser');
-        return;
-      }
-
-      // Check if HTTPS is required (WebUSB only works on HTTPS or localhost)
-      const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      if (!isSecure) {
-        toast.error('⚠️ HTTPS required for USB access. Please use a secure connection.');
-        console.warn('⚠️ WebUSB only works on HTTPS or localhost');
-        return;
-      }
-
-      console.log('🔌 Opening USB device picker...');
-      
-      // IMPORTANT: Do NOT use await in a try-catch chain - it loses the user gesture!
-      // Request device with both specific vendor IDs AND empty filter as last resort
-      const device = await navigator.usb.requestDevice({
-        filters: [
-          { vendorId: 0x18d1 }, // Google/Android
-          { vendorId: 0x0fce }, // Sony
-          { vendorId: 0x0bb4 }, // HTC
-          { vendorId: 0x0e8d }, // MediaTek
-          { vendorId: 0x1004 }, // LG
-          { vendorId: 0x22b8 }, // Motorola
-          { vendorId: 0x1949 }, // Lab126 (Amazon)
-          { vendorId: 0x1a40 }, // Seagate
-          { vendorId: 0x0951 }, // Kingston
-          { vendorId: 0x8087 }, // Intel
-          { classCode: 0x03 }, // HID class (barcode scanners)
-          { classCode: 0x09 }, // Hub class
-          { classCode: 0xff }  // Vendor specific
-        ]
-      });
-
-      console.log(`✅ USB Device Selected: ${device.productName || device.serialNumber || 'Unknown Device'}`);
-      toast.success(`📱 Device connected: ${device.productName || 'USB Scanner Device'}`);
-      
-    } catch (error) {
-      console.error('🔌 USB Error:', error.name, error.message);
-      
-      if (error.name === 'NotFoundError') {
-        console.warn('❌ No USB devices found - user cancelled or no devices detected');
-        toast.error('❌ No compatible device found. Make sure your phone/scanner is connected.');
-        showUSBTroubleshootingGuide();
-      } else if (error.name === 'SecurityError') {
-        console.warn('⚠️ SecurityError - Check if HTTPS required or user gesture lost');
-        toast.error('⚠️ USB access denied. Make sure browser allows USB access.');
-      } else if (error.name === 'AbortError') {
-        console.log('ℹ️ User cancelled device selection');
-      } else {
-        toast.error(`❌ Error: ${error.message}`);
-      }
-    }
-  };
-
-  const showUSBTroubleshootingGuide = () => {
-    console.log(`
-    📱 USB Device Connection Troubleshooting:
-    
-    ✅ Android Phone (Recommended):
-    1. Connect phone to computer via USB cable
-    2. On phone: Enable "Developer Mode" (tap Build Number 7x in Settings > About)
-    3. Enable "USB Debugging" in Developer Options
-    4. Select "File Transfer" mode when prompted
-    5. Try again in the scanner interface
-    
-    ✅ iPhone (via USB-C):
-    1. Connect iPhone to computer
-    2. Trust the computer when prompted
-    3. Use a compatible barcode scanner app
-    4. Try the USB connection again
-    
-    ✅ Physical Barcode Scanner:
-    1. Connect scanner via USB
-    2. Make sure scanner is in HID mode (not serial)
-    3. Most scanners work automatically
-    
-    💡 If still not working:
-    - Try using the 🔫 Gun Scanner mode instead (works with any keyboard input)
-    - Make sure browser has permission to access USB (check browser settings)
-    - Restart browser and try again
-    - Use Chrome/Edge (best WebUSB support)
-    `);
   };
 
   const handleUSBScannerInput = (barcode, source = 'usb') => {
@@ -977,50 +777,11 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     }
   };
 
-  // ⏱️ Start 4-second no-activity timeout - Show transaction summary or prompt
-  const startNoActivityTimer = () => {
-    const timer = setTimeout(() => {
-      setShowNoActivityWarning(true);
-      console.warn('⏰ No activity detected for 4 seconds');
-      
-      // Show creative popup based on current transaction state
-      if (currentTransaction.length > 0) {
-        // Show transaction summary
-        setInactivityProduct({
-          type: 'summary',
-          items: currentTransaction,
-          total: transactionTotal
-        });
-        playSound('success');
-      } else {
-        // Show "Ready to scan" prompt with random emoji
-        const emojis = ['🚀', '⚡', '🏇', '💪', '🔥', '✨', '👍', '🎉'];
-        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-        setInactivityProduct({
-          type: 'prompt',
-          emoji: randomEmoji,
-          message: `${randomEmoji} Ready to scan your first product!`
-        });
-        playSound('detect');
-      }
-    }, 4000);
-    
-    setNoActivityTimer(timer);
-  };
-
-  // 🔄 Reset the no-activity timer when a scan happens
-  const resetNoActivityTimer = () => {
-    if (noActivityTimer) clearTimeout(noActivityTimer);
-    setShowNoActivityWarning(false);
-    setInactivityProduct(null);
-    startNoActivityTimer();
-  };
-
   const handleGunInput = (event) => {
-    // Reset timer when input detected
-    resetNoActivityTimer();
-    
     const char = event.key;
+
+    // Modifier / navigation keys (Shift, Tab, ...) are not part of the barcode
+    if (char.length > 1 && char !== 'Enter' && char !== 'Escape') return;
 
     // Accumulate input with logging
     setScanBuffer(prev => {
@@ -1269,6 +1030,14 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     }
   };
 
+  const flashScan = (kind) => {
+    // Phones: a short buzz confirms the scan even when you're not looking at the screen
+    if (navigator.vibrate) navigator.vibrate(kind === 'ok' ? 60 : [80, 60, 80]);
+    setScanFlash(kind);
+    if (scanFlashTimeoutRef.current) clearTimeout(scanFlashTimeoutRef.current);
+    scanFlashTimeoutRef.current = setTimeout(() => setScanFlash(null), 1200);
+  };
+
   const handleScannedBarcode = (barcode, source = 'unknown') => {
     if (!barcode || barcode.length < 3) return;
 
@@ -1309,6 +1078,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
         ...prev.slice(0, 9)
       ]);
       playSound('success');
+      flashScan('ok');
       toast.success(`📦 Barcode captured: ${barcode}`, { autoClose: 1500, pauseOnHover: false });
       onBarcodeScanned(barcode);
       setTimeout(() => onClose(), autoCloseDelay || 1500);
@@ -1322,6 +1092,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     if (!product) {
       // Product NOT FOUND - Show IMMEDIATE error notification
       playSound('error');
+      flashScan('error');
       toast.error(`❌ Product "${barcode}" NOT in inventory!`, {
         autoClose: 3000, // 3 second notification
         pauseOnHover: false,
@@ -1368,6 +1139,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
     // Play success sound
     playSound('success');
+    flashScan('ok');
     toast.success(`✅ ${product.name} added!`, {
       autoClose: 2000, // 2 second notification
       pauseOnHover: false
@@ -1382,6 +1154,8 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       setTimeout(() => gunInputRef.current?.focus(), 200);
     }
   };
+
+  handleScannedBarcodeRef.current = handleScannedBarcode;
 
   const playSound = (type = 'success') => {
     // Reuse a single AudioContext instead of allocating a new one per beep
@@ -1565,523 +1339,330 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     handleScannedBarcode(barcode);
   };
 
-  const getScanSourceIcon = (source) => {
-    switch (source) {
-      case 'gun':
-        return '🔫';
-      case 'camera':
-        return '📱';
-      default:
-        return '📦';
-    }
-  };
+  const aiReady = geminiAIService.isInitialized();
+  const isCameraMode = scanMode === 'camera' || scanMode === 'smart';
+  const totalUnits = currentTransaction.reduce((sum, item) => sum + item.quantity, 0);
 
+  const cornerColor = scanFlash === 'ok' ? 'border-green-400' : scanFlash === 'error' ? 'border-red-400' : 'border-white';
+
+  const manualEntryForm = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const input = e.target.elements.manualBarcode;
+        manualBarcodeScan(input.value);
+        input.value = '';
+      }}
+      className="flex gap-2"
+    >
+      <input
+        name="manualBarcode"
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="Type a barcode number"
+        className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+      />
+      <button
+        type="submit"
+        className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white active:scale-95"
+      >
+        Add
+      </button>
+    </form>
+  );
+
+  // Root z-index sits above the floating chat bubble / "Install app" button (z-50 / z-100)
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm">
-      <div className="relative bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
-        {/* ✨ Modern Compact Header with Icon Bar */}
-        <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 px-3 sm:px-6 py-3 sm:py-4 flex flex-col space-y-2 sm:space-y-3 flex-shrink-0 relative overflow-hidden">
-          {/* Animated background elements */}
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full filter blur-3xl animate-pulse"></div>
-            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full filter blur-3xl animate-pulse delay-1000"></div>
-          </div>
-          
-          {/* Title Row */}
-          <div className="flex items-center justify-between relative z-10">
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <div className="p-2 bg-white/20 rounded-full backdrop-blur-md">
-                <FiZap className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-white text-lg sm:text-2xl font-bold tracking-tight">
-                  {context === 'admin' ? 'Add Item' : 'Scanner'}
-                </h2>
-                <p className="text-white/80 text-xs sm:text-sm hidden sm:block">
-                  {context === 'admin' ? 'Scan to add or find a product' : 'Smart Barcode Detection'}
-                </p>
-              </div>
-            </div>
-            
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-full transition-all z-10 active:scale-90 flex-shrink-0"
-            >
-              <FiX className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-            </button>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 sm:p-4">
+      <style>{`@keyframes ican-scan-line { from { top: 4%; } to { top: 96%; } }`}</style>
+
+      <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-[640px] sm:max-h-[92vh] sm:rounded-2xl">
+        {/* Header — title, how to scan, close. Compact on phones so the close button always fits. */}
+        <div className="flex flex-shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
+          <div className="min-w-0 flex-1 truncate font-sans text-base font-bold text-gray-900 sm:text-lg">
+            {context === 'admin' ? 'Scan a product' : 'Scan your items'}
           </div>
 
-          {/* Control Badge Bar - Smart Layout */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 relative z-10 justify-between sm:justify-start">
-            {/* Smart Mode Badge */}
-            <button
-              onClick={() => setScanMode('smart')}
-              title="Smart Mode: Both Camera and Gun Scanner"
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 backdrop-blur-md flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
-                scanMode === 'smart'
-                  ? 'bg-white text-purple-600 shadow-lg scale-110'
-                  : 'bg-white/20 text-white hover:bg-white/30'
-              }`}
-            >
-              <FiSmartphone className="h-4 w-4" />
-              <span className="hidden sm:inline">Smart</span>
-            </button>
-
-            {/* Camera Scan Badge */}
+          <div className="flex flex-shrink-0 rounded-lg bg-gray-100 p-0.5 text-xs font-semibold sm:p-1 sm:text-sm">
             <button
               onClick={() => setScanMode('camera')}
-              title="Camera Mode: Phone Camera Only"
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 backdrop-blur-md flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
-                scanMode === 'camera'
-                  ? 'bg-white text-blue-600 shadow-lg scale-110'
-                  : 'bg-white/20 text-white hover:bg-white/30'
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors sm:gap-1.5 sm:px-3 ${
+                isCameraMode ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
               <FiCamera className="h-4 w-4" />
-              <span className="hidden sm:inline">Camera</span>
+              Camera
             </button>
-
-            {/* Gun Scan Badge */}
             <button
               onClick={() => setScanMode('gun')}
-              title="Gun Mode: Barcode Gun Only"
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 backdrop-blur-md flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
-                scanMode === 'gun'
-                  ? 'bg-white text-green-600 shadow-lg scale-110'
-                  : 'bg-white/20 text-white hover:bg-white/30'
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors sm:gap-1.5 sm:px-3 ${
+                !isCameraMode ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
-              <span className="text-lg">🔫</span>
-              <span className="hidden sm:inline">Gun</span>
+              <FiZap className="h-4 w-4" />
+              Scanner
             </button>
-
-            {/* AI Analysis Badge - Only when camera active and AI ready */}
-            {cameraActive && geminiAIService.isInitialized() && (
-              <button
-                onClick={() => {
-                  if (canvasRef.current) {
-                    analyzeImageWithAI(canvasRef.current);
-                  } else {
-                    toast.error('No camera frame available');
-                  }
-                }}
-                title="AI Vision: Analyze image with AI"
-                className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 backdrop-blur-md flex items-center gap-1 sm:gap-2 whitespace-nowrap bg-white/20 text-white hover:bg-white/30 active:scale-95 group"
-              >
-                <FiCpu className="h-4 w-4 animate-pulse" />
-                <span className="hidden sm:inline">AI</span>
-              </button>
-            )}
-
-            {/* USB Connect Badge - Only if USB API available */}
-            {navigator.usb && (
-              <button
-                onClick={requestUSBPermission}
-                title="Connect USB Device"
-                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 backdrop-blur-md flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
-                  usbDeviceConnected
-                    ? 'bg-white text-green-600 shadow-lg'
-                    : 'bg-white/20 text-white hover:bg-white/30'
-                }`}
-              >
-                <span className="text-lg">🔌</span>
-                <span className="hidden sm:inline">USB</span>
-              </button>
-            )}
-
-            {/* USB Help Badge - Only if USB API available */}
-            {navigator.usb && (
-              <button
-                onClick={() => {
-                  showUSBTroubleshootingGuide();
-                  toast.info('📱 Troubleshooting guide printed to console');
-                }}
-                title="USB Setup Help"
-                className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 backdrop-blur-md flex items-center gap-1 sm:gap-2 whitespace-nowrap bg-white/20 text-white hover:bg-white/30 active:scale-95"
-              >
-                <span className="text-lg">❓</span>
-                <span className="hidden sm:inline">Help</span>
-              </button>
-            )}
-
-            {/* AI Ready Badge - Shows when AI is enabled */}
-            {geminiAIService.isInitialized() && (
-              <div className="ml-auto lg:mr-44 xl:mr-52 flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 bg-white/20 rounded-full backdrop-blur-md animate-pulse">
-                <FiCpu className="h-3 w-3 sm:h-4 sm:w-4 text-cyan-300" />
-                <span className="text-white text-xs sm:text-sm font-semibold hidden sm:inline">AI Ready</span>
-              </div>
-            )}
           </div>
+
+          <button
+            onClick={onClose}
+            aria-label="Close scanner"
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-90"
+          >
+            <FiX className="h-5 w-5" />
+          </button>
         </div>
 
-        {/* Main Content Grid — camera stays a small, fixed-size viewfinder; on
-            narrow screens the scanned-items lists (Transaction, Recent Scans)
-            are reordered above the secondary Status & Info panel so the live
-            scan feedback is visible without scrolling past a full-page camera. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-6 flex-1 overflow-y-auto">
-          {/* Left: Status & Info (secondary — pushed last on mobile) */}
-          <div className="order-4 md:order-none space-y-2 sm:space-y-4">
-            <h3 className="font-bold text-gray-900 text-sm sm:text-base flex items-center space-x-2">
-              <FiSmartphone className="h-5 w-5 text-blue-600 sm:h-6 sm:w-6" />
-              <span className="font-semibold">Status & Info</span>
-            </h3>
-
-            {/* Current Mode Display */}
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-3 sm:p-4 border-2 border-blue-200">
-              <p className="text-xs text-gray-600 font-semibold mb-2">ACTIVE MODE</p>
-              <p className="text-lg sm:text-xl font-bold text-blue-600 capitalize">
-                {scanMode === 'smart' && '🧠 Smart Mode'}
-                {scanMode === 'camera' && '📱 Camera Scan'}
-                {scanMode === 'gun' && '🔫 Gun Scan'}
-              </p>
-              <p className="text-xs text-gray-600 mt-2">
-                {scanMode === 'smart' && 'Both camera and gun scanner active'}
-                {scanMode === 'camera' && 'Phone camera scanning only'}
-                {scanMode === 'gun' && 'Barcode gun scanning only'}
-              </p>
-            </div>
-
-            {/* AI Ready Banner */}
-            {geminiAIService.isInitialized() && (
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-3 sm:p-4 border-2 border-purple-200">
-                <div className="flex items-center space-x-2 mb-1">
-                  <FiCpu className="h-5 w-5 text-purple-600 animate-pulse" />
-                  <p className="text-sm sm:text-base font-bold text-purple-600">AI Vision Ready</p>
-                </div>
-                <p className="text-xs text-gray-600">Advanced product identification enabled</p>
-              </div>
-            )}
-
-            {/* Status Indicators */}
-            <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl p-3 sm:p-4 border-2 border-gray-200 space-y-2 sm:space-y-3">
-              <p className="text-xs font-bold text-gray-700 uppercase">SENSORS</p>
-              <div className="flex items-center space-x-3">
-                <div className={`h-3 w-3 sm:h-4 sm:w-4 rounded-full ${cameraActive ? 'bg-green-500 animate-pulse shadow-lg shadow-green-400' : 'bg-gray-300'}`}></div>
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-gray-700">📱 Camera</p>
-                  <p className="text-xs text-gray-500">{cameraActive ? 'Ready' : 'Disabled'}</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className={`h-3 w-3 sm:h-4 sm:w-4 rounded-full ${gunListening ? 'bg-green-500 animate-pulse shadow-lg shadow-green-400' : 'bg-gray-300'}`}></div>
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-gray-700">🔫 Gun</p>
-                  <p className="text-xs text-gray-500">{gunListening ? 'Listening' : 'Disabled'}</p>
-                </div>
-              </div>
-              {navigator.usb && (
-                <div className="flex items-center space-x-3">
-                  <div className={`h-3 w-3 sm:h-4 sm:w-4 rounded-full ${usbDeviceConnected ? 'bg-green-500 animate-pulse shadow-lg shadow-green-400' : 'bg-gray-300'}`}></div>
-                  <div>
-                    <p className="text-xs sm:text-sm font-semibold text-gray-700">🔌 USB</p>
-                    <p className="text-xs text-gray-500">{usbDeviceConnected ? usbDeviceName : 'Disconnected'}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Creative No Activity Notification - Show after 4 seconds */}
-            {showNoActivityWarning && inactivityProduct && (
-              <div className="w-full overflow-hidden">
-                {inactivityProduct.type === 'summary' ? (
-                  // 📊 Transaction Summary Popup
-                  <div className="w-full p-2 sm:p-3 rounded-lg border-2 border-green-400 bg-gradient-to-r from-green-50 to-emerald-50 animate-pulse">
-                    <p className="font-bold text-green-900 text-sm sm:text-base mb-2">📊 Transaction Summary</p>
-                    <div className="space-y-1 max-h-[120px] overflow-y-auto">
-                      {inactivityProduct.items.map(item => (
-                        <div key={item.id} className="flex justify-between text-xs text-green-800 bg-white bg-opacity-50 px-2 py-1 rounded">
-                          <span className="font-semibold">{item.name}</span>
-                          <span>x{item.quantity} = <span className="font-bold text-green-700">${item.subtotal.toFixed(2)}</span></span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-2 pt-2 border-t border-green-300 flex justify-between items-center">
-                      <span className="font-bold text-green-900">💰 Total:</span>
-                      <span className="text-lg font-bold text-green-700">${inactivityProduct.total.toFixed(2)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  // 🏇 Ready to Scan Prompt - Enhanced with animation
-                  <div className="w-full p-4 sm:p-5 rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 via-white to-cyan-50 animate-pulse shadow-lg">
-                    <p className="font-bold text-blue-900 text-center text-3xl sm:text-4xl mb-2">{inactivityProduct.emoji}</p>
-                    <p className="font-bold text-blue-900 text-center text-sm sm:text-base leading-relaxed">{inactivityProduct.message}</p>
-                    <div className="mt-3 flex items-center justify-center space-x-2">
-                      <div className="flex space-x-1">
-                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce"></div>
-                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce delay-100"></div>
-                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce delay-200"></div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Loading status */}
-            {loadingProducts && (
-              <div className="w-full p-2 sm:p-3 rounded-lg border-2 border-blue-400 bg-gradient-to-br from-blue-50 to-blue-100">
-                <p className="font-bold text-blue-900 text-sm sm:text-base">📥 Loading Products...</p>
-                <p className="text-xs text-blue-700">Reading from database</p>
-              </div>
-            )}
-
-              {/* USB Device Status */}
-              {usbDeviceConnected && (
-                <div className="flex items-center space-x-2 pt-1 border-t border-gray-300">
-                  <div className="h-2 w-2 sm:h-3 sm:w-3 rounded-full bg-purple-500 animate-pulse"></div>
-                  <span className="text-xs sm:text-sm text-gray-700">🔌 <span className="font-bold">{usbDeviceName}</span></span>
-                </div>
-              )}
-            </div>
-
-            {/* Stats */}
-            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-2 sm:p-3 space-y-1 border border-blue-200">
-              <p className="text-xs sm:text-sm font-bold text-gray-900">📊 Stats</p>
-              <p className="text-xs text-gray-700">📦 <span className="font-bold text-blue-600">{scanStats.total}</span></p>
-              <p className="text-xs text-gray-700">🔫 <span className="font-bold text-red-600">{scanStats.gunScans}</span></p>
-              <p className="text-xs text-gray-700">📱 <span className="font-bold text-green-600">{scanStats.cameraScans}</span></p>
-              {lastScanTime && (
-                <p className="text-xs text-gray-600 mt-2 flex items-center space-x-1">
-                  <FiClock className="h-3 w-3" />
-                  <span>{lastScanTime.toLocaleTimeString()}</span>
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Center: Camera Feed — a compact viewfinder, not a page-filling block.
-              Below lg it sits inline at the top of the stacked content (small,
-              capped height). At lg+ ("computer") it lifts out of the grid
-              entirely and docks as a small thumbnail in the header's empty
-              top-right area, so the full-width content area is left free for
-              the Status/Transaction/Scans lists. */}
-          <div className="order-1 md:order-none bg-gradient-to-br from-gray-950 via-gray-900 to-gray-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center relative aspect-[4/3] max-h-[200px] sm:max-h-[240px] md:max-h-none md:h-full lg:!absolute lg:top-3 lg:right-16 lg:z-40 lg:w-40 lg:h-24 lg:!max-h-none lg:!aspect-auto xl:w-48 xl:h-28 border border-gray-700 shadow-2xl lg:shadow-xl lg:border-2 lg:border-white/30">
-            {scanMode === 'camera' || scanMode === 'smart' ? (
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          {/* Viewfinder */}
+          <div className="relative h-[38vh] flex-shrink-0 overflow-hidden bg-black lg:h-auto lg:flex-1">
+            {isCameraMode ? (
               <>
                 <video
                   ref={videoRef}
                   autoPlay
                   playsInline
-                  className="w-full h-full object-cover rounded-lg"
+                  muted
+                  className="absolute inset-0 h-full w-full object-cover"
                 />
-                <canvas
-                  ref={canvasRef}
-                  className="hidden"
-                />
-                {!cameraActive && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center space-y-2 lg:space-y-0 bg-gray-950/80 text-white">
-                    <div className="h-6 w-6 lg:h-4 lg:w-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-xs font-semibold lg:hidden">Starting camera…</p>
-                  </div>
-                )}
+                <canvas ref={canvasRef} className="hidden" />
+
                 {cameraActive && (
                   <>
-                    {/* Enhanced scanning border with glow */}
-                    <div className="absolute inset-0 border-3 lg:border-2 border-blue-500/60 rounded-xl pointer-events-none shadow-xl shadow-blue-500/20">
-                      {/* Top scanning line */}
-                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
-                      {/* Bottom scanning line */}
-                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
+                    {/* Scan frame: the huge box-shadow dims everything outside it */}
+                    <div className="pointer-events-none absolute inset-x-[10%] bottom-[22%] top-[22%] rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
+                      <div className={`absolute left-0 top-0 h-9 w-9 rounded-tl-lg border-l-4 border-t-4 ${cornerColor}`} />
+                      <div className={`absolute right-0 top-0 h-9 w-9 rounded-tr-lg border-r-4 border-t-4 ${cornerColor}`} />
+                      <div className={`absolute bottom-0 left-0 h-9 w-9 rounded-bl-lg border-b-4 border-l-4 ${cornerColor}`} />
+                      <div className={`absolute bottom-0 right-0 h-9 w-9 rounded-br-lg border-b-4 border-r-4 ${cornerColor}`} />
+                      {!scanFlash && (
+                        <div
+                          className="absolute left-3 right-3 h-0.5 rounded-full bg-red-500 shadow-[0_0_10px_2px_rgba(239,68,68,0.8)]"
+                          style={{ animation: 'ican-scan-line 1.8s ease-in-out infinite alternate' }}
+                        />
+                      )}
                     </div>
+                    <p className="absolute inset-x-0 bottom-4 px-4 text-center text-sm font-medium text-white drop-shadow">
+                      {showTip ? 'Move a little closer and hold steady — use the light if it is dark' : 'Hold the barcode inside the frame'}
+                    </p>
 
-                    {/* Animated corner markers — sized to fit the compact viewfinder (smaller still on the header thumbnail) */}
-                    <div className="absolute top-2 left-2 lg:top-1 lg:left-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-t-2 border-l-2 border-cyan-400 rounded-tl-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
-                    <div className="absolute top-2 right-2 lg:top-1 lg:right-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-t-2 border-r-2 border-cyan-400 rounded-tr-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
-                    <div className="absolute bottom-2 left-2 lg:bottom-1 lg:left-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-b-2 border-l-2 border-cyan-400 rounded-bl-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
-                    <div className="absolute bottom-2 right-2 lg:bottom-1 lg:right-1 w-6 h-6 sm:w-8 sm:h-8 lg:w-3 lg:h-3 border-b-2 border-r-2 border-cyan-400 rounded-br-lg shadow-lg shadow-cyan-400/30 animate-pulse"></div>
+                    {/* Easy-scan controls: only the ones this camera supports */}
+                    <div className="absolute right-3 top-3 flex flex-col gap-2">
+                      {torchSupported && (
+                        <button
+                          onClick={toggleTorch}
+                          aria-label={torchOn ? 'Turn light off' : 'Turn light on'}
+                          className={`flex h-10 w-10 items-center justify-center rounded-full shadow active:scale-90 ${
+                            torchOn ? 'bg-yellow-400 text-gray-900' : 'bg-black/60 text-white'
+                          }`}
+                        >
+                          <FiSun className="h-5 w-5" />
+                        </button>
+                      )}
+                      {zoomRange && (
+                        <>
+                          <button onClick={() => changeZoom(1)} aria-label="Zoom in" className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white shadow active:scale-90">
+                            <FiZoomIn className="h-5 w-5" />
+                          </button>
+                          <button onClick={() => changeZoom(-1)} aria-label="Zoom out" className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white shadow active:scale-90">
+                            <FiZoomOut className="h-5 w-5" />
+                          </button>
+                        </>
+                      )}
+                      {hasMultipleCameras && (
+                        <button onClick={flipCamera} aria-label="Switch camera" className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white shadow active:scale-90">
+                          <FiRefreshCw className="h-5 w-5" />
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
 
-                {/* Status indicator - compact (dot only on the header thumbnail) */}
-                {showScanningIndicator && (
-                  <div className="absolute top-1.5 right-1.5 lg:top-1 lg:right-1 bg-gradient-to-r from-cyan-500 to-blue-500 text-white px-2 lg:px-0 py-0.5 lg:py-0 rounded-full text-[10px] sm:text-xs flex items-center space-x-1 shadow-lg shadow-cyan-500/50 font-bold lg:h-2.5 lg:w-2.5">
-                    <div className="h-1.5 w-1.5 lg:h-full lg:w-full bg-white rounded-full animate-pulse"></div>
-                    <span className="lg:hidden">Scanning...</span>
+                {!cameraActive && !cameraError && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    <p className="text-sm">Starting camera…</p>
                   </div>
                 )}
 
-                {/* Instructions - a slim single-line strip; dropped entirely on the tiny header thumbnail */}
-                <div className="lg:hidden absolute bottom-1.5 left-1.5 right-1.5 bg-black/70 backdrop-blur-md text-white px-2 py-1 rounded-lg text-center border border-gray-700/50">
-                  <p className="text-[10px] sm:text-xs font-semibold flex items-center justify-center gap-1">
-                    <FiCheck className="h-3 w-3 text-cyan-400 flex-shrink-0" />
-                    <span>Point at barcode — auto-detect on</span>
-                  </p>
-                </div>
+                {cameraError && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gray-900 px-6 text-center text-white">
+                    <FiAlertCircle className="h-10 w-10 text-amber-400" />
+                    <p className="max-w-xs text-sm text-gray-200">{cameraError}</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <button
+                        onClick={initializeCamera}
+                        className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 active:scale-95"
+                      >
+                        Try again
+                      </button>
+                      <button
+                        onClick={() => setScanMode('gun')}
+                        className="rounded-md border border-white/40 px-4 py-2 text-sm font-semibold text-white active:scale-95"
+                      >
+                        Use a barcode scanner
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center space-y-2 sm:space-y-4 lg:space-y-1 p-3 sm:p-6 lg:p-1">
-                <FiCamera className="h-8 w-8 sm:h-12 sm:w-12 lg:h-4 lg:w-4 text-gray-600" />
-                <p className="text-gray-400 text-center text-xs sm:text-sm lg:hidden">
-                  {scanMode === 'gun'
-                    ? '🔫 Gun mode active - scan with hand scanner'
-                    : 'Switch to Camera mode to enable video'
-                  }
-                </p>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-900 px-6 text-center text-white">
+                <FiZap className="h-12 w-12 text-gray-300" />
+                <p className="text-lg font-semibold">Ready to scan</p>
+                <p className="max-w-xs text-sm text-gray-400">Point your barcode scanner at an item and pull the trigger.</p>
               </div>
             )}
 
-            {/* Hidden Gun Input */}
+            {/* Result flash — big and readable for anyone standing at the till */}
+            {scanFlash && (
+              <div
+                className={`absolute inset-x-0 top-4 mx-auto flex w-fit items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-white shadow-lg ${
+                  scanFlash === 'ok' ? 'bg-green-600' : 'bg-red-600'
+                }`}
+              >
+                {scanFlash === 'ok' ? <FiCheck className="h-4 w-4" /> : <FiAlertCircle className="h-4 w-4" />}
+                {scanFlash === 'ok' ? 'Scanned' : 'Item not found'}
+              </div>
+            )}
+
+            {/* Hidden input that catches barcode-scanner keystrokes */}
             <input
               ref={gunInputRef}
               type="text"
-              className="absolute opacity-0 -z-10"
-              placeholder="Gun Scanner Input"
-              tabIndex={scanMode === 'gun' || scanMode === 'smart' ? 0 : -1}
+              onKeyDown={handleGunInput}
+              className="absolute left-0 top-0 h-px w-px opacity-0"
+              aria-hidden="true"
+              tabIndex={-1}
             />
+
+            {aiReady && cameraActive && (
+              <button
+                onClick={() => analyzeImageWithAI(captureFullFrame())}
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow active:scale-95"
+              >
+                <FiCpu className="h-3.5 w-3.5" />
+                Can't scan? Identify it
+              </button>
+            )}
           </div>
 
-          {/* Right: Current Transaction — cashier-only. This cart + total +
-              "Save & Submit" (which inserts a sale and depletes stock) only
-              makes sense for a POS checkout. The admin scanner is for
-              adding/looking up products, not ringing up a sale, so it gets a
-              lightweight "last captured barcode" card in the same slot instead. */}
-          {context === 'cashier' ? (
-            <div className="order-2 md:order-none space-y-2 sm:space-y-3 flex flex-col bg-gradient-to-b from-green-50 to-white rounded-lg border-2 border-green-300 p-2 sm:p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-gray-900 text-sm sm:text-lg">🛒 Transaction</h3>
-                {currentTransaction.length > 0 && (
-                  <button
-                    onClick={clearTransaction}
-                    className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-all active:scale-95"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+          {/* Side container — a classic till receipt */}
+          <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 bg-[#fffdf5] font-mono pb-[env(safe-area-inset-bottom)] lg:w-96 lg:flex-none lg:border-l lg:border-t-0 lg:pb-0">
+            {context === 'cashier' ? (
+              <>
+                <div className="flex-shrink-0 px-4 pt-3 text-center">
+                  <p className="text-sm font-bold tracking-[0.3em] text-gray-800">YOUR ITEMS</p>
+                  <div className="mt-2 border-t-2 border-dashed border-gray-300" />
+                </div>
 
-              {/* Transaction Items */}
-              <div className="flex-1 bg-white rounded-lg p-2 sm:p-3 overflow-y-auto space-y-1 sm:space-y-2 border border-green-200">
-                {currentTransaction.length === 0 ? (
-                  <p className="text-gray-400 text-center text-xs sm:text-sm py-4">No items yet</p>
-                ) : (
-                  currentTransaction.map(item => (
-                    <div
-                      key={item.id}
-                      className="bg-green-50 p-1 sm:p-2 rounded border border-green-200 text-xs space-y-0.5 sm:space-y-1 hover:shadow-md transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-green-700 truncate text-xs">{item.name}</span>
-                        <button
-                          onClick={() => removeFromTransaction(item.id)}
-                          className="text-red-500 hover:text-red-700 text-lg leading-none active:scale-125 transition-transform"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between text-gray-700">
-                        <span>Qty: <span className="font-bold">{item.quantity}</span></span>
-                        <span>₱{item.price.toFixed(2)}</span>
-                      </div>
-                      <div className="flex items-center justify-between font-bold text-green-700 border-t border-green-200 pt-1">
-                        <span>Subtotal:</span>
-                        <span>₱{item.subtotal.toFixed(2)}</span>
-                      </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1">
+                  {currentTransaction.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center text-gray-400">
+                      <FiCamera className="h-8 w-8" />
+                      <p className="text-sm">Scan an item to begin</p>
                     </div>
-                  ))
-                )}
-              </div>
+                  ) : (
+                    <ul className="divide-y divide-dashed divide-gray-200">
+                      {currentTransaction.map(item => (
+                        <li key={item.id} className="py-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="break-words text-sm font-bold text-gray-900">{item.name}</span>
+                            <button
+                              onClick={() => removeFromTransaction(item.id)}
+                              aria-label={`Remove ${item.name}`}
+                              className="-mt-1 px-1 text-xl leading-none text-gray-400 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <div className="flex items-baseline text-xs text-gray-600">
+                            <span>{item.quantity} × ₱{item.price.toFixed(2)}</span>
+                            <span className="mx-2 flex-1 border-b border-dotted border-gray-400" />
+                            <span className="font-bold text-gray-900">₱{item.subtotal.toFixed(2)}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
 
-              {/* Transaction Total */}
-              {currentTransaction.length > 0 && (
-                <>
-                  <div className="bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg p-2 sm:p-4 space-y-1 sm:space-y-2">
-                    <div className="flex items-center justify-between text-sm sm:text-lg">
-                      <span className="font-bold">TOTAL</span>
-                      <span className="text-lg sm:text-2xl font-bold">₱{transactionTotal.toFixed(2)}</span>
+                <div className="flex-shrink-0 space-y-3 px-4 pb-4">
+                  <div className="border-t-2 border-dashed border-gray-300 pt-2">
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>ITEMS</span>
+                      <span>{totalUnits}</span>
                     </div>
-                    <div className="text-xs opacity-90">
-                      <p>Items: {currentTransaction.length} | Units: {currentTransaction.reduce((sum, item) => sum + item.quantity, 0)}</p>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-base font-bold text-gray-900">TOTAL</span>
+                      <span className="text-2xl font-bold text-gray-900">₱{transactionTotal.toFixed(2)}</span>
                     </div>
                   </div>
 
-                  {/* Save Transaction Button - Creates POS data for dashboard */}
-                  <button
-                    onClick={saveTransactionToSupabase}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-4 rounded-lg transition-all active:scale-95 flex items-center justify-center space-x-2 shadow-lg"
-                  >
-                    <FiZap className="h-5 w-5" />
-                    <span>💾 Save & Submit</span>
-                  </button>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="order-2 md:order-none space-y-2 sm:space-y-3 flex flex-col bg-gradient-to-b from-blue-50 to-white rounded-lg border-2 border-blue-300 p-2 sm:p-4">
-              <h3 className="font-bold text-gray-900 text-sm sm:text-lg">📦 Add Item</h3>
-              <p className="text-xs sm:text-sm text-gray-600">
-                Scan a barcode to add it to the catalog or open it for editing — no cart, no checkout.
-              </p>
-              <div className="flex-1 bg-white rounded-lg p-3 border border-blue-200 flex flex-col items-center justify-center text-center space-y-2">
-                {recentScans.length > 0 ? (
-                  <>
-                    <FiCheck className="h-6 w-6 text-green-500" />
-                    <p className="font-mono font-bold text-blue-700 text-sm break-all">{recentScans[0].barcode}</p>
-                    <p className="text-xs text-gray-500">Captured {recentScans[0].timestamp.toLocaleTimeString()}</p>
-                  </>
-                ) : (
-                  <>
-                    <FiCamera className="h-6 w-6 text-gray-300" />
-                    <p className="text-xs sm:text-sm text-gray-400">Waiting for a scan…</p>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Recent Scans Log — also part of the live scanned-items view, so it
-              stays ahead of the secondary Status & Info panel on mobile. */}
-          <div className="order-3 md:order-none space-y-2 sm:space-y-3 flex flex-col">
-            <h3 className="font-bold text-gray-900 text-sm sm:text-base">📋 Scans</h3>
-            <div className="flex-1 bg-gray-50 rounded-lg p-2 sm:p-3 overflow-y-auto space-y-1 sm:space-y-2 border border-gray-200">
-              {recentScans.length === 0 ? (
-                <p className="text-gray-400 text-center text-xs sm:text-sm py-4">No scans</p>
-              ) : (
-                recentScans.map(scan => (
-                  <div
-                    key={scan.id}
-                    className="bg-white p-1 sm:p-2 rounded border border-gray-200 text-xs space-y-0.5 hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-blue-600">{scan.barcode}</span>
-                      <span>{getScanSourceIcon(scan.source)}</span>
+                  {currentTransaction.length > 0 && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={saveTransactionToSupabase}
+                        disabled={isSavingTransaction}
+                        className="flex-1 rounded-md bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 active:scale-95 disabled:opacity-60"
+                      >
+                        {isSavingTransaction ? 'Saving…' : 'Save & Submit'}
+                      </button>
+                      <button
+                        onClick={clearTransaction}
+                        className="rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 active:scale-95"
+                      >
+                        Clear
+                      </button>
                     </div>
-                    <div className="flex items-center space-x-1 text-gray-600">
-                      <FiCheck className="h-3 w-3 text-green-500" />
-                      <span>{scan.timestamp.toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                  )}
 
-            {/* Manual Input */}
-            <div className="bg-blue-50 rounded-lg p-2 sm:p-3 border border-blue-200 space-y-1 sm:space-y-2">
-              <label className="text-xs font-bold text-gray-700 block">Manual Entry</label>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const barcode = e.target.elements.manualBarcode.value;
-                  manualBarcodeScan(barcode);
-                  e.target.elements.manualBarcode.value = '';
-                }}
-                className="flex gap-1 sm:gap-2"
-              >
-                <input
-                  name="manualBarcode"
-                  type="text"
-                  placeholder="Barcode..."
-                  className="flex-1 px-2 py-2 sm:py-1 rounded border border-gray-300 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="submit"
-                  className="px-3 py-2 sm:py-1 bg-blue-600 text-white rounded font-bold text-xs sm:text-sm hover:bg-blue-700 transition-all active:scale-95 whitespace-nowrap"
-                >
-                  Add
-                </button>
-              </form>
-            </div>
+                  {manualEntryForm}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex-shrink-0 px-4 pt-3 text-center">
+                  <p className="text-sm font-bold tracking-[0.3em] text-gray-800">LAST SCANNED</p>
+                  <div className="mt-2 border-t-2 border-dashed border-gray-300" />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                  {recentScans.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center text-gray-400">
+                      <FiCamera className="h-8 w-8" />
+                      <p className="text-sm">Scan a barcode to add it or open it for editing</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <FiCheck className="mx-auto mb-1 h-6 w-6 text-green-600" />
+                        <p className="break-all text-lg font-bold text-gray-900">{recentScans[0].barcode}</p>
+                        <p className="text-xs text-gray-500">{recentScans[0].timestamp.toLocaleTimeString()}</p>
+                      </div>
+                      {recentScans.length > 1 && (
+                        <ul className="divide-y divide-dashed divide-gray-200 border-t-2 border-dashed border-gray-300">
+                          {recentScans.slice(1).map(scan => (
+                            <li key={scan.id} className="flex items-baseline justify-between py-1.5 text-xs text-gray-600">
+                              <span className="font-semibold text-gray-800">{scan.barcode}</span>
+                              <span>{scan.timestamp.toLocaleTimeString()}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-shrink-0 border-t-2 border-dashed border-gray-300 px-4 pb-4 pt-3">
+                  {manualEntryForm}
+                </div>
+              </>
+            )}
           </div>
         </div>
+      </div>
 
         {/* 🤖 AI Analysis Modal - Product Identification */}
         {showAIAnalysis && (
@@ -2207,7 +1788,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             </div>
           </div>
         )}
-      </div>
+    </div>
   );
 };
 
