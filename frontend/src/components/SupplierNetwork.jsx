@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Globe2, PackageCheck, RefreshCw, ShoppingCart } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import SupplierBidRequests from './SupplierBidRequests';
 
 export default function SupplierNetwork({ supplierProfile }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [businessProfileId, setBusinessProfileId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,9 +34,10 @@ export default function SupplierNetwork({ supplierProfile }) {
         profileId = createdProfileId;
       }
       if (!profileId) {
-        if (!cancelled) { setOrders([]); setLoading(false); }
+        if (!cancelled) { setOrders([]); setBusinessProfileId(null); setLoading(false); }
         return;
       }
+      if (!cancelled) setBusinessProfileId(profileId);
       const { data } = await supabase
         .from('supplier_marketplace_orders')
         .select('id, order_number, quantity, unit_price, currency, status, created_at, buyer_business_profile_id')
@@ -61,6 +64,8 @@ export default function SupplierNetwork({ supplierProfile }) {
           <div className="rounded-xl bg-white/10 p-3"><Globe2 className="h-5 w-5 mb-1" /><p className="font-semibold">Supply anywhere</p><p className="text-indigo-100 text-xs">Your supplier identity stays separate from buyers.</p></div>
         </div>
       </div>
+
+      <SupplierBidRequests supplierBusinessProfileId={businessProfileId} />
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex items-center justify-between mb-4"><div><h3 className="font-semibold text-gray-800">Incoming marketplace orders</h3><p className="text-xs text-gray-500 mt-1">Direct buyer relationships replace applications.</p></div><RefreshCw className={`h-4 w-4 text-gray-400 ${loading ? 'animate-spin' : ''}`} /></div>
