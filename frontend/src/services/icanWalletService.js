@@ -372,25 +372,20 @@ export async function buyICANFromWallet({ userId, icanAmount, reference = null }
   return data;
 }
 
-/** The money (UGX) in the user's own IcanEra Wallet — what a purchase is paid from. */
-export async function getWalletUgxBalance() {
-  const { data, error } = await supabase.rpc('get_my_wallet_ugx_balance');
-  if (error) throw error;
-  return Number(data) || 0;
-}
-
 /**
- * The LIVE price of one icaneracoin in UGX — the same number the wallet badge shows (the ICAN app's own
- * live-engine price, never below the 5,000 launch floor). Selling pays at this,
- * not at the floor. Returns null if the price engine can't be reached, so callers refuse to
- * quote a figure rather than show a wrong one.
+ * What the Buy / Sell screens need, in the USER'S OWN currency (the country they chose at sign-up —
+ * the one the wallet badge shows): { currency, price, walletBalance }. `price` is the LIVE price of
+ * one icaneracoin in that currency, `walletBalance` the money they hold in that currency in their
+ * IcanEra Wallet. It is the same figure the database buys and sells with, so the number shown is the
+ * number paid. Returns null if the price engine can't be reached, so callers refuse to quote a figure
+ * rather than show a wrong one.
  */
-export async function getLiveUgxPrice() {
-  // The same single function the database sells and buys with, so the number shown is the number paid.
-  const { data, error } = await supabase.rpc('ican_live_ugx_price');
-  if (error) return null;
-  const price = Number(data);
-  return Number.isFinite(price) && price > 0 ? price : null;
+export async function getMyTradingInfo() {
+  const { data, error } = await supabase.rpc('get_my_ican_trading_info');
+  if (error || !data) return null;
+  const price = Number(data.price_per_ican);
+  if (!data.currency || !Number.isFinite(price) || price <= 0) return null;
+  return { currency: data.currency, price, walletBalance: Number(data.wallet_balance) || 0 };
 }
 
 /** Convert UGX to ICAN at floor price (rounds down to 8 dp). */

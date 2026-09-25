@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { formatICAN, sellICAN, getLiveUgxPrice } from '@/services/icanWalletService';
+import { formatICAN, sellICAN, getMyTradingInfo } from '@/services/icanWalletService';
 
 export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
   const [icanAmount, setIcanAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
 
-  // Sales pay at icaneracoin's live value, so nothing is quoted until it is known.
-  const [livePrice, setLivePrice] = useState(null);
+  // Sales pay at icaneracoin's live value in the user's own currency, so nothing is quoted until it is known.
+  const [info, setInfo] = useState(null);
   const [priceFailed, setPriceFailed] = useState(false);
+  const livePrice = info?.price ?? null;
+  const currency = info?.currency ?? '';
+  const money = (n) => `${currency} ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   useEffect(() => {
     let cancelled = false;
-    const load = () => getLiveUgxPrice().then((p) => {
+    const load = () => getMyTradingInfo().then((t) => {
       if (cancelled) return;
-      setLivePrice(p);
-      setPriceFailed(p === null);
+      setInfo(t);
+      setPriceFailed(t === null);
     });
     load();
     const timer = setInterval(load, 60000);
@@ -23,9 +26,9 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
   }, []);
 
   const amount = parseFloat(icanAmount) || 0;
-  const ugxGross = livePrice ? amount * livePrice : 0;
+  const gross = livePrice ? Math.round(amount * livePrice * 100) / 100 : 0;
   const feePercent = 3; // flat 3% fee, applied server-side in sell_ican_coins()
-  const ugxNet = ugxGross - Math.round((ugxGross * feePercent) / 100);
+  const net = Math.round((gross - (gross * feePercent) / 100) * 100) / 100;
 
   const canSubmit = amount > 0 && amount <= (balance?.ican ?? 0) && !!livePrice;
 
@@ -56,8 +59,8 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
           <h2 className="text-white font-bold text-lg mb-2">Sold</h2>
           <div className="bg-gray-800 rounded-lg p-4 text-left text-sm space-y-1 mb-4">
             <div className="flex justify-between text-gray-300"><span>IcanEra sold</span><span>{formatICAN(result.ican_sold)}</span></div>
-            <div className="flex justify-between text-white font-semibold"><span>Credited to Wallet</span><span>UGX {Number(result.ugx_payout).toLocaleString()}</span></div>
-            <div className="flex justify-between text-gray-400"><span>New Wallet balance</span><span>UGX {Number(result.wallet_balance).toLocaleString()}</span></div>
+            <div className="flex justify-between text-white font-semibold"><span>Credited to Wallet</span><span>{result.currency} {Number(result.payout).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
+            <div className="flex justify-between text-gray-400"><span>New Wallet balance</span><span>{result.currency} {Number(result.wallet_balance).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
           </div>
           <button onClick={onClose} className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm">Done</button>
         </div>
@@ -87,14 +90,14 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
               disabled={processing}
               className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-orange-500"
             />
-            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} IcanEra · {livePrice ? `1 IcanEra = UGX ${livePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} (live value)` : priceFailed ? "Couldn't load the live price — retrying…" : 'Loading the live price…'}</p>
+            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} IcanEra · {livePrice ? `1 IcanEra = ${money(livePrice)} (live value)` : priceFailed ? "Couldn't load the live price — retrying…" : 'Loading the live price…'}</p>
           </div>
 
           {amount > 0 && (
             <div className="bg-gray-800 rounded-lg p-4 text-sm space-y-1">
-              <div className="flex justify-between text-gray-300"><span>Gross</span><span>UGX {ugxGross.toLocaleString()}</span></div>
-              <div className="flex justify-between text-gray-400"><span>Fee ({feePercent}%)</span><span>-UGX {(ugxGross - ugxNet).toLocaleString()}</span></div>
-              <div className="flex justify-between text-white font-semibold"><span>Credited to Wallet</span><span>UGX {ugxNet.toLocaleString()}</span></div>
+              <div className="flex justify-between text-gray-300"><span>Gross</span><span>{money(gross)}</span></div>
+              <div className="flex justify-between text-gray-400"><span>Fee ({feePercent}%)</span><span>-{money(gross - net)}</span></div>
+              <div className="flex justify-between text-white font-semibold"><span>Credited to Wallet</span><span>{money(net)}</span></div>
             </div>
           )}
 
