@@ -45,7 +45,7 @@ export default function BuyIcanModal({ userId, onClose, onSuccess }) {
         customerPhone: isMobileMoney ? phoneNumber : undefined,
         paymentOptions: selectedMethod.paymentOptions,
         title: 'Supermartkera — IcanEra Wallet',
-        description: `Buy ${formatICAN(icanAmount)} ICAN`,
+        description: `Buy ${formatICAN(icanAmount)} IcanEra`,
         txRef,
       });
 
@@ -70,7 +70,7 @@ export default function BuyIcanModal({ userId, onClose, onSuccess }) {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Payment verification failed');
 
-      toast.success(`Successfully bought ${formatICAN(icanAmount)} ICAN!`);
+      toast.success(`Successfully bought ${formatICAN(icanAmount)} IcanEra!`);
       setUgxAmount('');
       setPhoneNumber('');
       if (onSuccess) onSuccess();
@@ -86,7 +86,7 @@ export default function BuyIcanModal({ userId, onClose, onSuccess }) {
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-bold text-lg">Buy ICAN</h2>
+          <h2 className="text-white font-bold text-lg">Buy IcanEra</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
         </div>
 
@@ -135,7 +135,7 @@ export default function BuyIcanModal({ userId, onClose, onSuccess }) {
               disabled={processing}
               className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-green-500"
             />
-            <p className="text-gray-500 text-xs mt-1">1 ICAN = UGX {ICAN_TO_UGX.toLocaleString()} (floor price)</p>
+            <p className="text-gray-500 text-xs mt-1">1 IcanEra = UGX {ICAN_TO_UGX.toLocaleString()} (floor price)</p>
           </div>
 
           {icanAmount > 0 && (
@@ -147,13 +147,13 @@ export default function BuyIcanModal({ userId, onClose, onSuccess }) {
               <div className="text-green-400 mx-4">→</div>
               <div className="text-center flex-1">
                 <div className="text-xs text-gray-400 mb-1">You Get</div>
-                <div className="text-green-400 font-bold text-lg">{formatICAN(icanAmount)} ICAN</div>
+                <div className="text-green-400 font-bold text-lg">{formatICAN(icanAmount)} IcanEra</div>
               </div>
             </div>
           )}
 
           <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-xs">
-            Payment is processed securely via Flutterwave. ICAN arrives in your wallet instantly once verified.
+            Payment is processed securely via Flutterwave. IcanEra arrives in your wallet instantly once verified.
           </div>
         </div>
 
@@ -164,7 +164,7 @@ export default function BuyIcanModal({ userId, onClose, onSuccess }) {
             disabled={!canBuy || processing}
             className="flex-1 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-60"
           >
-            {processing ? 'Processing…' : 'Buy ICAN Now'}
+            {processing ? 'Processing…' : 'Buy IcanEra Now'}
           </button>
         </div>
 

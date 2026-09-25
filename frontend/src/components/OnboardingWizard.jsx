@@ -458,7 +458,7 @@ const OnboardingWizard = ({ onComplete, onSkip }) => {
   const renderCustomerLoyalty = () => (
     <div className="space-y-5">
       <h2 className="text-2xl font-bold text-gray-900">ICAN Loyalty Rewards</h2>
-      <p className="text-gray-500">Every purchase earns you ICAN coins — redeemable across the entire ecosystem.</p>
+      <p className="text-gray-500">Every purchase earns you icaneracoins — redeemable across the entire ecosystem.</p>
       {[
         { icon: '🛒', title: '1% cashback on every purchase', desc: 'Automatically added to your ICAN wallet after checkout.' },
         { icon: '💰', title: '1 ICAN = 5,000 UGX', desc: 'Redeem your coins for discounts or transfers.' },

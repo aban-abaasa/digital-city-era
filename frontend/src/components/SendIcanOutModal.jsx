@@ -70,13 +70,13 @@ export default function SendIcanOutModal({ userId, balance, onClose, onSuccess }
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl my-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-bold text-lg">Send ICAN Out</h2>
+          <h2 className="text-white font-bold text-lg">Send IcanEra Out</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="text-gray-400 text-sm mb-1 block">Amount (ICAN)</label>
+            <label className="text-gray-400 text-sm mb-1 block">Amount (IcanEra)</label>
             <input
               type="number"
               min="0.0001"
@@ -88,7 +88,7 @@ export default function SendIcanOutModal({ userId, balance, onClose, onSuccess }
               disabled={processing}
               className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-rose-500"
             />
-            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} ICAN</p>
+            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} IcanEra</p>
           </div>
 
           <div className="flex gap-2">
@@ -180,11 +180,11 @@ export default function SendIcanOutModal({ userId, balance, onClose, onSuccess }
           )}
 
           {amount > (balance?.ican ?? 0) && (
-            <p className="text-rose-400 text-xs">Amount exceeds your ICAN balance.</p>
+            <p className="text-rose-400 text-xs">Amount exceeds your IcanEra balance.</p>
           )}
 
           <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-xs">
-            Sent via Flutterwave. A 3% cash-out fee applies. ICAN leaves your wallet immediately; if the transfer fails, it is refunded automatically.
+            Sent via Flutterwave. A 3% cash-out fee applies. IcanEra leaves your wallet immediately; if the transfer fails, it is refunded automatically.
           </div>
         </div>
 

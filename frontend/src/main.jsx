@@ -1,13 +1,18 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { injectSpeedInsights } from '@vercel/speed-insights'
 import './index.css'
 import 'react-toastify/dist/ReactToastify.css'
 import App from './App.jsx'
 import setupMockAxios from './services/mockApi.jsx'
 import { initClockDiagnostic } from './utils/clockDiagnostic.js'
 import PWAInstallPrompt from './components/PWAInstallPrompt.jsx'
+import PushAlertsPrompt from './components/PushAlertsPrompt.jsx'
 import { startGlobalPosSync } from './services/posOfflineQueue.js'
+
+// Vercel Speed Insights (no-op outside a Vercel deployment).
+injectSpeedInsights()
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -115,6 +120,7 @@ createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <App />
       <PWAInstallPrompt />
+      <PushAlertsPrompt />
     </BrowserRouter>
   </StrictMode>,
 )

@@ -13,6 +13,7 @@
     "@ericblade/quagga2": "^1.10.2",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.74.0",
+    "@vercel/speed-insights": "^2.0.0",
     "axios": "^1.11.0",
     "babel": "^6.23.0",
     "jspdf": "^3.0.2",

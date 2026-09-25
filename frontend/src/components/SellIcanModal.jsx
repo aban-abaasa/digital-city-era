@@ -24,7 +24,7 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
         reference: `DCE-SELL-${Date.now()}`,
       });
       setResult(data);
-      toast.success('Sold — credited to your ICANera Wallet balance.');
+      toast.success('Sold — credited to your IcanEra Wallet balance.');
       if (onSuccess) onSuccess();
     } catch (e) {
       toast.error(e.message || 'Sell failed');
@@ -40,7 +40,7 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
           <div className="text-4xl mb-3">✅</div>
           <h2 className="text-white font-bold text-lg mb-2">Sold</h2>
           <div className="bg-gray-800 rounded-lg p-4 text-left text-sm space-y-1 mb-4">
-            <div className="flex justify-between text-gray-300"><span>ICAN sold</span><span>{formatICAN(result.ican_sold)}</span></div>
+            <div className="flex justify-between text-gray-300"><span>IcanEra sold</span><span>{formatICAN(result.ican_sold)}</span></div>
             <div className="flex justify-between text-white font-semibold"><span>Credited to Wallet</span><span>UGX {Number(result.ugx_payout).toLocaleString()}</span></div>
             <div className="flex justify-between text-gray-400"><span>New Wallet balance</span><span>UGX {Number(result.wallet_balance).toLocaleString()}</span></div>
           </div>
@@ -54,13 +54,13 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl my-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-bold text-lg">Sell ICAN</h2>
+          <h2 className="text-white font-bold text-lg">Sell IcanEra</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="text-gray-400 text-sm mb-1 block">Amount (ICAN)</label>
+            <label className="text-gray-400 text-sm mb-1 block">Amount (IcanEra)</label>
             <input
               type="number"
               min="0.0001"
@@ -72,7 +72,7 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
               disabled={processing}
               className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-orange-500"
             />
-            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} ICAN · 1 ICAN = UGX {ICAN_TO_UGX.toLocaleString()} (floor price)</p>
+            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} IcanEra · 1 IcanEra = UGX {ICAN_TO_UGX.toLocaleString()} (floor price)</p>
           </div>
 
           {amount > 0 && (
@@ -84,11 +84,11 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
           )}
 
           {amount > (balance?.ican ?? 0) && (
-            <p className="text-rose-400 text-xs">Amount exceeds your ICAN balance.</p>
+            <p className="text-rose-400 text-xs">Amount exceeds your IcanEra balance.</p>
           )}
 
           <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-xs">
-            Credited instantly to your in-app ICANera Wallet balance — a 3% fee applies. To cash out to mobile money/bank instead, use "Send Out".
+            Credited instantly to your in-app IcanEra Wallet balance — a 3% fee applies. To cash out to mobile money/bank instead, use "Send Out".
           </div>
         </div>
 
@@ -99,7 +99,7 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
             disabled={!canSubmit || processing}
             className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm disabled:opacity-60"
           >
-            {processing ? 'Processing…' : 'Sell ICAN'}
+            {processing ? 'Processing…' : 'Sell IcanEra'}
           </button>
         </div>
       </div>

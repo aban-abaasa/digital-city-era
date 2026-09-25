@@ -47,7 +47,7 @@ export function payWithFlutterwave(params) {
       },
       customizations: {
         title: params.title || 'ICAN Wallet',
-        description: params.description || 'Buy ICAN Coins',
+        description: params.description || 'Buy icaneracoins',
       },
       callback: (response) => {
         resolve({

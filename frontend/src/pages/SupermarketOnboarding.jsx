@@ -129,7 +129,7 @@ export default function SupermarketOnboarding() {
           <h1 className="text-2xl font-bold text-slate-800 mb-2">You're live!</h1>
           <p className="text-slate-600 mb-6">
             <strong>{form.storeName}</strong> is now on the platform.
-            You earned <span className="text-emerald-600 font-bold">10 ICAN coins</span> for joining!
+            You earned <span className="text-emerald-600 font-bold">10 icaneracoins</span> for joining!
           </p>
 
           <div className="bg-slate-50 rounded-xl p-4 mb-6 text-left space-y-2">
@@ -310,7 +310,7 @@ export default function SupermarketOnboarding() {
             <div className="bg-emerald-50 rounded-xl p-4 text-sm text-emerald-800 flex items-center gap-3">
               <span className="text-2xl">₡</span>
               <div>
-                <p className="font-semibold">Earn 10 ICAN coins on registration</p>
+                <p className="font-semibold">Earn 10 icaneracoins on registration</p>
                 <p className="text-xs text-emerald-600">Plus 1% cashback for every customer purchase — paid in ICAN</p>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -8,6 +8,9 @@ import {
   getTransactions,
   sendICAN,
   requestIcanPayout,
+  resolveRecipient,
+  sendICANToBusiness,
+  detectUgandaMobileNetwork,
   formatICAN,
   icanToUGX,
   ugxToICAN,
@@ -24,6 +27,13 @@ import { hasPinSet, verifyPin } from '@/services/pinService';
 import { parseIcanPayCode, payIcanRequest, payInvoiceWithIcan } from '@/services/icanPaymentRequestService';
 import { parseInvoiceTransactionId } from '@/services/transactionService';
 import SupplierAvailabilityPanel from '@/components/SupplierAvailabilityPanel';
+import { ArrowDown, ArrowUp, Banknote, CheckCircle2, Gem, Landmark, Receipt as ReceiptIcon, RotateCcw, ShoppingBasket, ShoppingCart, Smartphone, Sparkles, Leaf } from 'lucide-react';
+import {
+  Sheet, StoreCard, ActionTiles, SpendMix, Receipt, ReceiptRow, FilterTabs, Collapsible, AddressQr, CopyButton,
+  fmtLocal, Barcode, FIELD, LABEL, BTN_PRIMARY, BTN_OUTLINE, HistoryHeader, SearchBox, compactNumber, formatAmount,
+} from '@/components/wallet/SupermartWalletUI';
+
+const PAGE_BG = 'radial-gradient(120% 55% at 50% -8%, #0b4a37 0%, #05201a 45%, #031510 100%)';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -36,25 +46,17 @@ const TX_LABELS = {
   tithe: 'Tithe (10%)',
   sale: 'Sale',
   refund: 'Refund',
+  buy: 'Bought IcanEra',
+  sell: 'Sold IcanEra',
+  journey_payment: 'Journey payment',
 };
 
-const TX_COLORS = {
-  earn: 'text-emerald-400',
-  cashback: 'text-emerald-400',
-  purchase: 'text-rose-400',
-  transfer_in: 'text-emerald-400',
-  transfer_out: 'text-rose-400',
-  tithe: 'text-amber-400',
-  sale: 'text-emerald-400',
-  refund: 'text-sky-400',
-};
+const APP_LABEL = { ican: 'ICAN', 'digital-city-era': 'Supermarket', 'farm-agent': 'AgriBone', mybodaguy: 'BodaGoEra' };
+/** Receipts carry the coin's code ("ICAN"); people see its name. */
+const unitLabel = (code) => (!code || code === 'ICAN' ? 'IcanEra' : code);
 
-const APP_BADGE = {
-  ican: { label: 'ICAN', color: 'bg-violet-900 text-violet-200' },
-  'digital-city-era': { label: 'Supermarket', color: 'bg-blue-900 text-blue-200' },
-  'farm-agent': { label: 'AgriBone', color: 'bg-green-900 text-green-200' },
-  mybodaguy: { label: 'My Boda Guy', color: 'bg-orange-900 text-orange-200' },
-};
+const HIDE_KEY = 'ican_wallet_balance_hidden';
+
 
 function formatDate(ts) {
   return new Date(ts).toLocaleDateString('en-UG', {
@@ -62,105 +64,80 @@ function formatDate(ts) {
   });
 }
 
-// ─── sub-components ────────────────────────────────────────────────────────
+// ─── helpers for the till receipt ───────────────────────────────────────────
 
-function BalanceCard({ balance, walletAddress, onRefresh, refreshing, embedded = false, display }) {
-  const [hidden, setHidden] = useState(false);
+const timeOf = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const currencyCode = display?.currency_code || 'UGX';
-  const countryName  = display?.country_name;
-  const priceLocal   = Number(display?.price_local ?? ICAN_TO_UGX);
-  const localBalance = balance.ican * priceLocal;
+/**
+ * Every word typed must appear somewhere in the transaction: its name, the app,
+ * the note, the amount (as shown or plain), the direction, the date (as
+ * "25 Sep 2026", "September", "Today"…), its status or its id.
+ */
+function matchesQuery(tx, query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const d = new Date(tx.created_at);
+  const hay = [
+    TX_LABELS[tx.transaction_type] ?? tx.transaction_type,
+    tx.transaction_type,
+    APP_LABEL[tx.source_app] ?? tx.source_app,
+    tx.note,
+    tx.direction === 'in' ? 'in received incoming' : 'out sent outgoing',
+    formatICAN(tx.ican_amount),
+    String(Number(tx.ican_amount)),
+    d.toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' }),
+    d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }),
+    d.toLocaleDateString([], { weekday: 'long' }),
+    dayLabel(tx.created_at),
+    tx.status,
+    tx.id,
+    tx.reference_id,
+  ].filter(Boolean).join(' ').toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
 
-  const bgStyle = embedded
-    ? { background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)' }
-    : { background: 'linear-gradient(135deg, #1a1040 0%, #0f2055 50%, #0a3d2b 100%)' };
+function dayLabel(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(today) - start(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
 
-  const textColor = embedded ? 'text-white' : 'text-white';
+function txTone(tx) {
+  if (tx.transaction_type === 'tithe') return { text: 'text-amber-700', bg: 'bg-amber-100' };
+  if (tx.direction === 'in') return { text: 'text-emerald-700', bg: 'bg-emerald-100' };
+  return { text: 'text-rose-700', bg: 'bg-rose-100' };
+}
 
-  return (
-    <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={bgStyle}>
-      <div className="absolute inset-0 opacity-10 pointer-events-none"
-        style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, #7c3aed 0%, transparent 60%)' }} />
-      <div className="relative p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center">
-              <span className={`${textColor} font-bold text-sm`}>I</span>
-            </div>
-            <span className={`${textColor} font-semibold text-sm`}>Supermarket — IcanEra Wallet</span>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setHidden(h => !h)}
-              className="text-white/60 hover:text-white text-xs px-2 py-1 rounded bg-white/10">
-              {hidden ? 'Show' : 'Hide'}
-            </button>
-            <button onClick={onRefresh} disabled={refreshing}
-              className="text-white/60 hover:text-white text-xs px-2 py-1 rounded bg-white/10">
-              {refreshing ? '...' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-white/60 text-xs uppercase tracking-widest">IcanEra Balance</div>
-          {countryName && (
-            <span className="text-white/50 text-[10px] bg-white/10 rounded-full px-2 py-0.5">
-              🌍 {countryName} · {currencyCode}
-            </span>
-          )}
-        </div>
-        <div className={`text-4xl font-bold ${textColor} mb-1`}>
-          {hidden ? '••••••' : `${formatICAN(balance.ican)} ICAN`}
-        </div>
-        <div className="text-white/70 text-sm mb-4">
-          {hidden ? '••••••' : `≈ ${currencyCode} ${localBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-        </div>
-
-        <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-3">
-          <span className="text-white/50 text-xs shrink-0">Address:</span>
-          <span className="text-white/80 text-xs font-mono truncate flex-1">{walletAddress ?? 'Generating…'}</span>
-          {walletAddress && (
-            <button onClick={() => { navigator.clipboard.writeText(walletAddress); toast.info('Address copied'); }}
-              className="text-white/50 hover:text-white text-xs ml-auto shrink-0">Copy</button>
-          )}
-        </div>
-
-        {/* Stats row - showing total earned, spent, tithe */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {[
-            { label: 'Earned', value: `${formatICAN(balance.totalEarned ?? 0)}` },
-            { label: 'Spent', value: `${formatICAN(balance.totalSpent ?? 0)}` },
-            { label: 'Tithe', value: `${formatICAN(balance.totalTithe ?? 0)}` },
-          ].map(s => (
-            <div key={s.label} className="bg-white/10 rounded-xl p-2 text-center">
-              <p className="text-white/50 text-xs mb-1">{s.label}</p>
-              <p className="text-white font-bold text-xs">{s.value} ₡</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-3 text-white/40 text-xs">
-          Live price: 1 ICAN = {currencyCode} {priceLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          {display?.is_protected && <span className="text-emerald-300 ml-2">✓ beating local inflation</span>}
-        </div>
-      </div>
-    </div>
-  );
+function txIcon(tx) {
+  const t = tx.transaction_type;
+  if (t === 'tithe') return <span className="text-[11px] font-bold">10%</span>;
+  if (t === 'buy' || t === 'purchase') return <ShoppingCart size={15} />;
+  if (t === 'sell' || t === 'sale') return <Banknote size={15} />;
+  if (t === 'refund') return <RotateCcw size={15} />;
+  if (t === 'earn' || t === 'cashback') return <Sparkles size={15} />;
+  return tx.direction === 'in' ? <ArrowDown size={15} /> : <ArrowUp size={15} />;
 }
 
 const SEND_DESTINATIONS = [
-  { key: 'wallet', label: '💎 ICAN Wallet' },
-  { key: 'mobilemoneyuganda', label: '📱 Mobile Money' },
-  { key: 'bank', label: '🏦 Bank Account' },
+  { key: 'wallet', label: 'IcanEra wallet', Icon: Gem },
+  { key: 'mobilemoneyuganda', label: 'Mobile Money', Icon: Smartphone },
+  { key: 'bank', label: 'Bank', Icon: Landmark },
 ];
 
-function SendModal({ userId, walletAddress, balance, onClose, onDone }) {
+function SendModal({ userId, balance, onClose, onDone }) {
   const [destination, setDestination] = useState('wallet');
+  const [step, setStep] = useState('form'); // 'form' | 'confirm'
 
-  // ICAN-to-ICAN fields
-  const [recipientAddress, setRecipientAddress] = useState('');
+  // ICAN-to-ICAN fields - numbers only: the recipient's 16-digit account number
+  // (or a 3... business wallet number, or a phone number), never an "ICA-"/"BIZ" code.
+  const [recipient, setRecipient] = useState('');
   const [note, setNote] = useState('');
+  const [resolved, setResolved] = useState(null);
+  const [pin, setPin] = useState('');
 
   // Real-money payout fields (mobile money / bank)
   const [network, setNetwork] = useState('MTN');
@@ -172,43 +149,66 @@ function SendModal({ userId, walletAddress, balance, onClose, onDone }) {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const available = balance?.ican ?? 0;
   const amountNum = parseFloat(amount) || 0;
   const isPayout = destination !== 'wallet';
-  const feePercent = 3; // flat 3% cash-out fee (mobile money / bank) — sending to another ICAN wallet is 0%
+  const feePercent = 3; // flat 3% cash-out fee (mobile money / bank) - sending to another ICAN wallet is 0%
   const ugxGross = amountNum * ICAN_TO_UGX;
   const ugxNet = ugxGross - Math.round((ugxGross * feePercent) / 100);
 
-  const canSend = isPayout
-    ? amountNum > 0 && amountNum <= (balance?.ican ?? 0) &&
-      (destination === 'mobilemoneyuganda' ? !!phoneNumber : !!accountNumber && !!bankCode && !!beneficiaryName)
-    : !!recipientAddress && amountNum > 0;
+  // The network comes from the number's prefix; the MTN/Airtel picker only
+  // appears when the prefix isn't recognised (same as the ICAN app).
+  const detectedNetwork = destination === 'mobilemoneyuganda' ? detectUgandaMobileNetwork(phoneNumber) : null;
+  const payoutNetwork = detectedNetwork || network;
 
-  const handleSend = async () => {
+  const canSend = isPayout
+    ? amountNum > 0 && amountNum <= available &&
+      (destination === 'mobilemoneyuganda' ? !!phoneNumber : !!accountNumber && !!bankCode && !!beneficiaryName)
+    : !!recipient.trim() && amountNum > 0;
+
+  // Step 1: check the form and (for a wallet) find out who is really being paid.
+  const handleContinue = async () => {
     if (!canSend) { toast.error('Fill in all fields'); return; }
+    if (amountNum > available) { toast.error('Insufficient balance'); return; }
+    if (destination === 'wallet') {
+      setLoading(true);
+      try {
+        const found = await resolveRecipient(recipient);
+        if (!found) { toast.error(`Recipient not found: ${recipient.trim()}`); return; }
+        if (found.kind === 'user' && found.userId === userId) { toast.error('Cannot send IcanEra to yourself'); return; }
+        setResolved(found);
+      } catch (e) {
+        toast.error(e.message || 'Could not look up the recipient');
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+    setPin('');
+    setStep('confirm');
+  };
+
+  // Step 2: the transaction PIN, then the money moves.
+  const handleConfirm = async () => {
     setLoading(true);
     try {
-      if (destination === 'wallet') {
-        // Resolve wallet address → user_id
-        const { data: recipientWallet, error } = await supabase
-          .from('ican_user_wallets')
-          .select('user_id')
-          .eq('wallet_address', recipientAddress.trim())
-          .single();
-        if (error || !recipientWallet) { toast.error('Wallet address not found'); return; }
+      const pinCheck = await verifyPin(userId, pin);
+      if (!pinCheck.success) { toast.error(pinCheck.error || 'Incorrect transaction PIN. Transfer cancelled.'); return; }
 
-        await sendICAN({
-          fromUserId: userId,
-          toUserId: recipientWallet.user_id,
-          amount: amountNum,
-          note,
-        });
-        toast.success(`Sent ${amount} ICAN`);
+      if (destination === 'wallet' && resolved) {
+        const memo = note.trim() || `Transfer to ${resolved.name}`;
+        if (resolved.kind === 'business') {
+          await sendICANToBusiness({ fromUserId: userId, businessProfileId: resolved.businessProfileId, amount: amountNum, note: memo });
+        } else {
+          await sendICAN({ fromUserId: userId, toUserId: resolved.userId, amount: amountNum, note: memo });
+        }
+        toast.success(`Sent ${formatICAN(amountNum)} IcanEra to ${resolved.name}. No fee.`);
       } else {
         const data = await requestIcanPayout({
           icanAmount: amountNum,
           channel: destination,
           phoneNumber: destination === 'mobilemoneyuganda' ? phoneNumber : undefined,
-          network: destination === 'mobilemoneyuganda' ? network : undefined,
+          network: destination === 'mobilemoneyuganda' ? payoutNetwork : undefined,
           accountNumber: destination === 'bank' ? accountNumber : undefined,
           bankCode: destination === 'bank' ? bankCode : undefined,
           beneficiaryName: destination === 'bank' ? beneficiaryName : undefined,
@@ -224,173 +224,188 @@ function SendModal({ userId, walletAddress, balance, onClose, onDone }) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl my-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-bold text-lg">Send</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
+  if (step === 'confirm') {
+    const rows = destination === 'wallet' && resolved
+      ? [
+          ['To', resolved.name],
+          [resolved.kind === 'business' ? 'Business wallet' : 'Account', resolved.identifier],
+          ['Amount', `${formatICAN(amountNum)} IcanEra`],
+          ['Fee', 'None'],
+        ]
+      : [
+          ['To', destination === 'mobilemoneyuganda' ? `${phoneNumber} (${payoutNetwork})` : `${beneficiaryName} · ${accountNumber}`],
+          ['Amount', `${formatICAN(amountNum)} IcanEra`],
+          [`Fee (${feePercent}%)`, `−UGX ${(ugxGross - ugxNet).toLocaleString()}`],
+          ['Recipient gets', `UGX ${ugxNet.toLocaleString()}`],
+        ];
+    return (
+      <Sheet title="Confirm" onClose={onClose}>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-emerald-800/20 bg-white/80 p-4 text-[13px] text-stone-700">
+            {rows.map(([k, v]) => (
+              <div key={k} className="flex items-baseline py-1.5">
+                <span className="shrink-0">{k}</span>
+                <span className="mx-2 flex-1 border-b border-dotted border-emerald-900/30" />
+                <span className="min-w-0 max-w-[62%] break-words text-right font-semibold text-stone-900">{v}</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <label className={LABEL} htmlFor="w-send-pin">Transaction PIN</label>
+            <input
+              id="w-send-pin" type="password" inputMode="numeric" autoComplete="off" maxLength={6} autoFocus
+              value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="••••" className={`${FIELD} text-center text-[20px] tracking-[0.5em]`}
+            />
+          </div>
+          <div className="grid grid-cols-[1fr_1.4fr] gap-3 pt-1">
+            <button type="button" onClick={() => setStep('form')} disabled={loading} className={BTN_OUTLINE}>Back</button>
+            <button type="button" onClick={handleConfirm} disabled={loading || pin.length < 4} className={BTN_PRIMARY}>
+              {loading ? 'Sending…' : isPayout ? 'Cash out' : 'Send'}
+            </button>
+          </div>
         </div>
+      </Sheet>
+    );
+  }
 
-        <div className="mb-4">
-          <label className="text-gray-400 text-sm mb-1 block">Send To</label>
-          <div className="flex gap-2">
-            {SEND_DESTINATIONS.map((d) => (
+  return (
+    <Sheet title="Send" onClose={onClose}>
+      <div className="space-y-4">
+        <div>
+          <span className={LABEL}>Send to</span>
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label="Send to">
+            {SEND_DESTINATIONS.map(({ key, label, Icon }) => (
               <button
-                key={d.key}
+                key={key}
                 type="button"
-                onClick={() => setDestination(d.key)}
+                aria-pressed={destination === key}
+                onClick={() => setDestination(key)}
                 disabled={loading}
-                className={`flex-1 py-2 rounded-lg text-xs sm:text-sm font-medium border ${
-                  destination === d.key ? 'bg-violet-600 border-violet-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-300'
+                className={`flex min-w-0 flex-col items-center gap-1.5 rounded-2xl border p-2.5 text-center transition ${
+                  destination === key ? 'border-emerald-700 bg-emerald-50 shadow-[inset_0_0_0_1px_rgba(4,120,87,0.9)]' : 'border-emerald-800/25 bg-white hover:border-emerald-700'
                 }`}
               >
-                {d.label}
+                <Icon size={18} className="text-emerald-700" />
+                <span className="text-[11.5px] font-semibold leading-tight text-stone-800">{label}</span>
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Cards can only receive top-ups, not payouts — send to a card isn't supported by any provider we integrate with.
+          <p className="mt-2 text-[11px] leading-snug text-stone-500">
+            Cards can only receive top-ups, not payouts — sending to a card isn't supported by any provider we integrate with.
           </p>
         </div>
 
-        <div className="space-y-4">
-          {destination === 'wallet' && (
-            <div>
-              <label className="text-gray-400 text-sm mb-1 block">Recipient Wallet Address</label>
-              <input
-                value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)}
-                placeholder="ICA-XXXXXXXXXXXXXXXX"
-                className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-              />
-            </div>
-          )}
-
-          {destination === 'mobilemoneyuganda' && (
-            <>
-              <div className="flex gap-2">
-                {['MTN', 'AIRTEL'].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setNetwork(n)}
-                    disabled={loading}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                      network === n ? 'bg-violet-600 border-violet-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-300'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-              <div>
-                <label className="text-gray-400 text-sm mb-1 block">Mobile Money Number</label>
-                <input
-                  value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
-                  placeholder="e.g. 0770123456"
-                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-                />
-              </div>
-            </>
-          )}
-
-          {destination === 'bank' && (
-            <>
-              <div>
-                <label className="text-gray-400 text-sm mb-1 block">Bank Code</label>
-                <input
-                  value={bankCode} onChange={e => setBankCode(e.target.value)}
-                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-                />
-              </div>
-              <div>
-                <label className="text-gray-400 text-sm mb-1 block">Account Number</label>
-                <input
-                  value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
-                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-                />
-              </div>
-              <div>
-                <label className="text-gray-400 text-sm mb-1 block">Account Holder Name</label>
-                <input
-                  value={beneficiaryName} onChange={e => setBeneficiaryName(e.target.value)}
-                  className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-                />
-              </div>
-            </>
-          )}
-
+        {destination === 'wallet' && (
           <div>
-            <label className="text-gray-400 text-sm mb-1 block">Amount (ICAN)</label>
+            <label className={LABEL} htmlFor="w-send-recipient">Recipient account number</label>
             <input
-              type="number" min="0.0001" step="0.0001" max={isPayout ? (balance?.ican ?? undefined) : undefined}
-              value={amount} onChange={e => setAmount(e.target.value)}
-              placeholder="0.0000"
-              className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
+              id="w-send-recipient" value={recipient}
+              onChange={(e) => setRecipient(e.target.value.replace(/[^\d+]/g, ''))}
+              placeholder="1002345678901234" inputMode="numeric" autoComplete="off"
+              className={`${FIELD} font-mono tabular-nums`}
             />
-            {amount && !isPayout && <p className="text-gray-500 text-xs mt-1">≈ UGX {(parseFloat(amount || 0) * ICAN_TO_UGX).toLocaleString()}</p>}
+            <p className="mt-1.5 text-[11px] leading-snug text-stone-500">
+              Numbers only — their 16-digit account number or phone number. A business wallet number starts with 3.
+            </p>
           </div>
+        )}
 
-          {destination === 'wallet' && (
+        {destination === 'mobilemoneyuganda' && (
+          <>
             <div>
-              <label className="text-gray-400 text-sm mb-1 block">Note (optional)</label>
-              <input
-                value={note} onChange={e => setNote(e.target.value)}
-                placeholder="What's this for?"
-                className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-violet-500"
-              />
+              <label className={LABEL} htmlFor="w-send-phone">Mobile Money number</label>
+              <input id="w-send-phone" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="e.g. 0770123456" inputMode="tel" className={FIELD} />
             </div>
-          )}
+            {phoneNumber.trim() && (detectedNetwork ? (
+              <p className="-mt-2 text-[12px] text-stone-500">Network detected: <span className="font-semibold text-stone-800">{detectedNetwork === 'AIRTEL' ? 'Airtel' : 'MTN'}</span></p>
+            ) : (
+              <div>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Network">
+                  {['MTN', 'AIRTEL'].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      aria-pressed={network === n}
+                      onClick={() => setNetwork(n)}
+                      disabled={loading}
+                      className={`rounded-2xl border p-2.5 text-center text-sm font-semibold transition ${
+                        network === n ? 'border-emerald-700 bg-emerald-50 text-emerald-900 shadow-[inset_0_0_0_1px_rgba(4,120,87,0.9)]' : 'border-emerald-800/25 bg-white text-stone-700'
+                      }`}
+                    >
+                      {n === 'AIRTEL' ? 'Airtel' : n}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-stone-500">Couldn't tell the network from this number — pick which one it's on.</p>
+              </div>
+            ))}
+          </>
+        )}
 
-          {isPayout && amountNum > 0 && (
-            <div className="bg-gray-800 rounded-lg p-4 text-sm space-y-1">
-              <div className="flex justify-between text-gray-300"><span>Gross</span><span>UGX {ugxGross.toLocaleString()}</span></div>
-              <div className="flex justify-between text-gray-400"><span>Fee ({feePercent}%)</span><span>-UGX {(ugxGross - ugxNet).toLocaleString()}</span></div>
-              <div className="flex justify-between text-white font-semibold"><span>Recipient gets</span><span>UGX {ugxNet.toLocaleString()}</span></div>
+        {destination === 'bank' && (
+          <>
+            <div>
+              <label className={LABEL} htmlFor="w-send-bank">Bank code</label>
+              <input id="w-send-bank" value={bankCode} onChange={(e) => setBankCode(e.target.value)} className={FIELD} />
             </div>
-          )}
+            <div>
+              <label className={LABEL} htmlFor="w-send-acc">Account number</label>
+              <input id="w-send-acc" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} inputMode="numeric" className={FIELD} />
+            </div>
+            <div>
+              <label className={LABEL} htmlFor="w-send-name">Account holder name</label>
+              <input id="w-send-name" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} className={FIELD} />
+            </div>
+          </>
+        )}
 
-          <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-xs">
-            {isPayout
-              ? 'Sent via Flutterwave. A 3% cash-out fee applies. ICAN leaves your wallet immediately; if the transfer fails, it is refunded automatically.'
-              : 'No fee — the recipient receives the full amount you send.'}
+        <div>
+          <label className={LABEL} htmlFor="w-send-amount">Amount (IcanEra)</label>
+          <input
+            id="w-send-amount"
+            type="number" min="0.0001" step="0.0001" inputMode="decimal" max={available}
+            value={amount} onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.0000"
+            className={`${FIELD} font-classic-display text-[18px] font-bold tabular-nums lining-nums`}
+          />
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[11.5px] text-stone-500">
+            <span className="min-w-0 truncate">{amount && !isPayout ? `≈ UGX ${(amountNum * ICAN_TO_UGX).toLocaleString()}` : ' '}</span>
+            <button type="button" className="shrink-0 font-semibold text-emerald-800 hover:underline" onClick={() => setAmount(String(available))}>
+              Max {formatICAN(available)}
+            </button>
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-gray-800 text-gray-300 font-medium text-sm">Cancel</button>
-          <button onClick={handleSend} disabled={!canSend || loading}
-            className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm disabled:opacity-60">
-            {loading ? 'Sending…' : 'Send'}
+        {destination === 'wallet' && (
+          <div>
+            <label className={LABEL} htmlFor="w-send-note">Note (optional)</label>
+            <input id="w-send-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's this for?" className={FIELD} />
+          </div>
+        )}
+
+        {isPayout && amountNum > 0 && (
+          <div className="rounded-2xl border border-emerald-800/20 bg-white/80 p-4 font-mono text-[12.5px] text-stone-700">
+            <div className="flex items-baseline"><span>Gross</span><span className="mx-2 flex-1 border-b border-dotted border-emerald-900/30" /><span>UGX {ugxGross.toLocaleString()}</span></div>
+            <div className="mt-1.5 flex items-baseline"><span>Fee ({feePercent}%)</span><span className="mx-2 flex-1 border-b border-dotted border-emerald-900/30" /><span>−UGX {(ugxGross - ugxNet).toLocaleString()}</span></div>
+            <div className="mt-1.5 flex items-baseline font-bold text-stone-900"><span>Recipient gets</span><span className="mx-2 flex-1 border-b border-dotted border-emerald-900/30" /><span>UGX {ugxNet.toLocaleString()}</span></div>
+          </div>
+        )}
+
+        <p className="rounded-2xl border border-[#c4a052]/40 bg-[#fdf8ea] px-4 py-3 text-[12px] leading-relaxed text-[#5c4410]">
+          {isPayout
+            ? 'Sent via Flutterwave. A 3% cash-out fee applies. IcanEra leaves your wallet immediately; if the transfer fails, it is refunded automatically.'
+            : 'No fee — the recipient receives the full amount you send.'}
+        </p>
+
+        <div className="grid grid-cols-[1fr_1.4fr] gap-3 pt-1">
+          <button type="button" onClick={onClose} className={BTN_OUTLINE}>Cancel</button>
+          <button type="button" onClick={handleContinue} disabled={!canSend || loading} className={BTN_PRIMARY}>
+            {loading ? 'Checking…' : 'Continue'}
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ReceiveModal({ walletAddress, onClose }) {
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl text-center">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-bold text-lg">Receive ICAN</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
-        </div>
-        <div className="bg-white rounded-xl p-4 mx-auto w-48 h-48 flex items-center justify-center mb-4">
-          <div className="text-xs text-gray-500 text-center">
-            QR Code<br />(install qrcode.react to render)
-          </div>
-        </div>
-        <div className="bg-gray-800 rounded-lg px-4 py-3 text-white font-mono text-sm break-all mb-4">
-          {walletAddress}
-        </div>
-        <button onClick={() => { navigator.clipboard.writeText(walletAddress); toast.info('Copied!'); }}
-          className="w-full py-3 rounded-xl bg-violet-600 text-white font-semibold text-sm">
-          Copy Address
-        </button>
-      </div>
-    </div>
+    </Sheet>
   );
 }
 
@@ -414,8 +429,17 @@ export default function ICANWalletPage({
   const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | 'sendout' | null
   const [paymentReceipt, setPaymentReceipt] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [historyOpen, setHistoryOpen] = useState(false); // collapsed until asked for
+  const [query, setQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
   const [needsPin, setNeedsPin] = useState(false);
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem(HIDE_KEY) === '1'; } catch { return false; }
+  });
+  const toggleHidden = () => setHidden((h) => {
+    try { localStorage.setItem(HIDE_KEY, h ? '0' : '1'); } catch { /* private mode: just don't remember it */ }
+    return !h;
+  });
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -470,7 +494,7 @@ export default function ICANWalletPage({
     const invoiceTransactionId = paymentCode ? null : parseInvoiceTransactionId(scannedValue);
 
     if (!paymentCode && !invoiceTransactionId) {
-      toast.error('This QR code is not an ICAN payment request or invoice');
+      toast.error('This QR code is not an IcanEra payment request or invoice');
       return;
     }
 
@@ -501,7 +525,7 @@ export default function ICANWalletPage({
           receiptNumber: result.invoice.receiptNumber,
           transactionId: result.transfer.out_tx_id,
           amount: result.transfer.amount_sent,
-          currency: 'ICAN',
+          currency: 'IcanEra',
           payerUserId: userId,
           issuedAt: new Date().toISOString(),
           description: `Invoice payment — ${result.invoice.storeName}`,
@@ -550,8 +574,8 @@ export default function ICANWalletPage({
       '--------------------------------',
       `Receipt: ${paymentReceipt.receiptNumber}`,
       `Transaction: ${paymentReceipt.transactionId || 'N/A'}`,
-      `Amount: ${formatICAN(paymentReceipt.amount)} ${paymentReceipt.currency || 'ICAN'}`,
-      `Description: ${paymentReceipt.description || 'ICAN payment'}`,
+      `Amount: ${formatICAN(paymentReceipt.amount)} ${unitLabel(paymentReceipt.currency)}`,
+      `Description: ${paymentReceipt.description || 'IcanEra payment'}`,
       `Payment code: ${paymentReceipt.paymentCode}`,
       `Date: ${new Date(paymentReceipt.issuedAt).toLocaleString('en-UG')}`,
       '',
@@ -565,13 +589,30 @@ export default function ICANWalletPage({
     URL.revokeObjectURL(url);
   };
 
-  const filteredTx = transactions.filter(tx => {
+  const filteredTx = useMemo(() => transactions.filter((tx) => {
     if (activeTab === 'all') return true;
     if (activeTab === 'in') return tx.direction === 'in';
     if (activeTab === 'out') return tx.direction === 'out';
     if (activeTab === 'tithe') return tx.transaction_type === 'tithe';
     return true;
-  });
+  }).filter((tx) => matchesQuery(tx, query)), [transactions, activeTab, query]);
+
+  // History grouped by day, newest first (the query already returns it that way).
+  const groups = useMemo(() => {
+    const out = [];
+    for (const tx of filteredTx) {
+      const label = dayLabel(tx.created_at);
+      const last = out[out.length - 1];
+      if (last && last.label === label) last.items.push(tx);
+      else out.push({ label, items: [tx] });
+    }
+    return out;
+  }, [filteredTx]);
+
+  const cashback = useMemo(
+    () => transactions.filter((tx) => tx.transaction_type === 'cashback' && tx.direction === 'in').reduce((sum, tx) => sum + Number(tx.ican_amount), 0),
+    [transactions],
+  );
 
   // Live, country-aware currency (falls back to the UGX floor price if the
   // pricing RPC — or the user's sign-up country — isn't resolved yet).
@@ -591,193 +632,167 @@ export default function ICANWalletPage({
 
   if (loading) {
     return (
-      <div className={`${embedded ? '' : 'min-h-screen bg-gray-950'} flex items-center justify-center ${embedded ? 'py-10' : ''}`}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400">Loading your ICAN wallet…</p>
+      <div className={`${embedded ? '' : 'min-h-screen'} px-4 py-6`} style={embedded ? undefined : { background: PAGE_BG }} role="status" aria-label="Loading your wallet">
+        <div className="mx-auto max-w-2xl space-y-4">
+          <div className="h-[290px] animate-pulse rounded-[26px] bg-gradient-to-br from-[#04281e] to-[#0b6b4f] opacity-80" />
+          <div className="h-32 animate-pulse rounded-[22px] bg-emerald-900/10" />
+          <div className="h-44 animate-pulse rounded-[22px] bg-emerald-900/10" />
         </div>
       </div>
     );
   }
 
-  const containerClass = embedded 
-    ? "px-4 py-6 space-y-6" 
-    : "min-h-screen bg-gray-950 text-white";
-  
-  const innerContainerClass = embedded 
-    ? "" 
-    : "max-w-2xl mx-auto px-4 py-8 space-y-6";
+  const valueOf = (ican) => fmtLocal(Number(ican) * priceLocal, currencyCode);
+  const dash = hidden ? '••••' : null;
 
   return (
-    <div className={containerClass}>
-      <div className={innerContainerClass}>
+    <div className={embedded ? '' : 'min-h-screen text-white'} style={embedded ? undefined : { background: PAGE_BG }}>
+      <div className={`mx-auto max-w-2xl space-y-4 px-4 ${embedded ? 'py-5' : 'py-8'}`}>
 
         {/* Header - only show if not embedded */}
         {!embedded && (
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center">
-              <span className="font-bold text-lg">₡</span>
-            </div>
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-[#e6c980] ring-1 ring-[#c4a052]/60"><ShoppingBasket size={19} /></span>
             <div>
-              <h1 className="font-bold text-xl">IcanEra Wallet</h1>
-              <p className="text-gray-500 text-sm">Supermarket — powered by Icaneracoin</p>
+              <h1 className="font-classic-display text-xl font-bold">IcanEra Wallet</h1>
+              <p className="text-[12px] text-emerald-100/60">Supermarket — powered by IcanEra</p>
             </div>
           </div>
         )}
 
-        {/* Balance card */}
-        <BalanceCard
-          balance={balance}
-          walletAddress={balance.address}
+        <StoreCard
+          balanceText={formatAmount(balance.ican)}
+          exactText={formatICAN(balance.ican)}
+          hidden={hidden}
+          onToggleHidden={toggleHidden}
           onRefresh={handleRefresh}
           refreshing={refreshing}
-          embedded={embedded}
           display={display}
+          fallbackPrice={ICAN_TO_UGX}
+          localBalance={balance.ican * priceLocal}
+          currency={currencyCode}
+          address={balance.address}
+          onShowQr={() => setModal('qr')}
         />
 
-        {/* Quick actions */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: 'Pay', icon: '⌕', color: 'from-orange-700 to-orange-900', action: () => setModal('pay') },
-            { label: 'Send', icon: '↑', color: 'from-violet-700 to-violet-900', action: () => setModal('send') },
-            { label: 'Receive', icon: '↓', color: 'from-emerald-700 to-emerald-900', action: () => setModal('receive') },
-            { label: 'Buy', icon: '💳', color: 'from-green-700 to-green-900', action: () => setModal('buy') },
-            { label: 'Sell', icon: '💰', color: 'from-rose-700 to-rose-900', action: () => setModal('sell') },
-            { label: 'Send Out', icon: '📤', color: 'from-pink-700 to-pink-900', action: () => setModal('sendout') },
-            { label: 'History', icon: '≡', color: 'from-blue-700 to-blue-900', action: () => document.getElementById('tx-section')?.scrollIntoView({ behavior: 'smooth' }) },
-          ].map(btn => (
-            <button key={btn.label} onClick={btn.action}
-              className={`bg-gradient-to-br ${btn.color} rounded-2xl p-4 flex flex-col items-center gap-2 hover:opacity-90 active:scale-95 transition-all`}>
-              <span className="text-2xl font-light">{btn.icon}</span>
-              <span className="text-sm font-medium">{btn.label}</span>
-            </button>
-          ))}
-        </div>
+        <ActionTiles embedded={embedded} onAction={(a) => setModal(a)} />
 
         {/* Supplier availability — confirmed suppliers only, see SupplierAvailabilityPanel */}
         {showSupplierAvailability && <SupplierAvailabilityPanel embedded={embedded} />}
 
-        {/* Stats row */}
+        <SpendMix
+          transactions={transactions}
+          earned={compactNumber(balance.totalEarned ?? 0)}
+          spent={compactNumber(balance.totalSpent ?? 0)}
+          tithe={compactNumber(balance.totalTithe ?? 0)}
+          cashback={cashback}
+          hidden={hidden}
+          embedded={embedded}
+          fmt={compactNumber}
+        />
+
         {!embedded && (
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Total Earned', value: `${formatICAN(balance.totalEarned ?? 0)} ICAN` },
-              { label: 'Rate', value: `1 ICAN = ${currencyCode} ${priceLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
-              { label: 'Tithe Rate', value: '10% auto-deducted' },
-            ].map(s => (
-              <div key={s.label} className="bg-gray-900 rounded-xl p-3 text-center">
-                <p className="text-gray-500 text-xs mb-1">{s.label}</p>
-                <p className="text-white font-semibold text-xs">{s.value}</p>
-              </div>
-            ))}
-          </div>
+          <Collapsible embedded={embedded} icon={<Leaf size={16} />} title="Earn IcanEra at the Supermarket" subtitle="Cashback, deliveries and tithe">
+            <ul className="space-y-2 text-[13px] leading-snug text-emerald-50/80">
+              {[
+                'Pay with IcanEra at checkout — 1% cashback on every purchase.',
+                'Suppliers earn IcanEra on every approved delivery.',
+                'A 10% tithe is deducted automatically from all earnings.',
+              ].map((item) => (
+                <li key={item} className="flex gap-2"><span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#c4a052]" />{item}</li>
+              ))}
+            </ul>
+          </Collapsible>
         )}
 
-        {/* Transaction history */}
-        <div id="tx-section">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className={`font-semibold text-base ${embedded ? 'text-gray-900' : 'text-white'}`}>Transaction History</h2>
-            <div className={`flex gap-1 ${embedded ? 'bg-gray-100' : 'bg-gray-900'} rounded-lg p-1`}>
-              {['all', 'in', 'out', 'tithe'].map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`text-xs px-3 py-1.5 rounded-md capitalize transition-colors ${activeTab === tab ? (embedded ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white') : (embedded ? 'text-gray-600 hover:text-gray-900' : 'text-gray-400 hover:text-white')}`}>
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Transaction history — a till receipt, collapsed by default, searchable once open */}
+        <section id="tx-section" aria-label="Transaction history">
+          <HistoryHeader
+            open={historyOpen}
+            onToggle={() => setHistoryOpen((o) => !o)}
+            count={transactions.length}
+            embedded={embedded}
+            preview={transactions[0]
+              ? `Latest: ${TX_LABELS[transactions[0].transaction_type] ?? transactions[0].transaction_type} · ${dayLabel(transactions[0].created_at)}, ${timeOf(transactions[0].created_at)}`
+              : 'No receipts yet'}
+          />
 
-          {filteredTx.length === 0 ? (
-            <div className={`${embedded ? 'bg-slate-50' : 'bg-gray-900'} rounded-2xl p-8 text-center`}>
-              <div className="text-4xl mb-3">💳</div>
-              <p className={`${embedded ? 'text-gray-600' : 'text-gray-500'} text-sm`}>No transactions yet. Pay or receive ICAN at the supermarket checkout.</p>
-            </div>
-          ) : (
-            <div className="space-y-0.5">
-              {filteredTx.map(tx => {
-                const isIn = tx.direction === 'in';
-                return (
-                  <button
-                    key={tx.id}
-                    type="button"
-                    onClick={() => setSelectedTx(tx)}
-                    className={`w-full flex items-center justify-between py-1.5 px-2 rounded-lg text-left transition-colors ${embedded ? 'hover:bg-gray-100' : 'hover:bg-gray-900'}`}
-                  >
-                    <p className={`${embedded ? 'text-gray-700' : 'text-gray-200'} text-xs truncate pr-2`}>
-                      {TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
-                    </p>
-                    <p className={`text-xs font-medium shrink-0 ${TX_COLORS[tx.transaction_type] ?? (isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400'))}`}>
-                      {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
-                    </p>
-                  </button>
-                );
-              })}
+          {historyOpen && (
+            <div id="tx-panel" className="mt-3 space-y-3">
+              <SearchBox value={query} onChange={setQuery} embedded={embedded} />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <FilterTabs value={activeTab} onChange={setActiveTab} embedded={embedded} />
+                {(query || activeTab !== 'all') && (
+                  <p className={`text-[12px] ${embedded ? 'text-stone-500' : 'text-emerald-100/60'}`} aria-live="polite">{filteredTx.length} {filteredTx.length === 1 ? 'result' : 'results'}</p>
+                )}
+              </div>
+          <Receipt
+            groups={groups}
+            footerId={balance.address}
+            empty={{
+              title: query ? 'No matches' : activeTab === 'all' ? 'Nothing on the till yet' : 'Nothing matches this filter',
+              body: query ? `Nothing matches “${query}”. Try a name, an amount or a date.` : activeTab === 'all' ? 'Pay or receive IcanEra at the supermarket checkout.' : 'Try another filter.',
+            }}
+            renderRow={(tx) => {
+              const isIn = tx.direction === 'in';
+              return (
+                <ReceiptRow
+                  key={tx.id}
+                  label={TX_LABELS[tx.transaction_type] ?? tx.transaction_type}
+                  sub={`${APP_LABEL[tx.source_app] ?? tx.source_app} · ${timeOf(tx.created_at)}${tx.note ? ` · ${tx.note}` : ''}`}
+                  amount={dash || `${isIn ? '+' : '−'}${formatAmount(tx.ican_amount)}`}
+                  local={dash ? ' ' : valueOf(tx.ican_amount)}
+                  tone={txTone(tx)}
+                  icon={txIcon(tx)}
+                  onClick={() => setSelectedTx(tx)}
+                />
+              );
+            }}
+          />
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Transaction detail modal */}
+        {/* Transaction detail */}
         {selectedTx && (() => {
           const tx = selectedTx;
-          const badge = APP_BADGE[tx.source_app] ?? APP_BADGE.ican;
           const isIn = tx.direction === 'in';
+          const tone = txTone(tx);
+          const rows = [
+            ['Value today', valueOf(tx.ican_amount)],
+            ['App', APP_LABEL[tx.source_app] ?? tx.source_app],
+            ['Date', formatDate(tx.created_at)],
+            ['Status', String(tx.status || 'completed')],
+            ['Note', tx.note || '—'],
+          ];
           return (
-            <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4" onClick={() => setSelectedTx(null)}>
-              <div className={`${embedded ? 'bg-white text-gray-900' : 'bg-gray-900 text-white'} rounded-2xl shadow-2xl max-w-sm w-full p-6`} onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-base">Transaction Details</h3>
-                  <button onClick={() => setSelectedTx(null)} className={`${embedded ? 'text-gray-500 hover:text-gray-800' : 'text-gray-400 hover:text-white'} text-xl leading-none`}>&times;</button>
-                </div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${isIn ? (embedded ? 'bg-emerald-100' : 'bg-emerald-900') : (embedded ? 'bg-rose-100' : 'bg-rose-900')}`}>
-                    <span className={isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400')}>{isIn ? '↓' : '↑'}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{TX_LABELS[tx.transaction_type] ?? tx.transaction_type}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>
-                    </div>
-                    <p className={`${embedded ? 'text-gray-400' : 'text-gray-600'} text-xs`}>{formatDate(tx.created_at)}</p>
-                  </div>
-                </div>
-                <div className={`${embedded ? 'bg-gray-50' : 'bg-black/30'} rounded-xl p-4 space-y-2 text-sm`}>
-                  <div className="flex justify-between gap-4">
-                    <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>Amount</span>
-                    <strong className={TX_COLORS[tx.transaction_type] ?? (isIn ? (embedded ? 'text-emerald-600' : 'text-emerald-400') : (embedded ? 'text-rose-600' : 'text-rose-400'))}>
-                      {isIn ? '+' : '-'}{formatICAN(tx.ican_amount)} ICAN
-                    </strong>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>Local value</span>
-                    <strong>{currencyCode} {Number(tx.ican_amount * priceLocal).toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>Note</span>
-                    <strong className="truncate max-w-[60%]">{tx.note || '—'}</strong>
-                  </div>
-                  {tx.id && (
-                    <div className="flex justify-between gap-4">
-                      <span className={embedded ? 'text-gray-500' : 'text-gray-400'}>ID</span>
-                      <strong className="truncate max-w-[60%] text-xs">{tx.id}</strong>
-                    </div>
-                  )}
-                </div>
+            <Sheet title="Receipt" onClose={() => setSelectedTx(null)} z={60}>
+              <div className="text-center">
+                <span className={`mx-auto grid h-11 w-11 place-items-center rounded-full ${tone.bg} ${tone.text}`}>{txIcon(tx)}</span>
+                <p className="mt-2 text-[13px] font-semibold text-stone-600">{TX_LABELS[tx.transaction_type] ?? tx.transaction_type}</p>
+                <p className={`mt-1 font-classic-display text-[34px] font-bold leading-none tabular-nums lining-nums ${tone.text}`}>{isIn ? '+' : '−'}{formatAmount(tx.ican_amount)}</p>
               </div>
-            </div>
+              <div className="mt-5 rounded-2xl border border-emerald-800/20 bg-white/80 p-4 font-mono text-[12.5px]">
+                {rows.map(([k, v]) => (
+                  <div key={k} className="flex items-baseline py-1.5">
+                    <span className="text-stone-500">{k}</span>
+                    <span className="mx-2 flex-1 border-b border-dotted border-emerald-900/30" />
+                    <span className="max-w-[55%] truncate text-right font-bold text-stone-800">{v}</span>
+                  </div>
+                ))}
+              </div>
+              {tx.id && (
+                <div className="mt-4 space-y-3">
+                  <Barcode value={tx.id} color="#052e22" height={30} className="opacity-70" />
+                  <div className="flex items-center gap-3">
+                    <p className="min-w-0 flex-1 truncate font-mono text-[11px] text-stone-400" title={tx.id}>ID {tx.id}</p>
+                    <div className="w-32 shrink-0"><CopyButton text={tx.id} label="Copy ID" /></div>
+                  </div>
+                </div>
+              )}
+            </Sheet>
           );
         })()}
-
-        {/* Earn more section */}
-        {!embedded && (
-          <div className="bg-gradient-to-br from-violet-900/40 to-blue-900/40 border border-violet-700/30 rounded-2xl p-5">
-            <h3 className="font-semibold mb-2">Earn ICAN at the Supermarket</h3>
-            <ul className="space-y-2 text-sm text-gray-300">
-              <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> Pay with ICAN at checkout — 1% cashback on every purchase</li>
-              <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> Suppliers earn ICAN on every approved delivery</li>
-              <li className="flex items-start gap-2"><span className="text-violet-400 mt-0.5">•</span> 10% tithe is auto-deducted from all earnings</li>
-            </ul>
-          </div>
-        )}
 
       </div>
 
@@ -804,6 +819,11 @@ export default function ICANWalletPage({
       {modal === 'pay' && (
         <PayMoneyModal isOpen userId={userId} onClose={() => setModal(null)} onPaymentScanned={handlePaymentScanned} />
       )}
+      {modal === 'qr' && balance.address && (
+        <Sheet title="Your wallet code" onClose={() => setModal(null)}>
+          <AddressQr address={balance.address} />
+        </Sheet>
+      )}
       {modal === 'buy' && (
         <BuyIcanModal userId={userId} onClose={() => setModal(null)} onSuccess={loadWallet} />
       )}
@@ -814,24 +834,29 @@ export default function ICANWalletPage({
         <SendIcanOutModal userId={userId} balance={balance} onClose={() => setModal(null)} onSuccess={loadWallet} />
       )}
       {paymentReceipt && (
-        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-gray-900">
-            <div className="text-center">
-              <div className="text-5xl mb-3">✅</div>
-              <h2 className="text-xl font-bold text-emerald-700">Payment successful</h2>
-              <p className="text-sm text-gray-600 mt-1">Your ICAN payment has been sent and recorded.</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4 mt-5 space-y-2 text-sm">
-              <div className="flex justify-between gap-4"><span>Receipt</span><strong>{paymentReceipt.receiptNumber}</strong></div>
-              <div className="flex justify-between gap-4"><span>Amount</span><strong>{formatICAN(paymentReceipt.amount)} {paymentReceipt.currency || 'ICAN'}</strong></div>
-              <div className="flex justify-between gap-4"><span>Transaction</span><strong className="truncate">{paymentReceipt.transactionId || 'N/A'}</strong></div>
-            </div>
-            <div className="flex gap-3 mt-5">
-              <button onClick={downloadPaymentReceipt} className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold">Download receipt</button>
-              <button onClick={() => setPaymentReceipt(null)} className="px-5 py-3 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold">Close</button>
-            </div>
+        <Sheet title="Payment successful" onClose={() => setPaymentReceipt(null)} z={60}>
+          <div className="text-center">
+            <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle2 size={28} /></span>
+            <p className="mt-2 text-[13px] text-stone-500">Your IcanEra payment has been sent and recorded.</p>
           </div>
-        </div>
+          <div className="mt-4 rounded-2xl border border-emerald-800/20 bg-white/80 p-4 font-mono text-[12.5px]">
+            {[
+              ['Receipt', paymentReceipt.receiptNumber],
+              ['Amount', `${formatICAN(paymentReceipt.amount)} ${unitLabel(paymentReceipt.currency)}`],
+              ['Transaction', paymentReceipt.transactionId || 'N/A'],
+            ].map(([k, v]) => (
+              <div key={k} className="flex items-baseline py-1.5">
+                <span className="text-stone-500">{k}</span>
+                <span className="mx-2 flex-1 border-b border-dotted border-emerald-900/30" />
+                <span className="max-w-[55%] truncate text-right font-bold text-stone-800">{v}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 grid grid-cols-[1.4fr_1fr] gap-3">
+            <button type="button" onClick={downloadPaymentReceipt} className={BTN_PRIMARY}>Download receipt</button>
+            <button type="button" onClick={() => setPaymentReceipt(null)} className={BTN_OUTLINE}>Close</button>
+          </div>
+        </Sheet>
       )}
       {needsPin && (
         <SetPinPrompt userId={userId} onDone={() => setNeedsPin(false)} />

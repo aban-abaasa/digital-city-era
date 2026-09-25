@@ -507,7 +507,7 @@ export default function AdminAuth() {
             <p className="text-slate-300">
               <span className="text-white font-semibold">{form.storeName}</span> ({typeInfo.label}) is now on the platform.{' '}
               You earned{' '}
-              <span className="text-emerald-400 font-bold">10 ICAN coins</span> for joining.
+              <span className="text-emerald-400 font-bold">10 icaneracoins</span> for joining.
             </p>
           </div>
 
@@ -820,7 +820,7 @@ export default function AdminAuth() {
                 <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 p-4 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-lg shrink-0">₡</div>
                   <div>
-                    <p className="text-sm font-bold text-emerald-800">Earn 10 ICAN coins on launch</p>
+                    <p className="text-sm font-bold text-emerald-800">Earn 10 icaneracoins on launch</p>
                     <p className="text-xs text-emerald-600">Plus ongoing rewards for every order processed through your store.</p>
                   </div>
                 </div>

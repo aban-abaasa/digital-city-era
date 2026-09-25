@@ -520,7 +520,7 @@ function SuppliersTab({ applications, onRefresh }) {
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm p-4 border-b border-slate-100 flex items-center justify-between">
         <h3 className="font-semibold text-slate-700">Supplier Applications ({applications.length})</h3>
-        <p className="text-xs text-slate-400">Approved suppliers earn 5 ICAN coins automatically</p>
+        <p className="text-xs text-slate-400">Approved suppliers earn 5 icaneracoins automatically</p>
       </div>
 
       {applications.length === 0 ? (

@@ -30,12 +30,20 @@ export async function getWallet(userId) {
   return data;
 }
 
+// The number people give each other to be paid: the 16-digit account number,
+// the same one the ICAN app shows. Digits only - the legacy "ICA-..." hex
+// wallet_address is kept as a last resort so Receive never disappears.
+async function getAccountNumber(userId) {
+  const { data } = await supabase.from('user_accounts').select('account_number').eq('user_id', userId).maybeSingle();
+  return data?.account_number ?? null;
+}
+
 export async function getBalance(userId) {
-  const wallet = await getWallet(userId);
+  const [wallet, accountNumber] = await Promise.all([getWallet(userId), getAccountNumber(userId)]);
   return {
     ican: wallet?.ican_balance ?? 0,
     ugx: (wallet?.ican_balance ?? 0) * ICAN_TO_UGX,
-    address: wallet?.wallet_address ?? null,
+    address: accountNumber ?? wallet?.wallet_address ?? null,
     totalEarned: wallet?.total_earned ?? 0,
     totalSpent: wallet?.total_spent ?? 0,
     totalTithe: wallet?.total_tithe_paid ?? 0,
@@ -170,6 +178,63 @@ export async function sendICAN({
   if (error) throw error;
   if (!data?.success) throw new Error(data?.error || 'The ICAN transfer was not recorded');
   return data;
+}
+
+// ─── Recipients (same rules as Send in the ICAN app) ───────────────────────
+
+// Finds who a typed recipient is. Numbers only, like ICAN: a 16-digit account
+// number, a 16-digit business wallet number (starts with 3) or a phone number;
+// an email also works. Returns null when nobody matches.
+export async function resolveRecipient(input) {
+  const value = String(input || '').trim();
+  if (!value) return null;
+
+  if (/^3\d{15}$/.test(value)) {
+    const { data, error } = await supabase.rpc('resolve_ican_business_wallet', { p_wallet_address: value });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (error || !row) return null;
+    return { kind: 'business', businessProfileId: row.business_profile_id, name: row.business_name || value, identifier: value };
+  }
+
+  let query = supabase.from('user_accounts').select('user_id, account_holder_name');
+  if (/^\d{16}$/.test(value)) query = query.eq('account_number', value);
+  else if (value.includes('@')) query = query.eq('email', value.toLowerCase());
+  else query = query.eq('phone_number', value);
+
+  const { data, error } = await query.maybeSingle();
+  if (error || !data) return null;
+  return { kind: 'user', userId: data.user_id, name: data.account_holder_name || value, identifier: value };
+}
+
+export async function sendICANToBusiness({ fromUserId, businessProfileId, amount, note = '' }) {
+  const { data, error } = await supabase.rpc('transfer_ican_to_business', {
+    p_from_user: fromUserId,
+    p_business_profile_id: businessProfileId,
+    p_amount: amount,
+    p_note: note,
+    p_source_app: SOURCE_APP,
+    p_reference_id: null,
+    p_pin_attempt: null,
+  });
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Business-wallet transfer failed');
+  return data;
+}
+
+const UGANDA_NETWORK_PREFIXES = {
+  MTN: ['77', '78', '76', '39'],
+  AIRTEL: ['70', '74', '75', '20'],
+};
+
+// MTN or Airtel from a Ugandan number, or null when the prefix is not recognised.
+export function detectUgandaMobileNetwork(phoneNumber) {
+  const digits = String(phoneNumber || '').replace(/[^\d]/g, '');
+  const national = digits.startsWith('256') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
+  const prefix = national.slice(0, 2);
+  for (const [network, prefixes] of Object.entries(UGANDA_NETWORK_PREFIXES)) {
+    if (prefixes.includes(prefix)) return network;
+  }
+  return null;
 }
 
 // ─── Earnings (cashier receives payment in ICAN) ───────────────────────────
