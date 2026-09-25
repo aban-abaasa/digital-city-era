@@ -26,11 +26,24 @@ export interface FlightOffer {
   // Duffel-assigned passenger ids from the offer — order creation must
   // reference these exactly, one per passenger booked on this offer.
   passengers: Array<{ id: string; type: string }>;
+  // Sent by newer versions of the search API; the flight picker falls back to
+  // the segment data in `slices` when they're absent.
+  carrierIata?: string | null;
+  carrierLogoUrl?: string | null;
+  /** Whether the fare can be refunded before departure (null = airline didn't say). */
+  refundable?: boolean | null;
+  // The fare in ICAN at its live value, and in the signed-in customer's own
+  // currency (from the country they chose). Null/absent when the price engine
+  // has no price for the airline's currency — the airline's own price shows.
+  priceIcan?: number | null;
+  priceLocal?: number | null;
+  localCurrency?: string | null;
 }
 
 export interface JourneyPickup {
-  lat: number;
-  lng: number;
+  /** Null when the customer skipped the airport pickup (own car / a friend drives them). */
+  lat: number | null;
+  lng: number | null;
   address: string;
   country?: string;
   city?: string;
@@ -49,20 +62,60 @@ export interface JourneyDestination {
   lng?: number | null;
 }
 
+/** The quote's amounts in the customer's own currency, at the live ICAN price in that currency. */
+export interface QuoteLocalView {
+  currency: string;
+  countryCode: string;
+  /** Live price of 1 ICAN in `currency`. */
+  pricePerIcan: number;
+  pickup: number;
+  flight: number;
+  cargo: number;
+  dropoff: number;
+  total: number;
+}
+
 export interface JourneyQuote {
   pickupFareUgx: number;
+  /** Distance to the departure airport the ride fare was priced on (null = unknown, minimum fare applied). */
+  pickupKm?: number | null;
+  pickupAirport?: { iataCode: string | null; name: string } | null;
   flightFareUgx: number;
   cargoFareUgx: number;
   dropoffFareUgx: number;
   totalUgx: number;
+  // Priced in ICAN first (at its live value) — the amount actually charged.
   totalIcan: number;
+  pickupIcan?: number;
+  flightIcan?: number;
+  cargoIcan?: number;
+  dropoffIcan?: number;
+  /** Live UGX price of 1 ICAN used for this quote. */
+  icanPriceUgx?: number;
+  /** Same amounts in the customer's currency; null when it couldn't be worked out. */
+  local?: QuoteLocalView | null;
   pickup: JourneyPickup;
   destination: JourneyDestination;
   offer: FlightOffer;
   cargoWeightKg: number;
-  /** Distance to the departure airport the ride fare was priced on (null = unknown, minimum fare applied). */
-  pickupKm?: number | null;
-  pickupAirport?: { iataCode: string | null; name: string } | null;
+  /** Whether a BodaGoEra ride to the departure airport / from the arrival airport is part of (and charged in) this journey. */
+  pickupRide?: boolean;
+  dropoffRide?: boolean;
+  /** How many travellers the offer (and so every price above) covers. */
+  partySize?: number;
+  /** 'parcel' = the ground legs are couriers carrying goods (see ParcelDetails). Default: 'travel'. */
+  serviceMode?: 'travel' | 'parcel';
+  parcel?: ParcelDetails;
+}
+
+/** What a "Send a parcel" journey carries. The parcel's weight is the journey's baggage weight. */
+export interface ParcelDetails {
+  description: string;
+  /** Whoever meets the parcel on arrival — only needed when the arrival courier is kept. */
+  recipientName: string;
+  recipientPhone: string;
+  /** Courier vehicle for both legs; a bike only takes a small parcel. */
+  vehicleType: 'motorcycle' | 'car' | null;
 }
 
 /** Thrown when the server says the customer's wallet was already debited but
@@ -91,6 +144,9 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   // A timeout or gateway error comes back as an HTML page, not JSON.
   const data = await res.json().catch(() => ({} as any));
   if (!res.ok || data.success === false) {
+    // A server-side misconfiguration carries the reason in `detail` — keep it
+    // out of the customer-facing message but make it easy to find.
+    if (data.detail) console.error(`[journey API] ${path}: ${data.code || 'error'} — ${data.detail}`);
     if (!data.error && (res.status === 502 || res.status === 504)) {
       throw new Error('The server took too long to respond — please try again.');
     }
@@ -107,6 +163,7 @@ export async function searchFlights(params: {
   destinationIata: string;
   departureDate: string;
   passengerCount?: number;
+  cabinClass?: 'economy' | 'premium_economy' | 'business' | 'first';
 }): Promise<{ offerRequestId: string; offers: FlightOffer[] }> {
   return postJson('/api/journeys/flights/search', params);
 }
@@ -133,6 +190,12 @@ export async function getJourneyQuote(params: {
    * beyond the free allowance — a straightforward per-kg platform
    * surcharge, not a real airline ancillary-baggage booking. */
   cargoWeightKg?: number;
+  /** Each airport ride is optional — leave one out when the customer has their own car or a friend drives them. Default: both. */
+  pickupRide?: boolean;
+  dropoffRide?: boolean;
+  /** Send a parcel instead of travelling: the ground legs become couriers. */
+  serviceMode?: 'travel' | 'parcel';
+  parcel?: ParcelDetails;
 }): Promise<{ quote: JourneyQuote }> {
   return postJson('/api/journeys/quote', params);
 }
@@ -180,9 +243,9 @@ export interface JourneyLeg {
       vehicle_color: string | null;
       vehicle_model: string | null;
       rating: number;
-      current_lat?: number | null;
-      current_lng?: number | null;
-      location_updated_at?: string | null;
+      current_lat: number | null;
+      current_lng: number | null;
+      location_updated_at: string | null;
       user?: { phone: string | null; profile?: { full_name: string | null } | null } | null;
     } | null;
   } | null;
@@ -192,15 +255,17 @@ export interface Journey {
   id: string;
   status: string;
   created_at?: string;
+  destination_country: string;
+  destination_city: string | null;
+  destination_address: string | null;
+  /** Travellers on the booking (1 when the column doesn't exist yet or for a solo trip). */
+  passenger_count?: number;
+  total_fare_ugx: number;
+  total_fare_ican: number;
   /** Set once the wallet was debited — even when the booking then failed, which is what tells "money taken, no ticket" from "never charged". */
   ican_journey_tx_id?: string | null;
   /** Set when a failed booking's payment was automatically returned to the wallet. */
   refunded_at?: string | null;
-  destination_country: string;
-  destination_city: string | null;
-  destination_address: string | null;
-  total_fare_ugx: number;
-  total_fare_ican: number;
   legs: JourneyLeg[];
 }
 
@@ -263,14 +328,23 @@ export async function getJourney(journeyId: string): Promise<Journey> {
     const { data: { session } } = await supabase.auth.getSession();
     const headers: Record<string, string> = {};
     if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
-    const res = await fetch(`${MBG_API_BASE_URL}/api/journeys/${journeyId}`, { headers });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch journey');
-    return data.journey as Journey;
+    // Never wait on the journey service forever — if it is slow or the route
+    // isn't deployed, fall through to the direct database read below.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(`${MBG_API_BASE_URL}/api/journeys/${journeyId}`, { headers, signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch journey');
+      return data.journey as Journey;
+    } finally {
+      clearTimeout(timer);
+    }
   } catch (apiError) {
     // The booking is already made and paid at this point, so if the journey
     // service can't be reached fall back to reading it straight from the
-    // database instead of leaving the customer on a spinner.
+    // database (the same read the My Journeys list uses) instead of leaving the
+    // customer on a spinner.
     const { data, error } = await supabase.from('mbg_journeys').select(JOURNEY_SELECT).eq('id', journeyId).maybeSingle();
     if (error || !data) throw apiError;
     return data as unknown as Journey;
@@ -297,37 +371,84 @@ export function pollJourney(journeyId: string, onUpdate: (journey: Journey) => v
   };
 }
 
+/** How a shipment's land legs are set up. A skipped leg isn't booked or charged. */
+export interface ShipLandOptions {
+  /** A truck/van collects from the pickup address and takes it to the departure port. Default true. */
+  pickupLeg?: boolean;
+  /** A vehicle takes it from the arrival port to the final address. Default true. */
+  dropoffLeg?: boolean;
+  /** null = automatic (truck/van matched on weight). */
+  vehicleType?: 'motorcycle' | 'car' | 'van' | 'truck' | null;
+}
+
+interface ShipRouteParams extends ShipLandOptions {
+  /** Coordinates of a skipped leg's address aren't needed. */
+  pickupLat: number | null; pickupLng: number | null; pickupCountry: string;
+  dropoffLat: number | null; dropoffLng: number | null; dropoffCountry: string;
+  cargoWeightKg?: number;
+}
+
+const shipRouteArgs = (params: ShipRouteParams) => ({
+  p_pickup_lat: params.pickupLat,
+  p_pickup_lng: params.pickupLng,
+  p_pickup_country: params.pickupCountry,
+  p_dropoff_lat: params.dropoffLat,
+  p_dropoff_lng: params.dropoffLng,
+  p_dropoff_country: params.dropoffCountry,
+  p_pickup_leg: params.pickupLeg ?? true,
+  p_dropoff_leg: params.dropoffLeg ?? true,
+  p_land_vehicle_type: params.vehicleType ?? null,
+  p_cargo_weight_kg: params.cargoWeightKg ?? null,
+});
+
+export interface ShipCargoQuote {
+  pickupFareUgx: number;
+  seaFareUgx: number;
+  dropoffFareUgx: number;
+  totalUgx: number;
+  /** What will be charged, at ICAN's live value. */
+  totalIcan: number;
+  originPort: { city: string; name: string; country: string };
+  destPort: { city: string; name: string; country: string };
+}
+
+/** The price of a shipment as currently set up, before anything is charged. */
+export async function quoteShipCargoJourney(params: ShipRouteParams): Promise<{ success: boolean; quote?: ShipCargoQuote; error?: string }> {
+  const { data, error } = await supabase.rpc('mbg_quote_ship_cargo_journey', shipRouteArgs(params));
+  if (error) return { success: false, error: error.message };
+  if (!data?.success) return { success: false, error: data?.error };
+  return {
+    success: true,
+    quote: {
+      pickupFareUgx: Number(data.pickup_fare_ugx), seaFareUgx: Number(data.sea_fare_ugx), dropoffFareUgx: Number(data.dropoff_fare_ugx),
+      totalUgx: Number(data.total_ugx), totalIcan: Number(data.total_ican),
+      originPort: data.origin_port, destPort: data.dest_port,
+    },
+  };
+}
+
 /**
  * Books a full end-to-end cargo shipment (pickup -> departure port -> sea
  * crossing -> arrival port -> final delivery) directly via Supabase RPC —
- * no third-party secret needed, so no MBG_API_BASE_URL prefix, unlike
- * flight booking.
+ * the land legs are optional (see ShipLandOptions). Unlike flight booking this
+ * needs no third-party secret, so it's called straight from the browser like any
+ * other mbg_* RPC, not through /api.
  */
-export async function requestShipCargoJourney(params: {
-  pickupLocation: string; pickupLat: number; pickupLng: number; pickupCountry: string;
-  dropoffLocation: string; dropoffLat: number; dropoffLng: number; dropoffCountry: string;
+export async function requestShipCargoJourney(params: ShipRouteParams & {
+  pickupLocation: string;
+  dropoffLocation: string;
   cargoDescription?: string;
-  cargoWeightKg?: number;
 }): Promise<{ success: boolean; journeyId?: string; error?: string }> {
   const { data, error } = await supabase.rpc('mbg_request_ship_cargo_journey', {
+    ...shipRouteArgs(params),
     p_pickup_location: params.pickupLocation,
-    p_pickup_lat: params.pickupLat,
-    p_pickup_lng: params.pickupLng,
-    p_pickup_country: params.pickupCountry,
     p_dropoff_location: params.dropoffLocation,
-    p_dropoff_lat: params.dropoffLat,
-    p_dropoff_lng: params.dropoffLng,
-    p_dropoff_country: params.dropoffCountry,
     p_cargo_description: params.cargoDescription ?? null,
-    p_cargo_weight_kg: params.cargoWeightKg ?? null,
   });
   if (error) return { success: false, error: error.message };
   return { success: !!data?.success, journeyId: data?.journey_id, error: data?.error };
 }
 
-// digital-city-era customers are keyed the same way as BodaGo customers
-// (mbg_customers.user_id = auth.uid()) since both apps share one Supabase
-// auth pool and mbg_* schema — no separate customer record needed here.
 export async function getMyJourneys(customerUserId: string): Promise<Journey[]> {
   const { data: customer } = await supabase.from('mbg_customers').select('id').eq('user_id', customerUserId).single();
   if (!customer) return [];

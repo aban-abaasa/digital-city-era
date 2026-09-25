@@ -1,0 +1,225 @@
+/* The ivory / ink / gold form, tile and itinerary surfaces of "Book a full
+   journey" — copied from mybodaguy's src/index.css so the vendored flow looks
+   the same here. Every rule is scoped under .mbg-journey (the flow's wrapper),
+   so none of it can leak into the rest of this app. This app's own
+   .classic-card / .classic-eyebrow / .font-classic-display (index.css) already
+   cover those three classes and are left alone. */
+
+.mbg-journey .landing-classic-divider {
+  background: linear-gradient(90deg, transparent, #c4a052 20%, #c4a052 80%, transparent);
+  height: 1px;
+}
+
+.mbg-journey .classic-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8a6a1f;
+}
+
+.dark .mbg-journey .classic-label { color: #e6c980; }
+
+.mbg-journey .classic-input {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(196, 160, 82, 0.5);
+  border-radius: 12px;
+  background: #fffdf8;
+  color: #1e293b;
+  padding: 11px 14px;
+  font-size: 16px; 
+  line-height: 1.25;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.mbg-journey .classic-input::placeholder { color: #94a3b8; }
+
+.mbg-journey .classic-input:hover:not(:disabled) { border-color: #c4a052; }
+
+.mbg-journey .classic-input:focus {
+  outline: none;
+  border-color: #c4a052;
+  box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.3);
+}
+
+.mbg-journey .classic-input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.mbg-journey .classic-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  padding: 12px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: transform 0.12s, box-shadow 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.mbg-journey .classic-btn:active:not(:disabled) { transform: scale(0.985); }
+
+.mbg-journey .classic-btn:focus-visible { outline: 2px solid #c4a052; outline-offset: 2px; }
+
+.mbg-journey .classic-btn:disabled { cursor: not-allowed; }
+
+.mbg-journey .classic-btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #f97316, #f59e0b);
+  box-shadow: 0 10px 22px -12px rgba(234, 88, 12, 0.75), inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.mbg-journey .classic-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 14px 26px -12px rgba(234, 88, 12, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.mbg-journey .classic-btn-primary:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; }
+
+.dark .mbg-journey .classic-btn-primary:disabled { background: #334155; color: #64748b; }
+
+.mbg-journey .classic-btn-ink {
+  color: #f6e7bd;
+  background: linear-gradient(135deg, #231b12, #3d2e18);
+  box-shadow: inset 0 0 0 1px rgba(196, 160, 82, 0.55), 0 10px 22px -14px rgba(0, 0, 0, 0.7);
+}
+
+.mbg-journey .classic-btn-ink:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; }
+
+.dark .mbg-journey .classic-btn-ink:disabled { background: #334155; color: #64748b; }
+
+.mbg-journey .classic-btn-outline {
+  color: #7a5a12;
+  background: transparent;
+  border: 1px solid rgba(196, 160, 82, 0.65);
+}
+
+.mbg-journey .classic-btn-outline:hover:not(:disabled) { background: rgba(196, 160, 82, 0.1); }
+
+.mbg-journey .classic-btn-outline:disabled { opacity: 0.5; }
+
+.dark .mbg-journey .classic-btn-outline { color: #e6c980; }
+
+.mbg-journey .classic-btn-ghost {
+  width: auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.mbg-journey .classic-btn-ghost:hover:not(:disabled) { color: #7a5a12; background: rgba(196, 160, 82, 0.1); }
+
+.mbg-journey .classic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid rgba(196, 160, 82, 0.35);
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.mbg-journey .classic-chip:hover:not(:disabled) { border-color: #c4a052; }
+
+.mbg-journey .classic-chip:focus-visible { outline: 2px solid #c4a052; outline-offset: 2px; }
+
+.mbg-journey .classic-chip:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.mbg-journey .classic-chip.is-active {
+  border-color: #c4a052;
+  background: #fbf3dc;
+  color: #7a5a12;
+  box-shadow: inset 0 0 0 1px #c4a052;
+}
+
+.dark .mbg-journey .classic-chip { background: #1e293b; color: #cbd5e1; border-color: #475569; }
+
+.dark .mbg-journey .classic-chip.is-active { background: rgba(196, 160, 82, 0.18); color: #f0d68f; border-color: #c4a052; }
+
+.mbg-journey .classic-tile {
+  width: 100%;
+  border: 1px solid rgba(196, 160, 82, 0.32);
+  border-radius: 16px;
+  background: #fff;
+  color: #1e293b;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s, transform 0.12s;
+}
+
+.mbg-journey .classic-tile:hover { border-color: #c4a052; box-shadow: 0 10px 24px -16px rgba(44, 36, 22, 0.35); }
+
+.mbg-journey .classic-tile:focus-visible { outline: 2px solid #c4a052; outline-offset: 2px; }
+
+.mbg-journey .classic-tile:active { transform: scale(0.995); }
+
+.mbg-journey .classic-tile.is-active {
+  border-color: #c4a052;
+  background: #fdf8ea;
+  box-shadow: inset 0 0 0 1px #c4a052, 0 12px 26px -16px rgba(161, 124, 40, 0.55);
+}
+
+.dark .mbg-journey .classic-tile { background: #1e293b; border-color: #334155; color: #f1f5f9; }
+
+.dark .mbg-journey .classic-tile.is-active { background: rgba(196, 160, 82, 0.14); border-color: #c4a052; }
+
+.mbg-journey .classic-perforation { border-left: 1.5px dashed rgba(196, 160, 82, 0.6); }
+
+.dark .mbg-journey .classic-perforation { border-left-color: #64748b; }
+
+.mbg-journey .classic-leader {
+  flex: 1;
+  min-width: 12px;
+  margin: 0 8px;
+  border-bottom: 1.5px dotted rgba(196, 160, 82, 0.7);
+  transform: translateY(-3px);
+}
+
+.mbg-journey .classic-step-dot {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1.5px solid rgba(196, 160, 82, 0.5);
+  background: #fffdf8;
+  color: #a17c28;
+  transition: all 0.2s;
+}
+
+.mbg-journey .classic-step-dot.is-done { background: #c4a052; border-color: #c4a052; color: #fff; }
+
+.mbg-journey .classic-step-dot.is-current {
+  background: linear-gradient(135deg, #f97316, #f59e0b);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.16);
+}
+
+.dark .mbg-journey .classic-step-dot { background: #1e293b; }
+
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.mbg-journey .animate-step-in { animation: step-in 0.28s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mbg-journey .animate-step-in { animation: none; }
+}

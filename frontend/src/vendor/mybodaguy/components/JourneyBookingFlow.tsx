@@ -2,15 +2,17 @@
 // Works unmodified for a supermarkera customer because both apps share one
 // Supabase Auth pool and the same mbg_* schema (mbg_customers.user_id =
 // auth.uid(), same as BodaGo) — see vendor/mybodaguy/services/supabaseClient.ts.
-// Only the supabase import path (one level, not two) and the flutterwaveClient
-// import (digital-city-era's own, via the @ alias — there's no vendored
-// copy) differ from the mybodaguy original.
-import { useEffect, useRef, useState } from 'react';
-import { MapPin, Plane, Home, CreditCard, CheckCircle, Loader2, Star, Phone, Car, Search, Bike, Ship, Package, Printer, User, AlertTriangle } from 'lucide-react';
+// Differs from the original only in: the import paths (one level, not two; the
+// flutterwaveClient is digital-city-era's own, via the @ alias), the
+// coordinate guards on saved areas / geocoded addresses, and the stylesheet —
+// the flow's ivory/gold "classic" surfaces come from ../journeyClassic.css,
+// scoped to the .mbg-journey wrapper so they can't touch the rest of this app.
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { MapPin, Plane, Home, CreditCard, CheckCircle, Loader2, Star, Phone, Car, Search, Bike, Ship, Package, Printer, User, ArrowRight, Wallet, ShieldCheck, Truck, AlertTriangle } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import {
-  searchFlights, searchAirports, getJourneyQuote, confirmJourney, pollJourney, getMyJourneys, requestShipCargoJourney, PaymentTakenError,
-  type FlightOffer, type Journey, type JourneyQuote, type AirportSuggestion,
+  searchFlights, searchAirports, getJourneyQuote, confirmJourney, pollJourney, getMyJourneys, requestShipCargoJourney, quoteShipCargoJourney, PaymentTakenError,
+  type FlightOffer, type Journey, type JourneyQuote, type AirportSuggestion, type ShipCargoQuote,
 } from '../services/journeyService';
 import { geocodeAddress, reverseGeocodeCountry, searchCities, searchAddresses, type CountryLookup, type CitySuggestion, type AddressSuggestion, type GeocodeResult } from '../services/geocodeService';
 import { printShipTicket } from '../services/printTicket';
@@ -21,14 +23,77 @@ import JourneyRideOptions, { DEFAULT_PICKUP_PREFERENCES, preferencesForApi, desc
 import { getBalance, ICAN_TO_UGX, formatICAN, SOURCE_APP } from '../services/icanWalletService';
 import { payWithFlutterwave, generateTxRef } from '@/services/flutterwaveClient';
 import LocationPickerMap from './LocationPickerMap';
+import FlightResultsPicker, { CabinPicker } from './FlightResultsPicker';
+import { JourneyStepper, StepCard, Field, TripSummary, ErrorBanner, FlightSkeleton, type StepperStep } from './JourneyUI';
+import { formatIcan, formatMoney, summarizeOffer, todayIsoDate, type CabinClass } from '../services/flightOffers';
 import type { Location } from '../data/locationTypes';
 import { COUNTRIES } from '../data/countries';
+import '../journeyClassic.css';
+
+const SHIP_BOOKING_TIMEOUT_MS = 60_000;
+
+/** Most travellers on one booking (the airline's own limit per order). */
+const MAX_PARTY_SIZE = 9;
+/** One BodaGoEra car carries this many; a bigger party keeps the flight but makes its own way to/from the airport. */
+const CAR_SEATS = 4;
+
+/** Heaviest parcel a courier on a bike takes (mirrors PARCEL_BIKE_MAX_KG in api/_lib/journeyQuote.js). */
+const PARCEL_BIKE_MAX_KG = 30;
+
+type ShipLandVehicle = 'motorcycle' | 'car' | 'van' | 'truck' | null;
+
+/** Vehicles for a shipment's land legs. Weight limits mirror mbg_plan_ship_cargo_journey (SQL). */
+const SHIP_LAND_VEHICLES: Array<{ value: ShipLandVehicle; label: string; desc: string; maxKg: number; Icon: typeof Car }> = [
+  { value: null, label: 'Automatic', desc: 'Truck or van, matched on weight', maxKg: Infinity, Icon: Truck },
+  { value: 'motorcycle', label: 'Bike', desc: 'Small loads, up to 30 kg', maxKg: 30, Icon: Bike },
+  { value: 'car', label: 'Car', desc: 'Up to 200 kg', maxKg: 200, Icon: Car },
+  { value: 'van', label: 'Van', desc: 'Medium loads', maxKg: Infinity, Icon: Truck },
+  { value: 'truck', label: 'Truck', desc: 'Heavy loads', maxKg: Infinity, Icon: Truck },
+];
+
+type PassengerTitle = 'mr' | 'mrs' | 'ms' | 'miss' | 'dr';
+
+interface PassengerForm {
+  title: PassengerTitle;
+  gender: 'm' | 'f';
+  givenName: string;
+  familyName: string;
+  dob: string;
+  phone: string;
+}
+
+const blankPassenger = (): PassengerForm => ({ title: 'mr', gender: 'm', givenName: '', familyName: '', dob: '', phone: '' });
+
+interface JourneyPrefillPoint {
+  lat: number;
+  lng: number;
+  address: string;
+}
 
 interface JourneyBookingFlowProps {
   customerId: string;
+  // Set when a customer got here via the auto-redirect from a normal
+  // ride/delivery request that turned out to need a plane or ship
+  // (EnhancedRideRequest.tsx's needsJourneyPath) — lets them land straight
+  // in the right mode instead of re-choosing Fly vs Ship, and for a cargo
+  // redirect, skips re-dropping pins they already placed.
+  initialBookingKind?: 'fly' | 'ship';
+  initialShipPickup?: JourneyPrefillPoint;
+  initialShipDropoff?: JourneyPrefillPoint;
+  initialPickupCountryIso2?: string;
 }
 
 interface CustomerArea {
+  id: string;
+  name: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+// A saved area as stored: old ones may have been created without coordinates
+// (or with them as text), and Leaflet requires finite lat/lng.
+interface RawCustomerArea {
   id: string;
   name: string;
   address?: string | null;
@@ -42,14 +107,12 @@ function coordinate(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed >= -180 && parsed <= 180 ? parsed : null;
 }
 
-function validAreaCoordinates(area: CustomerArea): { lat: number; lng: number } | null {
+function validAreaCoordinates(area: RawCustomerArea): { lat: number; lng: number } | null {
   const lat = coordinate(area.latitude);
   const lng = coordinate(area.longitude);
   if (lat === null || lng === null || lat < -90 || lat > 90) return null;
   return { lat, lng };
 }
-
-const SHIP_BOOKING_TIMEOUT_MS = 60_000;
 
 type BookingKind = 'fly' | 'ship';
 type Step = 'pickup' | 'flight' | 'destination' | 'review' | 'confirming' | 'tracking' | 'ship-details';
@@ -62,9 +125,32 @@ export const legLabel: Record<string, string> = {
   sea_leg: 'Sea crossing',
 };
 
-export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowProps) {
-  const [bookingKind, setBookingKind] = useState<BookingKind>('fly');
-  const [step, setStep] = useState<Step>('pickup');
+const legIcon: Record<string, typeof Car> = {
+  local_pickup: Car,
+  flight: Plane,
+  local_dropoff: Home,
+  road_leg: Truck,
+  sea_leg: Ship,
+};
+
+// Leg statuses are free-form strings from the dispatch engine, so colour by
+// meaning (done / trouble / not started / in motion) rather than exact value.
+function legStatusClass(status: string): string {
+  if (/complet|deliver|arriv|done/.test(status)) return 'bg-emerald-100 text-emerald-700';
+  if (/fail|cancel/.test(status)) return 'bg-red-100 text-red-700';
+  if (/^pending$/.test(status)) return 'bg-slate-100 text-slate-500';
+  return 'bg-orange-100 text-orange-700';
+}
+
+export default function JourneyBookingFlow({
+  customerId,
+  initialBookingKind,
+  initialShipPickup,
+  initialShipDropoff,
+  initialPickupCountryIso2,
+}: JourneyBookingFlowProps) {
+  const [bookingKind, setBookingKind] = useState<BookingKind>(initialBookingKind || 'fly');
+  const [step, setStep] = useState<Step>(initialBookingKind === 'ship' ? 'ship-details' : 'pickup');
   const [error, setError] = useState<string | null>(null);
 
   const changeBookingKind = (kind: BookingKind) => {
@@ -75,13 +161,24 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
 
   // Ship Cargo mode — a separate, simpler direct-book flow (no flight
   // search): pickup + destination pins, what's being shipped, submit.
-  const [shipPickup, setShipPickup] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [shipPickup, setShipPickup] = useState<{ lat: number; lng: number; address: string } | null>(initialShipPickup || null);
   const [shipPickupCountry, setShipPickupCountry] = useState<CountryLookup | null>(null);
-  const [shipDropoff, setShipDropoff] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [shipDropoff, setShipDropoff] = useState<{ lat: number; lng: number; address: string } | null>(initialShipDropoff || null);
   const [shipDropoffCountry, setShipDropoffCountry] = useState<CountryLookup | null>(null);
   const [cargoDescription, setCargoDescription] = useState('');
   const [shipCargoWeightKg, setShipCargoWeightKg] = useState('');
   const [submittingShip, setSubmittingShip] = useState(false);
+  // Land transport is optional at each end: a customer who brings the cargo to the
+  // departure port (or collects it at the arrival port) skips that road leg and is
+  // not charged for it. Without a leg there is no address, only a country.
+  const [shipPickupLeg, setShipPickupLeg] = useState(true);
+  const [shipDropoffLeg, setShipDropoffLeg] = useState(true);
+  const [shipLandVehicle, setShipLandVehicle] = useState<ShipLandVehicle>(null);
+  const [shipPickupCountryPick, setShipPickupCountryPick] = useState('');
+  const [shipDropoffCountryPick, setShipDropoffCountryPick] = useState('');
+  const [shipQuote, setShipQuote] = useState<ShipCargoQuote | null>(null);
+  const [shipQuoteError, setShipQuoteError] = useState<string | null>(null);
+  const [shipQuoting, setShipQuoting] = useState(false);
 
   useEffect(() => {
     if (!shipPickup) { setShipPickupCountry(null); return; }
@@ -93,8 +190,48 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     reverseGeocodeCountry(shipDropoff.lat, shipDropoff.lng).then(setShipDropoffCountry);
   }, [shipDropoff?.lat, shipDropoff?.lng]);
 
+  const shipFromCountry = shipPickupLeg ? shipPickupCountry?.name : shipPickupCountryPick;
+  const shipToCountry = shipDropoffLeg ? shipDropoffCountry?.name : shipDropoffCountryPick;
+  const shipWeight = Number(shipCargoWeightKg) || 0;
+  const shipVehicleOption = SHIP_LAND_VEHICLES.find((v) => v.value === shipLandVehicle) ?? SHIP_LAND_VEHICLES[0];
+  // A bike or car has no cargo capacity on file, so its limit is checked on the weight
+  // the customer states — which must therefore be given.
+  const shipVehicleProblem = (shipPickupLeg || shipDropoffLeg) && shipLandVehicle && (shipLandVehicle === 'motorcycle' || shipLandVehicle === 'car')
+    ? (shipWeight <= 0 ? `Enter the weight to use a ${shipVehicleOption.label.toLowerCase()}.` : shipWeight > shipVehicleOption.maxKg ? `A ${shipVehicleOption.label.toLowerCase()} carries up to ${shipVehicleOption.maxKg} kg — choose a bigger vehicle.` : null)
+    : null;
+  const shipReady = !!shipFromCountry && !!shipToCountry
+    && (!shipPickupLeg || !!shipPickup) && (!shipDropoffLeg || !!shipDropoff) && !shipVehicleProblem;
+  const shipRouteParams = {
+    pickupLat: shipPickupLeg ? shipPickup?.lat ?? null : null, pickupLng: shipPickupLeg ? shipPickup?.lng ?? null : null, pickupCountry: shipFromCountry || '',
+    dropoffLat: shipDropoffLeg ? shipDropoff?.lat ?? null : null, dropoffLng: shipDropoffLeg ? shipDropoff?.lng ?? null : null, dropoffCountry: shipToCountry || '',
+    pickupLeg: shipPickupLeg, dropoffLeg: shipDropoffLeg, vehicleType: shipLandVehicle,
+    cargoWeightKg: shipWeight > 0 ? shipWeight : undefined,
+  };
+
+  // Price the shipment as currently set up, so choices show their cost before anything is charged.
+  const shipRouteKey = JSON.stringify(shipRouteParams);
+  useEffect(() => {
+    setShipQuote(null);
+    setShipQuoteError(null);
+    if (bookingKind !== 'ship' || !shipReady) {
+      setShipQuoting(false);
+      return;
+    }
+    setShipQuoting(true);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const result = await quoteShipCargoJourney(shipRouteParams);
+      if (cancelled) return;
+      setShipQuoting(false);
+      if (result.success && result.quote) setShipQuote(result.quote);
+      else setShipQuoteError(result.error || 'Could not price this shipment');
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingKind, shipReady, shipRouteKey]);
+
   const submitShipCargo = async () => {
-    if (!shipPickup || !shipDropoff || !shipPickupCountry || !shipDropoffCountry) return;
+    if (!shipReady) return;
     setError(null);
     setPaymentIssue(null);
     setSubmittingShip(true);
@@ -104,10 +241,10 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
       let timer: ReturnType<typeof setTimeout> | undefined;
       const outcome = await Promise.race([
         requestShipCargoJourney({
-          pickupLocation: shipPickup.address, pickupLat: shipPickup.lat, pickupLng: shipPickup.lng, pickupCountry: shipPickupCountry.name,
-          dropoffLocation: shipDropoff.address, dropoffLat: shipDropoff.lat, dropoffLng: shipDropoff.lng, dropoffCountry: shipDropoffCountry.name,
+          ...shipRouteParams,
+          pickupLocation: shipPickupLeg ? shipPickup?.address ?? '' : '',
+          dropoffLocation: shipDropoffLeg ? shipDropoff?.address ?? '' : '',
           cargoDescription: cargoDescription.trim() || undefined,
-          cargoWeightKg: shipCargoWeightKg ? Number(shipCargoWeightKg) : undefined,
         }),
         new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), SHIP_BOOKING_TIMEOUT_MS); }),
       ]);
@@ -147,10 +284,6 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     }
   };
 
-  // Set when the wallet may have been debited but no ticket was issued — kept
-  // separate from `error` so it can't be dismissed or cleared by navigating.
-  const [paymentIssue, setPaymentIssue] = useState<{ journeyId: string | null; certain: boolean; ticketIssued?: boolean } | null>(null);
-
   // Journey status screen: poll the booking, surface a load failure instead of
   // an endless spinner, and stop polling when the page goes away.
   const stopPollingRef = useRef<(() => void) | null>(null);
@@ -176,13 +309,32 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const [searchingPickup, setSearchingPickup] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [pickupVehicleType, setPickupVehicleType] = useState<'motorcycle' | 'car'>('motorcycle');
+  // Either airport ride can be left out — the customer has their own car, or a
+  // friend drives them / collects them. A ride left out isn't charged or booked.
+  const [wantPickupRide, setWantPickupRide] = useState(true);
+  const [wantDropoffRide, setWantDropoffRide] = useState(true);
+  // How many people are travelling on this one booking. It sizes the flight
+  // search and decides what the ground rides can be (see CAR_SEATS).
+  const [partySize, setPartySize] = useState(1);
+  // "Send a parcel": the two ground legs become couriers carrying goods, and the
+  // flight is booked as usual for whoever carries the parcel as baggage. A courier
+  // isn't limited by seats, and the vehicle is chosen for the parcel, not the party.
+  const [parcelMode, setParcelMode] = useState(false);
+  const [parcelDescription, setParcelDescription] = useState('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
+  const ridesAvailable = parcelMode || partySize <= CAR_SEATS;
+  // A bike carries one traveller, so any party goes by car.
+  const effectiveVehicleType: 'motorcycle' | 'car' = !parcelMode && partySize > 1 ? 'car' : pickupVehicleType;
   const [pickupPreferences, setPickupPreferences] = useState<PickupPreferences>(DEFAULT_PICKUP_PREFERENCES);
   // Which country the journey actually STARTS in — was hardcoded to
   // 'Uganda' throughout (geocoding, quote, and the leg mbg_dispatch_journey_leg
   // matches against), even though the backend (mbg_find_available_vehicles,
   // gated on r.service_countries) already supports any country. Defaults to
   // Uganda since that's the primary market, but is now a real customer choice.
-  const [pickupCountry, setPickupCountry] = useState(COUNTRIES[0]);
+  const [pickupCountry, setPickupCountry] = useState(
+    COUNTRIES.find((c) => c.iso2 === initialPickupCountryIso2) || COUNTRIES[0]
+  );
 
   const [originIata, setOriginIata] = useState('EBB');
   const [originLabel, setOriginLabel] = useState<string | null>('Entebbe International Airport (EBB)');
@@ -193,6 +345,18 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const [searchingFlights, setSearchingFlights] = useState(false);
   const [offers, setOffers] = useState<FlightOffer[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<FlightOffer | null>(null);
+  const [cabinClass, setCabinClass] = useState<CabinClass>('economy');
+  const [hasSearched, setHasSearched] = useState(false);
+
+  // Offers belong to one exact route + date + cabin. The moment any of those
+  // change they no longer describe what's on screen, and a still-selected old
+  // offer would get quoted and booked for the wrong trip.
+  const clearFlightResults = () => {
+    setOffers([]);
+    setSelectedOffer(null);
+    setHasSearched(false);
+    setError(null);
+  };
 
   const [destCountry, setDestCountry] = useState('');
   const [destCity, setDestCity] = useState('');
@@ -202,24 +366,30 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const selectedDestinationAddressRef = useRef('');
 
   const [quote, setQuote] = useState<JourneyQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Set when the wallet may have been debited but no ticket was issued — kept
+  // separate from `error` so it can't be dismissed or cleared by navigating.
+  const [paymentIssue, setPaymentIssue] = useState<{ journeyId: string | null; certain: boolean; ticketIssued?: boolean } | null>(null);
   const [journey, setJourney] = useState<Journey | null>(null);
   const [customerName, setCustomerName] = useState('Customer');
 
-  // Real traveler details — must match the passenger's ID/passport, since
-  // this books an actual seat with a real airline via Duffel.
-  const [passengerTitle, setPassengerTitle] = useState<'mr' | 'mrs' | 'ms' | 'miss' | 'dr'>('mr');
-  const [passengerGender, setPassengerGender] = useState<'m' | 'f'>('m');
-  const [passengerGivenName, setPassengerGivenName] = useState('');
-  const [passengerFamilyName, setPassengerFamilyName] = useState('');
-  const [passengerDob, setPassengerDob] = useState('');
-  const [passengerPhone, setPassengerPhone] = useState('');
-  const passengerDetailsValid =
-    passengerGivenName.trim().length > 0 &&
-    passengerFamilyName.trim().length > 0 &&
-    !!passengerDob &&
-    !!toInternationalPhone(passengerPhone, pickupCountry.iso2);
-  const passengerPhoneIntl = toInternationalPhone(passengerPhone, pickupCountry.iso2);
+  // Real traveler details — must match each passenger's ID/passport, since
+  // this books actual seats with a real airline via Duffel. One entry per
+  // traveller; the first is the lead traveller (the account holder, usually).
+  const [passengers, setPassengers] = useState<PassengerForm[]>(() => [blankPassenger()]);
+  const updatePassenger = (index: number, patch: Partial<PassengerForm>) =>
+    setPassengers((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+  // Everyone else's phone number may be left blank: the airline needs one per
+  // ticket, so they fall back to the lead traveller's.
+  const leadPhone = passengers[0]?.phone ?? '';
+  const phoneFor = (index: number) => toInternationalPhone(passengers[index]?.phone.trim() ? passengers[index].phone : leadPhone, pickupCountry.iso2);
+  const passengerDetailsValid = passengers.length === partySize && passengers.every((p, i) =>
+    p.givenName.trim().length > 0 &&
+    p.familyName.trim().length > 0 &&
+    !!p.dob &&
+    !!phoneFor(i)
+  );
 
   // Real ICAN wallet balance, checked against the quote before letting the
   // customer confirm — avoids creating a doomed mbg_journeys row (confirm.js
@@ -248,6 +418,10 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   }, [step, quote]);
 
   const shortfallIcan = quote && walletIcan !== null ? Math.max(0, quote.totalIcan - walletIcan) : 0;
+  // A top-up buys ICAN at its live UGX price — the same value the quote used.
+  // Never below the 5,000 UGX launch floor, which is also the least the
+  // payment verifier will accept per coin (verify-flutterwave-payment).
+  const topUpUnitUgx = Math.max(ICAN_TO_UGX, quote?.icanPriceUgx ?? 0);
   const hasEnoughBalance = walletIcan === null ? true : shortfallIcan <= 0;
 
   const doTopUp = async () => {
@@ -257,20 +431,21 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     try {
       const { data: authUser } = await supabase.auth.getUser();
       const email = authUser?.user?.email;
-      // Round up to whole shillings, and up to at least the platform's
-      // minimum purchase, so a fractional shortfall still clears Flutterwave
-      // and buy_ican_coins' own minimum-amount expectations.
-      const ugxAmount = Math.max(ICAN_TO_UGX, Math.ceil(shortfallIcan * ICAN_TO_UGX));
-      const icanAmount = ugxAmount / ICAN_TO_UGX;
+      // Round up to whole shillings, and up to at least one coin, so a
+      // fractional shortfall still clears Flutterwave and buy_ican_coins' own
+      // minimum-amount expectations. The coin amount is floored (8 dp) so it
+      // can never be worth more than the shillings actually paid.
+      const ugxAmount = Math.max(Math.ceil(topUpUnitUgx), Math.ceil(shortfallIcan * topUpUnitUgx));
+      const icanAmount = Math.floor((ugxAmount / topUpUnitUgx) * 1e8) / 1e8;
       const txRef = generateTxRef('MBGJ-TOPUP');
 
       const payment = await payWithFlutterwave({
         amount: ugxAmount,
         currency: 'UGX',
         customerEmail: email,
-        customerPhone: passengerPhone.trim() || undefined,
-        customerName: `${passengerGivenName} ${passengerFamilyName}`.trim() || customerName,
-        title: 'BodaGo Journey — Top up ICAN',
+        customerPhone: leadPhone.trim() || undefined,
+        customerName: `${passengers[0]?.givenName ?? ''} ${passengers[0]?.familyName ?? ''}`.trim() || customerName,
+        title: 'BodaGoEra Journey — Top up ICAN',
         description: `Top up ${formatICAN(icanAmount)} ICAN to complete your journey booking`,
         txRef,
       });
@@ -315,15 +490,10 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
       .select('id, name, address, latitude, longitude')
       .eq('customer_user_id', customerId)
       .then(({ data }) => {
-        // Old saved areas may have been created without coordinates. Do not
-        // let those records reach Leaflet, which requires finite lat/lng.
-        const validAreas = (data ?? []).map((area: CustomerArea) => {
+        // Do not let areas without usable coordinates reach the map.
+        const validAreas = ((data ?? []) as RawCustomerArea[]).map((area) => {
           const coords = validAreaCoordinates(area);
-          return coords ? {
-          ...area,
-          latitude: coords.lat,
-          longitude: coords.lng,
-          } : null;
+          return coords ? { ...area, latitude: coords.lat, longitude: coords.lng } : null;
         }).filter((area): area is CustomerArea => area !== null);
         setAreas(validAreas);
       });
@@ -348,9 +518,26 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   useEffect(() => {
     if (!customerName || customerName === 'Customer') return;
     const parts = customerName.trim().split(/\s+/);
-    setPassengerGivenName((prev) => prev || parts[0] || '');
-    setPassengerFamilyName((prev) => prev || parts.slice(1).join(' '));
+    setPassengers((prev) => prev.map((p, i) => (i === 0
+      ? { ...p, givenName: p.givenName || parts[0] || '', familyName: p.familyName || parts.slice(1).join(' ') }
+      : p)));
   }, [customerName]);
+
+  useEffect(() => {
+    setPassengers((prev) => (prev.length === partySize
+      ? prev
+      : partySize > prev.length
+        ? [...prev, ...Array.from({ length: partySize - prev.length }, blankPassenger)]
+        : prev.slice(0, partySize)));
+  }, [partySize]);
+
+  // Bigger than one car can carry: airport rides can't be booked for the party.
+  useEffect(() => {
+    if (!ridesAvailable) {
+      setWantPickupRide(false);
+      setWantDropoffRide(false);
+    }
+  }, [ridesAvailable]);
 
   const isFirstPickupCountryRender = useRef(true);
   useEffect(() => {
@@ -362,6 +549,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
       isFirstPickupCountryRender.current = false;
       return;
     }
+    clearFlightResults();
     if (pickupCountry.iso2 === 'UG') {
       setOriginIata('EBB');
       setOriginLabel('Entebbe International Airport (EBB)');
@@ -403,7 +591,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     try {
       const result = await geocodeAddress(query, pickupCountry.name);
       if (!result) {
-        setError(`Couldn't find “${query}” in ${pickupCountry.name}. Try adding a neighborhood, city, or landmark.`);
+        setError(`Couldn't find "${query}" in ${pickupCountry.name}. Try adding a neighborhood, city, or landmark.`);
         return;
       }
       setPickupSearchResult(result);
@@ -418,11 +606,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     if (!pickupSearchResult) return;
     setSelectedAreaId('');
     setManualAddress(pickupSearchResult.displayName);
-    setManualPickup({
-      lat: pickupSearchResult.lat,
-      lng: pickupSearchResult.lng,
-      address: pickupSearchResult.displayName,
-    });
+    setManualPickup({ lat: pickupSearchResult.lat, lng: pickupSearchResult.lng, address: pickupSearchResult.displayName });
   };
 
   const findDestinationOnMap = async () => {
@@ -436,7 +620,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         return;
       }
       if (!Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
-        setError("That address did not return a usable map location — add more detail and try again.");
+        setError('That address did not return a usable map location — add more detail and try again.');
         return;
       }
       setDestPin({ lat: Number(result.lat), lng: Number(result.lng), address: result.displayName });
@@ -452,6 +636,11 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   };
 
   const goToFlightStep = async () => {
+    // No pickup ride: nothing to locate, the customer makes their own way.
+    if (!wantPickupRide) {
+      setStep('flight');
+      return;
+    }
     // A saved area or a map pin already carries real coordinates — only a
     // freshly typed address (never geocoded yet) needs looking up here.
     if (selectedArea || manualPickup) {
@@ -466,11 +655,11 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         setError("Couldn't find that address — try adding more detail (e.g. neighborhood, city).");
         return;
       }
-       if (!Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
-         setError("That pickup address did not return a usable map location — add more detail and try again.");
-         return;
-       }
-       setManualPickup({ lat: Number(result.lat), lng: Number(result.lng), address: manualAddress });
+      if (!Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
+        setError('That pickup address did not return a usable map location — add more detail and try again.');
+        return;
+      }
+      setManualPickup({ lat: Number(result.lat), lng: Number(result.lng), address: manualAddress });
       setStep('flight');
     } catch (err: any) {
       setError(err.message || 'Could not look up that address');
@@ -479,13 +668,29 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     }
   };
 
-  const runFlightSearch = async () => {
+  // Duffel rejects both of these outright, so catch them here with a message
+  // the customer can act on rather than sending a search that can only fail.
+  const sameAirport = !!originIata && originIata === destinationIata;
+  const pastDate = !!departureDate && departureDate < todayIsoDate();
+  const searchProblem = sameAirport
+    ? 'Your departure and arrival airports are the same — choose a different destination.'
+    : pastDate
+      ? 'That date has already passed — choose today or a later date.'
+      : null;
+
+  const runFlightSearch = async (cabin: CabinClass = cabinClass) => {
     setError(null);
+    if (searchProblem) {
+      setError(searchProblem);
+      return;
+    }
     setSearchingFlights(true);
+    setSelectedOffer(null);
     try {
-      const { offers } = await searchFlights({ originIata, destinationIata, departureDate, passengerCount: 1 });
+      const { offers } = await searchFlights({ originIata, destinationIata, departureDate, passengerCount: partySize, cabinClass: cabin });
       setOffers(offers);
-      if (offers.length === 0) setError('No flights found for that route/date.');
+      setHasSearched(true);
+      if (offers.length === 0) setError(`No ${cabin.replace('_', ' ')} flights found for that route/date — try another date or cabin.`);
     } catch (err: any) {
       setError(err.message || 'Flight search failed');
     } finally {
@@ -493,33 +698,63 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     }
   };
 
+  // What a parcel journey still needs before it can be priced. The weight is the
+  // journey's baggage weight, so it is charged like any extra baggage.
+  const parcelWeight = Number(flightCargoWeightKg) || 0;
+  const parcelProblem = !parcelMode ? null
+    : !parcelDescription.trim() ? 'Say what the parcel is.'
+    : parcelWeight <= 0 ? "Enter the parcel's weight."
+    : (wantPickupRide || wantDropoffRide) && effectiveVehicleType === 'motorcycle' && parcelWeight > PARCEL_BIKE_MAX_KG ? `A bike carries up to ${PARCEL_BIKE_MAX_KG} kg — choose a car for this parcel.`
+    : wantDropoffRide && (!recipientName.trim() || recipientPhone.replace(/\D/g, '').length < 7) ? "Enter the recipient's name and phone number."
+    : null;
+
   const buildQuote = async () => {
-    if (!pickup || !selectedOffer) return;
+    if (!selectedOffer || (wantPickupRide && !pickup) || parcelProblem) return;
     setError(null);
+    setQuoting(true);
     try {
       const { quote } = await getJourneyQuote({
         customerUserId: customerId,
-        pickup: { ...pickup, country: pickupCountry.name, vehicleType: pickupVehicleType, preferences: preferencesForApi(pickupPreferences, pickupVehicleType) },
+        pickup: wantPickupRide && pickup
+          ? { ...pickup, country: pickupCountry.name, vehicleType: effectiveVehicleType, preferences: preferencesForApi(parcelMode ? DEFAULT_PICKUP_PREFERENCES : pickupPreferences, effectiveVehicleType) }
+          : { lat: null, lng: null, address: '', country: pickupCountry.name },
         offer: selectedOffer,
-        destination: { address: destAddress, country: destCountry, city: destCity, lat: destPin?.lat ?? null, lng: destPin?.lng ?? null },
+        // With no arrival ride there is no address to collect: the server records
+        // the airport the flight lands at.
+        destination: wantDropoffRide
+          ? { address: destAddress, country: destCountry, city: destCity, lat: destPin?.lat ?? null, lng: destPin?.lng ?? null }
+          : { address: '', country: destCountry, city: destCity || undefined, lat: null, lng: null },
         cargoWeightKg: flightCargoWeightKg ? Number(flightCargoWeightKg) : undefined,
+        pickupRide: wantPickupRide,
+        dropoffRide: wantDropoffRide,
+        ...(parcelMode ? {
+          serviceMode: 'parcel' as const,
+          parcel: {
+            description: parcelDescription.trim(),
+            recipientName: recipientName.trim(),
+            recipientPhone: recipientPhone.trim(),
+            vehicleType: wantPickupRide || wantDropoffRide ? effectiveVehicleType : null,
+          },
+        } : {}),
       });
       setQuote(quote);
       setStep('review');
     } catch (err: any) {
       setError(err.message || 'Could not build a quote');
+    } finally {
+      setQuoting(false);
     }
   };
 
   const doConfirm = async () => {
     if (!quote) return;
-    const passengerId = quote.offer.passengers?.[0]?.id;
-    if (!passengerId) {
+    const offerPassengers = quote.offer.passengers ?? [];
+    if (offerPassengers.length === 0 || offerPassengers.length !== passengers.length) {
       setError('This flight offer has expired — please search flights again.');
       return;
     }
     if (!passengerDetailsValid) {
-      setError("Please fill in the passenger's full name, date of birth and a phone number with its country code (e.g. +256 7XX XXX XXX).");
+      setError(`Please fill in ${partySize > 1 ? "every traveller's" : "the passenger's"} full name, date of birth and a phone number with its country code (e.g. +256 7XX XXX XXX).`);
       return;
     }
     if (!hasEnoughBalance) {
@@ -535,11 +770,12 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
       const { journeyId } = await confirmJourney({
         customerUserId: customerId,
         quote,
-        passengers: [{
-          id: passengerId, type: 'adult', title: passengerTitle,
-          given_name: passengerGivenName.trim(), family_name: passengerFamilyName.trim(),
-          born_on: passengerDob, gender: passengerGender, email, phone_number: passengerPhoneIntl || passengerPhone.trim(),
-        }],
+        passengers: passengers.map((p, i) => ({
+          // Each traveller is matched to the airline's own passenger id, in order.
+          id: offerPassengers[i].id, type: 'adult' as const, title: p.title,
+          given_name: p.givenName.trim(), family_name: p.familyName.trim(),
+          born_on: p.dob, gender: p.gender, email, phone_number: phoneFor(i) || (p.phone.trim() || leadPhone.trim()),
+        })),
       });
       startTracking(journeyId);
     } catch (err: any) {
@@ -558,40 +794,92 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     }
   };
 
+  const flowSteps: StepperStep[] = [
+    { id: 'pickup', label: 'Pickup' },
+    { id: 'flight', label: 'Flight' },
+    { id: 'destination', label: 'Arrival' },
+    { id: 'review', label: 'Pay' },
+  ];
+  const flowIndex = flowSteps.findIndex((s) => s.id === step);
+  const showStepper = bookingKind === 'fly' && flowIndex >= 0;
+  const selectedSummary = selectedOffer ? summarizeOffer(selectedOffer) : null;
+  const destinationLine = [destAddress, destCity, destCountry].filter(Boolean).join(', ');
+  const PickupVehicleIcon = effectiveVehicleType === 'car' ? Car : Bike;
+  const flightLine = selectedSummary
+    ? `${selectedSummary.departClock} ${selectedSummary.originIata} → ${selectedSummary.arriveClock}${selectedSummary.arriveDayOffset > 0 ? ` (+${selectedSummary.arriveDayOffset})` : ''} ${selectedSummary.destinationIata}`
+    : '';
+
+  // What's already been decided, kept in view while working on the next step.
+  const tripItems: Array<{ icon: ReactNode; label: string; value: string }> = [];
+  if (bookingKind === 'fly' && partySize > 1 && (step === 'flight' || step === 'destination')) {
+    tripItems.push({ icon: <User size={15} />, label: 'Travellers', value: `${partySize} people on one booking` });
+  }
+  if (bookingKind === 'fly' && (step === 'flight' || step === 'destination') && (pickup || !wantPickupRide)) {
+    tripItems.push({ icon: <PickupVehicleIcon size={15} />, label: 'To the airport', value: wantPickupRide && pickup ? pickup.address : 'Own way (no BodaGoEra ride)' });
+  }
+  if (step === 'destination' && selectedSummary) {
+    tripItems.push({ icon: <Plane size={15} />, label: 'Flight', value: `${selectedSummary.airline} · ${selectedSummary.departDayLabel} · ${flightLine}` });
+  }
+
+  // A new step starts at its top — otherwise, on a phone, "Next" lands the
+  // customer mid-way down a long page.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isFirstStepRender = useRef(true);
+  useEffect(() => {
+    if (isFirstStepRender.current) {
+      isFirstStepRender.current = false;
+      return;
+    }
+    containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [step]);
+
+  const goToStep = (next: Step) => {
+    setError(null);
+    setStep(next);
+  };
+
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center justify-center gap-2">
-          <Plane className="text-orange-500" /> Book a full journey
-        </h2>
-        <p className="text-slate-500 text-sm mt-1">Boda to the airport, a real flight, and a driver waiting when you land.</p>
-      </div>
+    <div ref={containerRef} className="mbg-journey mx-auto max-w-2xl scroll-mt-4 space-y-5 px-4 py-6">
+      <header className="text-center">
+        <p className="classic-eyebrow">Door to door</p>
+        <h2 className="mt-1 font-classic-display text-[28px] font-bold leading-tight text-slate-800">Book a full journey</h2>
+        <div className="landing-classic-divider mx-auto mt-3 max-w-[14rem]" />
+        <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-slate-500">
+          {bookingKind === 'ship'
+            ? 'Cargo carried across the water, with land transport at either end if you want it.'
+            : parcelMode
+              ? 'A courier to the airport, a real flight, and a courier waiting when it lands.'
+              : 'A ride to the airport, a real flight, and a driver waiting when you land.'}
+        </p>
+      </header>
 
       {step !== 'tracking' && step !== 'confirming' && (
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => changeBookingKind('fly')}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-              bookingKind === 'fly' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
-            }`}
-          >
-            <Plane size={16} /> Fly
-          </button>
-          <button
-            type="button"
-            onClick={() => changeBookingKind('ship')}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-              bookingKind === 'ship' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
-            }`}
-          >
-            <Ship size={16} /> Ship Cargo
-          </button>
+        <div className="classic-card grid grid-cols-2 gap-1 !rounded-2xl p-1" role="group" aria-label="What are you booking?">
+          {([['fly', 'Fly', Plane], ['ship', 'Ship Cargo', Ship]] as const).map(([kind, label, Icon]) => {
+            const active = bookingKind === kind;
+            return (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={active}
+                onClick={() => changeBookingKind(kind)}
+                className={`flex min-h-[44px] items-center justify-center gap-2 rounded-xl text-sm font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c4a052] ${
+                  active
+                    ? 'bg-gradient-to-br from-[#231b12] to-[#3d2e18] text-[#f6e7bd] shadow-md ring-1 ring-inset ring-[#c4a052]/50'
+                    : 'text-slate-500 hover:bg-[#c4a052]/10 hover:text-[#7a5a12]'
+                }`}
+              >
+                <Icon size={16} /> {label}
+              </button>
+            );
+          })}
         </div>
       )}
 
+      {showStepper && <JourneyStepper steps={flowSteps} currentIndex={flowIndex} onGoTo={(id) => goToStep(id as Step)} />}
+
       {paymentIssue && (
-        <div role="alert" className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-sm text-amber-900">
+        <div role="alert" className="animate-step-in rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-sm text-amber-900">
           <div className="flex items-start gap-2.5">
             <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
             <div className="space-y-2 leading-snug">
@@ -617,68 +905,289 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         </div>
       )}
 
-      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">{error}</div>}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+
+      {tripItems.length > 0 && <TripSummary items={tripItems} />}
 
       {step === 'ship-details' && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-slate-700 flex items-center gap-2"><Package size={18} /> What are you shipping?</h3>
-          <p className="text-xs text-slate-500">
-            For real overseas cargo — pickup and destination in different countries not reachable by road.
-            Routed automatically via a real seaport when needed.
-          </p>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1.5">Pickup location</label>
-            <LocationPickerMap
-              pickup={shipPickup ? { id: 'ship_pickup', name: shipPickup.address, area: shipPickup.address, fullAddress: shipPickup.address, coordinates: { lat: shipPickup.lat, lng: shipPickup.lng } } : null}
-              dropoff={shipDropoff ? { id: 'ship_dropoff', name: shipDropoff.address, area: shipDropoff.address, fullAddress: shipDropoff.address, coordinates: { lat: shipDropoff.lat, lng: shipDropoff.lng } } : null}
-              onPickupChange={(loc) => setShipPickup({ lat: loc.coordinates.lat, lng: loc.coordinates.lng, address: loc.fullAddress })}
-              onDropoffChange={(loc) => setShipDropoff({ lat: loc.coordinates.lat, lng: loc.coordinates.lng, address: loc.fullAddress })}
-            />
-            <p className="text-xs text-slate-500 mt-1">Tap the map to set the destination, drag either pin to fine-tune.</p>
+        <StepCard
+          eyebrow="Cargo · by sea"
+          title="What are you shipping?"
+          description="For real overseas cargo — pickup and destination in different countries not reachable by road. Routed automatically via a real seaport. Choose whether we also move it over land at either end."
+        >
+          <div className="space-y-4">
+            {([
+              {
+                label: 'At the pickup end',
+                on: shipPickupLeg,
+                set: setShipPickupLeg,
+                options: [
+                  { on: true, title: 'Collect from my door', desc: 'A vehicle takes it to the departure port' },
+                  { on: false, title: "I'll bring it to the port", desc: 'No land leg booked or charged' },
+                ],
+              },
+              {
+                label: 'At the destination end',
+                on: shipDropoffLeg,
+                set: setShipDropoffLeg,
+                options: [
+                  { on: true, title: 'Deliver to the address', desc: 'A vehicle takes it from the arrival port' },
+                  { on: false, title: "We'll collect at the port", desc: 'No land leg booked or charged' },
+                ],
+              },
+            ] as const).map((group) => (
+              <div key={group.label}>
+                <span className="classic-label">{group.label}</span>
+                <div className="grid grid-cols-2 gap-2.5" role="group" aria-label={group.label}>
+                  {group.options.map((option) => (
+                    <button
+                      key={option.title}
+                      type="button"
+                      aria-pressed={group.on === option.on}
+                      onClick={() => { group.set(option.on); setError(null); }}
+                      className={`classic-tile p-3 text-left ${group.on === option.on ? 'is-active' : ''}`}
+                    >
+                      <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{option.title}</span>
+                      <span className="block text-[11px] leading-tight text-slate-500">{option.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {(shipPickupCountry || shipDropoffCountry) && (
-            <p className="text-xs text-slate-500">
-              {shipPickupCountry?.name || '…'} → {shipDropoffCountry?.name || '…'}
+          {(shipPickupLeg || shipDropoffLeg) && (
+            <div>
+              <span className="classic-label">Land transport vehicle</span>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3" role="group" aria-label="Land transport vehicle">
+                {SHIP_LAND_VEHICLES.map(({ value, label, desc, Icon }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={shipLandVehicle === value}
+                    onClick={() => setShipLandVehicle(value)}
+                    className={`classic-tile flex items-center gap-2.5 p-3 ${shipLandVehicle === value ? 'is-active' : ''}`}
+                  >
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                      <Icon size={18} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                      <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {shipVehicleProblem && <p role="alert" className="mt-2 text-xs font-medium text-red-600">{shipVehicleProblem}</p>}
+            </div>
+          )}
+
+          {(shipPickupLeg || shipDropoffLeg) && (
+            <Field
+              label={shipPickupLeg && shipDropoffLeg ? 'Pickup & destination' : shipPickupLeg ? 'Pickup location' : 'Delivery location'}
+              hint={shipPickupLeg && shipDropoffLeg ? 'Tap the map to set the destination, drag either pin to fine-tune.' : 'Tap the map to set the pin, drag it to fine-tune.'}
+            >
+              <div className="overflow-hidden rounded-2xl border border-[#c4a052]/40">
+                <LocationPickerMap
+                  key={`${shipPickupLeg}-${shipDropoffLeg}`}
+                  pickup={shipPickupLeg && shipPickup ? { id: 'ship_pickup', name: shipPickup.address, area: shipPickup.address, fullAddress: shipPickup.address, coordinates: { lat: shipPickup.lat, lng: shipPickup.lng } } : null}
+                  dropoff={shipDropoffLeg && shipDropoff ? { id: 'ship_dropoff', name: shipDropoff.address, area: shipDropoff.address, fullAddress: shipDropoff.address, coordinates: { lat: shipDropoff.lat, lng: shipDropoff.lng } } : null}
+                  onPickupChange={(loc) => setShipPickup({ lat: loc.coordinates.lat, lng: loc.coordinates.lng, address: loc.fullAddress })}
+                  onDropoffChange={(loc) => setShipDropoff({ lat: loc.coordinates.lat, lng: loc.coordinates.lng, address: loc.fullAddress })}
+                  selectionMode={shipDropoffLeg ? 'dropoff' : 'pickup'}
+                  autoLocateGPS={shipPickupLeg}
+                />
+              </div>
+            </Field>
+          )}
+
+          {!shipPickupLeg && (
+            <Field label="Shipping from (country)" htmlFor="jb-ship-from" hint="You bring the cargo to this country's departure port.">
+              <select id="jb-ship-from" className="classic-input" value={shipPickupCountryPick} onChange={(e) => setShipPickupCountryPick(e.target.value)}>
+                <option value="">Select a country</option>
+                {COUNTRIES.map((c) => <option key={c.iso2 || c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {!shipDropoffLeg && (
+            <Field label="Shipping to (country)" htmlFor="jb-ship-to" hint="The cargo is held at this country's arrival port for you to collect.">
+              <select id="jb-ship-to" className="classic-input" value={shipDropoffCountryPick} onChange={(e) => setShipDropoffCountryPick(e.target.value)}>
+                <option value="">Select a country</option>
+                {COUNTRIES.map((c) => <option key={c.iso2 || c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            </Field>
+          )}
+
+          {(shipFromCountry || shipToCountry) && (
+            <p className="flex items-center justify-center gap-2 rounded-full bg-[#fbf3dc] px-3 py-1.5 text-xs font-semibold text-[#7a5a12]">
+              {shipFromCountry || '…'} <ArrowRight size={13} /> {shipToCountry || '…'}
             </p>
           )}
 
-          <input
-            className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-            placeholder="What's in the shipment? (e.g. furniture, textiles)"
-            value={cargoDescription}
-            onChange={(e) => setCargoDescription(e.target.value)}
-          />
-          <input
-            className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-            type="number"
-            min="0"
-            placeholder="Total weight (kg)"
-            value={shipCargoWeightKg}
-            onChange={(e) => setShipCargoWeightKg(e.target.value)}
-          />
-          <p className="text-xs text-slate-500">Weight is used to match a vehicle that can actually carry the load.</p>
+          <Field label="What's in the shipment?" htmlFor="jb-cargo-desc">
+            <input
+              id="jb-cargo-desc"
+              className="classic-input"
+              placeholder="e.g. furniture, textiles"
+              value={cargoDescription}
+              onChange={(e) => setCargoDescription(e.target.value)}
+            />
+          </Field>
+          <Field label="Total weight (kg)" htmlFor="jb-cargo-weight" hint="Used to match a vehicle that can actually carry the load.">
+            <input
+              id="jb-cargo-weight"
+              className="classic-input"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              placeholder="e.g. 250"
+              value={shipCargoWeightKg}
+              onChange={(e) => setShipCargoWeightKg(e.target.value)}
+            />
+          </Field>
+
+          {shipQuote && (
+            <div className="classic-tile !cursor-default space-y-1.5 p-3.5 text-sm text-slate-600" aria-live="polite">
+              {shipPickupLeg && <div className="flex justify-between gap-3"><span>Land transport to {shipQuote.originPort.city} port</span><span className="tabular-nums">UGX {shipQuote.pickupFareUgx.toLocaleString()}</span></div>}
+              <div className="flex justify-between gap-3"><span>Sea crossing, {shipQuote.originPort.city} → {shipQuote.destPort.city}</span><span className="tabular-nums">UGX {shipQuote.seaFareUgx.toLocaleString()}</span></div>
+              {shipDropoffLeg && <div className="flex justify-between gap-3"><span>Land transport from {shipQuote.destPort.city} port</span><span className="tabular-nums">UGX {shipQuote.dropoffFareUgx.toLocaleString()}</span></div>}
+              <div className="flex justify-between gap-3 border-t border-[#c4a052]/30 pt-1.5 font-semibold text-slate-800">
+                <span>Total, paid from your wallet</span>
+                <span className="tabular-nums">{formatIcan(shipQuote.totalIcan)} ICAN</span>
+              </div>
+            </div>
+          )}
+          {shipQuoteError && <p role="alert" className="text-center text-xs font-medium text-red-600">{shipQuoteError}</p>}
 
           <button
-            disabled={!shipPickup || !shipDropoff || !shipPickupCountry || !shipDropoffCountry || submittingShip}
+            disabled={!shipReady || submittingShip || shipQuoting || !shipQuote}
             onClick={submitShipCargo}
-            className="w-full bg-orange-500 disabled:bg-slate-300 text-white rounded-lg py-3 font-semibold flex items-center justify-center gap-2"
+            className="classic-btn classic-btn-primary"
           >
-            {submittingShip ? <Loader2 className="animate-spin" size={18} /> : <Ship size={18} />}
-            {submittingShip ? 'Booking…' : 'Ship this cargo'}
+            {submittingShip || shipQuoting ? <Loader2 className="animate-spin" size={18} /> : <Ship size={18} />}
+            {submittingShip ? 'Booking…' : shipQuoting ? 'Pricing…' : shipQuote ? `Ship this cargo · ${formatIcan(shipQuote.totalIcan)} ICAN` : 'Ship this cargo'}
           </button>
-        </div>
+          {!shipReady && !shipVehicleProblem && (
+            <p className="-mt-2 text-center text-xs text-slate-500">
+              {(shipPickupLeg && !shipPickup) || (shipDropoffLeg && !shipDropoff)
+                ? 'Set the pin on the map for each land leg to continue.'
+                : 'Choose the countries to continue.'}
+            </p>
+          )}
+        </StepCard>
       )}
 
       {bookingKind === 'fly' && step === 'pickup' && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-slate-700 flex items-center gap-2"><MapPin size={18} /> Pickup</h3>
-
+        <StepCard
+          eyebrow="Step 1 of 4"
+          title="Where should we collect you?"
+          description={parcelMode
+            ? 'A courier collects the parcel here and takes it to the airport — or skip it if you are bringing it yourself.'
+            : 'Your ride to the airport starts here — or skip it if someone else is taking you.'}
+        >
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1.5">Which country are you starting from?</label>
+            <span className="classic-label">What is this journey for?</span>
+            <div className="grid grid-cols-2 gap-2.5" role="group" aria-label="Travel or send a parcel">
+              {([
+                { parcel: false, label: 'Travel', desc: 'Rides for you, and your flight', Icon: User },
+                { parcel: true, label: 'Send a parcel', desc: 'Couriers carry it; it flies as baggage', Icon: Package },
+              ] as const).map(({ parcel, label, desc, Icon }) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={parcelMode === parcel}
+                  onClick={() => { setParcelMode(parcel); setError(null); }}
+                  className={`classic-tile flex items-center gap-3 p-3 text-left ${parcelMode === parcel ? 'is-active' : ''}`}
+                >
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                    <Icon size={20} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                    <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            {parcelMode && (
+              <div className="mt-3 space-y-3.5">
+                <Field label="What are you sending?" htmlFor="jb-parcel-desc" hint="The courier is told what they are carrying. Its weight is asked on the flight step.">
+                  <input
+                    id="jb-parcel-desc"
+                    className="classic-input"
+                    maxLength={200}
+                    placeholder="e.g. documents, a laptop, spare parts"
+                    value={parcelDescription}
+                    onChange={(e) => setParcelDescription(e.target.value)}
+                  />
+                </Field>
+                {(wantPickupRide || wantDropoffRide) && (
+                  <div>
+                    <span className="classic-label">Courier vehicle (both legs)</span>
+                    <div className="grid grid-cols-2 gap-2.5" role="group" aria-label="Courier vehicle">
+                      {([
+                        { value: 'motorcycle', label: 'Bike', desc: `Small parcels, up to ${PARCEL_BIKE_MAX_KG} kg`, Icon: Bike },
+                        { value: 'car', label: 'Car', desc: 'Bigger or awkward parcels', Icon: Car },
+                      ] as const).map(({ value, label, desc, Icon }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={effectiveVehicleType === value}
+                          onClick={() => setPickupVehicleType(value)}
+                          className={`classic-tile flex items-center gap-3 p-3 ${effectiveVehicleType === value ? 'is-active' : ''}`}
+                        >
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                            <Icon size={20} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                            <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <Field
+            label={parcelMode ? 'How many people are flying?' : 'How many people are travelling?'}
+            htmlFor="jb-party-size"
+            hint={parcelMode
+              ? 'Whoever flies carries the parcel as checked baggage. Everyone is booked on the same flight and you pay once.'
+              : partySize > 1
+              ? (ridesAvailable
+                ? 'One car takes the whole party to the airport, and everyone is booked on the same flight.'
+                : `A BodaGoEra car seats up to ${CAR_SEATS}, so for ${partySize} travellers only the flights are booked — you make your own way to and from the airport.`)
+              : 'Booking for a family or group? Everyone is booked on the same flight and you pay once.'}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label="Fewer travellers"
+                disabled={partySize <= 1}
+                onClick={() => { setPartySize((n) => Math.max(1, n - 1)); clearFlightResults(); }}
+                className="classic-btn classic-btn-outline !min-h-[44px] !w-12 !px-0 text-lg"
+              >−</button>
+              <output id="jb-party-size" className="min-w-[4.5rem] text-center font-classic-display text-lg font-semibold text-slate-800">
+                {partySize} {partySize === 1 ? 'traveller' : 'travellers'}
+              </output>
+              <button
+                type="button"
+                aria-label="More travellers"
+                disabled={partySize >= MAX_PARTY_SIZE}
+                onClick={() => { setPartySize((n) => Math.min(MAX_PARTY_SIZE, n + 1)); clearFlightResults(); }}
+                className="classic-btn classic-btn-outline !min-h-[44px] !w-12 !px-0 text-lg"
+              >+</button>
+            </div>
+          </Field>
+
+          <Field label="Starting country" htmlFor="jb-country">
             <select
-              className="w-full border rounded-lg p-3 bg-white text-slate-900"
+              id="jb-country"
+              className="classic-input"
               value={pickupCountry.iso2}
               onChange={(e) => {
                 const next = COUNTRIES.find((c) => c.iso2 === e.target.value) || COUNTRIES[0];
@@ -687,120 +1196,177 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
                 // applies once the country itself changes.
                 setManualPickup(null);
                 setSelectedAreaId('');
+                setPickupSearchResult(null);
               }}
             >
               {COUNTRIES.map((c) => (
                 <option key={c.iso2 || c.name} value={c.iso2}>{c.name}</option>
               ))}
             </select>
-          </div>
+          </Field>
 
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1.5">Ride to the airport</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setPickupVehicleType('motorcycle')}
-                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-                  pickupVehicleType === 'motorcycle' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
-                }`}
-              >
-                <Bike size={16} /> Bike
-              </button>
-              <button
-                type="button"
-                onClick={() => setPickupVehicleType('car')}
-                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-                  pickupVehicleType === 'car' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
-                }`}
-              >
-                <Car size={16} /> Car
-              </button>
+            <span className="classic-label">{parcelMode ? 'How does the parcel get to the airport?' : 'How will you get to the airport?'}</span>
+            <div className="grid grid-cols-2 gap-2.5" role="group" aria-label="How you get to the airport">
+              {([
+                { on: true, label: parcelMode ? 'BodaGoEra courier' : 'BodaGoEra ride', desc: parcelMode ? 'A rider collects the parcel' : partySize > 1 ? 'A car collects everyone' : 'A driver collects you' },
+                { on: false, label: parcelMode ? "I'll bring it myself" : 'My own way', desc: parcelMode ? 'You take it to the airport' : 'Own car or a friend drives me' },
+              ] as const).map(({ on, label, desc }) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={wantPickupRide === on}
+                  disabled={on && !ridesAvailable}
+                  onClick={() => { setWantPickupRide(on); setError(null); }}
+                  className={`classic-tile p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${wantPickupRide === on ? 'is-active' : ''}`}
+                >
+                  <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                  <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                </button>
+              ))}
+            </div>
+            {!wantPickupRide && (
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">No ride is booked or charged for this part. You only pay for what you choose.</p>
+            )}
+          </div>
+
+          {wantPickupRide && (<>
+          {!parcelMode && (<>
+          <div>
+            <span className="classic-label">Ride to the airport</span>
+            <div className="grid grid-cols-2 gap-2.5" role="group" aria-label="Ride to the airport">
+              {([
+                { value: 'motorcycle', label: 'Bike', desc: partySize > 1 ? 'Carries one traveller' : 'Quickest through traffic', Icon: Bike },
+                { value: 'car', label: 'Car', desc: 'Room for luggage', Icon: Car },
+              ] as const).map(({ value, label, desc, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={effectiveVehicleType === value}
+                  disabled={partySize > 1 && value === 'motorcycle'}
+                  onClick={() => setPickupVehicleType(value)}
+                  className={`classic-tile flex items-center gap-3 p-3 disabled:cursor-not-allowed disabled:opacity-50 ${effectiveVehicleType === value ? 'is-active' : ''}`}
+                >
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                    <Icon size={20} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                    <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
 
-          <JourneyRideOptions vehicleType={pickupVehicleType} country={pickupCountry.name} value={pickupPreferences} onChange={setPickupPreferences} />
+          <JourneyRideOptions vehicleType={effectiveVehicleType} country={pickupCountry.name} value={pickupPreferences} onChange={setPickupPreferences} />
+          </>)}
 
           {areas.length > 0 && (
-            <select className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400" value={selectedAreaId} onChange={(e) => setSelectedAreaId(e.target.value)}>
-              <option value="">Select a saved pickup location</option>
-              {areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <Field label="Saved places" htmlFor="jb-saved-area">
+              <select id="jb-saved-area" className="classic-input" value={selectedAreaId} onChange={(e) => setSelectedAreaId(e.target.value)}>
+                <option value="">Choose a saved pickup location</option>
+                {areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </Field>
           )}
+
           {!selectedAreaId && (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500">
-                {areas.length > 0 ? 'Or enter your pickup location:' : 'No saved areas yet — enter your pickup location:'}
-              </p>
-              <input
-                className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-                placeholder={`Search an area, landmark, or address in ${pickupCountry.name}`}
-                value={manualAddress}
-                onChange={(e) => {
-                  // Typing invalidates whatever pin/geocode result was
-                  // attached to the previous text — a stale one must never
-                  // silently get used for the new address.
-                  setManualAddress(e.target.value);
-                  setManualPickup(null);
-                  setPickupSearchResult(null);
-                }}
-              />
+            <div className="space-y-2.5">
+              <Field
+                label={areas.length > 0 ? 'Or search for a place' : 'Pickup location'}
+                htmlFor="jb-pickup-search"
+              >
+                <input
+                  id="jb-pickup-search"
+                  className="classic-input"
+                  placeholder={`An area, landmark, or address in ${pickupCountry.name}`}
+                  value={manualAddress}
+                  onChange={(e) => {
+                    // Typing invalidates whatever pin/geocode result was
+                    // attached to the previous text — a stale one must never
+                    // silently get used for the new address.
+                    setManualAddress(e.target.value);
+                    setManualPickup(null);
+                    setPickupSearchResult(null);
+                  }}
+                />
+              </Field>
               <button
                 type="button"
                 onClick={searchPickupOnMap}
                 disabled={!manualAddress.trim() || searchingPickup}
-                className="w-full border-2 border-blue-200 text-blue-700 rounded-lg py-2.5 font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                className="classic-btn classic-btn-outline !min-h-[44px] !text-sm"
               >
                 {searchingPickup ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
-                {searchingPickup ? 'Searching the map…' : 'Search this pickup on the map'}
+                {searchingPickup ? 'Searching the map…' : 'Find it on the map'}
               </button>
               {pickupSearchResult && (
                 <button
                   type="button"
                   onClick={usePickupSearchResult}
-                  className={`w-full text-left rounded-lg border-2 p-3 transition-colors ${manualPickup?.lat === pickupSearchResult.lat && manualPickup?.lng === pickupSearchResult.lng ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-white hover:border-blue-400'}`}
+                  className={`classic-tile p-3 ${manualPickup?.lat === pickupSearchResult.lat && manualPickup?.lng === pickupSearchResult.lng ? 'is-active' : ''}`}
                 >
-                  <div className="flex items-start gap-2">
-                    <MapPin size={17} className="text-green-600 mt-0.5 shrink-0" />
+                  <span className="flex items-start gap-2.5">
+                    <MapPin size={17} className="mt-0.5 shrink-0 text-[#a17c28]" />
                     <span>
-                      <span className="block text-sm font-semibold text-slate-800">{manualPickup ? 'Pickup selected' : 'Use this map result'}</span>
-                      <span className="block text-xs text-slate-500 mt-0.5">{pickupSearchResult.displayName}</span>
+                      <span className="block text-sm font-semibold text-slate-800">{manualPickup ? 'Pickup selected ✓' : 'Use this map result'}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{pickupSearchResult.displayName}</span>
                     </span>
-                  </div>
+                  </span>
                 </button>
               )}
             </div>
           )}
-          <p className="text-xs text-slate-500">Or drop a pin — same map picker as booking a ride:</p>
-          <LocationPickerMap
-            pickup={
-              pickup && coordinate(pickup.lat) !== null && coordinate(pickup.lng) !== null
-                ? { id: 'journey_pickup', name: pickup.address, area: pickup.address, fullAddress: pickup.address, coordinates: { lat: pickup.lat, lng: pickup.lng } }
-                : null
-            }
-            dropoff={null}
-            onPickupChange={handleMapPickupChange}
-            onDropoffChange={() => {}}
-          />
-          <button
-            disabled={(!selectedAreaId && !manualAddress.trim()) || geocoding}
-            onClick={goToFlightStep}
-            className="w-full bg-orange-500 disabled:bg-slate-300 text-white rounded-lg py-3 font-semibold flex items-center justify-center gap-2"
-          >
-            {geocoding ? <Loader2 className="animate-spin" size={18} /> : null}
-            {geocoding ? 'Finding your location…' : 'Next: choose your flight'}
-          </button>
-        </div>
+
+          <Field label="Or drop a pin" hint="Same map picker as booking a ride.">
+            <div className="overflow-hidden rounded-2xl border border-[#c4a052]/40">
+              <LocationPickerMap
+                pickup={
+                  pickup && coordinate(pickup.lat) !== null && coordinate(pickup.lng) !== null
+                    ? { id: 'journey_pickup', name: pickup.address, area: pickup.address, fullAddress: pickup.address, coordinates: { lat: pickup.lat, lng: pickup.lng } }
+                    : null
+                }
+                dropoff={null}
+                onPickupChange={handleMapPickupChange}
+                onDropoffChange={() => {}}
+              />
+            </div>
+          </Field>
+          </>)}
+
+          <div className="space-y-2">
+            <button
+              disabled={(wantPickupRide && ((!selectedAreaId && !manualAddress.trim()) || geocoding)) || (parcelMode && !parcelDescription.trim())}
+              onClick={goToFlightStep}
+              className="classic-btn classic-btn-primary"
+            >
+              {geocoding ? <Loader2 className="animate-spin" size={18} /> : null}
+              {geocoding ? 'Finding your location…' : <>Continue to flights <ArrowRight size={18} /></>}
+            </button>
+            {wantPickupRide && !selectedAreaId && !manualAddress.trim() && (
+              <p className="text-center text-xs text-slate-500">Choose or enter a pickup location to continue.</p>
+            )}
+            {parcelMode && !parcelDescription.trim() && (
+              <p className="text-center text-xs text-slate-500">Say what you are sending to continue.</p>
+            )}
+          </div>
+        </StepCard>
       )}
 
       {step === 'flight' && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-slate-700 flex items-center gap-2"><Plane size={18} /> Flight</h3>
+        <StepCard
+          eyebrow="Step 2 of 4"
+          title="Choose your flight"
+          description="Pick your route and date, and we'll show every airline flying it."
+          onBack={() => goToStep('pickup')}
+          backLabel="Pickup"
+        >
           <AirportPicker
             label="From"
             defaultCountryIso2={pickupCountry.iso2 || 'UG'}
             selectedLabel={originLabel}
-            onSelect={(iata, label) => { setOriginIata(iata); setOriginLabel(label); }}
+            onSelect={(iata, label) => { setOriginIata(iata); setOriginLabel(label); clearFlightResults(); }}
           />
           <AirportPicker
             label="To"
@@ -808,6 +1374,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
             onSelect={(iata, label, countryIso2) => {
               setDestinationIata(iata);
               setDestinationLabel(label);
+              clearFlightResults();
               const country = COUNTRIES.find((c) => c.iso2 === countryIso2);
               if (country && country.name !== destCountry) {
                 setDestCountry(country.name);
@@ -817,266 +1384,449 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
               }
             }}
           />
-          <input className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400" type="date" value={departureDate} onChange={(e) => setDepartureDate(e.target.value)} />
-          <div>
+          <Field label="Departure date" htmlFor="jb-departure-date">
             <input
-              className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
+              id="jb-departure-date"
+              className="classic-input"
+              type="date"
+              min={todayIsoDate()}
+              value={departureDate}
+              onChange={(e) => { setDepartureDate(e.target.value); clearFlightResults(); }}
+            />
+          </Field>
+          <CabinPicker
+            value={cabinClass}
+            disabled={searchingFlights}
+            onChange={(cabin) => {
+              if (cabin === cabinClass) return;
+              setCabinClass(cabin);
+              // Cabin changes what airlines offer and charge, so re-run the
+              // search for them when they've already searched once.
+              if (hasSearched && originIata && destinationIata && departureDate && !searchProblem) runFlightSearch(cabin);
+              else clearFlightResults();
+            }}
+          />
+          <Field
+            label={parcelMode ? 'Parcel weight (kg)' : partySize > 1 ? 'Extra baggage for everyone (kg) — optional' : 'Extra baggage (kg) — optional'}
+            htmlFor="jb-flight-cargo"
+            hint={parcelMode
+              ? 'The parcel flies as checked baggage. Each traveller has a free allowance; only what is beyond all of them is charged, as a per-kg platform surcharge added to your total.'
+              : partySize > 1
+              ? 'The total weight for the whole party. Each traveller has their own free allowance; only what is beyond all of them is charged, as a per-kg platform surcharge added to your total.'
+              : 'Anything beyond the free allowance. Charged as a per-kg platform surcharge, added to your total.'}
+          >
+            <input
+              id="jb-flight-cargo"
+              className="classic-input"
               type="number"
+              inputMode="decimal"
               min="0"
-              placeholder="Extra baggage/cargo beyond the free allowance (kg, optional)"
+              placeholder="0"
               value={flightCargoWeightKg}
               onChange={(e) => setFlightCargoWeightKg(e.target.value)}
             />
-            <p className="text-xs text-slate-500 mt-1">Charged as a per-kg platform surcharge, added to your total below.</p>
-          </div>
-          <button
-            disabled={!originIata || !destinationIata || !departureDate || searchingFlights}
-            onClick={runFlightSearch}
-            className="w-full bg-slate-800 disabled:bg-slate-300 text-white rounded-lg py-3 font-semibold flex items-center justify-center gap-2"
-          >
-            {searchingFlights ? <Loader2 className="animate-spin" size={18} /> : null}
-            Search flights
-          </button>
-
-          {offers.length > 0 && (
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {offers.map((offer) => (
-                (() => {
-                  const firstSegment = offer.slices?.[0]?.segments?.[0];
-                  const lastSegment = offer.slices?.[0]?.segments?.at?.(-1) || firstSegment;
-                  return (
-                    <button
-                      key={offer.offerId}
-                      type="button"
-                      onClick={() => setSelectedOffer(offer)}
-                      className={`w-full text-left border rounded-lg p-3 text-slate-900 bg-white hover:bg-orange-50 transition-colors ${selectedOffer?.offerId === offer.offerId ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-300' : 'border-slate-200'}`}
-                    >
-                      <div className="flex justify-between items-start gap-3">
-                        <div>
-                          <span className="block font-semibold text-slate-900">{offer.carrier || 'Available airline'}</span>
-                          <span className="block text-xs text-slate-600 mt-1">
-                            {firstSegment?.origin?.iata_code || originIata} → {lastSegment?.destination?.iata_code || destinationIata}
-                            {offer.slices?.length > 1 ? ` · ${offer.slices.length} legs` : ''}
-                          </span>
-                        </div>
-                        <span className="font-bold text-slate-900 whitespace-nowrap">{offer.totalAmount} {offer.totalCurrency}</span>
-                      </div>
-                      {firstSegment?.departing_at && (
-                        <span className="block text-xs text-slate-500 mt-2">
-                          Departs {new Date(firstSegment.departing_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })()
-              ))}
-            </div>
-          )}
+          </Field>
 
           <button
-            disabled={!selectedOffer}
-            onClick={() => setStep('destination')}
-            className="w-full bg-orange-500 disabled:bg-slate-300 text-white rounded-lg py-3 font-semibold"
+            disabled={!originIata || !destinationIata || !departureDate || !!searchProblem || searchingFlights}
+            onClick={() => runFlightSearch()}
+            className="classic-btn classic-btn-ink"
           >
-            Next: where you're staying
+            {searchingFlights ? <Loader2 className="animate-spin" size={18} /> : <Search size={17} />}
+            {searchingFlights ? 'Finding airlines…' : hasSearched ? 'Search again' : 'Find available airlines'}
           </button>
-        </div>
+          {searchProblem ? (
+            <p role="alert" className="-mt-2 text-center text-xs font-medium text-red-600">{searchProblem}</p>
+          ) : (!originIata || !destinationIata || !departureDate) && !searchingFlights ? (
+            <p className="-mt-2 text-center text-xs text-slate-500">
+              Pick both airports and a date to search.
+            </p>
+          ) : null}
+
+          {searchingFlights && offers.length === 0 && <FlightSkeleton />}
+
+          <FlightResultsPicker offers={offers} selectedOffer={selectedOffer} onSelect={setSelectedOffer} travellers={partySize} />
+
+          <button
+            disabled={!selectedOffer || (parcelMode && parcelWeight <= 0)}
+            onClick={() => goToStep('destination')}
+            className="classic-btn classic-btn-primary"
+          >
+            {selectedOffer
+              ? (parcelMode && parcelWeight <= 0 ? "Enter the parcel's weight to continue" : <>Continue with {selectedOffer.carrier || 'this flight'} <ArrowRight size={18} /></>)
+              : 'Choose a flight to continue'}
+          </button>
+        </StepCard>
       )}
 
       {step === 'destination' && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-slate-700 flex items-center gap-2"><Home size={18} /> Final destination</h3>
-          <select
-            className="w-full border rounded-lg p-3 bg-white text-slate-900"
-            value={destCountry}
-            onChange={(e) => {
-              setDestCountry(e.target.value);
-              setDestCity('');
-              setDestAddress('');
-              setDestPin(null);
-            }}
-          >
-            <option value="">Select a country</option>
-            {COUNTRIES.map((c) => (
-              <option key={c.iso2 || c.name} value={c.name}>{c.name}</option>
-            ))}
-          </select>
-          <CitySearchInput
-            countryIso2={COUNTRIES.find((c) => c.name === destCountry)?.iso2}
-            value={destCity}
-            onChange={setDestCity}
-          />
-          <AddressSearchInput
-            countryIso2={COUNTRIES.find((c) => c.name === destCountry)?.iso2}
-            city={destCity}
-            value={destAddress}
-            onChange={setDestAddress}
-            onSelect={(address, lat, lng) => {
-              selectedDestinationAddressRef.current = address;
-              setDestAddress(address);
-              setDestPin({ lat, lng, address });
-            }}
-          />
-          <p className="text-xs text-slate-500">A driver is dispatched automatically once you land — timed off your actual arrival, and re-timed automatically if your flight is delayed.</p>
+        <StepCard
+          eyebrow="Step 3 of 4"
+          title="Where are you headed?"
+          description={parcelMode
+            ? 'A courier is dispatched automatically once the flight lands — timed off the actual arrival, and re-timed if the flight is delayed.'
+            : 'A driver is dispatched automatically once you land — timed off your actual arrival, and re-timed if your flight is delayed.'}
+          onBack={() => goToStep('flight')}
+          backLabel="Flight"
+        >
+          <div>
+            <span className="classic-label">{parcelMode ? 'When the parcel lands' : 'When you land'}</span>
+            <div className="grid grid-cols-2 gap-2.5" role="group" aria-label="What happens when you land">
+              {([
+                { on: true, label: parcelMode ? 'BodaGoEra courier' : 'BodaGoEra ride', desc: parcelMode ? 'A rider takes it to the recipient' : partySize > 1 ? 'A car is waiting for everyone' : 'A driver is waiting for you' },
+                { on: false, label: parcelMode ? 'Someone collects it' : partySize > 1 ? 'Someone collects us' : 'Someone collects me', desc: parcelMode ? 'The recipient meets you at the airport' : partySize > 1 ? 'Own car or a friend picks us up' : 'Own car or a friend picks me up' },
+              ] as const).map(({ on, label, desc }) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={wantDropoffRide === on}
+                  disabled={on && !ridesAvailable}
+                  onClick={() => { setWantDropoffRide(on); setError(null); }}
+                  className={`classic-tile p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${wantDropoffRide === on ? 'is-active' : ''}`}
+                >
+                  <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                  <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                </button>
+              ))}
+            </div>
+            {!wantDropoffRide && (
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                Your flight is booked to {destinationLabel || 'your arrival airport'} and no {parcelMode ? 'courier' : 'ride'} is booked or charged on arrival.
+              </p>
+            )}
+          </div>
+
+          {wantDropoffRide && (<>
+          <Field label="Country" htmlFor="jb-dest-country">
+            <select
+              id="jb-dest-country"
+              className="classic-input"
+              value={destCountry}
+              onChange={(e) => {
+                setDestCountry(e.target.value);
+                setDestCity('');
+                setDestAddress('');
+                setDestPin(null);
+              }}
+            >
+              <option value="">Select a country</option>
+              {COUNTRIES.map((c) => (
+                <option key={c.iso2 || c.name} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="City" htmlFor="jb-dest-city">
+            <CitySearchInput
+              id="jb-dest-city"
+              countryIso2={COUNTRIES.find((c) => c.name === destCountry)?.iso2}
+              value={destCity}
+              onChange={setDestCity}
+            />
+          </Field>
+          <Field label="Hotel, lodge or address" htmlFor="jb-dest-address">
+            <AddressSearchInput
+              id="jb-dest-address"
+              countryIso2={COUNTRIES.find((c) => c.name === destCountry)?.iso2}
+              city={destCity}
+              value={destAddress}
+              onChange={setDestAddress}
+              onSelect={(address, lat, lng) => {
+                selectedDestinationAddressRef.current = address;
+                setDestAddress(address);
+                setDestPin({ lat, lng, address });
+              }}
+            />
+          </Field>
 
           <button
             type="button"
             onClick={findDestinationOnMap}
             disabled={!destAddress.trim() || findingDestPin}
-            className="w-full border-2 border-orange-300 text-orange-700 rounded-lg py-2.5 font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+            className="classic-btn classic-btn-outline !min-h-[44px] !text-sm"
           >
             {findingDestPin ? <Loader2 className="animate-spin" size={16} /> : <MapPin size={16} />}
             {destPin ? 'Re-check location on map' : 'Confirm exact location on map'}
           </button>
           {destPin && (
             <div className="space-y-2">
-              <LocationPickerMap
-                pickup={null}
-                dropoff={{ id: 'journey_destination', name: destPin.address, area: destPin.address, fullAddress: destPin.address, coordinates: { lat: destPin.lat, lng: destPin.lng } }}
-                onPickupChange={() => {}}
-                onDropoffChange={handleDestPinChange}
-                autoLocateGPS={false}
-              />
+              <div className="overflow-hidden rounded-2xl border border-[#c4a052]/40">
+                <LocationPickerMap
+                  pickup={null}
+                  dropoff={{ id: 'journey_destination', name: destPin.address, area: destPin.address, fullAddress: destPin.address, coordinates: { lat: destPin.lat, lng: destPin.lng } }}
+                  onPickupChange={() => {}}
+                  onDropoffChange={handleDestPinChange}
+                  autoLocateGPS={false}
+                />
+              </div>
               <p className="text-xs text-slate-500">
-                Drag the pin if it isn't quite right — this is what the driver waiting for you on arrival will be sent to.
+                Drag the pin if it isn't quite right — this is where the driver waiting for you will take you.
               </p>
             </div>
           )}
+          {parcelMode && (<>
+          <Field label="Recipient's name" htmlFor="jb-recipient-name" hint="Who the courier hands the parcel to.">
+            <input
+              id="jb-recipient-name"
+              className="classic-input"
+              maxLength={100}
+              autoComplete="off"
+              value={recipientName}
+              onChange={(e) => setRecipientName(e.target.value)}
+            />
+          </Field>
+          <Field label="Recipient's phone" htmlFor="jb-recipient-phone" hint="The courier calls this number on arrival. Include the country code.">
+            <input
+              id="jb-recipient-phone"
+              className="classic-input"
+              type="tel"
+              inputMode="tel"
+              maxLength={30}
+              autoComplete="off"
+              placeholder="+256 7XX XXX XXX"
+              value={recipientPhone}
+              onChange={(e) => setRecipientPhone(e.target.value)}
+            />
+          </Field>
+          </>)}
+          </>)}
 
-          <button
-            disabled={!destCountry || !destAddress}
-            onClick={buildQuote}
-            className="w-full bg-orange-500 disabled:bg-slate-300 text-white rounded-lg py-3 font-semibold"
-          >
-            Get my price
-          </button>
-        </div>
+          <div className="space-y-2">
+            <button
+              disabled={(wantDropoffRide && (!destCountry || !destAddress)) || !!parcelProblem || quoting}
+              onClick={buildQuote}
+              className="classic-btn classic-btn-primary"
+            >
+              {quoting ? <Loader2 className="animate-spin" size={18} /> : null}
+              {quoting ? 'Pricing your journey…' : <>See my price <ArrowRight size={18} /></>}
+            </button>
+            {wantDropoffRide && (!destCountry || !destAddress) ? (
+              <p className="text-center text-xs text-slate-500">{parcelMode ? 'Choose a country and enter where the parcel is going.' : "Choose a country and enter where you'll be staying."}</p>
+            ) : parcelProblem ? (
+              <p role="alert" className="text-center text-xs font-medium text-red-600">{parcelProblem}</p>
+            ) : null}
+          </div>
+        </StepCard>
       )}
 
       {step === 'review' && quote && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-slate-700 flex items-center gap-2"><CreditCard size={18} /> Review & pay</h3>
-          <div className="border rounded-lg p-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span>Boda to airport</span><span>UGX {quote.pickupFareUgx.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span>Flight ({selectedOffer?.carrier})</span><span>UGX {quote.flightFareUgx.toLocaleString()}</span></div>
-            {quote.cargoFareUgx > 0 && (
-              <div className="flex justify-between"><span>Extra baggage ({quote.cargoWeightKg} kg)</span><span>UGX {quote.cargoFareUgx.toLocaleString()}</span></div>
+        <StepCard
+          eyebrow="Step 4 of 4"
+          title="Review & pay"
+          description="Your whole journey, door to door."
+          onBack={() => goToStep('destination')}
+          backLabel="Arrival"
+        >
+          <ol>
+            {[
+              ...(quote.pickupRide !== false
+                ? [{ key: 'pickup', icon: <PickupVehicleIcon size={16} />, title: quote.serviceMode === 'parcel' ? 'Courier to the airport' : 'Ride to the airport', detail: [pickup?.address, quote.pickupAirport?.name && `→ ${quote.pickupAirport.name}${quote.pickupKm ? ` (${quote.pickupKm} km)` : ''}`, quote.serviceMode === 'parcel' ? quote.parcel?.description : describePreferences(pickupPreferences, effectiveVehicleType).join(', '), quote.serviceMode === 'parcel' ? 'A courier is sent shortly before the parcel has to leave' : 'Driver is sent shortly before you need to leave'].filter(Boolean).join(' · '), ican: quote.pickupIcan, local: quote.local?.pickup, ugx: quote.pickupFareUgx }]
+                : []),
+              {
+                key: 'flight',
+                icon: <Plane size={16} />,
+                title: `Flight · ${selectedOffer?.carrier || 'Airline'}${partySize > 1 ? ` · ${partySize} travellers` : ''}`,
+                detail: [
+                  selectedSummary ? `${selectedSummary.departDayLabel} · ${flightLine}` : '',
+                  // The airline's own price, so the ICAN figure is traceable.
+                  selectedOffer && selectedOffer.totalCurrency !== 'UGX' ? `Airline fare ${Number(selectedOffer.totalAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${selectedOffer.totalCurrency}` : '',
+                ].filter(Boolean).join(' · ') || undefined,
+                ican: quote.flightIcan,
+                local: quote.local?.flight,
+                ugx: quote.flightFareUgx,
+              },
+              ...(quote.cargoFareUgx > 0
+                ? [{ key: 'bag', icon: <Package size={16} />, title: quote.serviceMode === 'parcel' ? 'Parcel (extra baggage)' : 'Extra baggage', detail: `${quote.cargoWeightKg} kg`, ican: quote.cargoIcan, local: quote.local?.cargo, ugx: quote.cargoFareUgx }]
+                : []),
+              ...(quote.dropoffRide !== false
+                ? [{ key: 'dropoff', icon: <Home size={16} />, title: quote.serviceMode === 'parcel' ? 'Courier on arrival' : partySize > 1 ? 'Car on arrival' : 'Driver on arrival', detail: quote.serviceMode === 'parcel' && quote.parcel?.recipientName ? `${destinationLine} · for ${quote.parcel.recipientName}` : destinationLine, ican: quote.dropoffIcan, local: quote.local?.dropoff, ugx: quote.dropoffFareUgx }]
+                : []),
+            ].map((leg, i, all) => (
+              <li key={leg.key} className="relative flex gap-3 pb-5 last:pb-0">
+                {i < all.length - 1 && <span aria-hidden className="absolute bottom-0 left-4 top-9 w-px bg-[#c4a052]/40" />}
+                <span className="relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/50">
+                  {leg.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{leg.title}</p>
+                  {leg.detail && <p className="mt-0.5 text-xs leading-snug text-slate-500">{leg.detail}</p>}
+                </div>
+                <div className="shrink-0 text-right">
+                  {/* ICAN first, then the customer's own currency; UGX only
+                      when the server didn't send ICAN figures (older API). */}
+                  <p className="text-[13px] font-semibold tabular-nums text-slate-800">
+                    {leg.ican !== undefined ? `${formatIcan(leg.ican)} ICAN` : `UGX ${leg.ugx.toLocaleString()}`}
+                  </p>
+                  {leg.ican !== undefined && quote.local && leg.local !== undefined && (
+                    <p className="text-[11px] tabular-nums text-slate-500">≈ {formatMoney(leg.local, quote.local.currency)}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#231b12] via-[#2f2415] to-[#4a3418] p-4 text-white shadow-[0_18px_34px_-16px_rgba(0,0,0,0.65)] ring-1 ring-inset ring-[#c4a052]/40">
+            <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border border-[#c4a052]/25" />
+            <span aria-hidden className="pointer-events-none absolute -bottom-12 -left-8 h-32 w-32 rounded-full bg-orange-500/20 blur-2xl" />
+            <p className="relative text-[10px] font-semibold uppercase tracking-[0.24em] text-[#e6c980]">Total</p>
+            <p className="relative mt-1 font-classic-display text-[30px] font-bold leading-none">
+              {formatIcan(quote.totalIcan)} <span className="text-[18px] font-semibold text-[#e6c980]">ICAN</span>
+            </p>
+            <p className="relative mt-1.5 text-[15px] font-medium tabular-nums text-white/90">
+              {quote.local ? `≈ ${formatMoney(quote.local.total, quote.local.currency)}` : `≈ UGX ${quote.totalUgx.toLocaleString()}`}
+            </p>
+            <p className="relative mt-2 text-[12.5px] leading-relaxed text-white/70">
+              A fixed price in ICAN, paid in full from your wallet with no tithe.
+              {quote.local && ` At today's live value: 1 ICAN = ${formatMoney(quote.local.pricePerIcan, quote.local.currency)}.`}
+            </p>
+          </div>
+
+          <div className="classic-tile !cursor-default space-y-3 p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2.5 text-sm text-slate-600">
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40"><Wallet size={16} /></span>
+                ICAN wallet
+              </span>
+              <span className="text-right font-semibold tabular-nums text-slate-800">
+                {checkingBalance ? 'Checking…' : walletIcan !== null ? `${walletIcan.toFixed(4)} ICAN` : '—'}
+                {!checkingBalance && walletIcan !== null && quote.local && (
+                  <span className="block text-[11px] font-normal text-slate-500">≈ {formatMoney(walletIcan * quote.local.pricePerIcan, quote.local.currency)}</span>
+                )}
+              </span>
+            </div>
+            {!checkingBalance && walletIcan !== null && hasEnoughBalance && (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600"><ShieldCheck size={14} /> Your balance covers this journey.</p>
             )}
-            <div className="flex justify-between"><span>Driver at destination</span><span>UGX {quote.dropoffFareUgx.toLocaleString()}</span></div>
-            <div className="flex justify-between font-semibold border-t pt-2"><span>Total</span><span>UGX {quote.totalUgx.toLocaleString()} ({quote.totalIcan.toFixed(4)} ICAN)</span></div>
-          </div>
-          <p className="text-xs text-slate-500">Paid in full from your ICAN wallet — no tithe on journey payments.</p>
-
-          <div className="border rounded-lg p-3 text-sm flex items-center justify-between">
-            <span className="text-slate-500">Wallet balance</span>
-            <span className="font-semibold">
-              {checkingBalance ? 'Checking…' : walletIcan !== null ? `${walletIcan.toFixed(4)} ICAN` : '—'}
-            </span>
-          </div>
-
-          {!checkingBalance && walletIcan !== null && !hasEnoughBalance && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-              <p className="text-sm text-amber-800">
-                You need {shortfallIcan.toFixed(4)} more ICAN (about UGX {Math.ceil(shortfallIcan * ICAN_TO_UGX).toLocaleString()}) to complete this booking.
-              </p>
-              <button
-                type="button"
-                disabled={toppingUp}
-                onClick={doTopUp}
-                className="w-full bg-amber-500 disabled:bg-slate-300 text-white rounded-lg py-2.5 font-semibold text-sm flex items-center justify-center gap-2"
-              >
-                {toppingUp ? <Loader2 className="animate-spin" size={16} /> : <CreditCard size={16} />}
-                {toppingUp ? 'Processing top-up…' : 'Top up via Flutterwave'}
-              </button>
-            </div>
-          )}
-
-          <div className="space-y-3 border-t pt-4">
-            <h4 className="font-semibold text-slate-700 flex items-center gap-2"><User size={16} /> Passenger details</h4>
-            <p className="text-xs text-slate-500">Must match the traveler's ID/passport exactly — this books a real seat with the airline.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
-                value={passengerTitle}
-                onChange={(e) => {
-                  const title = e.target.value as typeof passengerTitle;
-                  setPassengerTitle(title);
-                  // The airline rejects a title that contradicts the gender.
-                  const implied = genderForTitle(title);
-                  if (implied) setPassengerGender(implied);
-                }}
-              >
-                <option value="mr">Mr</option>
-                <option value="mrs">Mrs</option>
-                <option value="ms">Ms</option>
-                <option value="miss">Miss</option>
-                <option value="dr">Dr</option>
-              </select>
-              <select
-                className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
-                value={passengerGender}
-                onChange={(e) => {
-                  const gender = e.target.value as 'm' | 'f';
-                  setPassengerGender(gender);
-                  const implied = genderForTitle(passengerTitle);
-                  if (implied && implied !== gender) setPassengerTitle(gender === 'm' ? 'mr' : 'ms');
-                }}
-              >
-                <option value="m">Male</option>
-                <option value="f">Female</option>
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                className="border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-                placeholder="Given name"
-                value={passengerGivenName}
-                onChange={(e) => setPassengerGivenName(e.target.value)}
-              />
-              <input
-                className="border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-                placeholder="Family name"
-                value={passengerFamilyName}
-                onChange={(e) => setPassengerFamilyName(e.target.value)}
-              />
-            </div>
-            <input
-              className="w-full border rounded-lg p-3 bg-white text-slate-900"
-              type="date"
-              value={passengerDob}
-              onChange={(e) => setPassengerDob(e.target.value)}
-            />
-            <input
-              className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400"
-              type="tel"
-              placeholder="Phone number (e.g. +2567XXXXXXXX)"
-              value={passengerPhone}
-              onChange={(e) => setPassengerPhone(e.target.value)}
-            />
-            {passengerPhone.trim() && (
-              <p className={`text-xs ${passengerPhoneIntl ? 'text-emerald-700' : 'text-red-600'}`}>
-                {passengerPhoneIntl ? `Will be sent to the airline as ${passengerPhoneIntl}` : 'Start with your country code, e.g. +256 7XX XXX XXX'}
-              </p>
+            {!checkingBalance && walletIcan !== null && !hasEnoughBalance && (
+              <div className="space-y-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm text-amber-800">
+                  You need {shortfallIcan.toFixed(4)} more ICAN (about UGX {Math.ceil(shortfallIcan * topUpUnitUgx).toLocaleString()} at today's live value) to complete this booking.
+                </p>
+                <button type="button" disabled={toppingUp} onClick={doTopUp} className="classic-btn classic-btn-ink !min-h-[44px] !text-sm">
+                  {toppingUp ? <Loader2 className="animate-spin" size={16} /> : <CreditCard size={16} />}
+                  {toppingUp ? 'Processing top-up…' : 'Top up via Flutterwave'}
+                </button>
+              </div>
             )}
           </div>
 
-          <button
-            disabled={confirming || !passengerDetailsValid || !hasEnoughBalance}
-            onClick={doConfirm}
-            className="w-full bg-orange-500 disabled:bg-slate-300 text-white rounded-lg py-3 font-semibold flex items-center justify-center gap-2"
-          >
-            {confirming ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}
-            Confirm & pay {quote.totalIcan.toFixed(4)} ICAN
-          </button>
-        </div>
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-3">
+              <h4 className="flex items-center gap-2 font-classic-display text-lg font-semibold text-slate-800"><User size={16} /> {quote.serviceMode === 'parcel' ? 'Who is flying with the parcel' : partySize > 1 ? 'Traveller details' : 'Passenger details'}</h4>
+              <div className="landing-classic-divider flex-1" />
+            </div>
+            <p className="text-xs leading-relaxed text-slate-500">
+              {partySize > 1
+                ? "Each traveller's name must match their own ID or passport exactly — this books a real seat with the airline for every one of them."
+                : "Must match the traveller's ID or passport exactly — this books a real seat with the airline."}
+            </p>
+            {passengers.map((pax, i) => {
+              const id = `jb-pax-${i}`;
+              const phoneIntl = phoneFor(i);
+              return (
+                <fieldset key={i} className={partySize > 1 ? 'space-y-3.5 rounded-2xl border border-[#c4a052]/40 p-3.5' : 'space-y-3.5'}>
+                  {partySize > 1 && (
+                    <legend className="px-1.5 font-classic-display text-[15px] font-semibold text-slate-800">
+                      Traveller {i + 1}{i === 0 ? ' (you)' : ''}
+                    </legend>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Title" htmlFor={`${id}-title`}>
+                      <select id={`${id}-title`} className="classic-input" value={pax.title} onChange={(e) => {
+                        const title = e.target.value as PassengerTitle;
+                        // The airline rejects a title that contradicts the gender.
+                        const implied = genderForTitle(title);
+                        updatePassenger(i, implied ? { title, gender: implied } : { title });
+                      }}>
+                        <option value="mr">Mr</option>
+                        <option value="mrs">Mrs</option>
+                        <option value="ms">Ms</option>
+                        <option value="miss">Miss</option>
+                        <option value="dr">Dr</option>
+                      </select>
+                    </Field>
+                    <Field label="Gender" htmlFor={`${id}-gender`}>
+                      <select id={`${id}-gender`} className="classic-input" value={pax.gender} onChange={(e) => {
+                        const gender = e.target.value as 'm' | 'f';
+                        const implied = genderForTitle(pax.title);
+                        updatePassenger(i, implied && implied !== gender ? { gender, title: gender === 'm' ? 'mr' : 'ms' } : { gender });
+                      }}>
+                        <option value="m">Male</option>
+                        <option value="f">Female</option>
+                      </select>
+                    </Field>
+                    <Field label="Given name" htmlFor={`${id}-given`}>
+                      <input id={`${id}-given`} className="classic-input" autoComplete={i === 0 ? 'given-name' : 'off'} placeholder="As on passport" value={pax.givenName} onChange={(e) => updatePassenger(i, { givenName: e.target.value })} />
+                    </Field>
+                    <Field label="Family name" htmlFor={`${id}-family`}>
+                      <input id={`${id}-family`} className="classic-input" autoComplete={i === 0 ? 'family-name' : 'off'} placeholder="As on passport" value={pax.familyName} onChange={(e) => updatePassenger(i, { familyName: e.target.value })} />
+                    </Field>
+                  </div>
+                  <Field label="Date of birth" htmlFor={`${id}-dob`}>
+                    <input id={`${id}-dob`} className="classic-input" type="date" autoComplete={i === 0 ? 'bday' : 'off'} max={todayIsoDate()} value={pax.dob} onChange={(e) => updatePassenger(i, { dob: e.target.value })} />
+                  </Field>
+                  <Field label={i === 0 ? 'Phone number' : 'Phone number (optional)'} htmlFor={`${id}-phone`}>
+                    <input
+                      id={`${id}-phone`}
+                      className="classic-input"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete={i === 0 ? 'tel' : 'off'}
+                      placeholder={i === 0 ? '+2567XXXXXXXX' : "Leave blank to use traveller 1's number"}
+                      value={pax.phone}
+                      onChange={(e) => updatePassenger(i, { phone: e.target.value })}
+                    />
+                    {pax.phone.trim() && (
+                      <p className={`mt-1 text-xs ${phoneIntl ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {phoneIntl ? `Will be sent to the airline as ${phoneIntl}` : 'Start with your country code, e.g. +256 7XX XXX XXX'}
+                      </p>
+                    )}
+                  </Field>
+                </fieldset>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            <button
+              disabled={confirming || !passengerDetailsValid || !hasEnoughBalance}
+              onClick={doConfirm}
+              className="classic-btn classic-btn-primary"
+            >
+              {confirming ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}
+              {confirming ? 'Booking your journey…' : `Confirm & pay ${quote.totalIcan.toFixed(4)} ICAN`}
+            </button>
+            {!confirming && !passengerDetailsValid && (
+              <p className="text-center text-xs text-slate-500">Complete {partySize > 1 ? "every traveller's" : "the passenger's"} name, date of birth and phone number to continue.</p>
+            )}
+            {!confirming && passengerDetailsValid && !hasEnoughBalance && (
+              <p className="text-center text-xs text-slate-500">Top up your wallet above to continue.</p>
+            )}
+          </div>
+        </StepCard>
       )}
 
       {step === 'tracking' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-700">Your journey</h3>
+        <section className="animate-step-in space-y-4">
+          <div className="relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#231b12] via-[#2f2415] to-[#4a3418] p-5 text-white shadow-[0_18px_34px_-16px_rgba(0,0,0,0.65)] ring-1 ring-inset ring-[#c4a052]/40">
+            <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border border-[#c4a052]/25" />
+            <div className="relative flex items-center gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/5 ring-1 ring-[#c4a052]/50">
+                <CheckCircle size={22} className="text-[#e6c980]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#e6c980]">
+                  {journey ? 'Booked' : 'Booking'}
+                </p>
+                <h3 className="font-classic-display text-[22px] font-bold leading-tight">Your journey</h3>
+              </div>
+            </div>
             {journey && bookingKind === 'fly' && journey.legs.some((l) => l.leg_type === 'flight' && l.flight_booking) && (
-              <AirTicketButton journeyId={journey.id} />
+              <div className="relative mt-4">
+                <AirTicketButton
+                  journeyId={journey.id}
+                  className="classic-btn !min-h-[42px] w-full !text-[13px] text-[#f6e7bd] ring-1 ring-inset ring-[#c4a052]/50 hover:bg-white/5"
+                />
+              </div>
             )}
             {journey && bookingKind === 'ship' && (
               <button
@@ -1093,63 +1843,80 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
                     dropoffCountry: shipDropoffCountry?.name || '',
                   });
                 }}
-                className="text-xs sm:text-sm text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+                className="classic-btn relative mt-4 !min-h-[42px] !text-[13px] text-[#f6e7bd] ring-1 ring-inset ring-[#c4a052]/50 hover:bg-white/5"
               >
-                <Printer size={14} /> Print Shipping Waybill
+                <Printer size={15} /> Print shipping waybill
               </button>
             )}
           </div>
+
           {!journey ? (
             trackingError ? (
-              <div role="alert" className="border rounded-lg p-4 text-center text-sm text-slate-600 space-y-1">
+              <div className="classic-card space-y-2 p-5 text-center text-sm text-slate-600" role="alert">
                 <p className="font-semibold text-slate-800">Your booking is placed — we just can't load its status right now.</p>
                 <p>It is safe to leave this page; you'll find it under My Journeys on your dashboard.</p>
               </div>
             ) : (
-              <Loader2 className="animate-spin mx-auto" />
+              <div className="classic-card flex items-center justify-center gap-2 p-6 text-sm text-slate-500" role="status">
+                <Loader2 className="animate-spin" size={18} /> Getting your journey…
+              </div>
             )
           ) : (
             <div className="space-y-3">
               {bookingKind === 'ship' && journey.total_fare_ican > 0 && (
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm text-orange-800 flex justify-between">
+                <div className="flex justify-between gap-3 rounded-2xl border border-[#c4a052]/40 bg-[#fbf3dc] p-3.5 text-sm text-[#5c4410]">
                   <span>Charged automatically from your ICAN wallet</span>
-                  <span className="font-semibold">{journey.total_fare_ican.toFixed(4)} ICAN (UGX {journey.total_fare_ugx.toLocaleString()})</span>
+                  <span className="shrink-0 font-semibold tabular-nums">{journey.total_fare_ican.toFixed(4)} ICAN (UGX {journey.total_fare_ugx.toLocaleString()})</span>
                 </div>
               )}
-              {journey.legs.sort((a, b) => a.leg_order - b.leg_order).map((leg) => {
-                const rider = leg.ride?.rider;
-                return (
-                  <div key={leg.id} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <div className="font-medium">{legLabel[leg.leg_type]}</div>
-                        {leg.flight_booking?.pnr && <div className="text-xs text-slate-500">PNR: {leg.flight_booking.pnr}</div>}
-                      </div>
-                      <span className="text-xs font-semibold uppercase text-orange-600">{leg.status.replace(/_/g, ' ')}</span>
-                    </div>
-                    {rider && (
-                      <div className="bg-orange-50 rounded-lg p-3 flex items-center justify-between text-sm">
-                        <div>
-                          <div className="font-semibold text-slate-800">{rider.user?.profile?.full_name || 'Your driver'}</div>
-                          <div className="text-slate-500 flex items-center gap-1">
-                            <Car size={14} /> {rider.vehicle_type} · {rider.vehicle_color || ''} {rider.vehicle_model || ''} · {rider.plate_number}
+              <ol className="classic-card p-4">
+                {[...journey.legs].sort((a, b) => a.leg_order - b.leg_order).map((leg, i, all) => {
+                  const rider = leg.ride?.rider;
+                  const LegIcon = legIcon[leg.leg_type] || MapPin;
+                  return (
+                    <li key={leg.id} className="relative flex gap-3 pb-5 last:pb-0">
+                      {i < all.length - 1 && <span aria-hidden className="absolute bottom-0 left-4 top-9 w-px bg-[#c4a052]/40" />}
+                      <span className="relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/50">
+                        <LegIcon size={16} />
+                      </span>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{legLabel[leg.leg_type]}</p>
+                            {leg.flight_booking?.pnr && (
+                              <p className="mt-0.5 text-xs text-slate-500">Booking reference <span className="font-semibold tracking-wider text-slate-700">{leg.flight_booking.pnr}</span></p>
+                            )}
                           </div>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${legStatusClass(leg.status)}`}>
+                            {leg.status.replace(/_/g, ' ')}
+                          </span>
                         </div>
-                        <div className="text-right space-y-1">
-                          <div className="flex items-center gap-1 text-amber-600 font-semibold"><Star size={14} fill="currentColor" /> {Number(rider.rating || 0).toFixed(1)}</div>
-                          {rider.user?.phone && (
-                            <a href={`tel:${rider.user.phone}`} className="flex items-center gap-1 text-orange-600"><Phone size={14} /> Call</a>
-                          )}
-                        </div>
+                        {rider && (
+                          <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c4a052]/30 bg-[#fdf8ea] p-3 text-sm dark:bg-[#c4a052]/10">
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-slate-800">{rider.user?.profile?.full_name || 'Your driver'}</p>
+                              <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                                <Car size={13} className="shrink-0" />
+                                <span className="truncate">{rider.vehicle_type} · {rider.vehicle_color || ''} {rider.vehicle_model || ''} · {rider.plate_number}</span>
+                              </p>
+                            </div>
+                            <div className="shrink-0 space-y-1 text-right">
+                              <p className="flex items-center justify-end gap-1 font-semibold text-amber-600"><Star size={13} fill="currentColor" /> {Number(rider.rating || 0).toFixed(1)}</p>
+                              {rider.user?.phone && (
+                                <a href={`tel:${rider.user.phone}`} className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600"><Phone size={13} /> Call</a>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <JourneyLegRideActions leg={leg} customerId={customerId} />
                       </div>
-                    )}
-                    <JourneyLegRideActions leg={leg} customerId={customerId} />
-                  </div>
-                );
-              })}
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );
@@ -1175,38 +1942,32 @@ function AirportPicker({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadCountryAirports = async (iso2: string) => {
+  const loadCountryAirports = async (iso2: string, open = true) => {
     const country = COUNTRIES.find((c) => c.iso2 === iso2);
     if (!country) return;
 
     setLoading(true);
     try {
-      // Duffel's Places API accepts a country name and returns the places in
-      // that country. Keep the text input empty so the user can still search
-      // by city or airport after the country list is loaded.
+      // Load the country's airports immediately; the input remains available
+      // for narrowing the results by city or airport name.
       const { airports } = await searchAirports(country.name, iso2);
       setSuggestions(airports);
-      setShowSuggestions(true);
+      setShowSuggestions(open);
     } catch {
       setSuggestions([]);
-      setShowSuggestions(true);
+      setShowSuggestions(open);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const nextCountry = defaultCountryIso2 || 'UG';
-    if (nextCountry !== countryIso2) {
-      setCountryIso2(nextCountry);
-      setQuery('');
-      setSuggestions([]);
-      onSelect('', '');
-    }
-    loadCountryAirports(nextCountry);
-    // The initial load is intentionally driven by the country prop.
+    // Only open the list straight away when there's nothing chosen yet —
+    // otherwise (e.g. the Entebbe default) it just hides what's selected.
+    loadCountryAirports(countryIso2, !selectedLabel);
+    // The initial airport list is driven by the selected country.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultCountryIso2]);
+  }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1232,17 +1993,16 @@ function AirportPicker({
   }, [query, countryIso2]);
 
   return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-slate-500">{label}</label>
+    <div className="space-y-2">
+      <span className="classic-label !mb-0">{label}</span>
       <div className="grid grid-cols-2 gap-2">
         <select
-          className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
+          aria-label={`${label} — country`}
+          className="classic-input !text-sm"
           value={countryIso2}
           onChange={(e) => {
             const nextIso2 = e.target.value;
             setCountryIso2(nextIso2);
-            // Search the selected country immediately and clear any airport
-            // code from the previous country so a stale route cannot be used.
             setQuery('');
             setSuggestions([]);
             setShowSuggestions(true);
@@ -1255,25 +2015,33 @@ function AirportPicker({
           ))}
         </select>
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
           <input
-            className="w-full border rounded-lg p-2.5 pl-8 bg-white text-slate-900 placeholder-slate-400 text-sm"
-            placeholder="Search airport or city"
+            aria-label={`${label} — city or airport`}
+            className="classic-input !pl-9 !text-sm"
+            placeholder="City or airport"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => query.trim().length >= 2 && setShowSuggestions(true)}
+            onFocus={() => {
+              if (query.trim().length >= 2) setShowSuggestions(true);
+              // Focus with nothing typed browses the country's airports.
+              else if (suggestions.length === 0) loadCountryAirports(countryIso2);
+              else setShowSuggestions(true);
+            }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           />
         </div>
       </div>
       {selectedLabel && !showSuggestions && (
-        <p className="text-xs text-emerald-600 font-medium">✓ {selectedLabel}</p>
+        <p className="flex items-center gap-1.5 rounded-lg bg-[#fbf3dc] px-3 py-2 text-xs font-semibold text-[#5c4410]">
+          <Plane size={13} className="shrink-0 text-[#a17c28]" /> {selectedLabel}
+        </p>
       )}
       {showSuggestions && (
-        <div className="relative z-[60] border border-slate-300 rounded-lg bg-white text-slate-900 shadow-xl max-h-56 overflow-y-auto">
-          {loading && <div className="p-2.5 text-xs text-slate-400">Searching…</div>}
+        <div className="max-h-56 overflow-y-auto rounded-xl border border-[#c4a052]/40 bg-white shadow-lg">
+          {loading && <div className="p-3 text-xs text-slate-500">Searching…</div>}
           {!loading && suggestions.length === 0 && (
-            <div className="p-2.5 text-xs text-slate-400">No airports found</div>
+            <div className="p-3 text-xs text-slate-500">No airports found</div>
           )}
           {suggestions.map((a) => (
             <button
@@ -1285,7 +2053,7 @@ function AirportPicker({
                 setQuery('');
                 setShowSuggestions(false);
               }}
-              className="w-full text-left px-3 py-2 text-sm text-slate-900 bg-white hover:bg-orange-50 border-b border-slate-200 last:border-b-0"
+              className="w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm hover:bg-[#fbf3dc] focus-visible:bg-[#fbf3dc] focus-visible:outline-none last:border-b-0"
             >
               <div className="font-medium text-slate-800">{a.name} ({a.iataCode})</div>
               {a.cityName && <div className="text-xs text-slate-500">{a.cityName}</div>}
@@ -1298,12 +2066,14 @@ function AirportPicker({
 }
 
 function AddressSearchInput({
+  id,
   countryIso2,
   city,
   value,
   onChange,
   onSelect,
 }: {
+  id?: string;
   countryIso2?: string;
   city: string;
   value: string;
@@ -1339,9 +2109,10 @@ function AddressSearchInput({
 
   return (
     <div className="relative">
-      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
       <input
-        className="w-full border rounded-lg p-3 pl-8 bg-white text-slate-900 placeholder-slate-400"
+        id={id}
+        className="classic-input !pl-9"
         placeholder={countryIso2 ? 'Hotel, lodge or street address' : 'Select a country first'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -1350,10 +2121,10 @@ function AddressSearchInput({
         disabled={!countryIso2}
       />
       {showSuggestions && (
-        <div className="absolute z-20 w-full mt-1 border rounded-lg bg-white shadow-md max-h-56 overflow-y-auto">
-          {loading && <div className="p-2.5 text-xs text-slate-400">Searching hotels and addresses…</div>}
+        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-[#c4a052]/40 bg-white shadow-lg">
+          {loading && <div className="p-3 text-xs text-slate-500">Searching hotels and addresses…</div>}
           {!loading && suggestions.length === 0 && value.trim().length >= 2 && (
-            <div className="p-2.5 text-xs text-slate-400">No matching hotel found — you can still type the address</div>
+            <div className="p-3 text-xs text-slate-500">No matching hotel found — you can still type the address</div>
           )}
           {suggestions.map((a, i) => (
             <button
@@ -1364,7 +2135,7 @@ function AddressSearchInput({
                 onSelect(a.displayName, a.lat, a.lng);
                 setShowSuggestions(false);
               }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-slate-100 last:border-b-0"
+              className="w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm hover:bg-[#fbf3dc] focus-visible:bg-[#fbf3dc] focus-visible:outline-none last:border-b-0"
             >
               <div className="font-medium text-slate-800">{a.name}</div>
               <div className="text-xs text-slate-500 truncate">{a.displayName}</div>
@@ -1382,10 +2153,12 @@ function AddressSearchInput({
 // just a hardcoded shortlist. Free typing is still allowed — a suggestion
 // just makes it a real, spellchecked place name.
 function CitySearchInput({
+  id,
   countryIso2,
   value,
   onChange,
 }: {
+  id?: string;
   countryIso2?: string;
   value: string;
   onChange: (cityName: string) => void;
@@ -1420,9 +2193,10 @@ function CitySearchInput({
 
   return (
     <div className="relative">
-      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
       <input
-        className="w-full border rounded-lg p-3 pl-8 bg-white text-slate-900 placeholder-slate-400"
+        id={id}
+        className="classic-input !pl-9"
         placeholder="City (e.g. New York)"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -1430,10 +2204,10 @@ function CitySearchInput({
         onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
       />
       {showSuggestions && (
-        <div className="absolute z-10 w-full mt-1 border rounded-lg bg-white shadow-md max-h-48 overflow-y-auto">
-          {loading && <div className="p-2.5 text-xs text-slate-400">Searching…</div>}
+        <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-[#c4a052]/40 bg-white shadow-lg">
+          {loading && <div className="p-3 text-xs text-slate-500">Searching…</div>}
           {!loading && suggestions.length === 0 && value.trim().length >= 2 && (
-            <div className="p-2.5 text-xs text-slate-400">No cities found — you can still type your own</div>
+            <div className="p-3 text-xs text-slate-500">No cities found — you can still type your own</div>
           )}
           {suggestions.map((c, i) => (
             <button
@@ -1444,7 +2218,7 @@ function CitySearchInput({
                 onChange(c.name);
                 setShowSuggestions(false);
               }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-slate-100 last:border-b-0"
+              className="w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm hover:bg-[#fbf3dc] focus-visible:bg-[#fbf3dc] focus-visible:outline-none last:border-b-0"
             >
               <div className="font-medium text-slate-800">{c.name}</div>
               <div className="text-xs text-slate-500 truncate">{c.displayName}</div>
