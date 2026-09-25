@@ -60,6 +60,7 @@ import { productService } from '../services/productService';
 import { customerService } from '../services/customerService';
 import EnhancedRideRequest from '../vendor/mybodaguy/components/EnhancedRideRequest';
 import JourneyBookingFlow from '../vendor/mybodaguy/components/JourneyBookingFlow';
+import JourneyTracker from '../vendor/mybodaguy/components/JourneyTracker';
 import CustomerSelfCheckout from '../vendor/mybodaguy/components/CustomerSelfCheckout';
 import RideTrackingModal from '../vendor/mybodaguy/components/RideTrackingModal';
 import ICANWalletPage from './ICANWalletPage';
@@ -988,8 +989,13 @@ const CustomerDashboard = () => {
                 deployment (cross-origin) since the Duffel/ICAN logic lives
                 there, not in this app — see vendor/mybodaguy/services/journeyService.ts */}
             {activeTab === 'journey' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <JourneyBookingFlow customerId={user?.id} />
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <JourneyBookingFlow customerId={user?.id} />
+                </div>
+                {/* My Journeys — live legs, driver chat/call, air ticket
+                    download, and a refund notice for a paid-but-failed booking */}
+                {user?.id && <JourneyTracker customerId={user.id} />}
               </div>
             )}
 

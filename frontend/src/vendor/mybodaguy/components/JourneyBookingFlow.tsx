@@ -6,14 +6,18 @@
 // import (digital-city-era's own, via the @ alias — there's no vendored
 // copy) differ from the mybodaguy original.
 import { useEffect, useRef, useState } from 'react';
-import { MapPin, Plane, Home, CreditCard, CheckCircle, Loader2, Star, Phone, Car, Search, Bike, Ship, Package, Printer, User } from 'lucide-react';
+import { MapPin, Plane, Home, CreditCard, CheckCircle, Loader2, Star, Phone, Car, Search, Bike, Ship, Package, Printer, User, AlertTriangle } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import {
-  searchFlights, searchAirports, getJourneyQuote, confirmJourney, pollJourney, requestShipCargoJourney,
+  searchFlights, searchAirports, getJourneyQuote, confirmJourney, pollJourney, getMyJourneys, requestShipCargoJourney, PaymentTakenError,
   type FlightOffer, type Journey, type JourneyQuote, type AirportSuggestion,
 } from '../services/journeyService';
 import { geocodeAddress, reverseGeocodeCountry, searchCities, searchAddresses, type CountryLookup, type CitySuggestion, type AddressSuggestion, type GeocodeResult } from '../services/geocodeService';
-import { printFlightTicket, printShipTicket } from '../services/printTicket';
+import { printShipTicket } from '../services/printTicket';
+import AirTicketButton from './AirTicketButton';
+import JourneyLegRideActions from './JourneyLegRideActions';
+import { toInternationalPhone, genderForTitle } from '../services/phone';
+import JourneyRideOptions, { DEFAULT_PICKUP_PREFERENCES, preferencesForApi, describePreferences, type PickupPreferences } from './JourneyRideOptions';
 import { getBalance, ICAN_TO_UGX, formatICAN, SOURCE_APP } from '../services/icanWalletService';
 import { payWithFlutterwave, generateTxRef } from '@/services/flutterwaveClient';
 import LocationPickerMap from './LocationPickerMap';
@@ -45,11 +49,13 @@ function validAreaCoordinates(area: CustomerArea): { lat: number; lng: number } 
   return { lat, lng };
 }
 
+const SHIP_BOOKING_TIMEOUT_MS = 60_000;
+
 type BookingKind = 'fly' | 'ship';
 type Step = 'pickup' | 'flight' | 'destination' | 'review' | 'confirming' | 'tracking' | 'ship-details';
 
-const legLabel: Record<string, string> = {
-  local_pickup: 'Boda to the airport',
+export const legLabel: Record<string, string> = {
+  local_pickup: 'Ride to the airport',
   flight: 'Flight',
   local_dropoff: 'Driver to your final address',
   road_leg: 'Road transport',
@@ -90,26 +96,77 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const submitShipCargo = async () => {
     if (!shipPickup || !shipDropoff || !shipPickupCountry || !shipDropoffCountry) return;
     setError(null);
+    setPaymentIssue(null);
     setSubmittingShip(true);
     try {
-      const result = await requestShipCargoJourney({
-        pickupLocation: shipPickup.address, pickupLat: shipPickup.lat, pickupLng: shipPickup.lng, pickupCountry: shipPickupCountry.name,
-        dropoffLocation: shipDropoff.address, dropoffLat: shipDropoff.lat, dropoffLng: shipDropoff.lng, dropoffCountry: shipDropoffCountry.name,
-        cargoDescription: cargoDescription.trim() || undefined,
-        cargoWeightKg: shipCargoWeightKg ? Number(shipCargoWeightKg) : undefined,
-      });
-      if (!result.success || !result.journeyId) {
-        setError(result.error || 'Could not book this shipment');
+      // Payment and booking happen in one server step. Never leave the button
+      // spinning forever: after a minute, work out what actually happened.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const outcome = await Promise.race([
+        requestShipCargoJourney({
+          pickupLocation: shipPickup.address, pickupLat: shipPickup.lat, pickupLng: shipPickup.lng, pickupCountry: shipPickupCountry.name,
+          dropoffLocation: shipDropoff.address, dropoffLat: shipDropoff.lat, dropoffLng: shipDropoff.lng, dropoffCountry: shipDropoffCountry.name,
+          cargoDescription: cargoDescription.trim() || undefined,
+          cargoWeightKg: shipCargoWeightKg ? Number(shipCargoWeightKg) : undefined,
+        }),
+        new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), SHIP_BOOKING_TIMEOUT_MS); }),
+      ]);
+      clearTimeout(timer);
+
+      const noAnswer = outcome === 'timeout' || (!outcome.success && /failed to fetch|network|timeout|timed out|aborted/i.test(outcome.error || ''));
+      if (noAnswer) {
+        // We never got an answer — the booking may still have gone through.
+        const existing = await findRecentShipJourney();
+        if (existing) {
+          startTracking(existing);
+          return;
+        }
+        setPaymentIssue({ journeyId: null, certain: false });
         return;
       }
-      setStep('tracking');
-      pollJourney(result.journeyId, setJourney);
+      if (!outcome.success || !outcome.journeyId) {
+        setError(outcome.error || 'Could not book this shipment');
+        return;
+      }
+      startTracking(outcome.journeyId);
     } catch (err: any) {
       setError(err.message || 'Could not book this shipment');
     } finally {
       setSubmittingShip(false);
     }
   };
+
+  /** A shipment this customer booked in the last few minutes, if the server saved one. */
+  const findRecentShipJourney = async (): Promise<string | null> => {
+    try {
+      const rows = await getMyJourneys(customerId);
+      const recent = rows.find((j) => j.legs?.some((l) => l.leg_type === 'sea_leg') && j.created_at && Date.now() - new Date(j.created_at).getTime() < 5 * 60_000);
+      return recent?.id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Set when the wallet may have been debited but no ticket was issued — kept
+  // separate from `error` so it can't be dismissed or cleared by navigating.
+  const [paymentIssue, setPaymentIssue] = useState<{ journeyId: string | null; certain: boolean } | null>(null);
+
+  // Journey status screen: poll the booking, surface a load failure instead of
+  // an endless spinner, and stop polling when the page goes away.
+  const stopPollingRef = useRef<(() => void) | null>(null);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const startTracking = (journeyId: string) => {
+    stopPollingRef.current?.();
+    setTrackingError(null);
+    setStep('tracking');
+    stopPollingRef.current = pollJourney(
+      journeyId,
+      (j) => { setTrackingError(null); setJourney(j); },
+      10000,
+      (err: any) => setTrackingError(err?.message || 'Could not load your booking'),
+    );
+  };
+  useEffect(() => () => stopPollingRef.current?.(), []);
 
   const [areas, setAreas] = useState<CustomerArea[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState('');
@@ -119,6 +176,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
   const [searchingPickup, setSearchingPickup] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [pickupVehicleType, setPickupVehicleType] = useState<'motorcycle' | 'car'>('motorcycle');
+  const [pickupPreferences, setPickupPreferences] = useState<PickupPreferences>(DEFAULT_PICKUP_PREFERENCES);
   // Which country the journey actually STARTS in — was hardcoded to
   // 'Uganda' throughout (geocoding, quote, and the leg mbg_dispatch_journey_leg
   // matches against), even though the backend (mbg_find_available_vehicles,
@@ -160,7 +218,8 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     passengerGivenName.trim().length > 0 &&
     passengerFamilyName.trim().length > 0 &&
     !!passengerDob &&
-    passengerPhone.trim().length >= 7;
+    !!toInternationalPhone(passengerPhone, pickupCountry.iso2);
+  const passengerPhoneIntl = toInternationalPhone(passengerPhone, pickupCountry.iso2);
 
   // Real ICAN wallet balance, checked against the quote before letting the
   // customer confirm — avoids creating a doomed mbg_journeys row (confirm.js
@@ -440,7 +499,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     try {
       const { quote } = await getJourneyQuote({
         customerUserId: customerId,
-        pickup: { ...pickup, country: pickupCountry.name, vehicleType: pickupVehicleType },
+        pickup: { ...pickup, country: pickupCountry.name, vehicleType: pickupVehicleType, preferences: preferencesForApi(pickupPreferences, pickupVehicleType) },
         offer: selectedOffer,
         destination: { address: destAddress, country: destCountry, city: destCity, lat: destPin?.lat ?? null, lng: destPin?.lng ?? null },
         cargoWeightKg: flightCargoWeightKg ? Number(flightCargoWeightKg) : undefined,
@@ -460,7 +519,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
       return;
     }
     if (!passengerDetailsValid) {
-      setError('Please fill in the passenger\'s full name, date of birth and phone number.');
+      setError("Please fill in the passenger's full name, date of birth and a phone number with its country code (e.g. +256 7XX XXX XXX).");
       return;
     }
     if (!hasEnoughBalance) {
@@ -469,6 +528,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
     }
     setConfirming(true);
     setError(null);
+    setPaymentIssue(null);
     try {
       const { data: authUser } = await supabase.auth.getUser();
       const email = authUser?.user?.email || '';
@@ -478,13 +538,20 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         passengers: [{
           id: passengerId, type: 'adult', title: passengerTitle,
           given_name: passengerGivenName.trim(), family_name: passengerFamilyName.trim(),
-          born_on: passengerDob, gender: passengerGender, email, phone_number: passengerPhone.trim(),
+          born_on: passengerDob, gender: passengerGender, email, phone_number: passengerPhoneIntl || passengerPhone.trim(),
         }],
       });
-      setStep('tracking');
-      pollJourney(journeyId, setJourney);
+      startTracking(journeyId);
     } catch (err: any) {
-      setError(err.message || 'Journey confirmation failed');
+      if (err instanceof PaymentTakenError) {
+        setPaymentIssue({ journeyId: err.journeyId, certain: !!err.journeyId });
+      } else if (err?.code === 'price_changed') {
+        // Nothing was charged. Show the fresh price so the customer can confirm it.
+        await buildQuote();
+        setError(err.message);
+      } else {
+        setError(err.message || 'Journey confirmation failed');
+      }
       setStep('review');
     } finally {
       setConfirming(false);
@@ -520,6 +587,29 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
           >
             <Ship size={16} /> Ship Cargo
           </button>
+        </div>
+      )}
+
+      {paymentIssue && (
+        <div role="alert" className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
+            <div className="space-y-2 leading-snug">
+              <p className="font-bold">
+                {paymentIssue.certain
+                  ? 'Your payment was taken but your air ticket was NOT issued.'
+                  : 'We could not confirm your booking — your money may have been deducted.'}
+              </p>
+              <p>
+                {paymentIssue.certain
+                  ? 'Please contact the support team to be refunded. Do not pay again until this is sorted out.'
+                  : 'Check your wallet balance and My Journeys before trying again. If money was deducted and you have no ticket, contact the support team to be refunded.'}
+              </p>
+              {paymentIssue.journeyId && (
+                <p className="text-xs">Quote this reference to support: <span className="select-all font-mono font-semibold">{paymentIssue.journeyId}</span></p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -624,6 +714,8 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
               </button>
             </div>
           </div>
+
+          <JourneyRideOptions vehicleType={pickupVehicleType} country={pickupCountry.name} value={pickupPreferences} onChange={setPickupPreferences} />
 
           {areas.length > 0 && (
             <select className="w-full border rounded-lg p-3 bg-white text-slate-900 placeholder-slate-400" value={selectedAreaId} onChange={(e) => setSelectedAreaId(e.target.value)}>
@@ -902,7 +994,13 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
               <select
                 className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
                 value={passengerTitle}
-                onChange={(e) => setPassengerTitle(e.target.value as typeof passengerTitle)}
+                onChange={(e) => {
+                  const title = e.target.value as typeof passengerTitle;
+                  setPassengerTitle(title);
+                  // The airline rejects a title that contradicts the gender.
+                  const implied = genderForTitle(title);
+                  if (implied) setPassengerGender(implied);
+                }}
               >
                 <option value="mr">Mr</option>
                 <option value="mrs">Mrs</option>
@@ -913,7 +1011,12 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
               <select
                 className="border rounded-lg p-2.5 bg-white text-slate-900 text-sm"
                 value={passengerGender}
-                onChange={(e) => setPassengerGender(e.target.value as 'm' | 'f')}
+                onChange={(e) => {
+                  const gender = e.target.value as 'm' | 'f';
+                  setPassengerGender(gender);
+                  const implied = genderForTitle(passengerTitle);
+                  if (implied && implied !== gender) setPassengerTitle(gender === 'm' ? 'mr' : 'ms');
+                }}
               >
                 <option value="m">Male</option>
                 <option value="f">Female</option>
@@ -946,6 +1049,11 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
               value={passengerPhone}
               onChange={(e) => setPassengerPhone(e.target.value)}
             />
+            {passengerPhone.trim() && (
+              <p className={`text-xs ${passengerPhoneIntl ? 'text-emerald-700' : 'text-red-600'}`}>
+                {passengerPhoneIntl ? `Will be sent to the airline as ${passengerPhoneIntl}` : 'Start with your country code, e.g. +256 7XX XXX XXX'}
+              </p>
+            )}
           </div>
 
           <button
@@ -963,27 +1071,8 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-slate-700">Your journey</h3>
-            {journey && bookingKind === 'fly' && (
-              <button
-                type="button"
-                onClick={() => {
-                  const flightLeg = journey.legs.find((l) => l.leg_type === 'flight');
-                  printFlightTicket({
-                    passengerName: `${passengerGivenName} ${passengerFamilyName}`.trim() || customerName,
-                    pnr: flightLeg?.flight_booking?.pnr || null,
-                    carrier: selectedOffer?.carrier || 'Airline',
-                    originLabel: originLabel || originIata,
-                    destinationLabel: destinationLabel || destinationIata,
-                    departureAt: flightLeg?.flight_booking?.current_departure_at || null,
-                    arrivalAt: flightLeg?.flight_booking?.current_arrival_at || null,
-                    totalIcan: quote?.totalIcan || 0,
-                    totalUgx: quote?.totalUgx || 0,
-                  });
-                }}
-                className="text-xs sm:text-sm text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
-              >
-                <Printer size={14} /> Print Air Ticket
-              </button>
+            {journey && bookingKind === 'fly' && journey.legs.some((l) => l.leg_type === 'flight' && l.flight_booking) && (
+              <AirTicketButton journeyId={journey.id} />
             )}
             {journey && bookingKind === 'ship' && (
               <button
@@ -1007,7 +1096,14 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
             )}
           </div>
           {!journey ? (
-            <Loader2 className="animate-spin mx-auto" />
+            trackingError ? (
+              <div role="alert" className="border rounded-lg p-4 text-center text-sm text-slate-600 space-y-1">
+                <p className="font-semibold text-slate-800">Your booking is placed — we just can't load its status right now.</p>
+                <p>It is safe to leave this page; you'll find it under My Journeys on your dashboard.</p>
+              </div>
+            ) : (
+              <Loader2 className="animate-spin mx-auto" />
+            )
           ) : (
             <div className="space-y-3">
               {bookingKind === 'ship' && journey.total_fare_ican > 0 && (
@@ -1043,6 +1139,7 @@ export default function JourneyBookingFlow({ customerId }: JourneyBookingFlowPro
                         </div>
                       </div>
                     )}
+                    <JourneyLegRideActions leg={leg} customerId={customerId} />
                   </div>
                 );
               })}
