@@ -355,6 +355,44 @@ export async function requestIcanPayout({
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Buy ICAN coins with the money in the user's own IcanEra Wallet (wallet_accounts), at the
+ * coin's LIVE value — no payment window: it is an exchange between two balances they already
+ * hold. Flutterwave is only for money entering or leaving the platform.
+ */
+export async function buyICANFromWallet({ userId, icanAmount, reference = null }) {
+  const { data, error } = await supabase.rpc('buy_ican_coins_from_wallet', {
+    p_user_id: userId,
+    p_ican_amount: icanAmount,
+    p_source_app: SOURCE_APP,
+    p_reference: reference,
+  });
+  if (error) throw new Error(/buy_ican_coins_from_wallet/.test(error.message) ? 'Buying IcanEra is not switched on yet.' : error.message);
+  if (!data.success) throw new Error(data.error ?? 'Buy failed');
+  return data;
+}
+
+/** The money (UGX) in the user's own IcanEra Wallet — what a purchase is paid from. */
+export async function getWalletUgxBalance() {
+  const { data, error } = await supabase.rpc('get_my_wallet_ugx_balance');
+  if (error) throw error;
+  return Number(data) || 0;
+}
+
+/**
+ * The LIVE price of one icaneracoin in UGX — the same number the wallet badge shows (FX, the
+ * inflation floor and network usage; never below the 5,000 launch floor). Selling pays at this,
+ * not at the floor. Returns null if the price engine can't be reached, so callers refuse to
+ * quote a figure rather than show a wrong one.
+ */
+export async function getLiveUgxPrice() {
+  const { data, error } = await supabase.rpc('ican_get_price_in_currency', { p_currency_code: 'UGX' });
+  if (error) return null;
+  const row = Array.isArray(data) ? data[0] : data;
+  const price = Number(row?.price_local);
+  return Number.isFinite(price) && price > 0 ? price : null;
+}
+
 /** Convert UGX to ICAN at floor price (rounds down to 8 dp). */
 export function ugxToICAN(ugx) {
   return Math.floor((ugx / ICAN_TO_UGX) * 1e8) / 1e8;

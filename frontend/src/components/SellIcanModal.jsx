@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { ICAN_TO_UGX, formatICAN, sellICAN } from '@/services/icanWalletService';
+import { formatICAN, sellICAN, getLiveUgxPrice } from '@/services/icanWalletService';
 
 export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
   const [icanAmount, setIcanAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
 
+  // Sales pay at icaneracoin's live value, so nothing is quoted until it is known.
+  const [livePrice, setLivePrice] = useState(null);
+  const [priceFailed, setPriceFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => getLiveUgxPrice().then((p) => {
+      if (cancelled) return;
+      setLivePrice(p);
+      setPriceFailed(p === null);
+    });
+    load();
+    const timer = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
   const amount = parseFloat(icanAmount) || 0;
-  const ugxGross = amount * ICAN_TO_UGX;
+  const ugxGross = livePrice ? amount * livePrice : 0;
   const feePercent = 3; // flat 3% fee, applied server-side in sell_ican_coins()
   const ugxNet = ugxGross - Math.round((ugxGross * feePercent) / 100);
 
-  const canSubmit = amount > 0 && amount <= (balance?.ican ?? 0);
+  const canSubmit = amount > 0 && amount <= (balance?.ican ?? 0) && !!livePrice;
 
   const handleSell = async () => {
     if (!canSubmit) return;
@@ -72,7 +87,7 @@ export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
               disabled={processing}
               className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 text-sm outline-none border border-gray-700 focus:border-orange-500"
             />
-            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} IcanEra · 1 IcanEra = UGX {ICAN_TO_UGX.toLocaleString()} (floor price)</p>
+            <p className="text-gray-500 text-xs mt-1">Balance: {formatICAN(balance?.ican ?? 0)} IcanEra · {livePrice ? `1 IcanEra = UGX ${livePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} (live value)` : priceFailed ? "Couldn't load the live price — retrying…" : 'Loading the live price…'}</p>
           </div>
 
           {amount > 0 && (
