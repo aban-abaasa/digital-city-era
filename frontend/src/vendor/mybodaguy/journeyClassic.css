@@ -223,3 +223,13 @@
 @media (prefers-reduced-motion: reduce) {
   .mbg-journey .animate-step-in { animation: none; }
 }
+
+/* Dark mode in this app's deep-green palette (customer-dark.css) rather than
+   the slate greys copied from mybodaguy, so tiles and the sticky Continue bar
+   sit on the step card instead of looking like dark patches on it. */
+.dark .mbg-journey .classic-tile { background: #0c231b; border-color: rgba(196, 160, 82, 0.24); }
+.dark .mbg-journey .classic-tile.is-active { background: rgba(196, 160, 82, 0.14); border-color: #c4a052; }
+.dark .mbg-journey .classic-chip { background: #0c231b; border-color: rgba(196, 160, 82, 0.3); color: rgba(209, 250, 229, 0.8); }
+.dark .mbg-journey .classic-step-dot { background: #0c231b; }
+.dark .mbg-journey .dark\:bg-slate-800\/95 { background-color: rgba(15, 42, 32, 0.95); }
+.dark .mbg-journey .classic-btn-primary:disabled { background: #16352a; color: rgba(209, 250, 229, 0.4); }

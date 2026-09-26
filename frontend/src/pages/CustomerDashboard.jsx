@@ -76,6 +76,8 @@ import {
   removeCustomCallRingtone,
   playCallRingtonePreview,
 } from '../vendor/mybodaguy/services/notificationSound';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/customer-dark.css';
 
 /** Preset-grid + "upload your own song" picker for the incoming-call
  * ringtone that rings while a rider's voice/video call (from RideTrackingModal's
@@ -171,6 +173,8 @@ function CallRingtonePicker() {
 const CustomerDashboard = () => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const { user, customer, logout, loading: authLoading, isAuthenticated } = useAuth();
   // Lets the landing page's product showcase deep-link a signed-in visitor
   // straight into the Shop tab (?tab=shop) instead of always landing on
@@ -645,9 +649,16 @@ const CustomerDashboard = () => {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 bg-cover bg-center bg-fixed"
+      // sk-customer-themed: dark-mode repaint of this page's white/gray/ivory
+      // utilities (styles/customer-dark.css). In dark mode the page itself
+      // and the store's background-image overlay go deep green too.
+      className={`sk-customer-themed min-h-screen bg-cover bg-center bg-fixed ${
+        isDark ? 'bg-[#061510]' : 'bg-gradient-to-br from-gray-50 to-blue-50'
+      }`}
       style={branding.backgroundUrl ? {
-        backgroundImage: `linear-gradient(rgba(249,250,251,0.92), rgba(239,246,255,0.92)), url(${branding.backgroundUrl})`
+        backgroundImage: isDark
+          ? `linear-gradient(rgba(6,21,16,0.93), rgba(6,21,16,0.93)), url(${branding.backgroundUrl})`
+          : `linear-gradient(rgba(249,250,251,0.92), rgba(239,246,255,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
       <style dangerouslySetInnerHTML={{

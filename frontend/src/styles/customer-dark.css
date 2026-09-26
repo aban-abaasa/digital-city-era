@@ -1,0 +1,137 @@
+/* ==========================================================================
+   Customer dashboard dark mode.
+   The customer page is built from plain Tailwind white/gray/slate utilities
+   plus the ivory/gold "classic" surfaces (index.css), none of which have dark
+   variants — so in dark mode it rendered as a light page with stray dark
+   pieces (the vendored journey's tiles, its sticky bar) and the near-black
+   app background showing between cards. This layer repaints those classes
+   when the page sits inside `.sk-customer-themed` under [data-theme="dark"]
+   (set by ThemeContext), in the same deep-green / gold palette as the other
+   portals (supermartkera-portals.css). Light mode is untouched.
+   `!important` guards against Tailwind's own cascade order.
+   Form controls are left on their light fields (index.css gives them dark
+   text for that reason), so typed text stays legible.
+   ========================================================================== */
+
+[data-theme="dark"] .sk-customer-themed {
+  --cd-surface: #0f2a20;
+  --cd-surface-2: #0c231b;
+  --cd-surface-3: #16352a;
+  --cd-line: rgba(196, 160, 82, 0.24);
+  --cd-text: #ecfdf5;
+  --cd-text-muted: rgba(209, 250, 229, 0.74);
+  --cd-text-faint: rgba(209, 250, 229, 0.52);
+  --cd-gold: #e6c980;
+  color: var(--cd-text);
+}
+
+/* Surfaces */
+[data-theme="dark"] .sk-customer-themed .classic-card,
+[data-theme="dark"] .sk-customer-themed .bg-white:not(input):not(select):not(textarea),
+[data-theme="dark"] .sk-customer-themed .bg-\[\#fdfaf2\],
+[data-theme="dark"] .sk-customer-themed .bg-\[\#fbf8f0\] {
+  background-color: var(--cd-surface) !important;
+}
+[data-theme="dark"] .sk-customer-themed .classic-card {
+  border-color: var(--cd-line);
+  box-shadow: 0 12px 28px -16px rgba(0, 0, 0, 0.7);
+}
+[data-theme="dark"] .sk-customer-themed .bg-gray-50,
+[data-theme="dark"] .sk-customer-themed .bg-slate-50,
+[data-theme="dark"] .sk-customer-themed .bg-\[\#faf8f3\],
+[data-theme="dark"] .sk-customer-themed .bg-\[\#f6efdc\] {
+  background-color: var(--cd-surface-2) !important;
+}
+[data-theme="dark"] .sk-customer-themed .bg-gray-100,
+[data-theme="dark"] .sk-customer-themed .bg-slate-100 { background-color: #102a20 !important; }
+[data-theme="dark"] .sk-customer-themed .bg-gray-200,
+[data-theme="dark"] .sk-customer-themed .bg-gray-300,
+[data-theme="dark"] .sk-customer-themed .bg-slate-200 { background-color: var(--cd-surface-3) !important; }
+[data-theme="dark"] .sk-customer-themed .from-white { --tw-gradient-from: var(--cd-surface) var(--tw-gradient-from-position) !important; }
+[data-theme="dark"] .sk-customer-themed .to-\[\#fbf8f0\] { --tw-gradient-to: var(--cd-surface-2) var(--tw-gradient-to-position) !important; }
+[data-theme="dark"] .sk-customer-themed .hover\:bg-gray-50:hover,
+[data-theme="dark"] .sk-customer-themed .hover\:bg-gray-100:hover,
+[data-theme="dark"] .sk-customer-themed .hover\:bg-slate-50:hover { background-color: var(--cd-surface-3) !important; }
+
+/* Pastel tints (icon circles, badges) — keep the hue, drop the bright fill */
+[data-theme="dark"] .sk-customer-themed .bg-violet-50,
+[data-theme="dark"] .sk-customer-themed .bg-purple-50 { background-color: rgba(168, 85, 247, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.18) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-blue-50 { background-color: rgba(59, 130, 246, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-sky-50 { background-color: rgba(14, 165, 233, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-emerald-50,
+[data-theme="dark"] .sk-customer-themed .bg-green-50 { background-color: rgba(16, 185, 129, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-teal-50 { background-color: rgba(20, 184, 166, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-amber-50,
+[data-theme="dark"] .sk-customer-themed .bg-yellow-50 { background-color: rgba(245, 158, 11, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-orange-50 { background-color: rgba(249, 115, 22, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-orange-100 { background-color: rgba(249, 115, 22, 0.22) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-pink-50,
+[data-theme="dark"] .sk-customer-themed .bg-fuchsia-50 { background-color: rgba(217, 70, 239, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.16) !important; }
+[data-theme="dark"] .sk-customer-themed .bg-rose-50,
+[data-theme="dark"] .sk-customer-themed .bg-red-50 { background-color: rgba(244, 63, 94, 0.16) !important; }
+
+/* Text */
+[data-theme="dark"] .sk-customer-themed .text-gray-900,
+[data-theme="dark"] .sk-customer-themed .text-gray-800,
+[data-theme="dark"] .sk-customer-themed .text-slate-900,
+[data-theme="dark"] .sk-customer-themed .text-slate-800 { color: var(--cd-text) !important; }
+[data-theme="dark"] .sk-customer-themed .text-gray-700,
+[data-theme="dark"] .sk-customer-themed .text-gray-600,
+[data-theme="dark"] .sk-customer-themed .text-slate-700,
+[data-theme="dark"] .sk-customer-themed .text-slate-600 { color: var(--cd-text-muted) !important; }
+[data-theme="dark"] .sk-customer-themed .text-gray-500,
+[data-theme="dark"] .sk-customer-themed .text-gray-400,
+[data-theme="dark"] .sk-customer-themed .text-slate-500,
+[data-theme="dark"] .sk-customer-themed .text-slate-400 { color: var(--cd-text-faint) !important; }
+/* Indigo "ink" headings/labels become soft gold on the dark surface */
+[data-theme="dark"] .sk-customer-themed .text-\[\#1e1b4b\],
+[data-theme="dark"] .sk-customer-themed .hover\:text-\[\#1e1b4b\]:hover { color: #f5dfa0 !important; }
+[data-theme="dark"] .sk-customer-themed .text-\[\#a17c28\],
+[data-theme="dark"] .sk-customer-themed .classic-eyebrow { color: var(--cd-gold) !important; }
+/* Dark tinted text used on pastel badges */
+[data-theme="dark"] .sk-customer-themed .text-orange-900,
+[data-theme="dark"] .sk-customer-themed .text-orange-800 { color: #fdba74 !important; }
+[data-theme="dark"] .sk-customer-themed .text-blue-900,
+[data-theme="dark"] .sk-customer-themed .text-blue-800 { color: #93c5fd !important; }
+[data-theme="dark"] .sk-customer-themed .text-purple-900,
+[data-theme="dark"] .sk-customer-themed .text-purple-800 { color: #d8b4fe !important; }
+[data-theme="dark"] .sk-customer-themed .text-amber-900 { color: #fcd34d !important; }
+[data-theme="dark"] .sk-customer-themed .text-indigo-600,
+[data-theme="dark"] .sk-customer-themed .text-indigo-700 { color: #a5b4fc !important; }
+[data-theme="dark"] .sk-customer-themed .text-blue-600,
+[data-theme="dark"] .sk-customer-themed .text-blue-700 { color: #93c5fd !important; }
+[data-theme="dark"] .sk-customer-themed .text-violet-600,
+[data-theme="dark"] .sk-customer-themed .text-violet-700,
+[data-theme="dark"] .sk-customer-themed .text-purple-600,
+[data-theme="dark"] .sk-customer-themed .text-purple-700 { color: #c4b5fd !important; }
+
+/* Borders & dividers */
+[data-theme="dark"] .sk-customer-themed .border-gray-50,
+[data-theme="dark"] .sk-customer-themed .border-gray-100,
+[data-theme="dark"] .sk-customer-themed .border-gray-200,
+[data-theme="dark"] .sk-customer-themed .border-gray-300,
+[data-theme="dark"] .sk-customer-themed .border-gray-400,
+[data-theme="dark"] .sk-customer-themed .border-slate-100,
+[data-theme="dark"] .sk-customer-themed .border-slate-200 { border-color: var(--cd-line) !important; }
+[data-theme="dark"] .sk-customer-themed .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .sk-customer-themed .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .sk-customer-themed .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--cd-line) !important; }
+[data-theme="dark"] .sk-customer-themed .ring-black\/5 { --tw-ring-color: var(--cd-line) !important; }
+
+/* Desktop tab bar (index.css .classic-tab) */
+[data-theme="dark"] .sk-customer-themed .classic-tab { color: var(--cd-text-faint); }
+
+/* Form fields keep their light fill; soften placeholders on dark-filled ones */
+[data-theme="dark"] .sk-customer-themed input::placeholder,
+[data-theme="dark"] .sk-customer-themed textarea::placeholder { color: #94a3b8; }
+
+/* Fields with no fill of their own would otherwise get the browser's grey
+   dark-scheme fill (index.css sets color-scheme: dark) with index.css's dark
+   text on top. Give them the inset green and light text instead; fields with
+   a deliberate light fill (bg-* classes, .classic-input) keep it. */
+[data-theme="dark"] .sk-customer-themed :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea):not([class*="bg-"]):not(.classic-input) {
+  background-color: var(--cd-surface-2);
+  color: var(--cd-text);
+}
