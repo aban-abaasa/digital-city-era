@@ -1,6 +1,6 @@
 // Ported verbatim from mybodaguy's src/mybodaguy/components/JourneyUI.tsx —
 // styled by ../journeyClassic.css, scoped to the .mbg-journey wrapper.
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { AlertCircle, ArrowLeft, Check, X } from 'lucide-react';
 
 // Presentational pieces for the "Book a full journey" page, in the same
@@ -78,7 +78,7 @@ export function StepCard({
   children: ReactNode;
 }) {
   return (
-    <section className="classic-card animate-step-in space-y-5 p-4 min-[420px]:p-5">
+    <section className="classic-card animate-step-in space-y-5 p-3.5 sm:p-5">
       <header className="space-y-2">
         {onBack && (
           <button type="button" onClick={onBack} className="classic-btn classic-btn-ghost -ml-2">
@@ -94,6 +94,53 @@ export function StepCard({
       </header>
       {children}
     </section>
+  );
+}
+
+/**
+ * One option in a 2-up choice grid. On phones (below `sm`) it stays
+ * compact: a small icon inline with the title and the description on its own
+ * line underneath at the tile's full width. Tablets and up put a larger
+ * icon beside both lines. Keyed to `sm`, not a phone width, because the tile
+ * sits inside several padded containers and is far narrower than the screen.
+ */
+export function ChoiceTile({
+  label, desc, Icon, active, disabled, onClick,
+}: {
+  label: string;
+  desc?: string;
+  Icon?: ComponentType<{ size?: number; className?: string }>;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={`classic-tile relative grid grid-cols-[auto_1fr] content-center items-center gap-x-2 gap-y-1 px-2.5 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-50 sm:gap-x-3 sm:p-3 ${active ? 'is-active' : ''}`}
+    >
+      {active && (
+        <span aria-hidden className="absolute right-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-[#c4a052] text-white">
+          <Check size={10} strokeWidth={3} />
+        </span>
+      )}
+      {Icon && (
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40 sm:row-span-2 sm:h-10 sm:w-10">
+          <Icon size={15} className="sm:h-5 sm:w-5" />
+        </span>
+      )}
+      <span className={`min-w-0 pr-4 font-classic-display text-[14px] font-semibold leading-tight text-slate-800 sm:self-end sm:text-[15px] ${Icon ? '' : 'col-span-2'}`}>
+        {label}
+      </span>
+      {desc && (
+        <span className={`col-span-2 block text-[11px] leading-snug text-slate-500 sm:self-start ${Icon ? 'sm:col-span-1 sm:col-start-2' : ''}`}>
+          {desc}
+        </span>
+      )}
+    </button>
   );
 }
 
