@@ -1,5 +1,5 @@
 // =====================================================================
-// SUPPLIER ORDER MANAGEMENT COMPONENT - FAREDEAL UGANDA 🇺🇬
+// SUPPLIER ORDER MANAGEMENT COMPONENT
 // =====================================================================
 // Comprehensive supplier order verification and management for managers
 // Features: Create PO, Approve/Reject, Send to Supplier, Track Deliveries
@@ -11,7 +11,7 @@ import {
   FiTruck, FiCheckCircle, FiXCircle, FiSend, FiEdit, FiPlus,
   FiPackage, FiDollarSign, FiClock, FiAlertTriangle, FiSearch,
   FiDownload, FiMail, FiPhone, FiMapPin, FiCalendar, FiUser, FiChevronDown,
-  FiX, FiCheck, FiPrinter, FiRefreshCw
+  FiX, FiCheck, FiPrinter, FiRefreshCw, FiFileText
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import supplierOrdersService, { getBusinessWalletBalance, resolveBusinessProfileId } from '../services/supplierOrdersService';
@@ -20,8 +20,23 @@ import { supabase } from '../services/supabase';
 import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import OrderItemsSelector from './OrderItemsSelector';
 import './SupplierOrderManagement.css';
+
+// Money on screen: short ("UGX 2K", "UGX 5.2M") to save space, exact on hover / long-press
+const fullUGX = (n) => `UGX ${Math.round(Number(n) || 0).toLocaleString('en-UG')}`;
+const ugxShort = (n) => {
+  const x = Number(n) || 0;
+  const v = Math.abs(x);
+  const sign = x < 0 ? '-' : '';
+  const trim = (y, d) => y.toFixed(d).replace(/\.0+$/, '');
+  if (v >= 1e9) return `${sign}UGX ${trim(v / 1e9, v >= 1e11 ? 0 : 1)}B`;
+  if (v >= 1e6) return `${sign}UGX ${trim(v / 1e6, v >= 1e8 ? 0 : 1)}M`;
+  if (v >= 1e3) return `${sign}UGX ${trim(v / 1e3, v >= 1e5 ? 0 : 1)}K`;
+  return `${sign}UGX ${Math.round(v)}`;
+};
+const Money = ({ v }) => <span className="money" title={fullUGX(v)}>{ugxShort(v)}</span>;
 
 const ORDER_STAGES = [
   { id: 'pending_approval', label: 'Awaiting approval', icon: '📝', also: ['pending', 'draft'] },
@@ -44,6 +59,7 @@ const QUICK_FILTERS = [
 const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, openCreateSignal = 0 }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
   const activeBusinessProfileId = businessProfileId || resolvedBusinessProfileId;
+  const branding = useSupermarketBranding();
 
   useEffect(() => {
     let cancelled = false;
@@ -1630,17 +1646,17 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
       <section className="pol-money" aria-label="Order money summary">
         <div className="pol-money-cell">
           <span className="pol-money-label">Order value</span>
-          <b className="pol-money-value">{formatUGX(realTimeStats.totalValue)}</b>
+          <b className="pol-money-value"><Money v={realTimeStats.totalValue} /></b>
           <small>{realTimeStats.totalOrders} {realTimeStats.totalOrders === 1 ? 'order' : 'orders'}</small>
         </div>
         <div className="pol-money-cell is-ok">
           <span className="pol-money-label">Paid</span>
-          <b className="pol-money-value">{formatUGX(realTimeStats.totalPaidAmount)}</b>
+          <b className="pol-money-value"><Money v={realTimeStats.totalPaidAmount} /></b>
           <small>{realTimeStats.paidOrders} settled · {realTimeStats.partiallyPaidOrders} part-paid</small>
         </div>
         <div className="pol-money-cell is-due">
           <span className="pol-money-label">Outstanding</span>
-          <b className="pol-money-value">{formatUGX(realTimeStats.totalOutstanding)}</b>
+          <b className="pol-money-value"><Money v={realTimeStats.totalOutstanding} /></b>
           <small>{realTimeStats.unpaidOrders} unpaid</small>
         </div>
         <div className="pol-money-bar" role="img" aria-label={`${paidShare}% of order value paid`}>
@@ -1799,11 +1815,11 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                       </small>
                     </span>
                     <span className="pol-amount">
-                      <b>{formatUGX(total)}</b>
+                      <b><Money v={total} /></b>
                       {cancelledOrder ? (
                         <small>Cancelled</small>
                       ) : (
-                        <small className={balance > 0 ? 'is-due' : 'is-ok'}>{balance > 0 ? `${formatUGX(balance)} owed` : 'Fully paid'}</small>
+                        <small className={balance > 0 ? 'is-due' : 'is-ok'}>{balance > 0 ? <><Money v={balance} /> owed</> : 'Fully paid'}</small>
                       )}
                     </span>
                   </span>
@@ -1835,8 +1851,8 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                       <div><span>Ordered</span><b>{dateOf(order) ? new Date(dateOf(order)).toLocaleDateString() : '—'}</b></div>
                       <div><span>Expected</span><b className={late ? 'is-due' : ''}>{order.expected_delivery_date ? new Date(order.expected_delivery_date).toLocaleDateString() : 'TBD'}</b></div>
                       <div><span>Ordered by</span><b>{order.orderedBy || order.ordered_by_name || '—'}</b></div>
-                      <div><span>Paid</span><b className="is-ok">{formatUGX(paid)}</b></div>
-                      <div><span>Balance</span><b className={balance > 0 ? 'is-due' : 'is-ok'}>{formatUGX(balance)}</b></div>
+                      <div><span>Paid</span><b className="is-ok"><Money v={paid} /></b></div>
+                      <div><span>Balance</span><b className={balance > 0 ? 'is-due' : 'is-ok'}><Money v={balance} /></b></div>
                     </div>
 
                     {Array.isArray(order.items) && order.items.length > 0 && (
@@ -1848,7 +1864,7 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                             return (
                               <li key={idx}>
                                 <span>{item.product_name || item.productName || 'Item'} <em>× {item.quantity}</em></span>
-                                <b>{formatUGX(unit * (Number(item.quantity) || 0))}</b>
+                                <b><Money v={unit * (Number(item.quantity) || 0)} /></b>
                               </li>
                             );
                           })}
@@ -1936,7 +1952,7 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                   <li key={product.id}>
                     <span>
                       <b>{product.name}</b>
-                      <small>SKU {product.sku || '—'} · {formatUGX(product.selling_price || product.price || 0)}</small>
+                      <small>SKU {product.sku || '—'} · <Money v={product.selling_price || product.price || 0} /></small>
                     </span>
                     <em className={`pol-stock is-${state}`}>{state === 'out' ? 'Out' : `${stock} in stock`}</em>
                   </li>
@@ -1953,6 +1969,7 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
       {showCreateModal && (
       <CreateOrderModal
           suppliers={suppliers}
+          storeName={branding.name}
           businessProfileId={activeBusinessProfileId}
           pricingMode={wholesalePricingMode}
           onClose={() => setShowCreateModal(false)}
@@ -2018,7 +2035,7 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Total Amount</p>
-                      <p className="font-bold text-lg text-green-600">{formatUGX(selectedOrder.total_amount_ugx)}</p>
+                      <p className="font-bold text-lg text-green-600"><Money v={amountOf(selectedOrder)} /></p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Supplier</p>
@@ -2038,7 +2055,7 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Balance Due</p>
-                      <p className="font-bold text-lg text-red-600">{formatUGX(selectedOrder.balance_due)}</p>
+                      <p className="font-bold text-lg text-red-600"><Money v={balanceOf(selectedOrder)} /></p>
                     </div>
                   </div>
 
@@ -2074,9 +2091,9 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
                               <tr key={idx} className="border-t">
                                 <td className="px-4 py-3">{item.product_name || item.productName}</td>
                                 <td className="px-4 py-3 text-center">{item.quantity}</td>
-                                <td className="px-4 py-3 text-right">{formatUGX(item.unit_price || item.unitPrice)}</td>
+                                <td className="px-4 py-3 text-right"><Money v={item.unit_price || item.unitPrice} /></td>
                                 <td className="px-4 py-3 text-right font-semibold">
-                                  {formatUGX((item.unit_price || item.unitPrice) * item.quantity)}
+                                  <Money v={(item.unit_price || item.unitPrice) * item.quantity} />
                                 </td>
                               </tr>
                             ))}
@@ -2113,6 +2130,8 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
         <PaymentModal
           order={selectedOrder}
           businessProfileId={activeBusinessProfileId}
+          storeName={branding.name}
+          supplierName={supplierNameOf(selectedOrder)}
           onClose={() => {
             setShowPaymentModal(false);
             setSelectedOrder(null);
@@ -2156,7 +2175,7 @@ ${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
 // =====================================================================
 // CREATE ORDER MODAL COMPONENT
 // =====================================================================
-const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplier_price', onClose, onSuccess }) => {
+const CreateOrderModal = ({ suppliers, businessProfileId, storeName = 'Your store', pricingMode = 'supplier_price', onClose, onSuccess }) => {
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [orderItems, setOrderItems] = useState([]);
   const [newItem, setNewItem] = useState({
@@ -2165,7 +2184,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
     unitPrice: 0
   });
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('FAREDEAL Main Store, Kampala');
+  const [deliveryAddress, setDeliveryAddress] = useState(`${storeName} — main store`);
   const [deliveryInstructions, setDeliveryInstructions] = useState('');
   const [priority, setPriority] = useState('normal');
   const [notes, setNotes] = useState('');
@@ -2234,16 +2253,19 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
     e.preventDefault();
 
     if (!selectedSupplier) {
+      goToSection('supplier');
       alert('Please select a supplier');
       return;
     }
 
     if (orderItems.length === 0) {
+      goToSection('items');
       alert('Please add at least one item');
       return;
     }
 
     if (!expectedDeliveryDate) {
+      goToSection('delivery');
       alert('Please select expected delivery date');
       return;
     }
@@ -2381,6 +2403,38 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 
   const totals = calculateTotal();
 
+  // ---- Sheet layout: one section open at a time, step rail on top ----
+  const [openSection, setOpenSection] = useState('supplier');
+  const [supplierQuery, setSupplierQuery] = useState('');
+  const supplierObj = suppliers.find((sup) => sup.id === selectedSupplier) || null;
+  const filteredSuppliers = useMemo(() => {
+    const q = supplierQuery.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter((sup) => `${sup.business_name} ${sup.supplier_code}`.toLowerCase().includes(q));
+  }, [suppliers, supplierQuery]);
+  const cashNow = parseFloat(cashPaidNow) || 0;
+  const dayFromNow = (d) => {
+    const x = new Date();
+    x.setDate(x.getDate() + d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  };
+  const steps = [
+    { id: 'supplier', label: 'Supplier', done: Boolean(selectedSupplier) },
+    { id: 'items', label: 'Items', done: orderItems.length > 0 },
+    { id: 'delivery', label: 'Delivery', done: Boolean(expectedDeliveryDate && deliveryAddress) },
+    { id: 'payment', label: 'Payment', done: cashNow > 0 }
+  ];
+  const missing = [
+    !selectedSupplier && 'supplier',
+    orderItems.length === 0 && 'items',
+    !expectedDeliveryDate && 'delivery date'
+  ].filter(Boolean);
+  const goToSection = (id) => {
+    setOpenSection(id);
+    requestAnimationFrame(() => document.getElementById(`po-sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  const toggleSection = (id) => (openSection === id ? setOpenSection(null) : goToSection(id));
+
   const formatUGX = (amount) => {
     return new Intl.NumberFormat('en-UG', {
       style: 'currency',
@@ -2391,7 +2445,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="po-backdrop">
       {showPinPrompt && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
@@ -2443,282 +2497,241 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
           </div>
         </div>
       )}
-      <div className="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="po-sheet" role="dialog" aria-modal="true" aria-labelledby="po-title">
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 text-white p-6 rounded-t-xl z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold">🇺🇬 Create New Purchase Order</h2>
-              <p className="text-green-100 mt-1">FAREDEAL Uganda - Supplier Order System</p>
-            </div>
+        <header className="po-head">
+          <div className="po-head-main">
+            <p className="po-eyebrow">{storeName} · New purchase order</p>
+            <h2 id="po-title">Order stock</h2>
+          </div>
+          <button type="button" className="po-close" onClick={onClose} disabled={submitting} aria-label="Close">
+            <FiX />
+          </button>
+        </header>
+
+        {/* Step rail — tap to jump; ticks show what's done */}
+        <nav className="po-steps" aria-label="Order steps">
+          {steps.map((st, i) => (
             <button
-              onClick={onClose}
-              className="text-white hover:text-gray-200 text-3xl font-bold leading-none"
-              disabled={submitting}
+              key={st.id}
+              type="button"
+              className={`po-step ${st.done ? 'is-done' : ''} ${openSection === st.id ? 'is-on' : ''}`}
+              onClick={() => goToSection(st.id)}
             >
-              ×
+              <span className="po-step-dot">{st.done ? <FiCheck /> : i + 1}</span>
+              <span className="po-step-label">{st.label}</span>
             </button>
-          </div>
-        </div>
+          ))}
+        </nav>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Supplier Selection */}
-          <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              🏢 Select supplier or wholesaler *
-            </label>
-            <select
-              value={selectedSupplier}
-              onChange={(e) => setSelectedSupplier(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-lg"
-              required
-            >
-              <option value="">-- Choose supplier or wholesaler --</option>
-              {suppliers.map(supplier => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.business_name} ({supplier.supplier_code})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Order Items - Using New Enhanced Selector */}
-          <OrderItemsSelector
-            orderItems={orderItems}
-            onItemsChange={setOrderItems}
-            totals={totals}
-            pricingMode={pricingMode}
-            supplierId={selectedSupplier}
-            supplierBusinessProfileId={suppliers.find(supplier => supplier.id === selectedSupplier)?.supplier_business_profile_id || ''}
-            onTotalsChange={setTotals}
-          />
-
-          {/* Delivery Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                📅 Expected Delivery Date *
-              </label>
-              <input
-                type="date"
-                value={expectedDeliveryDate}
-                onChange={(e) => setExpectedDeliveryDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                ⚡ Priority Level
-              </label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-              >
-                <option value="low">📝 Low</option>
-                <option value="normal">📋 Normal</option>
-                <option value="high">⚠️ High</option>
-                <option value="urgent">🔥 Urgent</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📍 Delivery Address *
-            </label>
-            <input
-              type="text"
-              value={deliveryAddress}
-              onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Enter delivery address"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📝 Delivery Instructions
-            </label>
-            <textarea
-              value={deliveryInstructions}
-              onChange={(e) => setDeliveryInstructions(e.target.value)}
-              placeholder="Any special delivery instructions..."
-              rows="2"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              💬 Additional Notes
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any additional notes or requirements..."
-              rows="3"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          {/* Payment Section - NEW */}
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-6 border-2 border-green-300">
-            <h3 className="text-lg font-bold text-green-800 mb-4 flex items-center gap-2">
-              💵 Payment at Order Creation (Optional)
-              <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
-                Awaits Supplier Confirmation
-              </span>
-            </h3>
-            <p className="text-sm text-green-700 mb-4">
-              💡 If you're paying cash now, enter the amount here. It will be recorded with a transaction number and sent to the supplier for confirmation.
-            </p>
-            <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-              <strong>ICAN business-wallet protection:</strong> no ICAN funds move when this order is submitted. First approve the purchase order, then submit its wallet payment. The authorized business-wallet administrator receives the request in ICANera Wallet or CMMS and must enter the business-wallet PIN to approve it.
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Cash Amount */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-bold text-green-800 mb-2">
-                  💵 Cash Paid Now (UGX)
-                </label>
-                <input
-                  type="number"
-                  value={cashPaidNow}
-                  onChange={(e) => setCashPaidNow(e.target.value)}
-                  min="0"
-                  max={totals.total}
-                  step="1000"
-                  placeholder="Enter cash amount (leave 0 if not paying now)"
-                  className="w-full px-4 py-3 border-2 border-green-500 rounded-lg focus:border-green-600 focus:outline-none text-lg font-semibold text-green-700 bg-white"
-                />
-                {cashPaidNow > 0 && (
-                  <div className="mt-2 space-y-1">
-                    <p className="text-sm text-green-700 flex justify-between">
-                      <span>Order Total:</span>
-                      <span className="font-bold">{formatUGX(totals.total)}</span>
-                    </p>
-                    <p className="text-sm text-green-700 flex justify-between">
-                      <span>Paying Now:</span>
-                      <span className="font-bold">{formatUGX(cashPaidNow)}</span>
-                    </p>
-                    <p className="text-sm font-bold text-orange-700 flex justify-between pt-2 border-t border-green-300">
-                      <span>Balance Due:</span>
-                      <span>{formatUGX(totals.total - parseFloat(cashPaidNow || 0))}</span>
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Payment Method */}
-              {cashPaidNow > 0 && (
-                <>
-                  <div>
-                    <label className="block text-sm font-bold text-green-800 mb-2">
-                      💳 Payment Method
-                    </label>
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
-                    >
-                      <option value="cash">💵 Cash</option>
-                      <option value="ican_wallet">🪙 IcanEra Wallet</option>
-                    </select>
-                  </div>
-
-                  {/* ICAN Wallet Balance — shown only when paying with ICAN */}
-                  {paymentMethod === 'ican_wallet' && (
-                    <div className="md:col-span-2 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-                      <p className="mb-3 text-sm font-semibold text-indigo-900">This balance is informational only. The payment is requested after order approval and requires a business-wallet administrator's PIN approval in ICANera Wallet or CMMS.</p>
-                      <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
-                      {icanBalanceLoading ? (
-                        <div className="text-sm text-gray-500">Loading balance...</div>
-                      ) : (
-                        <>
-                          <div className="text-xl font-bold text-purple-700">
-                            {formatICAN(icanBalance?.ican || 0)} ICAN
-                          </div>
-                          {parseFloat(cashPaidNow) > 0 && (
-                            <div className="text-sm text-gray-600 mt-1">
-                              This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(cashPaidNow)))} ICAN
-                              {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow)) && (
-                                <span className="text-red-600 font-semibold"> — insufficient balance</span>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Payment Reference — not applicable to ICAN Wallet, the on-chain tx is the reference */}
-                  {paymentMethod !== 'ican_wallet' && (
-                    <div>
-                      <label className="block text-sm font-bold text-green-800 mb-2">
-                        🔖 Payment Reference (Optional)
-                      </label>
+        <form onSubmit={handleSubmit} className="po-form">
+          <div className="po-layout">
+            <div className="po-main">
+              {/* 1 · Supplier */}
+              <section id="po-sec-supplier" className={`po-sec ${openSection === 'supplier' ? 'is-open' : ''}`}>
+                <button type="button" className="po-sec-head" onClick={() => toggleSection('supplier')} aria-expanded={openSection === 'supplier'}>
+                  <span className="po-sec-num">1</span>
+                  <span className="po-sec-title"><b>Supplier</b><small>{supplierObj ? supplierObj.business_name : 'Choose who you are buying from'}</small></span>
+                  <FiChevronDown className="po-chev" />
+                </button>
+                {openSection === 'supplier' && (
+                  <div className="po-sec-body">
+                    <div className="po-search">
+                      <FiSearch />
                       <input
                         type="text"
-                        value={paymentReference}
-                        onChange={(e) => setPaymentReference(e.target.value)}
-                        placeholder="Transaction ID, receipt #, etc."
-                        className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
+                        value={supplierQuery}
+                        onChange={(e) => setSupplierQuery(e.target.value)}
+                        placeholder={`Search ${suppliers.length} suppliers & wholesalers`}
                       />
                     </div>
-                  )}
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-bold text-green-800 mb-2">
-                      📝 Payment Notes (Optional)
-                    </label>
-                    <textarea
-                      value={paymentNotes}
-                      onChange={(e) => setPaymentNotes(e.target.value)}
-                      placeholder="Any notes about this payment..."
-                      rows="2"
-                      className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
-                    />
+                    {filteredSuppliers.length === 0 ? (
+                      <p className="po-empty">{suppliers.length === 0 ? 'No active suppliers yet.' : 'No supplier matches that search.'}</p>
+                    ) : (
+                      <div className="po-suppliers" role="radiogroup" aria-label="Supplier">
+                        {filteredSuppliers.map((sup) => (
+                          <button
+                            key={sup.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selectedSupplier === sup.id}
+                            className={`po-supplier ${selectedSupplier === sup.id ? 'is-on' : ''}`}
+                            onClick={() => { setSelectedSupplier(sup.id); setOpenSection('items'); }}
+                          >
+                            <span className="po-supplier-avatar">{(sup.business_name || 'S').charAt(0).toUpperCase()}</span>
+                            <span className="po-supplier-text"><b>{sup.business_name}</b><small>{sup.supplier_code}</small></span>
+                            {selectedSupplier === sup.id && <FiCheckCircle className="po-supplier-tick" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </>
-              )}
+                )}
+              </section>
+
+              {/* 2 · Items */}
+              <section id="po-sec-items" className={`po-sec ${openSection === 'items' ? 'is-open' : ''}`}>
+                <button type="button" className="po-sec-head" onClick={() => toggleSection('items')} aria-expanded={openSection === 'items'}>
+                  <span className="po-sec-num">2</span>
+                  <span className="po-sec-title">
+                    <b>Items</b>
+                    <small>{orderItems.length > 0 ? `${orderItems.length} item${orderItems.length === 1 ? '' : 's'} · ${ugxShort(totals.total)}` : 'Pick products from the catalog'}</small>
+                  </span>
+                  <FiChevronDown className="po-chev" />
+                </button>
+                {/* Kept mounted so the picker keeps its search state while folded */}
+                <div className="po-sec-body" hidden={openSection !== 'items'}>
+                  <OrderItemsSelector
+                    orderItems={orderItems}
+                    onItemsChange={setOrderItems}
+                    totals={totals}
+                    pricingMode={pricingMode}
+                    supplierId={selectedSupplier}
+                    supplierBusinessProfileId={supplierObj?.supplier_business_profile_id || ''}
+                    onTotalsChange={setTotals}
+                  />
+                </div>
+              </section>
+
+              {/* 3 · Delivery */}
+              <section id="po-sec-delivery" className={`po-sec ${openSection === 'delivery' ? 'is-open' : ''}`}>
+                <button type="button" className="po-sec-head" onClick={() => toggleSection('delivery')} aria-expanded={openSection === 'delivery'}>
+                  <span className="po-sec-num">3</span>
+                  <span className="po-sec-title">
+                    <b>Delivery</b>
+                    <small>{expectedDeliveryDate ? `Due ${new Date(`${expectedDeliveryDate}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} · ${priority} priority` : 'When and where it should arrive'}</small>
+                  </span>
+                  <FiChevronDown className="po-chev" />
+                </button>
+                {openSection === 'delivery' && (
+                  <div className="po-sec-body po-grid">
+                    <div className="po-field">
+                      <label htmlFor="po-date">Expected delivery *</label>
+                      <input id="po-date" className="po-input" type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} min={dayFromNow(0)} required />
+                      <div className="po-chips">
+                        {[['Tomorrow', 1], ['In 3 days', 3], ['Next week', 7]].map(([label, d]) => (
+                          <button key={label} type="button" className={expectedDeliveryDate === dayFromNow(d) ? 'is-on' : ''} onClick={() => setExpectedDeliveryDate(dayFromNow(d))}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="po-field">
+                      <span className="po-label">Priority</span>
+                      <div className="po-seg" role="radiogroup" aria-label="Priority">
+                        {['low', 'normal', 'high', 'urgent'].map((p) => (
+                          <button key={p} type="button" role="radio" aria-checked={priority === p} className={`${priority === p ? 'is-on' : ''} pr-${p}`} onClick={() => setPriority(p)}>{p}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="po-field po-span">
+                      <label htmlFor="po-addr">Deliver to *</label>
+                      <input id="po-addr" className="po-input" type="text" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Delivery address" required />
+                    </div>
+                    <div className="po-field">
+                      <label htmlFor="po-instr">Delivery instructions <em>optional</em></label>
+                      <textarea id="po-instr" className="po-input" rows="2" value={deliveryInstructions} onChange={(e) => setDeliveryInstructions(e.target.value)} placeholder="Gate, contact person, unloading…" />
+                    </div>
+                    <div className="po-field">
+                      <label htmlFor="po-notes">Notes for the supplier <em>optional</em></label>
+                      <textarea id="po-notes" className="po-input" rows="2" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Brands, packaging, anything else" />
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* 4 · Payment */}
+              <section id="po-sec-payment" className={`po-sec ${openSection === 'payment' ? 'is-open' : ''}`}>
+                <button type="button" className="po-sec-head" onClick={() => toggleSection('payment')} aria-expanded={openSection === 'payment'}>
+                  <span className="po-sec-num">4</span>
+                  <span className="po-sec-title">
+                    <b>Payment now</b>
+                    <small>{cashNow > 0 ? `${ugxShort(cashNow)} by ${paymentMethod === 'ican_wallet' ? 'IcanEra Wallet' : 'cash'}` : 'Optional — pay later from the order'}</small>
+                  </span>
+                  <FiChevronDown className="po-chev" />
+                </button>
+                {openSection === 'payment' && (
+                  <div className="po-sec-body">
+                    <div className="po-field">
+                      <label htmlFor="po-cash">Amount paid now <em>UGX · leave 0 to pay later</em></label>
+                      <input id="po-cash" className="po-input po-input-big" type="number" inputMode="numeric" value={cashPaidNow} onChange={(e) => setCashPaidNow(e.target.value)} min="0" max={totals.total} step="any" placeholder="0" />
+                      {totals.total > 0 && (
+                        <div className="po-chips">
+                          <button type="button" className={cashNow === 0 ? 'is-on' : ''} onClick={() => setCashPaidNow(0)}>Pay later</button>
+                          <button type="button" className={cashNow === Math.round(totals.total / 2) ? 'is-on' : ''} onClick={() => setCashPaidNow(Math.round(totals.total / 2))}>Half</button>
+                          <button type="button" className={cashNow === Math.round(totals.total) ? 'is-on' : ''} onClick={() => setCashPaidNow(Math.round(totals.total))}>In full</button>
+                        </div>
+                      )}
+                    </div>
+                    {cashNow > 0 && (
+                      <>
+                        <div className="po-methods" role="radiogroup" aria-label="Payment method">
+                          {[['cash', 'Cash', 'Supplier confirms receipt'], ['ican_wallet', 'IcanEra Wallet', 'Requested after approval']].map(([id, t, sub]) => (
+                            <button key={id} type="button" role="radio" aria-checked={paymentMethod === id} className={`po-method ${paymentMethod === id ? 'is-on' : ''}`} onClick={() => setPaymentMethod(id)}>
+                              <b>{t}</b><small>{sub}</small>
+                            </button>
+                          ))}
+                        </div>
+                        {paymentMethod === 'ican_wallet' ? (
+                          <div className="po-callout">
+                            <div className="po-callout-top"><span>Store business account</span><b>{icanBalanceLoading ? 'Loading…' : `${formatICAN(icanBalance?.ican || 0)} ICAN`}</b></div>
+                            <p>Needs ≈ {formatICAN(ugxToICAN(cashNow))} ICAN{icanBalance && icanBalance.ican < ugxToICAN(cashNow) ? ' — not enough balance' : ''}. No ICAN moves now: after approval, the wallet administrator approves the request with the business-wallet PIN.</p>
+                          </div>
+                        ) : (
+                          <div className="po-field">
+                            <label htmlFor="po-ref">Reference <em>optional</em></label>
+                            <input id="po-ref" className="po-input" type="text" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Receipt or transaction number" />
+                          </div>
+                        )}
+                        <div className="po-field">
+                          <label htmlFor="po-pnotes">Payment notes <em>optional</em></label>
+                          <textarea id="po-pnotes" className="po-input" rows="2" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Anything about this payment" />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </section>
             </div>
+
+            {/* Order summary — a sticky receipt beside the form on wide screens */}
+            <aside className="po-receipt" aria-label="Order summary">
+              <p className="po-eyebrow">Order summary</p>
+              <p className="po-receipt-supplier">{supplierObj ? supplierObj.business_name : 'No supplier yet'}</p>
+              {orderItems.length > 0 ? (
+                <ul className="po-receipt-items">
+                  {orderItems.slice(0, 6).map((it, i) => (
+                    <li key={it.id || i}>
+                      <span>{it.product_name || it.productName} <em>× {it.quantity}</em></span>
+                      <b><Money v={it.total ?? (Number(it.quantity) || 0) * (parseFloat(it.unit_price ?? it.unitPrice) || 0)} /></b>
+                    </li>
+                  ))}
+                  {orderItems.length > 6 && <li className="po-more">+ {orderItems.length - 6} more</li>}
+                </ul>
+              ) : (
+                <p className="po-receipt-empty">Items you add will appear here.</p>
+              )}
+              <div className="po-receipt-rows">
+                <div><span>Subtotal</span><b><Money v={totals.subtotal} /></b></div>
+                <div><span>VAT 18%</span><b><Money v={totals.tax} /></b></div>
+                <div className="po-receipt-grand"><span>Total</span><b><Money v={totals.total} /></b></div>
+                {cashNow > 0 && <div><span>Paying now</span><b className="po-ok"><Money v={cashNow} /></b></div>}
+                {cashNow > 0 && <div><span>Balance after</span><b className="po-due"><Money v={Math.max(0, totals.total - cashNow)} /></b></div>}
+              </div>
+            </aside>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-300 font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || orderItems.length === 0}
-              className="px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
-              {submitting ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Creating Order...</span>
-                </>
-              ) : (
-                <>
-                  <FiCheckCircle className="h-5 w-5" />
-                  <span>Create Purchase Order</span>
-                </>
-              )}
-            </button>
-          </div>
+          {/* Sticky footer */}
+          <footer className="po-foot">
+            <div className="po-foot-total">
+              <span>{missing.length ? `Still needed: ${missing.join(', ')}` : 'Ready to send'}</span>
+              <b><Money v={totals.total} /></b>
+            </div>
+            <div className="po-foot-actions">
+              <button type="button" className="po-btn po-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+              <button type="submit" className="po-btn po-btn-gold" disabled={submitting || orderItems.length === 0}>
+                {submitting ? <><span className="pm-spin" /> Creating…</> : <><FiCheckCircle /> Create order</>}
+              </button>
+            </div>
+          </footer>
         </form>
       </div>
     </div>
@@ -2728,9 +2741,18 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 // =====================================================================
 // PAYMENT MODAL COMPONENT
 // =====================================================================
-const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
+const PaymentModal = ({ order, businessProfileId, storeName = 'Your store', supplierName = 'Supplier', onClose, onSuccess }) => {
+  // Tolerate both the old and new purchase_orders columns (the old modal read
+  // balance_due only, so orders stored with balance_due_ugx showed "Maximum: UGX 0")
+  const orderTotal = parseFloat(order.total_amount_ugx ?? order.total_amount) || 0;
+  const paidRaw = parseFloat(order.amount_paid_ugx ?? order.amount_paid);
+  const alreadyPaid = Number.isNaN(paidRaw) ? (order.payment_status === 'paid' ? orderTotal : 0) : paidRaw;
+  const dueRaw = parseFloat(order.balance_due_ugx ?? order.balance_due);
+  const balanceDue = order.payment_status === 'paid' ? 0 : (Number.isNaN(dueRaw) ? Math.max(0, orderTotal - alreadyPaid) : dueRaw);
+
   const [amountPaid, setAmountPaid] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
+  // A pending order can only be paid as an ICAN wallet request
+  const [paymentMethod, setPaymentMethod] = useState(order.status === 'pending_approval' ? 'ican_wallet' : 'cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -2776,8 +2798,8 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
       return;
     }
 
-    if (amount > parseFloat(order.balance_due_ugx)) {
-      alert(`Payment amount cannot exceed balance due: ${formatUGX(order.balance_due_ugx)}`);
+    if (amount > balanceDue) {
+      alert(`Payment amount cannot exceed balance due: ${formatUGX(balanceDue)}`);
       return;
     }
 
@@ -2850,181 +2872,170 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
     }
   };
 
+  const methodBlocked = order.status === 'pending_approval' && paymentMethod !== 'ican_wallet';
+  const enteredAmount = parseFloat(amountPaid) || 0;
+  const icanShort = paymentMethod === 'ican_wallet' && enteredAmount > 0 && icanBalance && icanBalance.ican < ugxToICAN(enteredAmount);
+  const afterPayment = Math.max(0, balanceDue - enteredAmount);
+  const paidPct = orderTotal > 0 ? Math.min(100, Math.round((alreadyPaid / orderTotal) * 100)) : 0;
+  const newPct = orderTotal > 0 ? Math.min(100 - paidPct, Math.round((Math.min(enteredAmount, balanceDue) / orderTotal) * 100)) : 0;
+  const quickAmounts = [
+    { label: 'Full balance', value: balanceDue },
+    { label: 'Half', value: Math.round(balanceDue / 2) },
+    { label: 'Quarter', value: Math.round(balanceDue / 4) }
+  ].filter((q) => q.value > 0);
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div className="pm-backdrop" role="dialog" aria-modal="true" aria-labelledby="pm-title" onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
+      <div className="pm">
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-green-600 to-emerald-600 text-white p-6 rounded-t-xl z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold flex items-center">
-                <FiDollarSign className="mr-3 h-8 w-8" />
-                💰 Record Payment - FAREDEAL Uganda
-              </h2>
-              <p className="text-green-100 mt-1">Order: {order.po_number}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-gray-200 text-3xl font-bold leading-none"
-              disabled={submitting}
-            >
-              ×
-            </button>
+        <header className="pm-head">
+          <div className="pm-head-main">
+            <p className="pm-eyebrow">{storeName} · Payment voucher</p>
+            <h2 id="pm-title">Record payment</h2>
+            <p className="pm-po"><FiFileText /> {order.po_number || 'Purchase order'} · {supplierName}</p>
           </div>
-        </div>
+          <button type="button" className="pm-close" onClick={onClose} disabled={submitting} aria-label="Close">
+            <FiX />
+          </button>
+        </header>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Order Summary */}
-          <div className="bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
-            <h3 className="font-bold text-lg mb-3">Payment Summary</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Supplier:</span>
-                <span className="font-semibold">{order.supplierName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Order Total:</span>
-                <span className="font-semibold">{formatUGX(order.total_amount_ugx)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Already Paid:</span>
-                <span className="font-semibold text-green-600">{formatUGX(order.amount_paid || 0)}</span>
-              </div>
-              <div className="flex justify-between pt-2 border-t-2 border-gray-300">
-                <span className="font-bold text-lg">Balance Due:</span>
-                <span className="font-bold text-lg text-red-600">{formatUGX(order.balance_due)}</span>
-              </div>
+        <form onSubmit={handleSubmit} className="pm-body">
+          {/* Receipt-style summary */}
+          <section className="pm-receipt" aria-label="Payment summary">
+            <div className="pm-row"><span>Order total</span><b><Money v={orderTotal} /></b></div>
+            <div className="pm-row"><span>Already paid</span><b className="pm-ok"><Money v={alreadyPaid} /></b></div>
+            <div className="pm-row pm-row-grand"><span>Balance due</span><b className={balanceDue > 0 ? 'pm-due' : 'pm-ok'}><Money v={balanceDue} /></b></div>
+            <div className="pm-bar" aria-hidden="true">
+              <span className="pm-bar-paid" style={{ width: `${paidPct}%` }} />
+              <span className="pm-bar-new" style={{ left: `${paidPct}%`, width: `${newPct}%` }} />
             </div>
-          </div>
+            <p className="pm-bar-legend">
+              <span><i className="is-paid" /> Paid {paidPct}%</span>
+              {newPct > 0 && <span><i className="is-new" /> This payment {newPct}%</span>}
+            </p>
+          </section>
 
-          {/* Payment Amount */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              💵 Payment Amount (UGX) *
-            </label>
-            <input
-              type="number"
-              value={amountPaid}
-              onChange={(e) => setAmountPaid(e.target.value)}
-              placeholder="Enter payment amount"
-              min="0"
-              max={order.balance_due}
-              step="1000"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none text-lg font-semibold"
-              required
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Maximum: {formatUGX(order.balance_due)}
+          {balanceDue <= 0 && (
+            <p className="pm-note pm-note-ok"><FiCheckCircle /> This order is fully paid — nothing left to record.</p>
+          )}
+
+          {/* Amount */}
+          <div className="pm-field">
+            <label htmlFor="pm-amount">Amount to pay <em>UGX</em></label>
+            <div className="pm-amount">
+              <span>UGX</span>
+              <input
+                id="pm-amount"
+                type="number"
+                inputMode="numeric"
+                value={amountPaid}
+                onChange={(e) => setAmountPaid(e.target.value)}
+                placeholder="0"
+                min="1"
+                max={balanceDue || undefined}
+                step="any"
+                required
+                disabled={balanceDue <= 0}
+              />
+            </div>
+            {quickAmounts.length > 0 && (
+              <div className="pm-quick">
+                {quickAmounts.map((q) => (
+                  <button key={q.label} type="button" onClick={() => setAmountPaid(String(q.value))} className={enteredAmount === q.value ? 'is-on' : ''}>
+                    {q.label}<small><Money v={q.value} /></small>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="pm-hint">
+              {enteredAmount > balanceDue
+                ? <span className="pm-due">More than the balance due of <Money v={balanceDue} /></span>
+                : enteredAmount > 0
+                  ? <>Balance after this payment: <b><Money v={afterPayment} /></b></>
+                  : <>Up to <Money v={balanceDue} /></>}
             </p>
           </div>
 
-          {/* Payment Method */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              💳 Payment Method *
-            </label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-              required
-            >
-              <option value="cash">💵 Cash</option>
-              <option value="ican_wallet">🪙 IcanEra Wallet</option>
-            </select>
+          {/* Method */}
+          <div className="pm-field">
+            <span className="pm-label">Pay with</span>
+            <div className="pm-methods" role="radiogroup" aria-label="Payment method">
+              {[
+                { id: 'cash', title: 'Cash', sub: 'Supplier confirms receipt', icon: <FiDollarSign /> },
+                { id: 'ican_wallet', title: 'IcanEra Wallet', sub: 'From the store business account', icon: <span className="pm-coin">₡</span> }
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={paymentMethod === m.id}
+                  className={`pm-method ${paymentMethod === m.id ? 'is-on' : ''}`}
+                  onClick={() => setPaymentMethod(m.id)}
+                >
+                  <span className="pm-method-icon">{m.icon}</span>
+                  <span className="pm-method-text"><b>{m.title}</b><small>{m.sub}</small></span>
+                  <span className="pm-radio" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+            {methodBlocked && (
+              <p className="pm-note pm-note-warn"><FiAlertTriangle /> This order is still awaiting approval, so it can only be paid as an IcanEra Wallet request.</p>
+            )}
           </div>
 
-          {/* IcanEra Wallet Balance — shown only when paying with ICAN */}
           {paymentMethod === 'ican_wallet' && (
-            <div className="p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-              <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
-              {icanBalanceLoading ? (
-                <div className="text-sm text-gray-500">Loading balance...</div>
-              ) : (
-                <>
-                  <div className="text-xl font-bold text-purple-700">
-                    {formatICAN(icanBalance?.ican || 0)} ICAN
-                  </div>
-                  {parseFloat(amountPaid) > 0 && (
-                    <div className="text-sm text-gray-600 mt-1">
-                      This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(amountPaid)))} ICAN
-                      {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(amountPaid)) && (
-                        <span className="text-red-600 font-semibold"> — insufficient balance</span>
-                      )}
-                    </div>
-                  )}
-                </>
+            <div className="pm-wallet">
+              <div className="pm-wallet-top">
+                <span>Store business account</span>
+                <b>{icanBalanceLoading ? 'Loading…' : `${formatICAN(icanBalance?.ican || 0)} ICAN`}</b>
+              </div>
+              {enteredAmount > 0 && !icanBalanceLoading && (
+                <p className={icanShort ? 'pm-due' : ''}>
+                  Needs ≈ {formatICAN(ugxToICAN(enteredAmount))} ICAN{icanShort ? ' — not enough balance' : ''}
+                </p>
               )}
+              <p className="pm-wallet-note">This sends an approval request. The authorized wallet administrator approves it with the business-wallet PIN in ICANera Wallet or CMMS.</p>
             </div>
           )}
 
-          {paymentMethod === 'ican_wallet' && (
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-              <strong>Manager action:</strong> submitting this creates an approval request only. The authorized business-wallet administrator receives it in ICANera Wallet or CMMS and enters the business-wallet PIN there to approve payment.
-            </div>
-          )}
-
-          {/* Payment Reference — not applicable to IcanEra Wallet, the on-chain tx is the reference */}
           {paymentMethod !== 'ican_wallet' && (
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                🔖 Payment Reference / Transaction ID
-              </label>
+            <div className="pm-field">
+              <label htmlFor="pm-ref">Reference / receipt number <em>optional</em></label>
               <input
+                id="pm-ref"
+                className="pm-input"
                 type="text"
                 value={paymentReference}
                 onChange={(e) => setPaymentReference(e.target.value)}
-                placeholder="e.g., TXN123456789, Cheque #12345"
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+                placeholder="e.g. receipt 00123, cheque 12345"
               />
             </div>
           )}
 
-          {/* Payment Notes */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📝 Payment Notes
-            </label>
+          <div className="pm-field">
+            <label htmlFor="pm-notes">Notes <em>optional</em></label>
             <textarea
+              id="pm-notes"
+              className="pm-input"
               value={paymentNotes}
               onChange={(e) => setPaymentNotes(e.target.value)}
-              placeholder="Any additional notes about this payment..."
-              rows="3"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+              placeholder="Anything the supplier or your team should know"
+              rows="2"
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-300 font-semibold"
-            >
-              Cancel
-            </button>
+          {/* Footer */}
+          <div className="pm-foot">
+            <button type="button" className="pm-btn pm-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
             <button
               type="submit"
-              disabled={submitting || (
-                paymentMethod === 'ican_wallet' &&
-                parseFloat(amountPaid) > 0 &&
-                icanBalance &&
-                icanBalance.ican < ugxToICAN(parseFloat(amountPaid))
-              )}
-              className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="pm-btn pm-btn-gold"
+              disabled={submitting || balanceDue <= 0 || enteredAmount <= 0 || enteredAmount > balanceDue || methodBlocked || icanShort}
             >
               {submitting ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Recording Payment...</span>
-                </>
+                <><span className="pm-spin" /> Recording…</>
               ) : (
-                <>
-                  <FiCheckCircle className="h-5 w-5" />
-                  <span>{paymentMethod === 'ican_wallet' ? 'Pay with ICAN' : 'Record Payment'}</span>
-                </>
+                <><FiCheckCircle /> {paymentMethod === 'ican_wallet' ? 'Request ICAN payment' : `Record ${enteredAmount > 0 ? ugxShort(enteredAmount) : 'payment'}`}</>
               )}
             </button>
           </div>

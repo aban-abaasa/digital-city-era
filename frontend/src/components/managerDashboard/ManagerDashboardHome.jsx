@@ -16,9 +16,9 @@ const moneyFull = (n) => `UGX ${Math.round(n || 0).toLocaleString('en-UG')}`;
 const moneyShort = (n) => {
   const v = Math.abs(n || 0);
   const sign = n < 0 ? '-' : '';
-  if (v >= 1e9) return `${sign}UGX ${(v / 1e9).toFixed(1)}B`;
-  if (v >= 1e6) return `${sign}UGX ${(v / 1e6).toFixed(1)}M`;
-  if (v >= 1e4) return `${sign}UGX ${(v / 1e3).toFixed(1)}K`;
+  if (v >= 1e9) return `${sign}UGX ${(v / 1e9).toFixed(1).replace(/\.0$/, '')}B`;
+  if (v >= 1e6) return `${sign}UGX ${(v / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  if (v >= 1e3) return `${sign}UGX ${(v / 1e3).toFixed(1).replace(/\.0$/, '')}K`;
   return `${sign}UGX ${Math.round(v).toLocaleString('en-UG')}`;
 };
 const num = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-UG'));
@@ -393,7 +393,7 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
           <div className="adh-section-head">
             <div>
               <h3>Sales trend</h3>
-              <p className="adh-panel-sub">{moneyFull(trendTotal)} · {num(trendOrders)} sales</p>
+              <p className="adh-panel-sub" title={moneyFull(trendTotal)}>{moneyShort(trendTotal)} · {num(trendOrders)} sales</p>
             </div>
             <div className="adh-seg" role="tablist" aria-label="Trend range">
               {RANGES.map((r) => (
