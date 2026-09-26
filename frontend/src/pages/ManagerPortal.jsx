@@ -42,7 +42,7 @@ import '../styles/supermartkera-portals.css';
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
 const ManagerNavigation = lazy(() => import('../components/ManagerNavigation'));
-const UgandaOverviewDashboard = lazy(() => import('../components/UgandaOverviewDashboard'));
+const ManagerDashboardHome = lazy(() => import('../components/managerDashboard/ManagerDashboardHome'));
 
 // 🇺🇬 UGANDA CULTURAL ELEMENTS
 const UGANDA_GREETINGS = {
@@ -253,6 +253,8 @@ const ManagerPortal = () => {
   const [showSupplierManagementModal, setShowSupplierManagementModal] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showAddCashierModal, setShowAddCashierModal] = useState(false);
+  // Bumped by the dashboard's "New purchase order" shortcut so the Orders page opens its create form
+  const [orderCreateSignal, setOrderCreateSignal] = useState(0);
   const [editModal, setEditModal] = useState({
     isOpen: false,
     type: '',
@@ -11256,6 +11258,19 @@ FAREDEAL Uganda Management Team
   // Shared Supermartkera header (BodaGoEra layout). Manager-specific bits ride
   // along as slots: the mobile menu button (with the unread badge), the
   // supplier-wallet approval bell, and the avatar-menu entries.
+  // Dashboard shortcuts: a tab id opens that tab; a few ids are actions instead
+  const openManagerSection = (target) => {
+    if (target === 'add-cashier') { setShowAddCashierModal(true); return; }
+    if (target === 'inventory-modal') { setShowInventoryModal(true); return; }
+    if (target === 'new-order') {
+      setActiveTab('orders');
+      setOrderCreateSignal((n) => n + 1);
+    } else {
+      setActiveTab(target);
+    }
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const renderCustomHeader = () => (
     <>
       <input
@@ -11679,24 +11694,14 @@ FAREDEAL Uganda Management Team
         }>
           {/* Enhanced Overview Dashboard with Uganda Context */}
             {activeTab === 'overview' && (
-            <>
-            <UgandaOverviewDashboard
-              businessMetrics={businessMetrics}
-              currentTime={currentTime}
-              managerProfile={managerProfile}
-              revenueData={revenueData}
-              realTimeActivity={realTimeActivity}
-              topProducts={topProducts}
-              performanceIndicators={performanceIndicators}
-              strategicGoals={strategicGoals}
-              formatCurrency={formatCurrency}
-              timeRange={timeRange}
-              setTimeRange={setTimeRange}
-              setActiveTab={setActiveTab}
-              setShowInventoryModal={setShowInventoryModal}
-              openEditModal={openEditModal}
-            />
-            </>
+              <ManagerDashboardHome
+                managerName={managerProfile.name}
+                storeName={branding.name}
+                supermarketId={branding.supermarketId || managerProfile.supermarket_id}
+                businessProfileId={branding.pichinBusinessProfileId}
+                alertCount={notificationCount}
+                onOpen={openManagerSection}
+              />
             )}
             {activeTab === 'business-operations' && (
               <BusinessOperationsHub
@@ -12132,7 +12137,7 @@ FAREDEAL Uganda Management Team
           )}
           {activeTab === 'orders' && (
             <div className="animate-fadeInUp">
-              <SupplierOrderManagement businessProfileId={branding.pichinBusinessProfileId} onPosUpdated={(addedProducts) => {
+              <SupplierOrderManagement businessProfileId={branding.pichinBusinessProfileId} openCreateSignal={orderCreateSignal} onPosUpdated={(addedProducts) => {
                 if (addedProducts && addedProducts.length > 0) {
                   setPosItems(prevItems => {
                     const itemMap = new Map(prevItems.map(i => [i.name, i]));

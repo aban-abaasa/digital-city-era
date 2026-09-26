@@ -55,7 +55,7 @@ const EMPTY = {
   team: { managers: null, cashiers: null },
   customers: null,
   suppliers: null,
-  po: { pending: null, spend30d: 0 },
+  po: { pending: null, spend30d: 0, byStatus: null },
   bookings: { awaiting: null, upcoming: null },
   wallet: null
 };
@@ -193,9 +193,15 @@ export default function useAdminDashboardData({ supermarketId, businessProfileId
 
       // Operations
       if (out.purchaseOrders) {
+        const byStatus = {};
+        out.purchaseOrders.forEach((p) => {
+          const k = String(p.status || 'draft').toLowerCase();
+          byStatus[k] = (byStatus[k] || 0) + 1;
+        });
         next.po = {
           pending: out.purchaseOrders.filter((p) => PENDING_PO.includes(p.status)).length,
-          spend30d: out.purchaseOrders.reduce((s, p) => s + (parseFloat(p.total_amount) || 0), 0)
+          spend30d: out.purchaseOrders.reduce((s, p) => s + (parseFloat(p.total_amount) || 0), 0),
+          byStatus
         };
       }
       if (out.bookings) {
