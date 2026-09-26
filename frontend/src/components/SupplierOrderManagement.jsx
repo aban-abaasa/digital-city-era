@@ -11,10 +11,9 @@ import {
   FiTruck, FiCheckCircle, FiXCircle, FiSend, FiEdit, FiPlus,
   FiPackage, FiDollarSign, FiClock, FiAlertTriangle, FiSearch,
   FiDownload, FiMail, FiPhone, FiMapPin, FiCalendar, FiUser, FiChevronDown,
-  FiX, FiCheck
+  FiX, FiCheck, FiPrinter, FiRefreshCw
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import supplierOrdersService, { getBusinessWalletBalance, resolveBusinessProfileId } from '../services/supplierOrdersService';
 import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
@@ -22,8 +21,27 @@ import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
+import './SupplierOrderManagement.css';
 
-const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
+const ORDER_STAGES = [
+  { id: 'pending_approval', label: 'Awaiting approval', icon: '📝', also: ['pending', 'draft'] },
+  { id: 'approved', label: 'Approved', icon: '✔' },
+  { id: 'sent_to_supplier', label: 'With supplier', icon: '✉', also: ['ordered'] },
+  { id: 'confirmed', label: 'Confirmed', icon: '🤝' },
+  { id: 'received', label: 'Received', icon: '📦', also: ['partially_received'] },
+  { id: 'completed', label: 'Completed', icon: '★' }
+];
+const PAYABLE_STATUSES = ['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'];
+const QUICK_FILTERS = [
+  { id: 'all', label: 'Everything' },
+  { id: 'action', label: 'Needs action' },
+  { id: 'unpaid', label: 'Unpaid' },
+  { id: 'incoming', label: 'On the way' },
+  { id: 'late', label: 'Late' },
+  { id: 'urgent', label: 'Urgent' }
+];
+
+const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, openCreateSignal = 0 }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
   const activeBusinessProfileId = businessProfileId || resolvedBusinessProfileId;
 
@@ -99,6 +117,9 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [viewMode, setViewMode] = useState('active'); // 'active' or 'history'
+  const [quickFilter, setQuickFilter] = useState('all'); // all | action | unpaid | incoming | urgent | late
+  const [sortBy, setSortBy] = useState('newest');
+  const [showShelf, setShowShelf] = useState(false);
   const [activeTab, setActiveTab] = useState('details'); // 'details' or 'payment'
   
   // NEW: Approval form state
@@ -137,7 +158,12 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   useEffect(() => {
     loadAllData();
     loadProducts();
-  }, [statusFilter, priorityFilter, paymentFilter, viewMode]);
+  }, [viewMode]);
+
+  // The manager dashboard's "New purchase order" shortcut
+  useEffect(() => {
+    if (openCreateSignal) setShowCreateModal(true);
+  }, [openCreateSignal]);
 
   // Real-time subscription to products
   useEffect(() => {
@@ -202,22 +228,11 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const loadAllData = async () => {
     setLoading(true);
     try {
-      let ordersResponse;
-      
-      // Load based on view mode
-      if (viewMode === 'history') {
-        ordersResponse = await supplierOrdersService.getOrderHistory({
-          status: statusFilter === 'all' ? null : statusFilter,
-          priority: priorityFilter === 'all' ? null : priorityFilter
-        });
-      } else if (paymentFilter !== 'all') {
-        ordersResponse = await supplierOrdersService.getOrdersByPaymentStatus(paymentFilter);
-      } else {
-        ordersResponse = await supplierOrdersService.getAllPurchaseOrders({
-          status: statusFilter === 'all' ? null : statusFilter,
-          priority: priorityFilter === 'all' ? null : priorityFilter
-        });
-      }
+      // Status, priority and payment filters are applied client-side (see
+      // visibleOrders) so the pipeline counts always cover the whole book.
+      const ordersResponse = viewMode === 'history'
+        ? await supplierOrdersService.getOrderHistory({})
+        : await supplierOrdersService.getAllPurchaseOrders({});
 
       const [suppliersResponse, statsResponse] = await Promise.all([
         supplierOrdersService.getActiveSuppliers(),
@@ -917,19 +932,6 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   };
 
   /**
-   * Get priority color
-   */
-  const getPriorityColor = (priority) => {
-    const colors = {
-      'low': 'bg-gray-100 text-gray-600',
-      'normal': 'bg-blue-100 text-blue-600',
-      'high': 'bg-orange-100 text-orange-600',
-      'urgent': 'bg-red-100 text-red-600'
-    };
-    return colors[priority] || 'bg-gray-100 text-gray-600';
-  };
-
-  /**
    * Get payment status color
    */
   const getPaymentStatusColor = (paymentStatus) => {
@@ -957,84 +959,216 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
     return labels[paymentStatus] || paymentStatus?.toUpperCase();
   };
 
-  /**
-   * Filter orders based on search term
-   */
-  const filteredOrders = orders.filter(order => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      order.po_number?.toLowerCase().includes(searchLower) ||
-      order.supplierName?.toLowerCase().includes(searchLower) ||
-      order.orderedBy?.toLowerCase().includes(searchLower)
-    );
-  });
+  // ---- Order ledger helpers: tolerate both the old and new purchase_orders columns ----
+  const amountOf = (o) => parseFloat(o.total_amount_ugx ?? o.total_amount) || 0;
+  const paidOf = (o) => {
+    const paid = parseFloat(o.amount_paid_ugx ?? o.amount_paid);
+    if (!Number.isNaN(paid)) return paid;
+    return o.payment_status === 'paid' ? amountOf(o) : 0;
+  };
+  const balanceOf = (o) => {
+    if (o.payment_status === 'paid') return 0;
+    const due = parseFloat(o.balance_due_ugx ?? o.balance_due);
+    return Number.isNaN(due) ? Math.max(0, amountOf(o) - paidOf(o)) : due;
+  };
+  const dateOf = (o) => o.order_date || o.ordered_at || o.created_at;
+  const supplierNameOf = (o) =>
+    o.supplierName || o.supplier_name
+    || suppliers.find((s) => s.id === o.supplier_id)?.company_name
+    || 'Supplier';
+  const stageIndexOf = (status) => {
+    const i = ORDER_STAGES.findIndex((s) => s.id === status || (s.also || []).includes(status));
+    return i < 0 ? 0 : i;
+  };
+  const statusLabel = (status) => {
+    const stage = ORDER_STAGES.find((s) => s.id === status || (s.also || []).includes(status));
+    if (stage) return stage.label;
+    return String(status || 'draft').replace(/_/g, ' ');
+  };
+  const isLate = (o) => {
+    if (!o.expected_delivery_date || !['approved', 'sent_to_supplier', 'confirmed', 'pending_approval'].includes(o.status)) return false;
+    const due = new Date(o.expected_delivery_date);
+    due.setHours(23, 59, 59, 999);
+    return due.getTime() < Date.now();
+  };
+  const needsAction = (o) => ['pending_approval', 'approved', 'received'].includes(o.status) || isLate(o);
+  const isUnpaid = (o) => !['cancelled', 'rejected'].includes(o.status) && o.payment_status !== 'paid';
+  const isIncoming = (o) => ['sent_to_supplier', 'confirmed'].includes(o.status);
+  const stockOf = (p) => Number(p.inventory?.[0]?.current_stock ?? p.inventory?.[0]?.quantity) || 0;
 
-  /**
-   * Calculate real-time statistics from current orders
-   */
-  const realTimeStats = useMemo(() => {
-    const allOrders = orders; // Use all orders, not just filtered ones
-    
-    const totalOrders = allOrders.length;
-    const totalValue = allOrders.reduce((sum, order) => sum + (parseFloat(order.total_amount_ugx) || 0), 0);
-    
-    // Count by status
-    const pendingOrders = allOrders.filter(o => 
-      o.status === 'pending_approval' || o.status === 'pending'
-    ).length;
-    
-    const completedOrders = allOrders.filter(o => 
-      o.status === 'completed' || o.status === 'received'
-    ).length;
-    
-    // Count and calculate by payment status
-    const paidOrders = allOrders.filter(o => o.payment_status === 'paid').length;
-    const partiallyPaidOrders = allOrders.filter(o => o.payment_status === 'partially_paid').length;
-    const unpaidOrders = allOrders.filter(o => 
-      o.payment_status === 'unpaid' || !o.payment_status
-    ).length;
-    
-    // Calculate payment amounts
-    const totalPaidAmount = allOrders.reduce((sum, order) => {
-      if (order.payment_status === 'paid') {
-        return sum + (parseFloat(order.total_amount_ugx) || 0);
-      } else if (order.payment_status === 'partially_paid') {
-        return sum + (parseFloat(order.amount_paid_ugx) || 0);
-      }
-      return sum;
-    }, 0);
-    
-    const totalOutstanding = allOrders.reduce((sum, order) => {
-      if (order.payment_status === 'unpaid' || !order.payment_status) {
-        return sum + (parseFloat(order.total_amount_ugx) || 0);
-      } else if (order.payment_status === 'partially_paid') {
-        return sum + (parseFloat(order.balance_due_ugx) || 0);
-      }
-      return sum;
-    }, 0);
-    
-    return {
-      totalOrders,
-      totalValue,
-      pendingOrders,
-      completedOrders,
-      paidOrders,
-      partiallyPaidOrders,
-      unpaidOrders,
-      totalPaidAmount,
-      totalOutstanding
-    };
+  // The single most useful next step for an order, shown on its folded docket
+  const nextActionOf = (o) => {
+    const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+    if (o.status === 'approved') {
+      return { hint: 'send it to the supplier', label: 'Send', icon: <FiSend />, tone: 'pol-btn-ink', run: stop(() => handleSendToSupplier(o.id)) };
+    }
+    if (o.status === 'sent_to_supplier' || o.status === 'confirmed') {
+      return { hint: 'check the delivery in', label: 'Receive', icon: <FiTruck />, tone: 'pol-btn-teal', run: stop(() => handleMarkAsReceived(o.id)) };
+    }
+    if (o.status === 'received') {
+      return { hint: 'close the order', label: 'Complete', icon: <FiCheckCircle />, tone: 'pol-btn-green', run: stop(() => handleMarkAsCompleted(o.id)) };
+    }
+    if (PAYABLE_STATUSES.includes(o.status) && o.payment_status !== 'paid') {
+      return { hint: 'record a payment', label: 'Pay', icon: <FiDollarSign />, tone: 'pol-btn-gold', run: stop(() => { setSelectedOrder(o); setShowPaymentModal(true); }) };
+    }
+    return null;
+  };
+
+  const stageCounts = useMemo(() => {
+    const counts = {};
+    orders.forEach((o) => {
+      const stage = ORDER_STAGES.find((s) => s.id === o.status || (s.also || []).includes(o.status));
+      if (stage) counts[stage.id] = (counts[stage.id] || 0) + 1;
+    });
+    return counts;
   }, [orders]);
 
-  // Data for the Order Overview line graph — replaces the old stat-card grid
-  const overviewChartData = useMemo(() => ([
-    { name: 'Total', icon: '📦', value: realTimeStats.totalOrders || 0, amount: realTimeStats.totalValue, sub: 'All orders', color: '#3b82f6' },
-    { name: 'Pending', icon: '⏳', value: realTimeStats.pendingOrders || 0, amount: null, sub: 'Awaiting action', color: '#eab308' },
-    { name: 'Completed', icon: '✅', value: realTimeStats.completedOrders || 0, amount: null, sub: 'Delivered', color: '#22c55e' },
-    { name: 'Paid', icon: '💵', value: realTimeStats.paidOrders || 0, amount: realTimeStats.totalPaidAmount, sub: 'Fully settled', color: '#10b981' },
-    { name: 'Half Paid', icon: '⚠️', value: realTimeStats.partiallyPaidOrders || 0, amount: null, sub: 'Partial payments', color: '#f97316' },
-    { name: 'Unpaid', icon: '❌', value: realTimeStats.unpaidOrders || 0, amount: realTimeStats.totalOutstanding, sub: 'Outstanding balance', color: '#ef4444' },
-  ]), [realTimeStats]);
+  const quickCounts = useMemo(() => ({
+    action: orders.filter(needsAction).length,
+    unpaid: orders.filter(isUnpaid).length,
+    incoming: orders.filter(isIncoming).length,
+    urgent: orders.filter((o) => o.priority === 'urgent' || o.priority === 'high').length,
+    late: orders.filter(isLate).length
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [orders]);
+
+  /**
+   * Search, filter and sort — all client-side over the loaded orders, so the
+   * pipeline counts always describe the whole book, not just the filtered page.
+   */
+  const visibleOrders = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const list = orders.filter((o) => {
+      if (statusFilter !== 'all') {
+        const stage = ORDER_STAGES.find((s) => s.id === statusFilter);
+        const ids = stage ? [stage.id, ...(stage.also || [])] : [statusFilter];
+        if (!ids.includes(o.status)) return false;
+      }
+      if (priorityFilter !== 'all' && (o.priority || 'normal') !== priorityFilter) return false;
+      if (paymentFilter !== 'all') {
+        const ps = o.payment_status || 'unpaid';
+        if (paymentFilter === 'overdue' ? !(ps === 'overdue' || (isLate(o) && ps !== 'paid')) : ps !== paymentFilter) return false;
+      }
+      if (quickFilter === 'action' && !needsAction(o)) return false;
+      if (quickFilter === 'unpaid' && !isUnpaid(o)) return false;
+      if (quickFilter === 'incoming' && !isIncoming(o)) return false;
+      if (quickFilter === 'urgent' && !(o.priority === 'urgent' || o.priority === 'high')) return false;
+      if (quickFilter === 'late' && !isLate(o)) return false;
+      if (!q) return true;
+      const hay = [
+        o.po_number, supplierNameOf(o), o.orderedBy, o.ordered_by_name, o.notes,
+        ...(Array.isArray(o.items) ? o.items.map((i) => i.product_name || i.productName) : [])
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+    const time = (o) => new Date(dateOf(o) || 0).getTime();
+    const sorters = {
+      newest: (a, b) => time(b) - time(a),
+      oldest: (a, b) => time(a) - time(b),
+      value: (a, b) => amountOf(b) - amountOf(a),
+      balance: (a, b) => balanceOf(b) - balanceOf(a)
+    };
+    return list.sort(sorters[sortBy] || sorters.newest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, suppliers, searchTerm, statusFilter, priorityFilter, paymentFilter, quickFilter, sortBy]);
+
+  /**
+   * Money and payment totals across every loaded order (not just the filtered view)
+   */
+  const realTimeStats = useMemo(() => {
+    const live = orders.filter((o) => o.status !== 'cancelled' && o.status !== 'rejected');
+    return {
+      totalOrders: orders.length,
+      totalValue: live.reduce((s, o) => s + amountOf(o), 0),
+      pendingOrders: orders.filter((o) => o.status === 'pending_approval' || o.status === 'pending').length,
+      completedOrders: orders.filter((o) => o.status === 'completed' || o.status === 'received').length,
+      paidOrders: live.filter((o) => o.payment_status === 'paid').length,
+      partiallyPaidOrders: live.filter((o) => o.payment_status === 'partially_paid').length,
+      unpaidOrders: live.filter((o) => o.payment_status === 'unpaid' || !o.payment_status).length,
+      totalPaidAmount: live.reduce((s, o) => s + Math.min(paidOf(o), amountOf(o) || paidOf(o)), 0),
+      totalOutstanding: live.reduce((s, o) => s + balanceOf(o), 0)
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders]);
+
+  const shelfStats = useMemo(() => {
+    let low = 0;
+    let out = 0;
+    products.forEach((p) => {
+      const stock = stockOf(p);
+      const min = Number(p.inventory?.[0]?.minimum_stock) || 0;
+      if (stock <= 0) out += 1;
+      else if (stock <= Math.max(min, 10)) low += 1;
+    });
+    return { low, out };
+  }, [products]);
+
+  // Download the orders currently on screen as a spreadsheet-friendly CSV
+  const exportOrdersCsv = () => {
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = ['PO number', 'Supplier', 'Status', 'Priority', 'Payment', 'Ordered', 'Expected delivery', 'Items', 'Total (UGX)', 'Paid (UGX)', 'Balance (UGX)'];
+    const rows = visibleOrders.map((o) => [
+      o.po_number, supplierNameOf(o), statusLabel(o.status), o.priority || 'normal', o.payment_status || 'unpaid',
+      dateOf(o) ? new Date(dateOf(o)).toISOString().slice(0, 10) : '',
+      o.expected_delivery_date || '',
+      Array.isArray(o.items) ? o.items.length : 0,
+      Math.round(amountOf(o)), Math.round(paidOf(o)), Math.round(balanceOf(o))
+    ]);
+    const csv = [header, ...rows].map((r) => r.map(esc).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // Open a classic printable docket for one order (Print → Save as PDF works too)
+  const printOrderDocket = (o) => {
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const items = Array.isArray(o.items) ? o.items : [];
+    const rows = items.map((i) => {
+      const unit = parseFloat(i.unit_price ?? i.unitPrice) || 0;
+      const qty = Number(i.quantity) || 0;
+      return `<tr><td>${esc(i.product_name || i.productName || 'Item')}</td><td class="r">${qty}</td><td class="r">${esc(formatUGX(unit))}</td><td class="r">${esc(formatUGX(unit * qty))}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" class="muted">No items listed</td></tr>';
+    const w = window.open('', '_blank', 'width=820,height=900');
+    if (!w) { toast.error('Allow pop-ups to print this order'); return; }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(o.po_number || 'Purchase order')}</title>
+<style>
+  body{font-family:Georgia,'Times New Roman',serif;color:#1e1b4b;margin:40px;}
+  .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px double #c4a052;padding-bottom:12px}
+  h1{margin:0;font-size:28px;letter-spacing:.02em} .eyebrow{font:700 10px/1 Arial,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:#8a6d1f}
+  .po{font:700 16px 'Courier New',monospace}
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;margin:18px 0;font:13px Arial,sans-serif}
+  .facts span{display:block;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  table{width:100%;border-collapse:collapse;font:13px Arial,sans-serif}
+  th{text-align:left;border-bottom:1px solid #c4a052;padding:8px 6px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}
+  td{border-bottom:1px dashed #e5dcc3;padding:8px 6px} .r{text-align:right} .muted{color:#94a3b8;text-align:center}
+  .totals{margin-top:14px;margin-left:auto;width:280px;font:14px Arial,sans-serif}
+  .totals div{display:flex;justify-content:space-between;padding:4px 0} .totals .grand{border-top:3px double #c4a052;font-weight:700;font-size:16px;margin-top:4px;padding-top:8px}
+  .notes{margin-top:18px;font:13px Arial,sans-serif;background:#faf8f3;border:1px solid #efe4c4;padding:10px 12px;border-radius:8px}
+  .sign{display:flex;gap:40px;margin-top:48px;font:12px Arial,sans-serif;color:#64748b} .sign div{flex:1;border-top:1px solid #94a3b8;padding-top:6px}
+</style></head><body>
+<div class="top"><div><div class="eyebrow">Purchase order</div><h1>${esc(supplierNameOf(o))}</h1></div><div class="po">${esc(o.po_number || '')}</div></div>
+<div class="facts">
+  <div><span>Status</span>${esc(statusLabel(o.status))}</div>
+  <div><span>Ordered</span>${dateOf(o) ? esc(new Date(dateOf(o)).toLocaleDateString()) : '—'}</div>
+  <div><span>Expected delivery</span>${o.expected_delivery_date ? esc(new Date(o.expected_delivery_date).toLocaleDateString()) : 'TBD'}</div>
+  <div><span>Priority</span>${esc(o.priority || 'normal')}</div>
+  <div><span>Payment</span>${esc(String(o.payment_status || 'unpaid').replace(/_/g, ' '))}</div>
+  <div><span>Ordered by</span>${esc(o.orderedBy || o.ordered_by_name || '—')}</div>
+</div>
+<table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Unit price</th><th class="r">Line total</th></tr></thead><tbody>${rows}</tbody></table>
+<div class="totals"><div><span>Total</span><span>${esc(formatUGX(amountOf(o)))}</span></div><div><span>Paid</span><span>${esc(formatUGX(paidOf(o)))}</span></div><div class="grand"><span>Balance due</span><span>${esc(formatUGX(balanceOf(o)))}</span></div></div>
+${o.notes ? `<div class="notes"><b>Notes:</b> ${esc(o.notes)}</div>` : ''}
+<div class="sign"><div>Prepared by</div><div>Approved by</div><div>Received by</div></div>
+<script>window.onload=function(){window.print();}</script>
+</body></html>`);
+    w.document.close();
+  };
 
   if (loading) {
     return (
@@ -1449,631 +1583,378 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
     );
   };
 
+  const hasFilters = statusFilter !== 'all' || priorityFilter !== 'all' || paymentFilter !== 'all' || quickFilter !== 'all' || searchTerm;
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setPaymentFilter('all');
+    setQuickFilter('all');
+    setSearchTerm('');
+  };
+  const paidShare = realTimeStats.totalValue > 0 ? Math.min(100, Math.round((realTimeStats.totalPaidAmount / realTimeStats.totalValue) * 100)) : 0;
+
   return (
-    <div className="space-y-6 animate-fadeInUp">
-      {/* Header Section */}
-      <div className="relative overflow-hidden rounded-2xl p-6 sm:p-7 text-white shadow-xl bg-gradient-to-br from-yellow-500 via-red-600 to-neutral-900">
-        <div className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-black/20 blur-3xl" />
-
-        <div className="relative flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-yellow-100 bg-white/10 border border-white/20 rounded-full px-3 py-1 mb-3">
-              🇺🇬 Trusted by Uganda's modern traders
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold flex items-center gap-3 mb-2 tracking-tight">
-              <span className="bg-white/15 p-2 rounded-xl backdrop-blur-sm">
-                <FiTruck className="h-6 w-6 sm:h-7 sm:w-7" />
-              </span>
-              Supplier Order Verification &amp; Management
-            </h2>
-            <p className="text-yellow-100/90 text-base sm:text-lg max-w-xl">
-              Choose suppliers, compare prices, and create purchase orders — built for a world-class buying experience.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="bg-white text-neutral-900 px-6 py-3 rounded-xl font-bold hover:bg-yellow-50 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center gap-2 shadow-lg shadow-black/20"
-          >
-            <FiPlus className="h-5 w-5" />
-            <span>Create New Order</span>
-          </button>
+    <div className="pol animate-fadeInUp">
+      {/* Ledger header */}
+      <section className="pol-hero">
+        <div className="pol-hero-main">
+          <p className="pol-eyebrow">Purchase order ledger</p>
+          <h2 className="pol-title">Orders</h2>
+          <p className="pol-sub">Buy from suppliers, approve, pay, receive and shelve — every order in one book.</p>
+          {storeId && (
+            <label className="pol-pricing">
+              <span>Order using</span>
+              <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)}>
+                <option value="supplier_price">Supplier price</option>
+                <option value="admin_price">Admin-set price</option>
+              </select>
+            </label>
+          )}
         </div>
-        {storeId && (
-          <div className="relative mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-black/25 backdrop-blur-sm border border-white/10 p-3 text-sm">
-            <span className="font-semibold">Order using:</span>
-            <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)} className="rounded-lg px-3 py-2 text-slate-900 font-medium">
-              <option value="supplier_price">Supplier price</option>
-              <option value="admin_price">Admin-set price</option>
+        <div className="pol-hero-actions">
+          <button type="button" className="pol-btn pol-btn-gold" onClick={() => setShowCreateModal(true)}>
+            <FiPlus /> New purchase order
+          </button>
+          <div className="pol-hero-row">
+            <button type="button" className="pol-btn pol-btn-ghost" onClick={loadAllData} aria-label="Refresh orders">
+              <FiRefreshCw /> Refresh
+            </button>
+            <button type="button" className="pol-btn pol-btn-ghost" onClick={exportOrdersCsv} disabled={visibleOrders.length === 0}>
+              <FiDownload /> Export
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Money strip */}
+      <section className="pol-money" aria-label="Order money summary">
+        <div className="pol-money-cell">
+          <span className="pol-money-label">Order value</span>
+          <b className="pol-money-value">{formatUGX(realTimeStats.totalValue)}</b>
+          <small>{realTimeStats.totalOrders} {realTimeStats.totalOrders === 1 ? 'order' : 'orders'}</small>
+        </div>
+        <div className="pol-money-cell is-ok">
+          <span className="pol-money-label">Paid</span>
+          <b className="pol-money-value">{formatUGX(realTimeStats.totalPaidAmount)}</b>
+          <small>{realTimeStats.paidOrders} settled · {realTimeStats.partiallyPaidOrders} part-paid</small>
+        </div>
+        <div className="pol-money-cell is-due">
+          <span className="pol-money-label">Outstanding</span>
+          <b className="pol-money-value">{formatUGX(realTimeStats.totalOutstanding)}</b>
+          <small>{realTimeStats.unpaidOrders} unpaid</small>
+        </div>
+        <div className="pol-money-bar" role="img" aria-label={`${paidShare}% of order value paid`}>
+          <span style={{ width: `${paidShare}%` }} />
+          <em>{paidShare}% paid</em>
+        </div>
+      </section>
+
+      {/* Active / history */}
+      <div className="pol-views" role="tablist" aria-label="Order view">
+        <button type="button" role="tab" aria-selected={viewMode === 'active'} className={viewMode === 'active' ? 'is-on' : ''} onClick={() => setViewMode('active')}>
+          <FiTruck /> Active orders
+        </button>
+        <button type="button" role="tab" aria-selected={viewMode === 'history'} className={viewMode === 'history' ? 'is-on' : ''} onClick={() => setViewMode('history')}>
+          <FiClock /> Order history
+        </button>
+      </div>
+
+      {/* Pipeline — tap a stage to filter */}
+      <section className="pol-panel" aria-label="Order pipeline">
+        <div className="pol-panel-head">
+          <div>
+            <h3>Where every order stands</h3>
+            <p>Tap a stage to see only those orders</p>
+          </div>
+          {statusFilter !== 'all' && (
+            <button type="button" className="pol-link" onClick={() => setStatusFilter('all')}>Show all <FiX /></button>
+          )}
+        </div>
+        <ol className="pol-stages">
+          {ORDER_STAGES.map((stage) => {
+            const count = stageCounts[stage.id] || 0;
+            const on = statusFilter === stage.id;
+            return (
+              <li key={stage.id} className={`${count > 0 ? 'has' : ''} ${on ? 'is-on' : ''}`}>
+                <button type="button" onClick={() => setStatusFilter(on ? 'all' : stage.id)} aria-pressed={on}>
+                  <span className="pol-stage-dot">{stage.icon}</span>
+                  <span className="pol-stage-count">{count}</span>
+                  <span className="pol-stage-label">{stage.label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+
+      {/* Search, quick filters, sort */}
+      <section className="pol-panel pol-tools">
+        <div className="pol-search">
+          <FiSearch />
+          <input
+            type="text"
+            placeholder="Search PO number, supplier, item or who ordered…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && <button type="button" onClick={() => setSearchTerm('')} aria-label="Clear search"><FiX /></button>}
+        </div>
+        <div className="pol-chips" role="group" aria-label="Quick filters">
+          {QUICK_FILTERS.map((q) => (
+            <button key={q.id} type="button" className={`pol-chip ${quickFilter === q.id ? 'is-on' : ''}`} onClick={() => setQuickFilter(q.id)} aria-pressed={quickFilter === q.id}>
+              {q.label}
+              {q.id !== 'all' && quickCounts[q.id] > 0 && <span>{quickCounts[q.id]}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="pol-selects">
+          <label>
+            <span>Priority</span>
+            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
             </select>
-            <span className="text-yellow-100/80">You can change this any time before creating an order.</span>
-          </div>
-        )}
-      </div>
-
-      {/* View Mode Toggle */}
-      <div className="flex justify-center">
-        <div className="inline-flex items-center gap-1 bg-gray-100 rounded-xl p-1 shadow-inner">
-          <button
-            onClick={() => setViewMode('active')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${
-              viewMode === 'active'
-                ? 'bg-white text-blue-700 shadow-md'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📦 Active Orders
-          </button>
-          <button
-            onClick={() => setViewMode('history')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${
-              viewMode === 'history'
-                ? 'bg-white text-purple-700 shadow-md'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📚 Order History
-          </button>
+          </label>
+          <label>
+            <span>Payment</span>
+            <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="paid">Paid</option>
+              <option value="partially_paid">Part-paid</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </label>
+          <label>
+            <span>Sort</span>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="value">Highest value</option>
+              <option value="balance">Most owed</option>
+            </select>
+          </label>
+          {hasFilters && (
+            <button type="button" className="pol-link" onClick={clearFilters}>Clear filters</button>
+          )}
         </div>
-      </div>
+        <p className="pol-count">
+          Showing <b>{visibleOrders.length}</b> of {orders.length} {viewMode === 'history' ? 'past' : ''} {orders.length === 1 ? 'order' : 'orders'}
+        </p>
+      </section>
 
-      {/* Order Overview — line graph */}
-      <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-lg border border-gray-100">
-        <div className="flex items-start justify-between flex-wrap gap-4 mb-2">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              Order Overview
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live
-              </span>
-            </h3>
-            <p className="text-sm text-gray-500 mt-0.5">Order flow and payment status at a glance</p>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {overviewChartData.map((d) => (
-              <div key={d.name} className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                <span className="text-xs font-medium text-gray-500">{d.name}</span>
-                <span className="text-xs font-bold text-gray-900">{d.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-3 -ml-2">
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={overviewChartData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="orderOverviewFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
-                axisLine={{ stroke: '#e2e8f0' }}
-                tickLine={false}
-              />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={28} />
-              <RechartsTooltip
-                cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }}
-                content={({ active, payload }) => {
-                  if (!active || !payload || !payload.length) return null;
-                  const d = payload[0].payload;
-                  return (
-                    <div className="bg-white rounded-xl shadow-xl border border-gray-100 px-4 py-3 min-w-[160px]">
-                      <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                        <span>{d.icon}</span>{d.name}
-                      </p>
-                      <p className="text-xl font-extrabold mt-0.5" style={{ color: d.color }}>
-                        {d.value} <span className="text-xs font-medium text-gray-400">orders</span>
-                      </p>
-                      {d.amount != null && (
-                        <p className="text-xs font-semibold text-gray-700 mt-1">{formatUGX(d.amount)}</p>
-                      )}
-                      <p className="text-[11px] text-gray-400 mt-0.5">{d.sub}</p>
-                    </div>
-                  );
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#3b82f6"
-                strokeWidth={3}
-                fill="url(#orderOverviewFill)"
-                dot={(props) => {
-                  const { cx, cy, payload, index } = props;
-                  return (
-                    <circle
-                      key={`dot-${index}`}
-                      cx={cx}
-                      cy={cy}
-                      r={6}
-                      fill={payload.color}
-                      stroke="#fff"
-                      strokeWidth={2}
-                    />
-                  );
-                }}
-                activeDot={{ r: 8, strokeWidth: 2, stroke: '#fff' }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Filters and Search */}
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <div className="space-y-4">
-          {/* Search Bar */}
-          <div className="relative max-w-2xl">
-            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-            <input
-              type="text"
-              placeholder="Search by PO number, supplier, or ordered by..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          {/* Filter Row */}
-          <div className="flex flex-wrap items-center gap-4">
-            {/* Status Filter */}
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700">Status:</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-              >
-                <option value="all">All Status</option>
-                <option value="pending_approval">Pending Approval</option>
-                <option value="approved">Approved</option>
-                <option value="sent_to_supplier">Sent to Supplier</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="received">Received</option>
-                <option value="received">Received</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            {/* Priority Filter */}
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700">Priority:</label>
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-              >
-                <option value="all">All Priorities</option>
-                <option value="urgent">🔥 Urgent</option>
-                <option value="high">⚠️ High</option>
-                <option value="normal">📋 Normal</option>
-                <option value="low">📝 Low</option>
-              </select>
-            </div>
-
-            {/* Payment Status Filter */}
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700">Payment:</label>
-              <select
-                value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value)}
-                className="px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-              >
-                <option value="all">All Payments</option>
-                <option value="paid">✅ Paid</option>
-                <option value="partially_paid">⚠️ Half Paid</option>
-                <option value="unpaid">❌ Unpaid</option>
-                <option value="overdue">🔴 Overdue</option>
-              </select>
-            </div>
-
-            {/* Clear Filters Button */}
-            {(statusFilter !== 'all' || priorityFilter !== 'all' || paymentFilter !== 'all' || searchTerm) && (
-              <button
-                onClick={() => {
-                  setStatusFilter('all');
-                  setPriorityFilter('all');
-                  setPaymentFilter('all');
-                  setSearchTerm('');
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all duration-300 font-semibold"
-              >
-                Clear Filters
-              </button>
+      {/* Order dockets */}
+      <div className="pol-list">
+        {visibleOrders.length === 0 ? (
+          <div className="pol-empty">
+            <FiPackage />
+            <h3>No orders here</h3>
+            <p>{hasFilters ? 'Nothing matches these filters.' : 'Create your first purchase order to get started.'}</p>
+            {hasFilters ? (
+              <button type="button" className="pol-btn pol-btn-ink" onClick={clearFilters}>Clear filters</button>
+            ) : (
+              <button type="button" className="pol-btn pol-btn-gold" onClick={() => setShowCreateModal(true)}><FiPlus /> New purchase order</button>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Orders List */}
-      <div className="space-y-4">
-        {filteredOrders.length === 0 ? (
-          <div className="bg-gray-50 rounded-xl p-12 text-center">
-            <FiPackage className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">No Orders Found</h3>
-            <p className="text-gray-500">
-              {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all'
-                ? 'Try adjusting your filters or search term'
-                : 'Create your first purchase order to get started'}
-            </p>
-          </div>
         ) : (
-          filteredOrders.map((order) => (
-            <div
-              key={order.id}
-              className={`bg-white rounded-xl shadow-lg border-2 hover:shadow-xl transition-all duration-300 overflow-hidden ${
-                order.status === 'pending_approval' ? 'border-yellow-300' :
-                order.status === 'approved' ? 'border-green-300' :
-                order.status === 'cancelled' ? 'border-red-300' :
-                'border-gray-200'
-              }`}
-            >
-              {/* Collapsed View - Order Header */}
-              <div
-                className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
-              >
-                <div className="flex items-center justify-between">
-                  {/* Left Section */}
-                  <div className="flex items-center space-x-4 flex-1">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                      <FiPackage className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-base text-gray-900">{order.po_number}</h3>
-                        {/* Status Badge */}
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${getStatusColor(order.status)}`}>
-                          {order.status?.replace(/_/g, ' ').toUpperCase()}
-                        </span>
-                        {/* Priority Badge */}
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getPriorityColor(order.priority)}`}>
-                          {order.priority === 'urgent' && '🔥 '}
-                          {order.priority === 'high' && '⚠️ '}
-                          {order.priority?.toUpperCase()}
-                        </span>
-                        {/* Payment Status Badge */}
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border-2 ${getPaymentStatusColor(order.payment_status)}`}>
-                          {getPaymentStatusLabel(order.payment_status)}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-600 mt-1">
-                        {order.supplierName} • {new Date(order.order_date).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Right Section */}
-                  <div className="flex items-center gap-4 ml-4">
-                    <div className="text-right">
-                      <p className="font-bold text-lg text-green-600">{formatUGX(order.total_amount_ugx)}</p>
-                      {order.payment_status === 'partially_paid' && (
-                        <p className="text-xs text-gray-600">
-                          Paid: <span className="text-green-600 font-semibold">{formatUGX(order.amount_paid_ugx || 0)}</span>
-                        </p>
+          visibleOrders.map((order) => {
+            const open = expandedOrderId === order.id;
+            const total = amountOf(order);
+            const paid = paidOf(order);
+            const balance = balanceOf(order);
+            const paidPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+            const stageIdx = stageIndexOf(order.status);
+            const late = isLate(order);
+            const next = nextActionOf(order);
+            const cancelledOrder = order.status === 'cancelled' || order.status === 'rejected';
+            return (
+              <article key={order.id} className={`pol-docket ${open ? 'is-open' : ''} ${cancelledOrder ? 'is-void' : ''} pr-${order.priority || 'normal'}`}>
+                <button
+                  type="button"
+                  className="pol-docket-head"
+                  onClick={() => setExpandedOrderId(open ? null : order.id)}
+                  aria-expanded={open}
+                >
+                  <span className="pol-docket-top">
+                    <span className="pol-po">{order.po_number || `PO-${String(order.id).slice(0, 8)}`}</span>
+                    <span className={`pol-pill st-${order.status}`}>{statusLabel(order.status)}</span>
+                    {(order.priority === 'urgent' || order.priority === 'high') && (
+                      <span className={`pol-pill pr-pill-${order.priority}`}>{order.priority === 'urgent' ? 'Urgent' : 'High'}</span>
+                    )}
+                    {late && <span className="pol-pill pol-pill-late"><FiAlertTriangle /> Late</span>}
+                    {order.unconfirmedPaymentsCount > 0 && (
+                      <span className="pol-pill pol-pill-wait">{order.unconfirmedPaymentsCount} payment{order.unconfirmedPaymentsCount === 1 ? '' : 's'} unconfirmed</span>
+                    )}
+                  </span>
+                  <span className="pol-docket-mid">
+                    <span className="pol-supplier">
+                      <b>{supplierNameOf(order)}</b>
+                      <small>
+                        Ordered {dateOf(order) ? new Date(dateOf(order)).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                        {order.expected_delivery_date && ` · due ${new Date(order.expected_delivery_date).toLocaleDateString([], { day: 'numeric', month: 'short' })}`}
+                        {Array.isArray(order.items) && order.items.length > 0 && ` · ${order.items.length} item${order.items.length === 1 ? '' : 's'}`}
+                      </small>
+                    </span>
+                    <span className="pol-amount">
+                      <b>{formatUGX(total)}</b>
+                      {cancelledOrder ? (
+                        <small>Cancelled</small>
+                      ) : (
+                        <small className={balance > 0 ? 'is-due' : 'is-ok'}>{balance > 0 ? `${formatUGX(balance)} owed` : 'Fully paid'}</small>
                       )}
-                    </div>
-                    {/* Expand/Collapse Icon */}
-                    <div className={`transform transition-transform ${expandedOrderId === order.id ? 'rotate-180' : ''}`}>
-                      <FiChevronDown className="h-5 w-5 text-gray-500" />
-                    </div>
-                  </div>
-                </div>
-              </div>
+                    </span>
+                  </span>
+                  {!cancelledOrder && (
+                    <span className="pol-track" aria-label={`Stage ${stageIdx + 1} of ${ORDER_STAGES.length}`}>
+                      {ORDER_STAGES.map((s, i) => (
+                        <i key={s.id} className={i <= stageIdx ? 'done' : ''} title={s.label} />
+                      ))}
+                    </span>
+                  )}
+                  <span className="pol-paybar"><span style={{ width: `${paidPct}%` }} /></span>
+                  <FiChevronDown className="pol-chev" />
+                </button>
 
-              {/* Expanded View - Order Details */}
-              {expandedOrderId === order.id && (
-                <div className="border-t-2 border-gray-200 p-6 bg-white animate-fadeInUp">
-                  {/* Supplier Info */}
-                  <div className="mb-4">
-                    <h4 className="text-lg font-semibold text-blue-600 mb-2 flex items-center gap-2">
-                      {order.supplierAvatar && (
-                        <img 
-                          src={order.supplierAvatar} 
-                          alt={order.supplierName}
-                          className="w-8 h-8 rounded-full border-2 border-blue-300"
+                {/* one-tap next step, without opening the docket */}
+                {next && !open && (
+                  <div className="pol-next">
+                    <span>Next: <b>{next.hint}</b></span>
+                    <button type="button" className={`pol-btn pol-btn-sm ${next.tone}`} onClick={next.run}>
+                      {next.icon} {next.label}
+                    </button>
+                  </div>
+                )}
+
+                {open && (
+                  <div className="pol-docket-body">
+                    <div className="pol-facts">
+                      <div><span>Supplier</span><b>{supplierNameOf(order)}</b></div>
+                      <div><span>Ordered</span><b>{dateOf(order) ? new Date(dateOf(order)).toLocaleDateString() : '—'}</b></div>
+                      <div><span>Expected</span><b className={late ? 'is-due' : ''}>{order.expected_delivery_date ? new Date(order.expected_delivery_date).toLocaleDateString() : 'TBD'}</b></div>
+                      <div><span>Ordered by</span><b>{order.orderedBy || order.ordered_by_name || '—'}</b></div>
+                      <div><span>Paid</span><b className="is-ok">{formatUGX(paid)}</b></div>
+                      <div><span>Balance</span><b className={balance > 0 ? 'is-due' : 'is-ok'}>{formatUGX(balance)}</b></div>
+                    </div>
+
+                    {Array.isArray(order.items) && order.items.length > 0 && (
+                      <div className="pol-items">
+                        <p className="pol-eyebrow">Items ({order.items.length})</p>
+                        <ul>
+                          {order.items.map((item, idx) => {
+                            const unit = parseFloat(item.unit_price ?? item.unitPrice) || 0;
+                            return (
+                              <li key={idx}>
+                                <span>{item.product_name || item.productName || 'Item'} <em>× {item.quantity}</em></span>
+                                <b>{formatUGX(unit * (Number(item.quantity) || 0))}</b>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+
+                    {order.notes && <p className="pol-notes"><b>Notes:</b> {order.notes}</p>}
+
+                    {PAYABLE_STATUSES.includes(order.status) && (
+                      <div className="pol-tracker">
+                        <OrderPaymentTracker
+                          order={order}
+                          businessProfileId={activeBusinessProfileId}
+                          pricingMode={wholesalePricingMode}
+                          onPaymentAdded={loadAllData}
+                          showAddPayment={true}
+                          userRole="manager"
                         />
-                      )}
-                      <span>{order.supplierName}</span>
-                      {order.supplierCategory && (
-                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
-                          {order.supplierCategory}
-                        </span>
-                      )}
-                    </h4>
-                  </div>
-
-                  {/* Order Details Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <FiCalendar className="text-gray-500" />
-                      <div>
-                        <p className="text-xs text-gray-500">Order Date</p>
-                        <p className="font-semibold text-gray-900">{new Date(order.order_date).toLocaleDateString()}</p>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <FiClock className="text-gray-500" />
-                      <div>
-                        <p className="text-xs text-gray-500">Expected Delivery</p>
-                        <p className="font-semibold text-gray-900">
-                          {order.expected_delivery_date ? new Date(order.expected_delivery_date).toLocaleDateString() : 'TBD'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <FiUser className="text-gray-500" />
-                      <div>
-                        <p className="text-xs text-gray-500">Ordered By</p>
-                        <p className="font-semibold text-gray-900">{order.orderedBy}</p>
-                      </div>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* 💰 PAYMENT TRACKER - Interactive Payment Management */}
-                  {/* Show payment tracker for all orders that are approved or beyond, allowing managers to add payments anytime */}
-                  {(order.status === 'pending_approval' ||
-                    order.status === 'approved' || 
-                    order.status === 'sent_to_supplier' || 
-                    order.status === 'confirmed' || 
-                    order.status === 'received' || 
-                    order.status === 'received') && (
-                    <div className="mb-4">
-                      <OrderPaymentTracker
-                        order={order}
-           businessProfileId={activeBusinessProfileId}
-           pricingMode={wholesalePricingMode}
-                        onPaymentAdded={loadAllData}
-                        showAddPayment={true}
-                        userRole="manager"
-                      />
-                    </div>
-                  )}
-
-                  {/* Items Summary */}
-                  {order.items && Array.isArray(order.items) && order.items.length > 0 && (
-                    <div className="mb-4">
-                      <h5 className="text-sm font-semibold text-gray-700 mb-2">Order Items ({order.items.length})</h5>
-                      <div className="space-y-1">
-                        {order.items.slice(0, 3).map((item, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-700">
-                              {item.product_name || item.productName} × {item.quantity}
-                            </span>
-                            <span className="font-semibold text-gray-900">
-                              {formatUGX((item.unit_price || item.unitPrice) * item.quantity)}
-                            </span>
-                          </div>
-                        ))}
-                        {order.items.length > 3 && (
-                          <p className="text-sm text-blue-600 font-semibold">
-                            +{order.items.length - 3} more items
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notes */}
-                  {order.notes && (
-                    <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-gray-700"><strong>Notes:</strong> {order.notes}</p>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center flex-wrap gap-3 pt-4 border-t border-gray-200">
-                    {/* ❌ COMMENTED OUT: Approve/Reject buttons disabled
-                    {order.status === 'pending_approval' && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleApproveOrder(order.id);
-                          }}
-                          className="flex-1 min-w-[180px] bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-all duration-300 flex items-center justify-center space-x-2 font-semibold shadow-lg"
-                        >
-                          <FiCheckCircle className="h-5 w-5" />
-                          <span>Approve Order</span>
+                    <div className="pol-actions">
+                      {order.status === 'approved' && (
+                        <button type="button" className="pol-btn pol-btn-ink" onClick={(e) => { e.stopPropagation(); handleSendToSupplier(order.id); }}>
+                          <FiSend /> Send to supplier
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRejectOrder(order.id);
-                          }}
-                          className="flex-1 min-w-[180px] bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-all duration-300 flex items-center justify-center space-x-2 font-semibold shadow-lg"
-                        >
-                          <FiXCircle className="h-5 w-5" />
-                          <span>Reject</span>
+                      )}
+                      {(order.status === 'sent_to_supplier' || order.status === 'confirmed') && (
+                        <button type="button" className="pol-btn pol-btn-teal" onClick={(e) => { e.stopPropagation(); handleMarkAsReceived(order.id); }}>
+                          <FiTruck /> Mark received &amp; update stock
                         </button>
-                      </>
-                    )}
-                    */}
-                    
-                    {order.status === 'approved' && (
+                      )}
+                      {order.status === 'received' && (
+                        <button type="button" className="pol-btn pol-btn-green" onClick={(e) => { e.stopPropagation(); handleMarkAsCompleted(order.id); }}>
+                          <FiCheckCircle /> Mark completed
+                        </button>
+                      )}
+                      {PAYABLE_STATUSES.includes(order.status) && order.payment_status !== 'paid' && (
+                        <button type="button" className="pol-btn pol-btn-gold" onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setShowPaymentModal(true); }}>
+                          <FiDollarSign /> Add payment
+                        </button>
+                      )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSendToSupplier(order.id);
-                        }}
-                        className="flex-1 min-w-[180px] bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-all duration-300 flex items-center justify-center space-x-2 font-semibold shadow-lg"
+                        type="button"
+                        className="pol-btn pol-btn-outline"
+                        onClick={(e) => { e.stopPropagation(); handleAddOrderProductsToPOS(order); }}
+                        title={order.added_to_pos ? 'This order has already been added to POS' : 'Add all order products to POS inventory'}
+                        disabled={!order.items || order.items.length === 0 || order.added_to_pos}
                       >
-                        <FiSend className="h-5 w-5" />
-                        <span>Send to Supplier</span>
+                        <FiPlus /> {order.added_to_pos ? 'Added to POS' : 'Add to POS'}
                       </button>
-                    )}
-
-                    {/* Mark as Received Button - Shows for sent_to_supplier or confirmed orders */}
-                    {(order.status === 'sent_to_supplier' || order.status === 'confirmed') && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMarkAsReceived(order.id);
-                        }}
-                        className="flex-1 min-w-[180px] bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-4 py-3 rounded-lg hover:from-teal-700 hover:to-cyan-700 transition-all duration-300 flex items-center justify-center space-x-2 font-bold shadow-lg"
-                      >
-                        <FiTruck className="h-5 w-5" />
-                        <span>📦 Mark as Received & Update Inventory</span>
+                      <button type="button" className="pol-btn pol-btn-outline" onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}>
+                        <FiEdit /> Details
                       </button>
-                    )}
-
-                    {/* Mark as Completed Button - Shows for received orders */}
-                    {order.status === 'received' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMarkAsCompleted(order.id);
-                        }}
-                        className="flex-1 min-w-[180px] bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-3 rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 flex items-center justify-center space-x-2 font-bold shadow-lg"
-                      >
-                        <FiCheckCircle className="h-5 w-5" />
-                        <span>✅ Mark as Completed</span>
+                      <button type="button" className="pol-btn pol-btn-outline" onClick={(e) => { e.stopPropagation(); printOrderDocket(order); }} title="Print or save this order as PDF">
+                        <FiPrinter /> Print
                       </button>
-                    )}
-
-                    {/* Add Payment Button - Show for approved orders and beyond (not fully paid) */}
-                    {(order.status === 'pending_approval' ||
-                      order.status === 'approved' || 
-                      order.status === 'sent_to_supplier' || 
-                      order.status === 'confirmed' || 
-                      order.status === 'received' || 
-                      order.status === 'received') && 
-                      order.payment_status !== 'paid' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedOrder(order);
-                          setShowPaymentModal(true);
-                        }}
-                        className="flex-1 min-w-[180px] bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 flex items-center justify-center space-x-2 font-bold shadow-lg"
-                      >
-                        <FiDollarSign className="h-5 w-5" />
-                        <span>💰 Add Payment</span>
-                      </button>
-                    )}
-
-                    {/* 🆕 ADD PRODUCT BUTTON - Add order products to POS inventory */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log('✅ Add to POS button clicked for order:', order?.id, order?.po_number);
-                        handleAddOrderProductsToPOS(order);
-                      }}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      className="flex-1 min-w-[180px] bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-3 rounded-lg hover:from-indigo-700 hover:to-blue-700 active:from-indigo-800 active:to-blue-800 transition-all duration-300 flex items-center justify-center space-x-2 font-bold shadow-lg cursor-pointer hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={order.added_to_pos ? "This order has already been added to POS" : "Add all order products to POS inventory"}
-                      disabled={!order.items || order.items.length === 0 || order.added_to_pos}
-                    >
-                      <FiPlus className="h-5 w-5" />
-                      <span>➕ {order.added_to_pos ? 'Added to POS ✓' : 'Add to POS'}</span>
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedOrder(order);
-                      }}
-                      className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-all duration-300 flex items-center space-x-2"
-                    >
-                      <FiEdit className="h-5 w-5" />
-                      <span>View Details</span>
-                    </button>
-
-                    <button
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-all duration-300 flex items-center space-x-2"
-                      title="Download PDF"
-                    >
-                      <FiDownload className="h-5 w-5" />
-                    </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ))
+                )}
+              </article>
+            );
+          })
         )}
       </div>
 
-      {/* 🛒 POS INVENTORY SECTION - Products Added to POS */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-800 mb-3 flex items-center">
-          <span className="mr-2 text-2xl">🛒</span>
-          POS Inventory
-        </h3>
-        <p className="text-gray-600 text-sm mb-4">Products available for sale in POS system</p>
-        
-        {products && products.length > 0 ? (
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {products.map((product) => {
-              const stock = product.inventory?.[0]?.quantity || 0;
-              const stockStatus = stock > 10 ? 'text-green-600' : stock > 0 ? 'text-yellow-600' : 'text-red-600';
-              
-              return (
-                <div key={product.id} className="bg-white rounded-lg p-3 border border-gray-200 hover:border-blue-400 transition-all hover:shadow-md">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-sm break-words">{product.name}</p>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">SKU: {product.sku || 'N/A'}</span>
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${stockStatus} bg-opacity-10`}>
-                          📦 {stock} units
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-green-600">UGX {(product.price || 0).toLocaleString()}</p>
-                      <p className={`text-xs font-semibold mt-1 ${stockStatus}`}>
-                        {stock > 10 ? '✅ Good' : stock > 0 ? '⚠️ Low' : '❌ Out'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-gray-500">
-            <p className="text-sm">📭 No products in POS inventory</p>
-            <p className="text-xs text-gray-400 mt-1">Add from supplier orders to populate</p>
-          </div>
+      {/* Stock on the shelves — folded away until needed */}
+      <section className={`pol-panel pol-shelf ${showShelf ? 'is-open' : ''}`}>
+        <button type="button" className="pol-shelf-head" onClick={() => setShowShelf((v) => !v)} aria-expanded={showShelf}>
+          <span>
+            <h3>Stock on your shelves</h3>
+            <p>{products.length} products · {shelfStats.low} low · {shelfStats.out} out of stock</p>
+          </span>
+          <span className="pol-link">{showShelf ? 'Hide' : 'Show'} <FiChevronDown className="pol-chev" /></span>
+        </button>
+        {showShelf && (
+          products.length > 0 ? (
+            <ul className="pol-shelf-list">
+              {products.map((product) => {
+                const stock = stockOf(product);
+                const min = Number(product.inventory?.[0]?.minimum_stock) || 0;
+                const state = stock <= 0 ? 'out' : stock <= Math.max(min, 10) ? 'low' : 'ok';
+                return (
+                  <li key={product.id}>
+                    <span>
+                      <b>{product.name}</b>
+                      <small>SKU {product.sku || '—'} · {formatUGX(product.selling_price || product.price || 0)}</small>
+                    </span>
+                    <em className={`pol-stock is-${state}`}>{state === 'out' ? 'Out' : `${stock} in stock`}</em>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="pol-empty pol-empty-sm"><p>No products in POS inventory yet — add them from a received order.</p></div>
+          )
         )}
-        
-        {/* Summary Stats */}
-        {products && products.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="bg-white rounded p-2">
-              <p className="font-bold text-gray-800">{products.length}</p>
-              <p className="text-gray-600">Total Products</p>
-            </div>
-            <div className="bg-white rounded p-2">
-              <p className="font-bold text-gray-800">{products.reduce((sum, p) => sum + (p.inventory?.[0]?.quantity || 0), 0)}</p>
-              <p className="text-gray-600">Total Stock</p>
-            </div>
-            <div className="bg-white rounded p-2">
-              <p className="font-bold text-green-600">UGX {(products.reduce((sum, p) => sum + (p.price || 0), 0)).toLocaleString()}</p>
-              <p className="text-gray-600">Total Value</p>
-            </div>
-          </div>
-        )}
-      </div>
+      </section>
 
       {/* Create Order Modal */}
       {showCreateModal && (
       <CreateOrderModal
           suppliers={suppliers}
           businessProfileId={activeBusinessProfileId}
+          pricingMode={wholesalePricingMode}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
