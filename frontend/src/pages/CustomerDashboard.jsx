@@ -990,9 +990,10 @@ const CustomerDashboard = () => {
                 there, not in this app — see vendor/mybodaguy/services/journeyService.ts */}
             {activeTab === 'journey' && (
               <div className="space-y-4">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <JourneyBookingFlow customerId={user?.id} />
-                </div>
+                {/* No wrapping box: the flow's own step cards are the surface,
+                    so on a phone they reach the page gutter instead of sitting
+                    inside another padded, bordered container. */}
+                <JourneyBookingFlow customerId={user?.id} />
                 {/* My Journeys — live legs, driver chat/call, air ticket
                     download, and a refund notice for a paid-but-failed booking */}
                 {user?.id && <JourneyTracker customerId={user.id} />}
