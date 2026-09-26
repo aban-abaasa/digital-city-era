@@ -554,16 +554,16 @@ const OrderItemsSelector = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="ois space-y-6">
       {/* Product Selection Card */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
-        <h3 className="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
+      <div className="ois-card bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
+        <h3 className="ois-card-title text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
           <FiBox className="h-5 w-5" />
           🛒 Order Items - Select from Catalog
         </h3>
 
         {/* Quick Select Dropdown - All Products */}
-        <div className="mb-4 p-4 bg-white rounded-lg border-2 border-blue-200">
+        <div className="ois-quick mb-4 p-4 bg-white rounded-lg border-2 border-blue-200">
           <label className="block text-sm font-semibold text-gray-700 mb-2">
             ⚡ Quick Select - All Products ({products.length})
           </label>
@@ -797,8 +797,8 @@ const OrderItemsSelector = ({
       </div>
 
       {/* Items List */}
-      <div>
-        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+      <div className="ois-list">
+        <h3 className="ois-list-title text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
           <FiCheckCircle className="h-5 w-5 text-blue-600" />
           📋 Order Items ({orderItems.length} items)
         </h3>
