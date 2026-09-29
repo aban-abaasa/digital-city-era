@@ -26,6 +26,9 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const isInvoice = receiptData?.paymentStatus && receiptData.paymentStatus !== 'paid';
   const docLabel = isInvoice ? 'Invoice' : 'Receipt';
   const receiptQrValue = branding?.publicWebsiteUrl || window.location.origin;
+  const receiptProofUrl = receiptData?.id && !receiptData?.pendingSync
+    ? `${window.location.origin}/invoice/${encodeURIComponent(receiptData.id)}`
+    : null;
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -162,6 +165,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         saleNumber: receiptData.receiptNumber,
         transactionId: receiptData.transactionId,
         websiteUrl: receiptQrValue,
+        proofUrl: receiptProofUrl,
         createdAt: receiptData.timestamp,
         items: items.map((item) => ({
           name: item.name,
@@ -195,6 +199,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
 Thank you for shopping at ${storeName}! 🇺🇬
 
 ${docLabel} Number: ${receiptData.receiptNumber}
+${receiptProofUrl ? `Verify / track: ${receiptProofUrl}\n` : ''}
 Date: ${formatDate(receiptData.timestamp)}
 Cashier: ${receiptData.receipt.cashier}
 
@@ -281,6 +286,7 @@ BALANCE DUE:     ${formatCurrency(receiptData.balanceDue)}
 ` : ''}
 Payment Method: ${receiptData.paymentMethod}
 Transaction ID: ${receiptData.transactionId}
+${receiptProofUrl ? `Verify / track: ${receiptProofUrl}\n` : ''}
 
 Webale nyo! (Thank you!)
 Visit us again at ${storeName}
@@ -294,16 +300,16 @@ ${branding?.publicWebsiteUrl || ''}
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4">
-      <div className="bg-white rounded-lg md:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#10251f]/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label={`${docLabel} ${receiptData.receiptNumber}`} className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[#e8dfcc] bg-[#fbfaf6] shadow-[0_24px_80px_rgba(12,30,25,0.35)] sm:rounded-[1.75rem]">
         
         {/* Header */}
-        <div className={`bg-gradient-to-r ${isInvoice ? 'from-amber-500 to-orange-600' : 'from-green-600 to-emerald-600'} text-white p-3 md:p-6 flex items-center justify-between`}>
+        <div className={`relative flex items-center justify-between border-t-[5px] ${isInvoice ? 'border-[#c88636] bg-[#293b34]' : 'border-[#d9b66e] bg-[#173d32]'} px-5 py-4 text-white sm:px-7 sm:py-5`}>
           <div className="flex-1">
-            <h2 className="text-lg md:text-2xl font-bold flex items-center">
+            <h2 className="flex items-center font-serif text-xl font-bold tracking-tight sm:text-3xl">
               🧾 {docLabel}{isInvoice ? ` (${receiptData.paymentStatus === 'partial' ? 'Partially Paid' : 'Unpaid'})` : ''}
             </h2>
-            <p className="text-green-100 mt-1 text-xs md:text-sm">
+            <p className="mt-1 font-mono text-xs tracking-wide text-[#e7e1d4] sm:text-sm">
               #{receiptData.receiptNumber}
             </p>
             {receiptData.pendingSync && (
@@ -321,10 +327,10 @@ ${branding?.publicWebsiteUrl || ''}
         </div>
 
         {/* Action Buttons */}
-        <div className="p-4 bg-gray-50 border-b grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2 border-b border-[#e9e3d7] bg-[#f3f0e8] p-3 sm:grid-cols-4 sm:gap-2.5 sm:p-4">
           <button
             onClick={handlePrint}
-            className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#244b3d] bg-[#244b3d] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#193a30] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
           >
             <FiPrinter className="h-4 w-4" />
             <span>Print</span>
@@ -332,7 +338,7 @@ ${branding?.publicWebsiteUrl || ''}
           
           <button
             onClick={handleDownloadPDF}
-            className="flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#8b6d35] bg-[#8b6d35] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#73582b] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
           >
             <FiDownload className="h-4 w-4" />
             <span>Download</span>
@@ -340,7 +346,7 @@ ${branding?.publicWebsiteUrl || ''}
           
           <button
             onClick={handleEmail}
-            className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#9b493e] bg-[#9b493e] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#823c33] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
           >
             <FiMail className="h-4 w-4" />
             <span>Email</span>
@@ -348,7 +354,7 @@ ${branding?.publicWebsiteUrl || ''}
           
           <button
             onClick={handleWhatsApp}
-            className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#42734c] bg-[#42734c] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#345d3d] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
           >
             <FiShare2 className="h-4 w-4" />
             <span>WhatsApp</span>
@@ -356,7 +362,7 @@ ${branding?.publicWebsiteUrl || ''}
           
           <button
             onClick={handleSMS}
-            className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-sm"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#ad7920] bg-[#ad7920] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#926619] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
           >
             <FiMessageSquare className="h-4 w-4" />
             <span>SMS</span>
@@ -364,7 +370,7 @@ ${branding?.publicWebsiteUrl || ''}
           
           <button
             onClick={handleCopyText}
-            className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#56615f] bg-[#56615f] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#424c4a] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
           >
             <FiCopy className="h-4 w-4" />
             <span>Copy</span>
@@ -383,7 +389,7 @@ ${branding?.publicWebsiteUrl || ''}
                   // User cancelled the native share sheet — nothing to report.
                 }
               }}
-              className="flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm"
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#454d83] bg-[#454d83] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#383f70] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
             >
               <FiShare2 className="h-4 w-4" />
               <span>Share</span>
@@ -392,10 +398,10 @@ ${branding?.publicWebsiteUrl || ''}
         </div>
 
         {/* Receipt Content */}
-        <div className="flex-1 overflow-y-auto p-3 md:p-6">
-          <div ref={receiptRef} className="max-w-md mx-auto bg-white text-xs md:text-sm">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,_#f5f0e4,_#f8f7f2_58%)] p-3 sm:p-6">
+          <div ref={receiptRef} className="mx-auto max-w-lg rounded-2xl border border-[#e8dfcc] bg-[#fffefa] px-4 py-5 text-xs text-[#34413b] shadow-[0_8px_30px_rgba(56,47,28,0.08)] sm:px-8 sm:py-7 sm:text-sm">
             {/* Receipt Header */}
-            <div className="receipt-header text-center border-b-2 border-dashed border-gray-300 pb-3 md:pb-4 mb-3 md:mb-4">
+            <div className="receipt-header mb-4 border-b border-dashed border-[#cfc4ab] pb-4 text-center sm:mb-5 sm:pb-5">
               {branding?.logoUrl && (
                 <img
                   src={branding.logoUrl}
@@ -403,7 +409,7 @@ ${branding?.publicWebsiteUrl || ''}
                   className="receipt-store-logo w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl mx-auto mb-2 shadow-md"
                 />
               )}
-              <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">{storeName}</div>
+              <div className="mb-1 font-serif text-2xl font-bold tracking-tight text-[#173d32] sm:text-3xl">{storeName}</div>
               <div className="text-xs md:text-sm text-gray-600 mt-2 space-y-1">
                 {storeLocation && <p>{storeLocation}</p>}
                 {(receiptData?.receipt?.address || branding?.address) && <p>{receiptData?.receipt?.address || branding?.address}</p>}
@@ -497,26 +503,31 @@ ${branding?.publicWebsiteUrl || ''}
                   </div>
                 </div>
               )}
-              <div className="receipt-qr-block mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200 flex flex-col items-center gap-2">
-                  <QRCodeCanvas
-                    value={receiptQrValue}
-                    size={132}
-                    level="M"
-                    includeMargin
-                  />
-                  <p className="receipt-qr-caption text-xs text-gray-600 text-center font-semibold">
-                    `Scan to visit ${storeName}`
+              <div className={`receipt-qr-block mt-4 grid gap-3 rounded-2xl border border-[#ddcfaa] bg-[#f8f4e9] p-3 text-center ${receiptProofUrl ? 'sm:grid-cols-2 sm:p-4' : ''}`}>
+                {receiptProofUrl && (
+                  <div className="flex flex-col items-center gap-2 rounded-xl border border-[#e5d9ba] bg-[#fffefa] p-3">
+                    <QRCodeCanvas value={receiptProofUrl} size={132} level="M" includeMargin />
+                    <p className="receipt-qr-caption text-xs font-semibold text-[#354840]">
+                      Verify receipt or track service
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-[#e5d9ba] bg-[#fffefa] p-3">
+                  <QRCodeCanvas value={receiptQrValue} size={132} level="M" includeMargin />
+                  <p className="receipt-qr-caption text-xs font-semibold text-[#354840]">
+                    Visit {storeName}
                   </p>
+                </div>
               </div>
               {receiptData.jobStatus && (
                 <div className="receipt-row flex justify-between">
                   <span className="font-semibold">Job Status:</span>
-                  <span className="text-right capitalize">{receiptData.jobStatus.replace(/_/g, ' ')}</span>
+                <span className="rounded-full bg-[#f3ead2] px-2.5 py-1 text-right text-[11px] font-bold capitalize text-[#755b22]">{receiptData.jobStatus.replace(/_/g, ' ')}</span>
                 </div>
               )}
               <div className="receipt-row flex justify-between text-xs text-gray-500">
                 <span>Transaction ID:</span>
-                <span className="text-right text-xs truncate">{receiptData.transactionId}</span>
+                <span className="max-w-[65%] break-all text-right font-mono text-[10px] text-gray-500 sm:text-xs">{receiptData.transactionId}</span>
               </div>
             </div>
 

@@ -3,6 +3,7 @@ import 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { supabase } from './supabase';
 import inventoryService from './inventorySupabaseService';
+import { getPublicBusinessPageUrl } from '../utils/publicBusinessUrl';
 const FALLBACK_COMPANY_INFO = {
   name: 'Your Supermarket',
   address: '',
@@ -40,7 +41,7 @@ class ReceiptService {
           businessProfile = data;
         }
         const publicWebsite = businessProfile?.id
-          ? `${window.location.origin}/notices/${businessProfile.id}`
+          ? getPublicBusinessPageUrl(businessProfile.id)
           : (supermarket.website_url || supermarket.website || '');
         return {
           name: supermarket.name,
@@ -94,6 +95,9 @@ class ReceiptService {
       receiptNumber: saleData.saleNumber || `RCP-${Date.now()}`,
       transactionId: saleData.transactionId || null,
       websiteUrl: saleData.websiteUrl || window.location.origin,
+      proofUrl: saleData.proofUrl ?? (saleData.id && !saleData.pendingSync
+        ? `${window.location.origin}/invoice/${encodeURIComponent(saleData.id)}`
+        : null),
       date: this.formatDateTime(saleData.createdAt || new Date()),
       items,
       subtotal: saleData.subtotal || 0,
@@ -178,6 +182,7 @@ class ReceiptService {
     const receipt = this.generateReceiptData(saleData);
     const companyInfo = await this.getCompanyInfo();
     const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 240 });
+    const proofQr = receipt.proofUrl ? await QRCode.toDataURL(receipt.proofUrl, { margin: 1, width: 240 }) : null;
     const isInvoice = receipt.paymentStatus !== 'paid';
     const docLabel = isInvoice ? 'Invoice' : 'Receipt';
     const statusBadge = isInvoice
@@ -308,6 +313,8 @@ class ReceiptService {
         }
         .website-qr { margin: 18px auto 0; padding: 14px; max-width: 220px; text-align: center; border: 1px solid #c4a052; border-radius: 10px; background: #faf8f1; color: #312e81; }
         .website-qr img { width: 132px; height: 132px; background: #fff; padding: 6px; }
+        .proof-qr { margin: 18px auto 0; padding: 14px; max-width: 220px; text-align: center; border: 1px solid #6b8a70; border-radius: 10px; background: #f3f7ef; color: #173d32; }
+        .proof-qr img { width: 132px; height: 132px; background: #fff; padding: 6px; }
         @media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         .uganda-flag { font-size: 24px; }
         .emoji { font-size: 18px; }
@@ -412,6 +419,7 @@ class ReceiptService {
           <h3><span class="emoji">🙏</span> Webale nyo! (Thank you!)</h3>
           <p>We appreciate your business and look forward to serving you again!</p>
           ${companyInfo.website ? `<p><strong>Visit us: ${companyInfo.website}</strong></p>` : ''}
+          ${proofQr ? `<div class="proof-qr"><strong>Verify receipt or track service</strong><br><img src="${proofQr}" alt="Receipt proof and service tracking QR"><p>${receipt.proofUrl}</p></div>` : ''}
           <div class="website-qr"><strong>Visit our public website</strong><br><img src="${websiteQr}" alt="Store website QR"><p>${receipt.websiteUrl || window.location.origin}</p></div>
           <p><span class="emoji">😊</span> Come back soon!</p>
         </div>
@@ -587,20 +595,32 @@ class ReceiptService {
       doc.text(`Points Earned: ${receipt.loyaltyPointsEarned}`, margin, yPos);
       yPos += 6;
     }
-    // Always link the QR to the store's CMMS public board (or app website
-    // when this store has no linked board).
+    // Keep proof/tracking and the public business page as separate QR actions.
     try {
-      const qrValue = receipt.websiteUrl || window.location.origin;
-      const qrDataUrl = await QRCode.toDataURL(qrValue, { margin: 1, width: 280 });
-      const qrSize = 28;
       yPos += 2;
       doc.setFillColor(250, 248, 241);
-      doc.roundedRect(18, yPos - 2, 44, 37, 2, 2, 'F');
-      doc.addImage(qrDataUrl, 'PNG', (pageWidth - qrSize) / 2, yPos, qrSize, qrSize);
-      yPos += qrSize + 2;
-      doc.setFontSize(7);
-      doc.setTextColor(49, 46, 129);
-      doc.text('SCAN TO VISIT OUR WEBSITE', pageWidth / 2, yPos, { align: 'center' });
+      if (receipt.proofUrl) {
+        const proofQr = await QRCode.toDataURL(receipt.proofUrl, { margin: 1, width: 280 });
+        const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 280 });
+        const qrSize = 24;
+        doc.roundedRect(6, yPos - 2, 68, 34, 2, 2, 'F');
+        doc.addImage(proofQr, 'PNG', 12, yPos, qrSize, qrSize);
+        doc.addImage(websiteQr, 'PNG', 44, yPos, qrSize, qrSize);
+        doc.setFontSize(5.5);
+        doc.setTextColor(23, 61, 50);
+        doc.text('VERIFY / TRACK', 24, yPos + 29, { align: 'center' });
+        doc.text('VISIT STORE', 56, yPos + 29, { align: 'center' });
+        yPos += 36;
+      } else {
+        const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 280 });
+        const qrSize = 28;
+        doc.roundedRect(18, yPos - 2, 44, 37, 2, 2, 'F');
+        doc.addImage(websiteQr, 'PNG', (pageWidth - qrSize) / 2, yPos, qrSize, qrSize);
+        yPos += qrSize + 2;
+        doc.setFontSize(7);
+        doc.setTextColor(49, 46, 129);
+        doc.text('SCAN TO VISIT OUR WEBSITE', pageWidth / 2, yPos, { align: 'center' });
+      }
       doc.setFontSize(9);
       yPos += 4;
     } catch (qrError) {

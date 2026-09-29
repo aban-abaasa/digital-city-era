@@ -20,6 +20,7 @@ import {
   ICAN_TO_UGX,
 } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
+import { getPublicBusinessPageUrl } from '../utils/publicBusinessUrl';
 import BuyIcanModal from '@/components/BuyIcanModal';
 import SellIcanModal from '@/components/SellIcanModal';
 import SendIcanOutModal from '@/components/SendIcanOutModal';
@@ -453,7 +454,7 @@ export default function ICANWalletPage({
           const { data: company } = await supabase.from('cmms_company_profiles')
             .select('id').eq('pichin_business_profile_id', businessProfileId).maybeSingle();
           if (company?.id && !cancelled) {
-            setPaymentReceiptWebsite(`${window.location.origin}/notices/${company.id}`);
+            setPaymentReceiptWebsite(getPublicBusinessPageUrl(company.id));
             return;
           }
         }

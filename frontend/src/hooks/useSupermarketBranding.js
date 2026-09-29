@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import inventoryService from '../services/inventorySupabaseService';
+import { getPublicBusinessPageUrl } from '../utils/publicBusinessUrl';
 
 const FALLBACK_NAME = 'Your Supermarket';
 
@@ -73,7 +74,7 @@ export const useSupermarketBranding = () => {
             .eq('pichin_business_profile_id', supermarketRow.pichin_business_profile_id)
             .maybeSingle();
           setBusinessProfile(cmmsProfile || null);
-          setPublicWebsiteUrl(cmmsProfile?.id ? `${window.location.origin}/notices/${cmmsProfile.id}` : (supermarketRow.website_url || supermarketRow.website || window.location.origin));
+          setPublicWebsiteUrl(cmmsProfile?.id ? getPublicBusinessPageUrl(cmmsProfile.id) : (supermarketRow.website_url || supermarketRow.website || window.location.origin));
         } catch (error) {
           console.warn('Could not resolve the store public CMMS website:', error);
           setPublicWebsiteUrl(window.location.origin);
