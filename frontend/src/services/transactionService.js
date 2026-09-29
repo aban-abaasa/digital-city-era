@@ -334,6 +334,27 @@ class TransactionService {
     }
   }
 
+  // Company verification is deliberately separate from the public invoice
+  // preview/payment lookup: only an authenticated active store member can
+  // attest that the receipt belongs to the issuing company.
+  async verifyInvoiceCompanyMember(transactionId) {
+    try {
+      const { data, error } = await supabase.rpc('verify_invoice_company_member', {
+        p_transaction_id: transactionId
+      });
+      if (error) return { success: false, error: error.message };
+      return {
+        success: Boolean(data?.success && data?.verified),
+        companyName: data?.companyName || null,
+        verifiedAt: data?.verifiedAt || null,
+        error: data?.error || null
+      };
+    } catch (error) {
+      console.error('Error verifying invoice company membership:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   // ===================================================
   // ADVANCE A SERVICE JOB'S STATUS FROM THE PUBLIC PAGE
   // A service sale (e.g. laundry) can be paid in full while the job is

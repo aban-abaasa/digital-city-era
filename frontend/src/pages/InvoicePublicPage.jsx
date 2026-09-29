@@ -41,6 +41,7 @@ const InvoicePublicPage = () => {
   const [showJobUpdate, setShowJobUpdate] = useState(false);
   const [updatingJob, setUpdatingJob] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [companyVerification, setCompanyVerification] = useState(null);
   const [payingWithIcan, setPayingWithIcan] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
   const [signInEmail, setSignInEmail] = useState('');
@@ -100,8 +101,12 @@ const InvoicePublicPage = () => {
       setInvoice(result.invoice);
       setCollectAmount(String(Math.round(result.invoice.balanceDue || 0)));
       setError(null);
+      setCompanyVerification(currentUserId
+        ? await transactionService.verifyInvoiceCompanyMember(transactionId)
+        : null);
     } else {
       setError(result.error || 'Invoice not found');
+      setCompanyVerification(null);
     }
     setLoading(false);
   };
@@ -109,7 +114,7 @@ const InvoicePublicPage = () => {
   useEffect(() => {
     loadInvoice();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactionId]);
+  }, [transactionId, currentUserId]);
 
   const isInvoice = invoice && invoice.paymentStatus && invoice.paymentStatus !== 'paid';
   const docLabel = isInvoice ? 'Invoice' : 'Receipt';
@@ -254,6 +259,35 @@ const InvoicePublicPage = () => {
         <div className="p-5 space-y-4">
           <div className="text-sm text-gray-500">
             {new Date(invoice.createdAt).toLocaleString('en-UG')}
+          </div>
+
+          <div className={`rounded-xl border px-3 py-3 text-sm ${companyVerification?.success ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+            {companyVerification?.success ? (
+              <div className="flex items-start gap-2">
+                <FiCheckCircle className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold">Verified by a company member</p>
+                  <p className="mt-0.5 text-xs">{companyVerification.companyName || invoice.storeName}</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="font-semibold">Company verification requires an active member</p>
+                <p className="mt-1 text-xs">The receipt preview and customer payment options remain available. Sign in with an account belonging to {invoice.storeName} to verify this invoice for the company.</p>
+                {!currentUserId && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSignIn(true)}
+                    className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                  >
+                    Sign in as a company member
+                  </button>
+                )}
+                {currentUserId && companyVerification && !companyVerification.success && (
+                  <p className="mt-2 text-xs font-medium">This account is not an active member of the issuing company.</p>
+                )}
+              </>
+            )}
           </div>
 
           <div className="border-t border-b divide-y">
