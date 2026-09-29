@@ -12,7 +12,7 @@ import {
   FiShoppingCart, FiTag, FiHash, FiImage, FiInfo, FiHelpCircle,
   FiBarChart, FiPieChart, FiActivity, FiGift, FiNavigation, 
   FiX, FiXCircle, FiCheck, FiPercent, FiPhone, FiWifi, FiGlobe, FiCamera,
-  FiMenu, FiChevronDown, FiSun, FiMoon
+  FiMenu, FiSun, FiMoon
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -24,6 +24,7 @@ import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import AddProductModal from '../components/AddProductModal';
 import Receipt from '../components/Receipt'; 
 import TransactionHistory from '../components/TransactionHistory';
+import ClassicNotificationList from '../components/ClassicNotificationList';
 import TillSuppliesSection from '../components/TillSuppliesSection';
 import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
@@ -133,6 +134,7 @@ const CashierPortal = () => {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [refreshingProducts, setRefreshingProducts] = useState(false);
+  const [failedProductImages, setFailedProductImages] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   
   // Sample products as fallback (if Supabase fails)
@@ -310,7 +312,7 @@ const CashierPortal = () => {
       // Build query for products
       let productsQuery = supabase
         .from('products')
-        .select('id, name, price, selling_price, cost_price, category, barcode, sku, is_active, supermarket_id, inventory_mode')
+        .select('id, name, price, selling_price, cost_price, category, barcode, sku, images, is_active, supermarket_id, inventory_mode')
         .eq('is_active', true);
       
       // Strict tenant isolation: only this exact supermarket's products.
@@ -380,6 +382,11 @@ const CashierPortal = () => {
           name: product.name,
           sku: product.sku,
           barcode: product.barcode,
+          // Admin product photos are stored in products.images; keep that
+          // same public URL array on the cashier catalog and cart rows.
+          images: (Array.isArray(product.images) ? product.images : product.images ? [product.images] : [])
+            .map(image => typeof image === 'string' ? image : image?.image_url || image?.url)
+            .filter(Boolean),
           price: product.price || 0,
           selling_price: product.selling_price || 0,
           cost_price: product.cost_price || 0,
@@ -955,11 +962,16 @@ const CashierPortal = () => {
   // Load performance metrics from Supabase
   const loadPerformanceMetrics = async () => {
     try {
-      // Load all recent transactions (not filtered by cashier_id)
-      // to match loadRecentTransactions behavior
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
       const { data: transactions, error } = await supabase
         .from('transactions')
         .select('*')
+        .gte('created_at', dayStart.toISOString())
+        .lt('created_at', dayEnd.toISOString())
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -967,14 +979,13 @@ const CashierPortal = () => {
         return;
       }
 
-      if (transactions && transactions.length > 0) {
-        // Calculate metrics from transactions
-        const todaySales = transactions.reduce((sum, t) => sum + (t.total_amount || 0), 0);
+      if (transactions) {
         const todayTransactions = transactions.length;
+        const todaySales = transactions.reduce((sum, t) => sum + (parseFloat(t.total_amount) || 0), 0);
         const averageBasketSize = todayTransactions > 0 ? todaySales / todayTransactions : 0;
         
         // Count total items sold
-        const totalItems = transactions.reduce((sum, t) => sum + (t.items_count || 0), 0);
+        const totalItems = transactions.reduce((sum, t) => sum + (parseInt(t.items_count, 10) || 0), 0);
         
         // Count payment methods
         const mobileMoneyTransactions = transactions.filter(t => 
@@ -1370,7 +1381,7 @@ const CashierPortal = () => {
     loadDailyTasks();
   };
 
-  // Load Performance Data (separate function for performance tab)
+  // Load dashboard-only trends, department sales and achievement data.
   const loadPerformanceData = () => {
     loadWeeklyPerformance();
     loadDepartmentSales();
@@ -1405,9 +1416,9 @@ const CashierPortal = () => {
     };
   }, []);
 
-  // Load performance data when switching to performance tab
+  // Load weekly trends, department sales and achievements on the dashboard.
   useEffect(() => {
-    if (activeTab === 'performance') {
+    if (activeTab === 'dashboard') {
       loadPerformanceData();
     }
   }, [activeTab]);
@@ -2057,55 +2068,11 @@ const CashierPortal = () => {
     }).format(amount);
   };
 
-  // Custom label renderer for pie charts with percentage
-  const renderCustomLabel = (entry) => {
-    const percent = ((entry.value / entry.payload.total) * 100).toFixed(1);
-    return `${percent}%`;
-  };
-
-  // Get performance metrics pie data with totals
-  const getPerformanceMetricsData = () => {
-    const values = [
-      performanceMetrics.todaySales || 1,
-      performanceMetrics.customersServed || 1,
-      performanceMetrics.averageBasketSize || 1,
-      performanceMetrics.todayTransactions || 1,
-      performanceMetrics.totalItems || 1
-    ];
-    const total = values.reduce((a, b) => a + b, 0);
-    
-    return [
-      { name: `Sales: ${formatUGX(performanceMetrics.todaySales)}`, value: performanceMetrics.todaySales || 1, color: '#10b981', total },
-      { name: `Customers: ${performanceMetrics.customersServed}`, value: performanceMetrics.customersServed || 1, color: '#3b82f6', total },
-      { name: `Avg Basket: ${formatUGX(performanceMetrics.averageBasketSize)}`, value: performanceMetrics.averageBasketSize || 1, color: '#a855f7', total },
-      { name: `Transactions: ${performanceMetrics.todayTransactions}`, value: performanceMetrics.todayTransactions || 1, color: '#f59e0b', total },
-      { name: `Items: ${performanceMetrics.totalItems || 0}`, value: performanceMetrics.totalItems || 1, color: '#ef4444', total }
-    ];
-  };
-
-  // Get payment methods pie data with totals
-  const getPaymentMethodsData = () => {
-    const values = [
-      performanceMetrics.mobileMoneyTransactions || 1,
-      performanceMetrics.cashTransactions || 1,
-      performanceMetrics.mobileMoneyTransactions || 1,
-      performanceMetrics.cardTransactions || 1
-    ];
-    const total = values.reduce((a, b) => a + b, 0);
-    
-    return [
-      { name: `MTN Mobile: ${performanceMetrics.mobileMoneyTransactions}`, value: performanceMetrics.mobileMoneyTransactions || 1, color: '#f59e0b', total },
-      { name: `Cash: ${performanceMetrics.cashTransactions}`, value: performanceMetrics.cashTransactions || 1, color: '#10b981', total },
-      { name: `Airtel Money: ${performanceMetrics.mobileMoneyTransactions}`, value: performanceMetrics.mobileMoneyTransactions || 1, color: '#dc2626', total },
-      { name: `Card: ${performanceMetrics.cardTransactions}`, value: performanceMetrics.cardTransactions || 1, color: '#3b82f6', total }
-    ];
-  };
-
-  // Custom label renderer for pie slices
-  const renderLabel = (entry) => {
-    const percent = ((entry.value / entry.total) * 100).toFixed(1);
-    return `${percent}%`;
-  };
+  const getPaymentMethodData = () => [
+    { name: 'Mobile money', value: performanceMetrics.mobileMoneyTransactions, color: '#c4a052' },
+    { name: 'Cash', value: performanceMetrics.cashTransactions, color: '#0f766e' },
+    { name: 'Card', value: performanceMetrics.cardTransactions, color: '#312e81' }
+  ].filter(method => method.value > 0);
 
   // 🛒 ORDER SUBMISSION FUNCTION
   const submitSupplyOrder = async (orderDataFromModal) => {
@@ -2186,23 +2153,36 @@ const CashierPortal = () => {
   const hasServiceItem = currentTransaction.items.some(item => item.inventoryMode === 'service_item');
 
   const renderPOS = () => (
-    <div className="space-y-3 md:space-y-6 animate-fadeInUp container-glass shadow-xl rounded-lg md:rounded-2xl p-2 md:p-6 border border-yellow-200">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-6">
+    <div className="cashier-pos-page animate-fadeInUp">
+      <header className="cashier-pos-heading">
+        <div>
+          <p className="classic-eyebrow">Cashier · Sales counter</p>
+          <h2><FiShoppingCart aria-hidden="true" /> Point of Sale</h2>
+          <p>Find an item, add it to the basket, and complete the sale.</p>
+        </div>
+        <div className="cashier-pos-register">
+          <FiHash aria-hidden="true" />
+          <span><small>Register</small><strong>{cashierProfile?.register || 'Till #1'}</strong></span>
+        </div>
+      </header>
+
+      <div className="cashier-pos-columns">
         {/* Product Selection */}
-        <div className="lg:col-span-2 bg-white rounded-lg md:rounded-xl p-2 md:p-6 shadow-lg">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 md:mb-6 gap-3">
-            <h3 className="text-lg md:text-xl font-bold text-gray-900 flex items-center">
-              🛒 Product Selection
-            </h3>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <section className="cashier-pos-catalog" aria-labelledby="cashier-pos-catalog-title">
+          <div className="cashier-pos-catalog-header">
+            <div>
+              <p className="classic-eyebrow">Store catalogue</p>
+              <h3 id="cashier-pos-catalog-title">Choose products</h3>
+            </div>
+            <div className="cashier-pos-catalog-actions">
               <button
                 onClick={loadProductsFromSupabase}
                 disabled={refreshingProducts}
-                className={`px-3 py-2 md:px-4 ${refreshingProducts ? 'bg-gray-400' : 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700'} text-white rounded-lg font-bold transition-all duration-300 transform hover:scale-105 flex items-center justify-center md:justify-start space-x-2 shadow-lg text-sm md:text-base`}
+                className="cashier-pos-action"
                 title="Refresh products from Manager Portal"
               >
-                <FiRefreshCw className={`h-4 w-4 md:h-5 md:w-5 ${refreshingProducts ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">{refreshingProducts ? 'Loading...' : 'Load POS'}</span>
+                <FiRefreshCw className={refreshingProducts ? 'animate-spin' : ''} />
+                <span>{refreshingProducts ? 'Loading...' : 'Refresh'}</span>
               </button>
               {/* COMMENTED OUT - Add Product button removed from POS
               <button
@@ -2215,16 +2195,16 @@ const CashierPortal = () => {
               */}
               <button
                 onClick={() => setShowBarcodeScanner(true)}
-                className="px-3 py-2 md:px-4 bg-gradient-to-r from-blue-600 to-green-600 text-white rounded-lg font-bold hover:from-blue-700 hover:to-green-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 shadow-lg text-sm md:text-base"
+                className="cashier-pos-action cashier-pos-action-primary"
               >
-                <FiCamera className="h-4 w-4 md:h-5 md:w-5" />
-                <span className="hidden xs:inline">Scan</span>
+                <FiCamera />
+                <span>Scan barcode</span>
               </button>
             </div>
           </div>
           
           {/* Search Bar */}
-          <div className="mb-4">
+          <div className="cashier-pos-search">
             <div className="relative">
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
@@ -2248,28 +2228,30 @@ const CashierPortal = () => {
                 Found {products.filter(p => 
                   p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
+                  p.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.category?.toLowerCase().includes(searchTerm.toLowerCase())
                 ).length} products
               </p>
             )}
           </div>
           
           {/* 🔥 SUPABASE PRODUCTS GRID - Real-time inventory */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 max-h-72 md:max-h-96 overflow-y-auto">
+          <div className="cashier-pos-product-grid">
             {productsLoading ? (
-              <div className="col-span-2 md:col-span-3 text-center py-8">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <p className="text-gray-500 mt-2 text-sm">Loading products from database...</p>
+              <div className="cashier-pos-grid-state">
+                <div className="cashier-pos-spinner"></div>
+                <p>Loading products from your store...</p>
               </div>
             ) : products.length === 0 ? (
-              <div className="col-span-2 md:col-span-3 text-center py-8">
-                <p className="text-gray-500 text-sm">No products available</p>
+              <div className="cashier-pos-grid-state">
+                <FiPackage aria-hidden="true" />
+                <p>No products available</p>
                 <button 
                   onClick={loadProductsFromSupabase}
-                  className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                  className="cashier-pos-action"
                 >
                   <FiRefreshCw className="inline mr-2" />
-                  Reload Products
+                  Reload products
                 </button>
               </div>
             ) : (
@@ -2284,11 +2266,12 @@ const CashierPortal = () => {
 
                 if (filteredProducts.length === 0) {
                   return (
-                    <div className="col-span-2 md:col-span-3 text-center py-8">
-                      <p className="text-gray-500 text-sm">No products found for "{searchTerm}"</p>
+                    <div className="cashier-pos-grid-state">
+                      <FiSearch aria-hidden="true" />
+                      <p>No products found for “{searchTerm}”</p>
                       <button
                         onClick={() => setSearchTerm('')}
-                        className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                        className="cashier-pos-action"
                       >
                         Clear Search
                       </button>
@@ -2300,51 +2283,77 @@ const CashierPortal = () => {
                 const productPrice = product.selling_price || product.price || 0;
                 const productStock = product.stock || product.available_stock || 0;
                 const categoryName = product.categoryName || product.category || 'General';
+                const storedImage = Array.isArray(product.images) ? product.images[0] : product.images;
+                const productImage = typeof storedImage === 'string'
+                  ? storedImage
+                  : storedImage?.image_url || storedImage?.url || product.image_url || null;
                 const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
                 const isLowStock = !isUnlimitedItem && productStock <= (product.minStock || 10);
                 const isOutOfStock = !isUnlimitedItem && productStock === 0;
+                const selectProduct = () => {
+                  if (isOutOfStock) return;
+                  if (product.variants?.length) {
+                    setVariantPickerProduct(product);
+                  } else {
+                    addItemToTransaction(product);
+                  }
+                };
 
                 return (
                   <div
                     key={product.id}
-                    onClick={() => {
-                      if (isOutOfStock) return;
-                      if (product.variants?.length) {
-                        setVariantPickerProduct(product);
-                      } else {
-                        addItemToTransaction(product);
+                    role="button"
+                    tabIndex={isOutOfStock ? -1 : 0}
+                    aria-disabled={isOutOfStock}
+                    aria-label={`${isOutOfStock ? 'Out of stock: ' : 'Add '}${product.name} for ${formatUGX(productPrice)}`}
+                    onClick={selectProduct}
+                    onKeyDown={(event) => {
+                      if (!isOutOfStock && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        selectProduct();
                       }
                     }}
-                    className={`border rounded-lg p-3 md:p-4 hover:shadow-md transition-all duration-300 ${
-                      isOutOfStock
-                        ? 'cursor-not-allowed opacity-50 bg-gray-100 border-gray-300'
-                        : 'cursor-pointer hover:bg-yellow-50 border-gray-200 hover:border-yellow-300'
-                    }`}
+                    className={`cashier-pos-product-card${isOutOfStock ? ' is-unavailable' : ''}`}
                   >
-                    <div className="text-center">
-                      <div className="text-xl md:text-2xl mb-1 md:mb-2">
+                    <div className="cashier-pos-product-media">
+                      <div className="cashier-pos-product-placeholder" aria-hidden="true">
+                        <span>
                         {categoryName.toLowerCase().includes('produce') ? '🥬' :
                          categoryName.toLowerCase().includes('dairy') ? '🥛' :
                          categoryName.toLowerCase().includes('bakery') ? '🍞' :
                          categoryName.toLowerCase().includes('personal') ? '🧼' :
                          categoryName.toLowerCase().includes('electronics') ? '📱' : '🌾'}
+                        </span>
                       </div>
-                      <h4 className="font-semibold text-xs md:text-sm text-gray-900 mb-1 line-clamp-2">{product.name}</h4>
-                      <p className="text-green-600 font-bold text-sm md:text-base">{formatUGX(productPrice)}</p>
-                      <div className="flex items-center justify-center space-x-1 text-xs mt-1">
+                      {productImage && !failedProductImages[productImage] && (
+                        <img
+                          src={productImage}
+                          alt={product.name}
+                          loading="lazy"
+                          onError={() => setFailedProductImages(current => ({ ...current, [productImage]: true }))}
+                        />
+                      )}
+                      {isOutOfStock && <span className="cashier-pos-unavailable-badge">Out of stock</span>}
+                    </div>
+                    <div className="cashier-pos-product-details">
+                      <span className="cashier-pos-category">{categoryName}</span>
+                      <h4>{product.name}</h4>
+                      {product.sku && <p className="cashier-pos-sku">SKU · {product.sku}</p>}
+                      <div className="cashier-pos-product-footer">
+                        <p className="cashier-pos-price">{formatUGX(productPrice)}</p>
+                        <span className="cashier-pos-add-mark" aria-hidden="true">+</span>
+                      </div>
+                      <div className="cashier-pos-stock">
                         {isUnlimitedItem ? (
-                          <span className="text-purple-600 font-semibold text-xs">🧺 Service</span>
+                          <span className="is-service">Service item</span>
                         ) : isOutOfStock ? (
-                          <span className="text-red-600 font-semibold text-xs">❌ Out</span>
+                          <span className="is-out">Out of stock</span>
                         ) : isLowStock ? (
-                          <span className="text-orange-600 font-semibold text-xs">⚠️ {productStock}</span>
+                          <span className="is-low">Low stock · {productStock}</span>
                         ) : (
-                          <span className="text-gray-500 text-xs">✓ {productStock}</span>
+                          <span>{productStock} in stock</span>
                         )}
                       </div>
-                      {product.sku && (
-                        <p className="text-xs text-gray-400 mt-1 line-clamp-1">SKU: {product.sku}</p>
-                      )}
                     </div>
                   </div>
                 );
@@ -2352,16 +2361,20 @@ const CashierPortal = () => {
             })()
             )}
           </div>
-        </div>
+        </section>
 
         {/* Transaction Summary */}
-        <div className="bg-white rounded-lg md:rounded-xl p-2 md:p-6 shadow-lg">
-          <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-            🧾 Current Transaction
-          </h3>
+        <aside className="cashier-pos-checkout" aria-labelledby="cashier-pos-checkout-title">
+          <div className="cashier-pos-checkout-heading">
+            <div>
+              <p className="classic-eyebrow">Customer basket</p>
+              <h3 id="cashier-pos-checkout-title">Current transaction</h3>
+            </div>
+            <span>{currentTransaction.items.reduce((sum, item) => sum + item.quantity, 0)} items</span>
+          </div>
           
           {/* Transaction Items */}
-          <div className="space-y-3 max-h-64 overflow-y-auto mb-6">
+          <div className="cashier-pos-cart-list">
             {currentTransaction.items.length === 0 ? (
               <p className="text-gray-500 text-center py-8">No items added</p>
             ) : (
@@ -2369,7 +2382,10 @@ const CashierPortal = () => {
                 const itemPrice = item.selling_price || item.price || 0;
                 const lineId = item.cartLineId || item.id;
                 return (
-                  <div key={lineId} className="flex items-center justify-between p-2 md:p-3 bg-gray-50 rounded-lg">
+                  <div key={lineId} className="cashier-pos-cart-item">
+                    {item.images?.[0] && !failedProductImages[item.images[0]] && (
+                      <img className="cashier-pos-cart-image" src={item.images[0]} alt="" loading="lazy" />
+                    )}
                     <div className="flex-1">
                       <h4 className="font-medium text-gray-900 text-xs md:text-sm">{item.name}</h4>
                       <p className="text-xs md:text-sm text-gray-600">{formatUGX(itemPrice)} x {item.quantity}</p>
@@ -2417,14 +2433,14 @@ const CashierPortal = () => {
               </div>
               
               {/* Total Amount Due */}
-              <div className="flex justify-between text-base md:text-xl font-bold border-t-2 border-b-2 border-gray-300 py-2 md:py-3 bg-gradient-to-r from-green-50 to-emerald-50">
+              <div className="cashier-pos-total flex justify-between text-base md:text-xl font-bold border-t-2 border-b-2 border-gray-300 py-2 md:py-3 bg-gradient-to-r from-green-50 to-emerald-50">
                 <span className="text-gray-900">TOTAL:</span>
                 <span className="text-green-600">{formatUGX(currentTransaction.total)}</span>
               </div>
               
               {/* Service Job Status - laundry/service tickets only */}
               {hasServiceItem && (
-                <div className="bg-purple-50 border-2 border-purple-200 rounded-lg md:rounded-xl p-2 md:p-3 space-y-2">
+                <div className="cashier-pos-job-status bg-purple-50 border-2 border-purple-200 rounded-lg md:rounded-xl p-2 md:p-3 space-y-2">
                   <label className="block text-xs font-semibold text-purple-900">
                     🧺 Job Status
                   </label>
@@ -2456,7 +2472,7 @@ const CashierPortal = () => {
               )}
 
               {/* Cash Received Input */}
-              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg md:rounded-xl p-2 md:p-3 space-y-2 md:space-y-3">
+              <div className="cashier-pos-cash-entry bg-blue-50 border-2 border-blue-200 rounded-lg md:rounded-xl p-2 md:p-3 space-y-2 md:space-y-3">
                 <label className="block text-xs font-semibold text-blue-900">
                   {billLater ? '💵 Amount Paid Now (optional)' : '💵 Cash Received (UGX)'}
                 </label>
@@ -2502,7 +2518,7 @@ const CashierPortal = () => {
               
               {/* Change Calculator */}
               {cashReceived && parseFloat(cashReceived) >= currentTransaction.total && (
-                <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-lg md:rounded-xl p-2 md:p-3 animate-pulse">
+                <div className="cashier-pos-change bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-lg md:rounded-xl p-2 md:p-3">
                   <div className="flex items-center justify-between mb-1 md:mb-2">
                     <span className="text-xs md:text-base font-bold text-yellow-900">💰 CHANGE:</span>
                     <span className="text-lg md:text-2xl font-bold text-orange-600">
@@ -2571,7 +2587,7 @@ const CashierPortal = () => {
                   <button
                     onClick={() => setPaymentModal(true)}
                     disabled={!canProceed}
-                    className={`w-full py-2 md:py-3 rounded-lg md:rounded-xl font-bold text-xs md:text-sm transition-all duration-300 mt-2 md:mt-3 transform hover:scale-105 shadow-lg ${
+                    className={`cashier-pos-pay-button w-full py-2 md:py-3 rounded-lg md:rounded-xl font-bold text-xs md:text-sm transition-all duration-300 mt-2 md:mt-3 ${
                       canProceed
                         ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
                         : 'bg-gradient-to-r from-yellow-500 to-red-600 text-white hover:from-yellow-600 hover:to-red-700'
@@ -2589,165 +2605,53 @@ const CashierPortal = () => {
               })()}
             </div>
           )}
-        </div>
+        </aside>
       </div>
     </div>
   );
 
   const renderDashboard = () => (
-    <div className="space-y-4 md:space-y-6 animate-slideInLeft container-3d bg-white rounded-none md:rounded-2xl p-2 md:p-8 shadow-none md:shadow-2xl">
-
-      {/* Ugandan-themed Welcome Section - Real Data */}
-      <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-none md:rounded-xl p-2 md:p-4 text-white shadow-none md:shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl md:text-3xl font-bold mb-1 md:mb-2">
-              {getGreeting()}, {cashierProfile?.name || 'Cashier'}! 🇺🇬
-            </h1>
-            <p className="text-yellow-100 text-lg">
-              Welcome to your cashier portal - Ready to serve customers!
-            </p>
-            <div className="flex items-center mt-4 space-x-6 flex-wrap gap-3">
-              <div className="flex items-center space-x-2">
-                <FiClock className="h-5 w-5" />
-                <span>{currentTime.toLocaleTimeString('en-UG')}</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <FiMapPin className="h-5 w-5" />
-                <span>{cashierProfile?.location || 'Kampala Branch'}</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className={`font-semibold ${getShiftStatus().color}`}>
-                  {getShiftStatus().icon} {getShiftStatus().status}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <FiShoppingCart className="h-5 w-5" />
-                <span>Till #{cashierProfile?.register || '1'}</span>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-5xl md:text-6xl mb-2">🏪</div>
-            <p className="text-yellow-100 font-semibold">{branding.name}</p>
-            <p className="text-yellow-100 text-xs mt-1">Supermarket</p>
-            
-            {/* Quick Scanner Access */}
-            <button
-              onClick={() => setShowBarcodeScanner(true)}
-              className="mt-2 px-4 py-2 md:px-6 md:py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-xl font-bold transition-all duration-300 transform hover:scale-105 flex items-center space-x-2 shadow-lg border border-white/30 text-sm md:text-base"
-            >
-              <FiCamera className="h-6 w-6" />
-              <span>📱 Quick Scan</span>
-            </button>
+    <div className="cashier-dashboard animate-fadeInUp">
+      <section className="cashier-dashboard-hero" aria-labelledby="cashier-dashboard-title">
+        <div className="cashier-dashboard-welcome">
+          <p className="classic-eyebrow">Cashier overview · {branding.name}</p>
+          <h1 id="cashier-dashboard-title">{getGreeting()}, {cashierProfile?.name || 'Cashier'}.</h1>
+          <p>Today’s sales, service, and shift activity in one place.</p>
+          <div className="cashier-dashboard-context">
+            <span><FiClock aria-hidden="true" /> {currentTime.toLocaleTimeString('en-UG')}</span>
+            <span><FiMapPin aria-hidden="true" /> {cashierProfile?.location || 'Kampala Branch'}</span>
+            <span><FiShoppingCart aria-hidden="true" /> {cashierProfile?.register || 'Till #1'}</span>
+            <span className={`cashier-dashboard-shift ${getShiftStatus().color}`}>{getShiftStatus().icon} {getShiftStatus().status}</span>
           </div>
         </div>
-      </div>
-
-      {/* Performance Metrics Pie Chart */}
-      <div className="bg-white rounded-lg md:rounded-xl shadow-md md:shadow-lg p-2 md:p-4">
-        <div className="border-b pb-2 md:pb-4 mb-2 md:mb-4 flex items-center justify-between">
-          <h3 className="text-base md:text-lg font-bold text-gray-900 bg-gradient-to-r from-yellow-500 to-red-600 bg-clip-text text-transparent">📊 Today's Performance Breakdown</h3>
-          <button
-            onClick={() => loadPerformanceMetrics()}
-            className="p-1 md:p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
-            title="Refresh metrics"
-          >
-            <FiRefreshCw className="h-4 w-4 md:h-5 md:w-5" />
+        <div className="cashier-dashboard-actions">
+          <button onClick={() => setActiveTab('pos')} className="cashier-dashboard-action-primary">
+            <FiShoppingCart aria-hidden="true" /> Start a sale
+          </button>
+          <button onClick={() => setShowBarcodeScanner(true)} className="cashier-dashboard-action-secondary">
+            <FiCamera aria-hidden="true" /> Scan a product
           </button>
         </div>
-        <div className="h-80 flex items-center justify-center">
-          {performanceMetrics.todayTransactions > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={getPerformanceMetricsData()}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={renderLabel}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {getPerformanceMetricsData().map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value, name, props) => {
-                    const total = props.payload.total;
-                    const percent = ((value / total) * 100).toFixed(1);
-                    return [`${value} (${percent}%)`, props.payload.name];
-                  }}
-                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
-                />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-center py-8">
-              <FiPieChart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No transactions yet</p>
-              <p className="text-sm text-gray-400">Start processing sales to see metrics</p>
-            </div>
-          )}
-        </div>
-      </div>
+      </section>
 
-      {/* Payment Methods Pie Chart */}
-      <div className="bg-white rounded-lg md:rounded-xl shadow-md md:shadow-lg p-2 md:p-4">
-        <div className="border-b pb-2 md:pb-4 mb-2 md:mb-4 flex items-center justify-between">
-          <h3 className="text-base md:text-lg font-bold text-gray-900">💳 Payment Methods Distribution (Today)</h3>
-          <button
-            onClick={() => loadPerformanceMetrics()}
-            className="p-1 md:p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
-            title="Refresh metrics"
-          >
-            <FiRefreshCw className="h-4 w-4 md:h-5 md:w-5" />
-          </button>
-        </div>
-        <div className="h-80 flex items-center justify-center">
-          {(performanceMetrics.mobileMoneyTransactions + performanceMetrics.cashTransactions + performanceMetrics.cardTransactions) > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={getPaymentMethodsData()}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={renderLabel}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {getPaymentMethodsData().map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value, name, props) => {
-                    const total = props.payload.total;
-                    const percent = ((value / total) * 100).toFixed(1);
-                    return [`${value} transactions (${percent}%)`, props.payload.name];
-                  }}
-                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
-                />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-center py-8">
-              <FiPieChart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No payment data yet</p>
-              <p className="text-sm text-gray-400">Process payments to see distribution</p>
-            </div>
-          )}
-        </div>
-      </div>
+      <section className="cashier-dashboard-metrics" aria-label="Today's cashier metrics">
+        {[
+          { label: 'Sales today', value: formatUGX(performanceMetrics.todaySales), detail: 'Gross sales', Icon: FiDollarSign },
+          { label: 'Transactions', value: performanceMetrics.todayTransactions, detail: 'Completed today', Icon: FiCreditCard },
+          { label: 'Average basket', value: formatUGX(performanceMetrics.averageBasketSize), detail: 'Per transaction', Icon: FiTrendingUp },
+          { label: 'Customers served', value: performanceMetrics.customersServed, detail: 'Today', Icon: FiUsers }
+        ].map(({ label, value, detail, Icon }) => (
+          <article className="cashier-dashboard-metric" key={label}>
+            <span className="cashier-dashboard-metric-icon"><Icon aria-hidden="true" /></span>
+            <div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>
+          </article>
+        ))}
+      </section>
+
+      {renderPerformance()}
 
       {/* Daily Tasks */}
-      <div className="bg-white rounded-xl p-6 shadow-lg">
+      <div className="cashier-dashboard-panel bg-white rounded-xl p-6 shadow-lg">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-gray-900">📋 Daily Cashier Tasks</h3>
           {dailyTasks.length > 0 && (
@@ -2803,14 +2707,14 @@ const CashierPortal = () => {
 
       {/* Recent Transactions & Top Products */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 md:gap-4">
-        <div className="bg-white rounded-lg md:rounded-xl p-2 md:p-4 shadow-md md:shadow-lg">
+        <div className="cashier-dashboard-panel bg-white rounded-lg md:rounded-xl p-2 md:p-4 shadow-md md:shadow-lg">
           <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-4">💳 Recent Transactions</h3>
           <div className="space-y-2">
             {recentTransactions.length > 0 ? (
               recentTransactions.map((transaction) => (
                 <div key={transaction.id} className="flex items-center justify-between p-2 md:p-3 border rounded-lg hover:shadow-md transition-all duration-300">
                   <div className="flex items-center space-x-2 md:space-x-3">
-                    <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-r from-yellow-500 to-red-600 rounded-full flex items-center justify-center">
+                    <div className="cashier-dashboard-transaction-icon">
                       <FiShoppingCart className="h-4 w-4 md:h-5 md:w-5 text-white" />
                     </div>
                     <div>
@@ -2845,14 +2749,14 @@ const CashierPortal = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg md:rounded-xl p-2 md:p-4 shadow-md md:shadow-lg">
+        <div className="cashier-dashboard-panel bg-white rounded-lg md:rounded-xl p-2 md:p-4 shadow-md md:shadow-lg">
           <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-4">🥇 Top Products (Today)</h3>
           <div className="space-y-2">
             {topProducts.length > 0 ? (
               topProducts.map((product, index) => (
                 <div key={index} className="flex items-center justify-between p-2 md:p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center space-x-2 md:space-x-3">
-                    <div className="w-6 h-6 md:w-8 md:h-8 bg-yellow-500 rounded-full flex items-center justify-center text-white font-bold text-xs md:text-sm">
+                    <div className="cashier-dashboard-rank">
                       {index + 1}
                     </div>
                     <div>
@@ -3184,19 +3088,28 @@ const CashierPortal = () => {
   }
 
   const renderPerformance = () => (
-    <div className="space-y-6 animate-slideInRight container-neon rounded-2xl p-8">
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">📈 Weekly Performance Trends (Real-time from Supabase)</h3>
+    <section className="cashier-dashboard-performance" aria-labelledby="cashier-dashboard-performance-title">
+      <header className="cashier-dashboard-section-heading">
+        <div>
+          <p className="classic-eyebrow">Sales intelligence</p>
+          <h2 id="cashier-dashboard-performance-title">Performance & growth</h2>
+        </div>
+        <span>Updated from store sales</span>
+      </header>
+      <div className="cashier-dashboard-panel bg-white rounded-xl p-6 shadow-lg">
+        <h3 className="text-xl font-bold text-gray-900 mb-6">Weekly sales and transaction trends</h3>
         {weeklyPerformance.length > 0 ? (
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={weeklyPerformance}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value, name) => name === 'sales' ? [formatUGX(value), 'Sales'] : [value, name]} />
-              <Line type="monotone" dataKey="sales" stroke="#3B82F6" strokeWidth={3} name="Sales (UGX)" />
-              <Line type="monotone" dataKey="transactions" stroke="#10B981" strokeWidth={3} name="Transactions" />
-              <Line type="monotone" dataKey="momo" stroke="#F59E0B" strokeWidth={3} name="Mobile Money" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--cashier-dashboard-grid)" />
+              <XAxis dataKey="name" stroke="var(--cashier-dashboard-muted)" tick={{ fill: 'var(--cashier-dashboard-muted)' }} />
+              <YAxis yAxisId="sales" stroke="var(--cashier-dashboard-muted)" tick={{ fill: 'var(--cashier-dashboard-muted)' }} />
+              <YAxis yAxisId="count" orientation="right" allowDecimals={false} stroke="var(--cashier-dashboard-muted)" tick={{ fill: 'var(--cashier-dashboard-muted)' }} />
+              <Tooltip formatter={(value, name) => name === 'sales' || name === 'Sales (UGX)' ? [formatUGX(value), 'Sales'] : [value, name]} />
+              <Legend />
+              <Line yAxisId="sales" type="monotone" dataKey="sales" stroke="var(--cashier-dashboard-chart-sales)" strokeWidth={3} name="Sales (UGX)" />
+              <Line yAxisId="count" type="monotone" dataKey="transactions" stroke="var(--cashier-dashboard-chart-transactions)" strokeWidth={3} name="Transactions" />
+              <Line yAxisId="count" type="monotone" dataKey="momo" stroke="var(--cashier-dashboard-chart-mobile)" strokeWidth={3} name="Mobile Money" />
             </LineChart>
           </ResponsiveContainer>
         ) : (
@@ -3208,9 +3121,9 @@ const CashierPortal = () => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl p-6 shadow-lg">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">🏪 Department Sales (Today - Supabase)</h3>
+      <div className="cashier-dashboard-performance-breakdown grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="cashier-dashboard-panel bg-white rounded-xl p-6 shadow-lg">
+          <h3 className="text-xl font-bold text-gray-900 mb-6">Sales by department today</h3>
           {departmentSales.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -3240,8 +3153,39 @@ const CashierPortal = () => {
           )}
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-lg">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">🏆 Achievements (Based on Performance)</h3>
+        <div className="cashier-dashboard-panel bg-white rounded-xl p-6 shadow-lg">
+          <h3 className="text-xl font-bold text-gray-900 mb-6">Payment methods today</h3>
+          {getPaymentMethodData().length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={getPaymentMethodData()}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={48}
+                  outerRadius={88}
+                  paddingAngle={3}
+                  dataKey="value"
+                >
+                  {getPaymentMethodData().map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => [`${value} transactions`, 'Payment count']} />
+                <Legend verticalAlign="bottom" />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-center py-12">
+              <FiCreditCard className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 font-medium">No payment activity yet</p>
+              <p className="text-sm text-gray-400">Payment methods will appear after sales are processed</p>
+            </div>
+          )}
+        </div>
+
+        <div className="cashier-dashboard-panel bg-white rounded-xl p-6 shadow-lg">
+          <h3 className="text-xl font-bold text-gray-900 mb-6">Shift achievements</h3>
           <div className="grid grid-cols-1 gap-4">
             {achievements.length > 0 ? (
               achievements.map((achievement) => (
@@ -3276,7 +3220,7 @@ const CashierPortal = () => {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 
   const renderInventory = () => (
@@ -3422,47 +3366,15 @@ const CashierPortal = () => {
   );
 
   const renderNotifications = () => (
-    <div className="space-y-6 animate-slideInRight container-glass shadow-xl rounded-2xl p-8 border border-blue-200">
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">🔔 Notifications</h3>
-        <div className="space-y-4">
-          {notifications.map((notification) => (
-            <div key={notification.id} className={`p-4 border rounded-lg transition-all duration-300 ${
-              notification.read ? 'bg-gray-50 border-gray-200' : 
-              notification.type === 'urgent' ? 'bg-red-50 border-red-200' :
-              notification.type === 'warning' ? 'bg-yellow-50 border-yellow-200' :
-              'bg-blue-50 border-blue-200'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  {!notification.read && (
-                    <div className={`w-2 h-2 rounded-full ${
-                      notification.type === 'urgent' ? 'bg-red-500' :
-                      notification.type === 'warning' ? 'bg-yellow-500' :
-                      'bg-blue-500'
-                    }`}></div>
-                  )}
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h4 className="font-semibold text-gray-900">{notification.title}</h4>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        notification.type === 'urgent' ? 'bg-red-100 text-red-800' :
-                        notification.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {notification.type}
-                      </span>
-                    </div>
-                    <p className="text-gray-600">{notification.message}</p>
-                    <p className="text-sm text-gray-500 mt-1">{notification.time}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <ClassicNotificationList
+      notifications={notifications}
+      eyebrow="Cashier / Updates"
+      description="Select a notification to read the full message."
+      idPrefix="cashier-notification"
+      storageKey={`cashier-notification-dismissals:${cashierProfile.user_id || cashierProfile.id || 'default'}`}
+      className="animate-slideInRight"
+      onDelete={(notification) => setNotifications((current) => current.filter((item) => item.id !== notification.id))}
+    />
   );
 
   // "My Profile" no longer lives here - it's reachable from the avatar
@@ -3471,7 +3383,6 @@ const CashierPortal = () => {
     { id: 'pos', label: 'POS System', icon: FiShoppingCart },
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart },
     { id: 'transactions', label: 'My Receipts', icon: FiPrinter },
-    { id: 'performance', label: 'Performance', icon: FiTrendingUp },
     // { id: 'inventory', label: 'Till Supplies', icon: FiPackage }, // DISABLED - Supply ordering removed from cashier portal
     { id: 'notifications', label: 'Notifications', icon: FiBell },
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiCreditCard },
@@ -3483,7 +3394,7 @@ const CashierPortal = () => {
     <div
       className="min-h-screen sk-portal-themed bg-cover bg-center bg-fixed"
       style={branding.backgroundUrl ? {
-        backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
+        backgroundImage: `linear-gradient(var(--sk-portal-branding-wash)), url(${branding.backgroundUrl})`
       } : undefined}
     >
       <style dangerouslySetInnerHTML={{
@@ -3586,22 +3497,21 @@ const CashierPortal = () => {
         {activeTab === 'pos' && renderPOS()}
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'transactions' && (
-          <div className="animate-fadeInUp">
-            <div className="mb-6">
-              <h2 className="text-3xl font-bold text-gray-900 mb-2 flex items-center">
-                🧾 My Transaction History
-              </h2>
-              <p className="text-gray-600">View and reprint your receipts (includes unsaved receipts)</p>
-            </div>
+          <div className="cashier-receipts-page">
+            <header className="cashier-receipts-heading">
+              <p className="classic-eyebrow">Cashier · Point of sale</p>
+              <h2><FiPrinter aria-hidden="true" /> My Receipts</h2>
+              <p>Review and reprint completed sales.</p>
+            </header>
             <TransactionHistory
               cashierId={cashierProfile?.user_id || cashierProfile?.id}
               supermarketId={cashierProfile?.supermarket_id}
               savedReceipts={savedReceipts}
+              classicLayout
             />
           </div>
         )}
         {activeTab === 'profile' && renderProfile()}
-        {activeTab === 'performance' && renderPerformance()}
         {activeTab === 'inventory' && renderInventory()}
         {activeTab === 'notifications' && renderNotifications()}
         {activeTab === 'ican-wallet' && (

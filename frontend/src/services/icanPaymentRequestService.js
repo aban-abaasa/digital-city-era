@@ -314,7 +314,7 @@ export async function payInvoiceWithIcan({
 
   const { data: store, error: storeError } = await supabase
     .from('supermarkets')
-    .select('owner_user_id, name')
+    .select('owner_user_id, name, pichin_business_profile_id')
     .eq('id', invoice.supermarketId)
     .maybeSingle();
   if (storeError || !store?.owner_user_id) throw new Error('Could not find this store\'s wallet');
@@ -341,7 +341,16 @@ export async function payInvoiceWithIcan({
     throw new Error(`Payment sent, but the store's records could not be updated automatically: ${settleResult.error}. Show this screen to the cashier.`);
   }
 
-  return { invoice, transfer, amountApplied: settleResult.amountApplied, paymentStatus: settleResult.paymentStatus };
+  return {
+    invoice: {
+      ...invoice,
+      recipientUserId: store.owner_user_id,
+      pichinBusinessProfileId: store.pichin_business_profile_id || null,
+    },
+    transfer,
+    amountApplied: settleResult.amountApplied,
+    paymentStatus: settleResult.paymentStatus,
+  };
 }
 
 export async function getActiveIcanPaymentRequests(userId) {

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
+import { QRCodeCanvas } from 'qrcode.react';
 import {
   getOrCreateWallet,
   getBalance,
@@ -428,6 +431,41 @@ export default function ICANWalletPage({
   const [refreshing, setRefreshing] = useState(false);
   const [modal, setModal] = useState(initialModal); // 'send' | 'pay' | 'receive' | 'buy' | 'sell' | 'sendout' | null
   const [paymentReceipt, setPaymentReceipt] = useState(null);
+  const [paymentReceiptWebsite, setPaymentReceiptWebsite] = useState(window.location.origin);
+
+  useEffect(() => {
+    if (!paymentReceipt) return;
+    let cancelled = false;
+    const resolveWebsite = async () => {
+      try {
+        let businessProfileId = paymentReceipt.pichinBusinessProfileId;
+        if (!businessProfileId && paymentReceipt.recipientUserId) {
+          const { data: business } = await supabase.from('business_profiles')
+            .select('id, website').eq('user_id', paymentReceipt.recipientUserId).limit(1).maybeSingle();
+          businessProfileId = business?.id;
+          if (!businessProfileId && business?.website && !cancelled) {
+            const site = /^https?:\/\//i.test(business.website) ? business.website : `https://${business.website}`;
+            setPaymentReceiptWebsite(site);
+            return;
+          }
+        }
+        if (businessProfileId) {
+          const { data: company } = await supabase.from('cmms_company_profiles')
+            .select('id').eq('pichin_business_profile_id', businessProfileId).maybeSingle();
+          if (company?.id && !cancelled) {
+            setPaymentReceiptWebsite(`${window.location.origin}/notices/${company.id}`);
+            return;
+          }
+        }
+        if (!cancelled) setPaymentReceiptWebsite(window.location.origin);
+      } catch (error) {
+        console.warn('Could not resolve public store website for wallet receipt:', error);
+        if (!cancelled) setPaymentReceiptWebsite(window.location.origin);
+      }
+    };
+    resolveWebsite();
+    return () => { cancelled = true; };
+  }, [paymentReceipt]);
   const [activeTab, setActiveTab] = useState('all');
   const [historyOpen, setHistoryOpen] = useState(false); // collapsed until asked for
   const [query, setQuery] = useState('');
@@ -529,6 +567,8 @@ export default function ICANWalletPage({
           payerUserId: userId,
           issuedAt: new Date().toISOString(),
           description: `Invoice payment — ${result.invoice.storeName}`,
+          recipientUserId: result.invoice.recipientUserId,
+          pichinBusinessProfileId: result.invoice.pichinBusinessProfileId,
         });
         toast.success(
           result.paymentStatus === 'paid'
@@ -567,26 +607,30 @@ export default function ICANWalletPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, userId]);
 
-  const downloadPaymentReceipt = () => {
+  const downloadPaymentReceipt = async () => {
     if (!paymentReceipt) return;
-    const receiptText = [
-      'ICANERA WALLET PAYMENT RECEIPT',
-      '--------------------------------',
+    const websiteUrl = paymentReceiptWebsite;
+    const qr = await QRCode.toDataURL(websiteUrl, { margin: 1, width: 260 });
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+    pdf.setFillColor(49, 46, 129); pdf.rect(0, 0, 210, 38, 'F');
+    pdf.setFillColor(196, 160, 82); pdf.rect(0, 38, 210, 2, 'F');
+    pdf.setTextColor(255, 253, 248); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(22); pdf.text('IcanEra payment receipt', 18, 24);
+    pdf.setTextColor(49, 46, 129); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(12);
+    const lines = [
       `Receipt: ${paymentReceipt.receiptNumber}`,
       `Transaction: ${paymentReceipt.transactionId || 'N/A'}`,
       `Amount: ${formatICAN(paymentReceipt.amount)} ${unitLabel(paymentReceipt.currency)}`,
       `Description: ${paymentReceipt.description || 'IcanEra payment'}`,
-      `Payment code: ${paymentReceipt.paymentCode}`,
+      `Payment code: ${paymentReceipt.paymentCode || 'N/A'}`,
       `Date: ${new Date(paymentReceipt.issuedAt).toLocaleString('en-UG')}`,
-      '',
-      'Payment successful.'
-    ].join('\n');
-    const url = URL.createObjectURL(new Blob([receiptText], { type: 'text/plain;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${paymentReceipt.receiptNumber}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
+      'Payment successful.',
+    ];
+    pdf.text(lines, 18, 60, { lineHeightFactor: 1.8 });
+    pdf.setDrawColor(196, 160, 82); pdf.setFillColor(250, 248, 241); pdf.roundedRect(74, 210, 62, 58, 3, 3, 'FD');
+    pdf.addImage(qr, 'PNG', 89, 212, 32, 32);
+    pdf.setTextColor(49, 46, 129); pdf.setFontSize(9); pdf.text('Visit IcanEra', 105, 251, { align: 'center' });
+    pdf.setTextColor(71, 85, 105); pdf.setFontSize(8); pdf.text(websiteUrl, 105, 257, { align: 'center' });
+    pdf.save(`${paymentReceipt.receiptNumber}.pdf`);
   };
 
   const filteredTx = useMemo(() => transactions.filter((tx) => {
@@ -852,8 +896,13 @@ export default function ICANWalletPage({
               </div>
             ))}
           </div>
+          <div className="mt-4 rounded-2xl border border-[#c4a052]/40 bg-[#faf8f1] p-4 text-center">
+            <QRCodeCanvas value={paymentReceiptWebsite} size={132} includeMargin />
+            <p className="mt-2 text-xs font-semibold text-indigo-900">Scan to visit the public website</p>
+            <p className="mt-1 break-all text-[11px] text-slate-600">{paymentReceiptWebsite}</p>
+          </div>
           <div className="mt-5 grid grid-cols-[1.4fr_1fr] gap-3">
-            <button type="button" onClick={downloadPaymentReceipt} className={BTN_PRIMARY}>Download receipt</button>
+            <button type="button" onClick={downloadPaymentReceipt} className={BTN_PRIMARY}>Download QR receipt</button>
             <button type="button" onClick={() => setPaymentReceipt(null)} className={BTN_OUTLINE}>Close</button>
           </div>
         </Sheet>

@@ -5,6 +5,22 @@
    .classic-card / .classic-eyebrow / .font-classic-display (index.css) already
    cover those three classes and are left alone. */
 
+/* The shared ivory card primitive needs an explicit night surface here; the
+   rest of the journey form uses the same dark palette below. */
+.dark .mbg-journey .classic-card {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+.dark .mbg-journey [class~="text-slate-800"] { color: #f1f5f9 !important; }
+.dark .mbg-journey [class~="text-slate-700"],
+.dark .mbg-journey [class~="text-slate-600"] { color: #cbd5e1 !important; }
+.dark .mbg-journey [class~="text-slate-500"] { color: #94a3b8 !important; }
+.dark .mbg-journey [class~="bg-white"] { background-color: #1e293b !important; }
+.dark .mbg-journey [class~="bg-slate-50"] { background-color: #1e293b !important; }
+.dark .mbg-journey [class~="bg-slate-100"] { background-color: #334155 !important; }
+
 .mbg-journey .landing-classic-divider {
   background: linear-gradient(90deg, transparent, #c4a052 20%, #c4a052 80%, transparent);
   height: 1px;

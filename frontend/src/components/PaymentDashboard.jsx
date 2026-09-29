@@ -3,7 +3,7 @@ import { toast } from 'react-toastify';
 import { 
   FiDollarSign, FiActivity, FiTrendingUp, FiShield, FiUsers, FiCreditCard,
   FiAlertTriangle, FiCheckCircle, FiClock, FiGlobe, FiZap,
-  FiRefreshCw, FiDownload, FiEye, FiSettings, FiBell, FiFilter, FiSearch,
+  FiRefreshCw, FiDownload, FiEye, FiSettings, FiFilter, FiSearch,
   FiCalendar, FiPieChart, FiTarget, FiAward, FiHeart, FiStar, FiPercent,
   FiLock, FiWifi, FiSmartphone, FiMapPin, FiInfo, FiTrendingDown,
   FiArrowUp, FiArrowDown, FiMoreHorizontal, FiGrid, FiList, FiXCircle
@@ -12,6 +12,7 @@ import PaymentSecurity from './PaymentSecurity';
 import PaymentAnalytics from './PaymentAnalytics';
 import PaymentMethods from './PaymentMethods';
 import paymentService from '../services/paymentService';
+import ClassicNotificationList from './ClassicNotificationList';
 
 const PaymentDashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
@@ -472,26 +473,18 @@ const PaymentDashboard = () => {
 
         {/* Notifications */}
         {notifications.length > 0 && (
-          <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">🔔 System Notifications</h3>
-              <FiBell className="h-5 w-5 text-gray-500" />
-            </div>
-            <div className="space-y-3">
-              {notifications.map((notification) => (
-                <div key={notification.id} className={`p-3 rounded-lg border-l-4 ${
-                  notification.type === 'success' ? 'border-green-500 bg-green-50' :
-                  notification.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
-                  'border-blue-500 bg-blue-50'
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900">{notification.message}</p>
-                    <span className="text-xs text-gray-500">{notification.time}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ClassicNotificationList
+            notifications={notifications}
+            eyebrow="Payments / Updates"
+            title="System notifications"
+            description="Expand a notice to read the full message."
+            idPrefix="payment-notification"
+            getTitle={(notification) => `${notification.type || 'Payment'} update`}
+            getMessage={(notification) => notification.message}
+            getTime={(notification) => notification.time}
+            getType={(notification) => notification.type}
+            onDelete={(notification) => setNotifications((current) => current.filter((item) => item.id !== notification.id))}
+          />
         )}
       </div>
 

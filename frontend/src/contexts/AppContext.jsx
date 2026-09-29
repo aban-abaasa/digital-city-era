@@ -237,6 +237,12 @@ const appReducer = (state, action) => {
         ]
       };
 
+    case ActionTypes.REMOVE_NOTIFICATION:
+      return {
+        ...state,
+        notifications: state.notifications.filter((notification) => notification.id !== action.payload)
+      };
+
     case ActionTypes.SET_LOADING:
       return {
         ...state,

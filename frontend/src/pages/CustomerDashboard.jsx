@@ -43,6 +43,7 @@ import {
   FiSend,
   FiGrid,
   FiExternalLink,
+  FiSearch,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { referralService } from '../services/referralService';
@@ -723,14 +724,14 @@ const CustomerDashboard = () => {
         </div>
 
         {/* Row 2 — nav tabs (desktop only): ivory bar, ink text, gold underline that slides in */}
-        <div className="hidden sm:block border-b border-[#c4a052]/40 bg-[#fdfaf2]">
+        <div className="hidden border-b border-[#c4a052]/40 bg-[#fdfaf2] sm:block dark:border-slate-700 dark:bg-slate-900">
           <div className="max-w-7xl mx-auto px-2">
             <nav className="flex overflow-x-auto scrollbar-hide gap-1 items-center">
               {ALL_TABS.map(tab => (
                 <button key={tab.id} onClick={() => switchTab(tab.id)}
                   aria-current={activeTab === tab.id ? 'page' : undefined}
                   className={`classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
-                    activeTab === tab.id ? 'font-semibold text-[#1e1b4b]' : 'font-medium text-slate-500 hover:text-[#1e1b4b]'
+                    activeTab === tab.id ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
                   }`}>
                   <span>{tab.emoji}</span>
                   {tab.label}
@@ -739,7 +740,7 @@ const CustomerDashboard = () => {
               <button onClick={() => setActiveTab('ican-wallet')}
                 aria-current={activeTab === 'ican-wallet' ? 'page' : undefined}
                 className={`classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
-                  activeTab === 'ican-wallet' ? 'font-semibold text-[#1e1b4b]' : 'font-medium text-[#a17c28] hover:text-[#1e1b4b]'
+                  activeTab === 'ican-wallet' ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-[#a17c28] hover:text-[#1e1b4b] dark:text-amber-300 dark:hover:text-white'
                 }`}>
                 <span>₡</span> IcanEra Wallet
               </button>
@@ -749,17 +750,17 @@ const CustomerDashboard = () => {
 
         {/* Phone section bar — current section in serif + the one menu
             trigger (opens the bottom sheet rendered just below the header). */}
-        <div className="sm:hidden border-b border-[#c4a052]/25 bg-white">
+        <div className="border-b border-[#c4a052]/25 bg-white sm:hidden dark:border-slate-700 dark:bg-slate-900">
           <div className="flex h-12 items-center justify-between gap-3 px-4">
             <div className="flex min-w-0 items-center gap-2">
               <ActiveTabIcon className="h-[17px] w-[17px] flex-shrink-0 text-indigo-600" />
-              <h2 className="truncate font-classic-display text-[18px] font-semibold leading-none text-slate-800">
+              <h2 className="truncate font-classic-display text-[18px] font-semibold leading-none text-slate-800 dark:text-slate-100">
                 {activeTabMeta.label}
               </h2>
             </div>
             <button type="button" onClick={() => setMobileMenu(true)}
               aria-label="Open menu" aria-expanded={mobileMenuOpen}
-              className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-[#c4a052]/40 bg-[#faf8f3] px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition-transform active:scale-95">
+              className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-[#c4a052]/40 bg-[#faf8f3] px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition-transform active:scale-95 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
               <FiGrid className="h-3.5 w-3.5 text-indigo-600" /> Menu
             </button>
           </div>
@@ -977,12 +978,12 @@ const CustomerDashboard = () => {
 
             {/* Book Ride — mybodaguy ride booking */}
             {activeTab === 'book-ride' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <a
                   href="https://bodagoera.icanera.space"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100 transition-colors"
+                  className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-950"
                 >
                   <span className="text-lg" aria-hidden="true">🏍️</span>
                   <span className="flex-1">
@@ -1042,91 +1043,99 @@ const CustomerDashboard = () => {
             )}
 
             {activeTab === 'rewards' && (
-              <div className="space-y-4">
+              <div className="mx-auto w-full min-w-0 space-y-4 sm:space-y-5">
                 {/* ICAN balance card */}
-                <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-2xl p-5 text-white">
-                  <p className="text-violet-200 text-sm mb-1">IcanEra Balance</p>
-                  <p className="text-4xl font-bold">
+                <div className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-violet-700 via-purple-700 to-fuchsia-700 p-5 text-white shadow-xl shadow-purple-950/15 sm:p-7">
+                  <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border border-white/15 bg-white/5" />
+                  <div className="relative">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200">IcanEra Balance</p>
+                  <p className="mt-2 text-3xl font-bold leading-none tabular-nums tracking-tight sm:text-4xl">
                     {icanLoading ? '…' : (icanBalance?.ican ?? 0).toFixed(4)} <span className="text-2xl">₡</span>
                   </p>
                   <p className="text-violet-200 text-xs mt-1">≈ UGX {icanLoading ? '…' : Number(icanBalance?.ugx ?? 0).toLocaleString()}</p>
-                  <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                  <div className="mt-5 grid grid-cols-3 gap-2 text-center sm:gap-3">
                     {[
                       { label: 'Earned', value: icanBalance?.totalEarned },
                       { label: 'Spent',  value: icanBalance?.totalSpent },
                       { label: 'Tithe',  value: icanBalance?.totalTithe },
                     ].map(s => (
-                      <div key={s.label} className="bg-white/10 rounded-xl p-2">
+                      <div key={s.label} className="min-w-0 rounded-xl border border-white/10 bg-white/10 px-1.5 py-2.5 sm:px-2">
                         <p className="text-xs text-violet-200">{s.label}</p>
                         <p className="font-bold text-sm">{icanLoading ? '…' : (s.value ?? 0).toFixed(2)} ₡</p>
                       </div>
                     ))}
                   </div>
-                  <button onClick={() => setActiveTab('ican-wallet')}
-                    className="mt-4 w-full py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-semibold transition-colors">
+                  <button type="button" onClick={() => setActiveTab('ican-wallet')}
+                    className="mt-4 min-h-12 w-full rounded-xl border border-white/15 bg-white/15 px-4 py-3 text-sm font-semibold transition-colors hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80">
                     Open Full Wallet →
                   </button>
+                  </div>
                 </div>
 
                 {/* Loyalty points (existing) */}
-                <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    <FiStar className="text-yellow-500" /> Loyalty Points
-                  </h4>
-                  <div className="flex items-center justify-between mb-3">
+                <details className="group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-700 dark:bg-slate-900">
+                  <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center gap-2 font-semibold text-gray-900 dark:text-slate-100">
+                      <FiStar className="text-yellow-500" /> Loyalty Points
+                    </span>
+                    <FiChevronDown aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-open:rotate-180 dark:text-slate-400" />
+                  </summary>
+                  <div className="pt-4">
+                  <div className="mb-4 flex items-end justify-between gap-3">
                     <div>
-                      <p className="text-3xl font-bold text-gray-900">{currentUser.loyaltyPoints}</p>
-                      <p className="text-sm text-gray-500">points balance</p>
+                      <p className="text-3xl font-bold tabular-nums text-gray-900 dark:text-white">{Number(currentUser.loyaltyPoints || 0).toLocaleString()}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400">points balance</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-gray-500">{1000 - (currentUser.loyaltyPoints % 1000)} pts to next reward</p>
-                      <div className="w-32 h-2 bg-gray-200 rounded-full mt-1">
-                        <div className="h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                      <p className="text-xs font-medium text-gray-500 dark:text-slate-400">{1000 - (currentUser.loyaltyPoints % 1000)} pts to next reward</p>
+                      <div className="ml-auto mt-2 h-2 w-28 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700 sm:w-36" role="progressbar" aria-label="Progress to next loyalty reward" aria-valuemin={0} aria-valuemax={100} aria-valuenow={(currentUser.loyaltyPoints % 1000) / 10}>
+                        <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500"
                           style={{ width: `${(currentUser.loyaltyPoints % 1000) / 10}%` }} />
                       </div>
                     </div>
                   </div>
                   <div className="space-y-2">
                     {customerData.loyaltyRewards.slice(0, 3).map(r => (
-                      <div key={r.id} className={`flex items-center justify-between p-3 rounded-lg border ${r.is_available ? 'border-green-200 bg-green-50' : 'border-gray-100'}`}>
+                      <div key={r.id} className={`flex min-w-0 items-center justify-between gap-3 rounded-xl border p-3 ${r.is_available ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/40' : 'border-gray-200 bg-gray-50 dark:border-slate-700 dark:bg-slate-800/60'}`}>
                         <div className="flex items-center gap-2">
                           <span className="text-lg">{r.icon || '🎁'}</span>
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{r.title}</p>
-                            <p className="text-xs text-gray-500">{r.points_required || r.points} pts</p>
+                            <p className="break-words text-sm font-medium text-gray-900 dark:text-slate-100">{r.title}</p>
+                            <p className="text-xs text-gray-500 dark:text-slate-400">{r.points_required || r.points} pts</p>
                           </div>
                         </div>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${r.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${r.is_available ? 'bg-green-100 text-green-700 dark:bg-green-900/60 dark:text-green-200' : 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-300'}`}>
                           {r.is_available ? 'Available' : 'Locked'}
                         </span>
                       </div>
                     ))}
                     {customerData.loyaltyRewards.length === 0 && (
-                      <p className="text-sm text-gray-400 text-center py-3">Keep shopping to unlock rewards!</p>
+                      <p className="rounded-xl bg-gray-50 py-4 text-center text-sm text-gray-500 dark:bg-slate-800 dark:text-slate-400">Keep shopping to unlock rewards!</p>
                     )}
                   </div>
-                </div>
+                  </div>
+                </details>
 
                 {/* ICAN transaction history */}
-                <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-700 dark:bg-slate-900">
+                  <h4 className="mb-3 flex items-center gap-2 font-semibold text-gray-900 dark:text-slate-100">
                     <FiTrendingUp className="text-blue-500" /> ICAN Transactions
                   </h4>
                   {icanLoading ? (
                     <p className="text-gray-400 text-sm text-center py-4">Loading…</p>
                   ) : icanTxs.length === 0 ? (
-                    <p className="text-gray-400 text-sm text-center py-4">No ICAN transactions yet.</p>
+                    <p className="py-4 text-center text-sm text-gray-500 dark:text-slate-400">No ICAN transactions yet.</p>
                   ) : (
                     <div className="space-y-2">
                       {icanTxs.map(tx => (
-                        <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                        <div key={tx.id} className="flex items-center justify-between gap-3 border-b border-gray-100 py-3 last:border-0 dark:border-slate-700">
                           <div className="flex items-center gap-2">
                             {tx.direction === 'in'
                               ? <FiArrowDownLeft className="text-emerald-500 h-4 w-4" />
                               : <FiArrowUpRight className="text-red-400 h-4 w-4" />}
                             <div>
-                              <p className="text-sm text-gray-700 font-medium capitalize">{tx.transaction_type.replace('_', ' ')}</p>
-                              <p className="text-xs text-gray-400">{new Date(tx.created_at).toLocaleDateString()}</p>
+                              <p className="text-sm font-medium capitalize text-gray-700 dark:text-slate-200">{tx.transaction_type.replace('_', ' ')}</p>
+                              <p className="text-xs text-gray-500 dark:text-slate-400">{new Date(tx.created_at).toLocaleDateString()}</p>
                             </div>
                           </div>
                           <p className={`font-bold text-sm ${tx.direction === 'in' ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -1136,7 +1145,7 @@ const CustomerDashboard = () => {
                       ))}
                     </div>
                   )}
-                </div>
+                </section>
               </div>
             )}
 
@@ -1255,36 +1264,45 @@ const CustomerDashboard = () => {
 
       {/* Track Orders Modal */}
       {showTrackModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 animate-fadeIn">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-2xl rounded-2xl bg-white animate-slideUp">
+        <div className="fixed inset-0 z-50 flex h-[100dvh] items-end justify-center overflow-y-auto bg-black/60 p-0 backdrop-blur-sm animate-fadeIn sm:items-center sm:p-5">
+          <div role="dialog" aria-modal="true" aria-labelledby="track-order-title" className="relative max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-gray-200 bg-white p-4 shadow-2xl animate-slideUp sm:rounded-2xl sm:p-6 dark:border-slate-700 dark:bg-slate-900">
             <div className="mt-3">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-bold text-gray-900 flex items-center">
+              <div className="mb-5 flex items-center justify-between gap-3 sm:mb-6">
+                <h3 id="track-order-title" className="flex items-center text-xl font-bold text-gray-900 dark:text-slate-100 sm:text-2xl">
                   <span className="mr-3 text-3xl animate-pulse">📦</span>
                   Track Your Order
                 </h3>
                 <button
                   onClick={() => setShowTrackModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors duration-200 hover:scale-110 transform"
+                  aria-label="Close order tracking"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-              <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">🔍 Tracking Number</label>
-                  <div className="relative">
+                  <label htmlFor="order-tracking-number" className="mb-2 block text-sm font-semibold text-gray-800 dark:text-slate-200">Tracking number</label>
+                  <div className="relative rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-700 dark:bg-slate-800/70 sm:p-4">
+                    <p className="mb-3 text-xs leading-5 text-gray-500 dark:text-slate-400">Enter the tracking code from your order confirmation.</p>
+                    <div className="relative">
                     <input
+                      id="order-tracking-number"
                       type="text"
                       value={trackingNumber}
                       onChange={(e) => setTrackingNumber(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleTrackOrder()}
                       placeholder="Enter your tracking number"
-                      className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300 text-lg"
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      className="min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 pr-11 text-base font-medium tracking-wide text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 placeholder:font-normal placeholder:tracking-normal dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500"
                     />
-                    <div className="absolute right-3 top-3">
-                      <span className="text-gray-400">🔍</span>
+                    <div aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500">
+                      <FiSearch className="h-5 w-5" />
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -1293,15 +1311,15 @@ const CustomerDashboard = () => {
                     Ride / Delivery tabs) — click one with a live rider
                     assigned to reopen the same live map + Call/Video/Chat
                     screen EnhancedRideRequest shows while actively booking. */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200">
-                  <h4 className="font-bold text-blue-900 mb-4 flex items-center">
+                <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 dark:border-blue-900 dark:from-slate-800 dark:to-indigo-950/50 sm:p-5">
+                  <h4 className="mb-4 flex items-center font-bold text-blue-900 dark:text-blue-100">
                     <span className="mr-2">📋</span>
                     Your Rides &amp; Deliveries
                   </h4>
                   {myRidesLoading ? (
-                    <p className="text-sm text-gray-500 text-center py-4">Loading…</p>
+                    <p className="py-4 text-center text-sm text-gray-500 dark:text-slate-400">Loading…</p>
                   ) : myRides.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-4">No rides or deliveries booked yet.</p>
+                    <p className="py-4 text-center text-sm text-gray-500 dark:text-slate-400">No rides or deliveries booked yet.</p>
                   ) : (
                     <div className="space-y-3">
                       {myRides.map((r) => {
@@ -1309,25 +1327,25 @@ const CustomerDashboard = () => {
                         return (
                           <div
                             key={r.id}
-                            className="flex justify-between items-center p-3 bg-white rounded-lg hover:shadow-md transition-all duration-300"
+                            className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-blue-100 bg-white p-3 transition hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
                           >
                             <div className="flex items-center space-x-3 min-w-0">
                               <span className="text-2xl">{r.service_type === 'delivery' ? '📦' : '🏍️'}</span>
                               <div className="min-w-0">
-                                <span className="font-semibold text-blue-900 truncate block">
+                                <span className="block truncate font-semibold text-blue-900 dark:text-slate-100">
                                   {r.pickup_location} → {r.dropoff_location}
                                 </span>
-                                <p className="text-sm text-gray-600 capitalize">
+                                <p className="text-sm capitalize text-gray-600 dark:text-slate-400">
                                   {r.status.replace('_', ' ')} • {new Date(r.created_at).toLocaleDateString()}
                                 </p>
                               </div>
                             </div>
                             <button
                               onClick={() => (isLive ? setTrackedRide(r) : toast.info(`This ${r.service_type} is ${r.status.replace('_', ' ')}.`))}
-                              className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all duration-300 transform hover:scale-105 ${
+                              className={`min-h-10 flex-shrink-0 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
                                 isLive
                                   ? 'bg-green-600 text-white hover:bg-green-700'
-                                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
                               }`}
                             >
                               {isLive ? 'Track Live' : 'View'}
@@ -1339,16 +1357,16 @@ const CustomerDashboard = () => {
                   )}
                 </div>
 
-                <div className="flex space-x-4">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-3">
                   <button
                     onClick={handleTrackOrder}
-                    className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white py-3 px-6 rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-300 transform hover:scale-105 hover:shadow-xl font-semibold"
+                    className="min-h-12 flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-green-700 px-5 py-3 font-semibold text-white shadow-sm transition hover:from-emerald-700 hover:to-green-800 hover:shadow-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/30"
                   >
                     🔍 Track Order
                   </button>
                   <button
                     onClick={() => setShowTrackModal(false)}
-                    className="flex-1 border-2 border-gray-300 text-gray-700 py-3 px-6 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 transform hover:scale-105"
+                    className="min-h-12 flex-1 rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                   >
                     Close
                   </button>
@@ -1381,7 +1399,7 @@ const CustomerDashboard = () => {
               <div className="space-y-6">
                 {/* Points Display */}
                 <div className="text-center bg-gradient-to-r from-purple-100 to-pink-100 p-6 rounded-2xl border border-purple-200">
-                  <div className="text-6xl mb-3 animate-bounce">⭐</div>
+                  <div className="mb-2 text-4xl sm:mb-3 sm:text-5xl">⭐</div>
                   <h4 className="text-2xl font-bold text-purple-900 mb-2">Your Loyalty Points</h4>
                   <div className="text-4xl font-bold text-purple-700 mb-2">{currentUser.loyaltyPoints.toLocaleString()}</div>
                   <p className="text-purple-600">Available for redemption</p>
@@ -1498,36 +1516,37 @@ const CustomerDashboard = () => {
 
       {/* Refer Friends Modal */}
       {showReferModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 animate-fadeIn">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-2xl rounded-2xl bg-white animate-slideUp">
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-bold text-gray-900 flex items-center">
-                  <span className="mr-3 text-3xl animate-ping">👥</span>
+        <div className="fixed inset-0 z-50 flex h-[100dvh] items-end justify-center overflow-y-auto bg-black/60 p-0 backdrop-blur-sm animate-fadeIn sm:items-center sm:p-5">
+          <div role="dialog" aria-modal="true" aria-labelledby="refer-friends-title" className="relative max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-gray-200 bg-white p-4 pb-24 shadow-2xl animate-slideUp sm:rounded-2xl sm:p-6 dark:border-slate-700 dark:bg-slate-900">
+            <div className="mt-1">
+              <div className="mb-4 flex items-center justify-between gap-3 sm:mb-6">
+                <h3 id="refer-friends-title" className="font-classic-display flex items-center text-xl font-bold text-[#1e1b4b] dark:text-amber-100 sm:text-2xl">
+                  <span className="mr-3 text-3xl">👥</span>
                   Refer Friends
                 </h3>
                 <button
                   onClick={() => setShowReferModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors duration-200 hover:scale-110 transform"
+                  aria-label="Close referral dialog"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-              <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
                 {/* Header */}
-                <div className="text-center bg-gradient-to-r from-orange-100 to-red-100 p-6 rounded-2xl border border-orange-200">
-                  <div className="text-6xl mb-3 animate-bounce">🎉</div>
-                  <h4 className="text-2xl font-bold text-orange-900 mb-2">Earn Rewards for Referring Friends!</h4>
-                  <p className="text-orange-700 text-lg">Share your referral code and earn {referralService.REWARD_POINTS} points for each friend who joins</p>
+                <div className="relative overflow-hidden rounded-2xl border border-[#c4a052]/55 bg-gradient-to-br from-[#211b35] via-[#2c2551] to-[#4b2d5e] p-4 text-center text-white shadow-lg shadow-indigo-950/15 sm:p-6">
+                  <div className="mb-2 text-4xl sm:mb-3 sm:text-5xl">🎉</div>
+                  <h4 className="font-classic-display mb-2 text-xl font-bold leading-tight text-[#f8e9b8] sm:text-2xl">Earn Rewards for Referring Friends</h4>
+                  <p className="mx-auto max-w-lg text-sm leading-6 text-indigo-100 sm:text-base">Invite someone to join and earn <span className="font-semibold text-[#f3dc9b]">{referralService.REWARD_POINTS} points</span> when they sign up.</p>
                 </div>
 
                 {referral.status === 'loading' ? (
-                  <div className="text-center py-8 text-gray-500">Loading your referral info…</div>
+                  <div className="rounded-xl bg-gray-50 py-8 text-center text-gray-500 dark:bg-slate-800 dark:text-slate-400">Loading your referral info…</div>
                 ) : referral.status === 'no-session' ? (
-                  <div className="text-center bg-gray-50 p-6 rounded-xl border border-gray-200">
-                    <p className="text-gray-700 font-medium mb-3">Sign in to get your personal referral code and start earning points.</p>
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center dark:border-slate-700 dark:bg-slate-800">
+                    <p className="mb-3 font-medium text-gray-700 dark:text-slate-200">Sign in to get your personal referral code and start earning points.</p>
                     <button
                       onClick={() => { setShowReferModal(false); navigate('/login'); }}
                       className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 font-semibold"
@@ -1536,9 +1555,9 @@ const CustomerDashboard = () => {
                     </button>
                   </div>
                 ) : referral.status === 'no-account-row' ? (
-                  <div className="text-center bg-gray-50 p-6 rounded-xl border border-gray-200">
-                    <p className="text-gray-700 font-medium mb-2">You're signed in, but we can't find your account profile yet.</p>
-                    <p className="text-gray-500 text-sm mb-3">This can happen right after creating a new account — try again in a moment.</p>
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center dark:border-slate-700 dark:bg-slate-800">
+                    <p className="mb-2 font-medium text-gray-700 dark:text-slate-200">You're signed in, but we can't find your account profile yet.</p>
+                    <p className="mb-3 text-sm text-gray-500 dark:text-slate-400">This can happen right after creating a new account — try again in a moment.</p>
                     <button
                       onClick={loadReferralData}
                       className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 font-semibold"
@@ -1547,10 +1566,10 @@ const CustomerDashboard = () => {
                     </button>
                   </div>
                 ) : referral.status === 'error' ? (
-                  <div className="text-center bg-gray-50 p-6 rounded-xl border border-gray-200">
-                    <p className="text-gray-700 font-medium mb-2">Something went wrong loading your referral info.</p>
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center dark:border-slate-700 dark:bg-slate-800">
+                    <p className="mb-2 font-medium text-gray-700 dark:text-slate-200">Something went wrong loading your referral info.</p>
                     {referral.message && (
-                      <p className="text-gray-400 text-xs mb-3 font-mono break-words">{referral.message}</p>
+                      <p className="mb-3 break-words font-mono text-xs text-gray-500 dark:text-slate-400">{referral.message}</p>
                     )}
                     <button
                       onClick={loadReferralData}
@@ -1562,34 +1581,35 @@ const CustomerDashboard = () => {
                 ) : (
                   <>
                     {/* Referral Stats */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="text-center bg-blue-50 p-4 rounded-xl border border-blue-200">
-                        <div className="text-2xl font-bold text-blue-600">{referral.friendsReferred}</div>
-                        <div className="text-sm text-blue-700">Friends Referred</div>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                      <div className="rounded-xl border border-[#c4a052]/35 bg-[#fdfaf2] p-3 text-center dark:border-[#c4a052]/30 dark:bg-slate-800 sm:p-4">
+                        <div className="font-classic-display text-xl font-bold text-[#1e1b4b] dark:text-amber-100 sm:text-2xl">{referral.friendsReferred}</div>
+                        <div className="text-xs leading-tight text-slate-600 dark:text-slate-300 sm:text-sm">Friends Referred</div>
                       </div>
-                      <div className="text-center bg-green-50 p-4 rounded-xl border border-green-200">
-                        <div className="text-2xl font-bold text-green-600">{referral.pointsEarned}</div>
-                        <div className="text-sm text-green-700">Points Earned</div>
+                      <div className="rounded-xl border border-[#c4a052]/35 bg-[#fdfaf2] p-3 text-center dark:border-[#c4a052]/30 dark:bg-slate-800 sm:p-4">
+                        <div className="font-classic-display text-xl font-bold text-[#1e1b4b] dark:text-amber-100 sm:text-2xl">{referral.pointsEarned}</div>
+                        <div className="text-xs leading-tight text-slate-600 dark:text-slate-300 sm:text-sm">Points Earned</div>
                       </div>
-                      <div className="text-center bg-purple-50 p-4 rounded-xl border border-purple-200">
-                        <div className="text-2xl font-bold text-purple-600">{Math.max(0, 5 - referral.friendsReferred)}</div>
-                        <div className="text-sm text-purple-700">More to Go</div>
+                      <div className="rounded-xl border border-[#c4a052]/35 bg-[#fdfaf2] p-3 text-center dark:border-[#c4a052]/30 dark:bg-slate-800 sm:p-4">
+                        <div className="font-classic-display text-xl font-bold text-[#1e1b4b] dark:text-amber-100 sm:text-2xl">{Math.max(0, 5 - referral.friendsReferred)}</div>
+                        <div className="text-xs leading-tight text-slate-600 dark:text-slate-300 sm:text-sm">More to Go</div>
                       </div>
                     </div>
 
                     {/* Referral Code */}
-                    <div className="bg-gradient-to-r from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-200">
-                      <label className="block text-lg font-bold text-orange-900 mb-3">🎯 Your Referral Code</label>
-                      <div className="flex space-x-3">
+                    <div className="rounded-2xl border border-[#c4a052]/45 bg-[#fdfaf2] p-4 dark:border-slate-700 dark:bg-slate-800 sm:p-5">
+                      <label className="mb-3 block text-base font-bold text-[#1e1b4b] dark:text-amber-100 sm:text-lg">🎯 Your Referral Code</label>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
                         <input
                           type="text"
+                          aria-label="Your referral code"
                           value={referral.code}
                           readOnly
-                          className="flex-1 border-2 border-orange-300 rounded-xl px-4 py-3 bg-white text-center text-xl font-bold text-orange-800"
+                          className="min-h-12 min-w-0 w-full flex-1 rounded-xl border border-[#c4a052]/50 bg-white px-4 py-3 text-center font-mono text-lg font-bold tracking-[0.2em] text-[#1e1b4b] dark:border-slate-600 dark:bg-slate-900 dark:text-amber-100 sm:text-xl"
                         />
                         <button
                           onClick={copyReferralCode}
-                          className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-300 transform hover:scale-105 hover:shadow-xl font-semibold"
+                          className="min-h-12 w-full rounded-xl border border-[#c4a052]/60 bg-[#1e1b4b] px-6 py-3 font-semibold text-[#f3dc9b] transition hover:bg-[#2b2760] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#c4a052]/30 sm:w-auto"
                         >
                           📋 Copy
                         </button>
@@ -1597,27 +1617,27 @@ const CustomerDashboard = () => {
                     </div>
 
                     {/* Share Options */}
-                    <div className="space-y-4">
-                      <h5 className="text-lg font-bold text-gray-900 flex items-center">
+                    <div className="space-y-3 sm:space-y-4">
+                      <h5 className="flex items-center text-base font-bold text-gray-900 dark:text-slate-100 sm:text-lg">
                         <span className="mr-2">📱</span>
                         Share Options
                       </h5>
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 gap-2.5 sm:gap-3">
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(`🎉 Join me on ${branding.name}! Use my referral code: ${referral.code} and get amazing deals! 🛍️`);
                             toast.success('📱 Referral message copied to clipboard!');
                           }}
-                          className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl border border-blue-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                          className="flex min-h-16 items-center justify-between gap-3 rounded-xl border border-[#c4a052]/30 bg-white p-3 text-left transition hover:border-[#c4a052]/70 hover:bg-[#fdfaf2] hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:hover:border-[#c4a052]/60 dark:hover:bg-slate-800/80 sm:p-4"
                         >
                           <div className="flex items-center space-x-3">
                             <span className="text-2xl">💬</span>
                             <div className="text-left">
-                              <div className="font-semibold text-blue-900">Copy Message</div>
-                              <div className="text-sm text-blue-700">Ready-to-send text with emojis</div>
+                              <div className="font-semibold text-[#1e1b4b] dark:text-slate-100">Copy Message</div>
+                              <div className="text-sm text-slate-500 dark:text-slate-400">Ready-to-send text with emojis</div>
                             </div>
                           </div>
-                          <span className="text-blue-600">→</span>
+                          <span className="text-[#a17c28]">→</span>
                         </button>
 
                         <button
@@ -1626,16 +1646,16 @@ const CustomerDashboard = () => {
                             navigator.clipboard.writeText(shareUrl);
                             toast.success('🔗 Referral link copied to clipboard!');
                           }}
-                          className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-xl border border-green-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                          className="flex min-h-16 items-center justify-between gap-3 rounded-xl border border-[#c4a052]/30 bg-white p-3 text-left transition hover:border-[#c4a052]/70 hover:bg-[#fdfaf2] hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:hover:border-[#c4a052]/60 dark:hover:bg-slate-800/80 sm:p-4"
                         >
                           <div className="flex items-center space-x-3">
                             <span className="text-2xl">🔗</span>
                             <div className="text-left">
-                              <div className="font-semibold text-green-900">Copy Link</div>
-                              <div className="text-sm text-green-700">Direct link to sign up page</div>
+                              <div className="font-semibold text-[#1e1b4b] dark:text-slate-100">Copy Link</div>
+                              <div className="text-sm text-slate-500 dark:text-slate-400">Direct link to sign up page</div>
                             </div>
                           </div>
-                          <span className="text-green-600">→</span>
+                          <span className="text-[#a17c28]">→</span>
                         </button>
 
                         <button
@@ -1644,50 +1664,50 @@ const CustomerDashboard = () => {
                             navigator.clipboard.writeText(qrText);
                             toast.success('📱 QR code data copied! Share this link to generate QR codes!');
                           }}
-                          className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-200 hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                          className="flex min-h-16 items-center justify-between gap-3 rounded-xl border border-[#c4a052]/30 bg-white p-3 text-left transition hover:border-[#c4a052]/70 hover:bg-[#fdfaf2] hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:hover:border-[#c4a052]/60 dark:hover:bg-slate-800/80 sm:p-4"
                         >
                           <div className="flex items-center space-x-3">
                             <span className="text-2xl">📱</span>
                             <div className="text-left">
-                              <div className="font-semibold text-purple-900">QR Code</div>
-                              <div className="text-sm text-purple-700">Generate QR code for easy sharing</div>
+                              <div className="font-semibold text-[#1e1b4b] dark:text-slate-100">QR Code</div>
+                              <div className="text-sm text-slate-500 dark:text-slate-400">Generate QR code for easy sharing</div>
                             </div>
                           </div>
-                          <span className="text-purple-600">→</span>
+                          <span className="text-[#a17c28]">→</span>
                         </button>
                       </div>
                     </div>
 
                     {/* Referral Rewards */}
-                    <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl border border-yellow-200">
-                      <h5 className="text-lg font-bold text-orange-900 mb-4 flex items-center">
+                    <div className="rounded-2xl border border-[#c4a052]/45 bg-[#fdfaf2] p-4 dark:border-slate-700 dark:bg-slate-800 sm:p-5">
+                      <h5 className="font-classic-display mb-4 flex items-center text-base font-bold text-[#1e1b4b] dark:text-amber-100 sm:text-lg">
                         <span className="mr-2">🏆</span>
                         Referral Rewards
                       </h5>
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between p-3 bg-white rounded-lg">
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                           <div className="flex items-center space-x-3">
                             <span className="text-2xl">🎁</span>
                             <div>
-                              <span className="font-semibold text-orange-900">First Referral</span>
-                              <p className="text-sm text-orange-700">Get {referralService.REWARD_POINTS} bonus points</p>
+                              <span className="font-semibold text-[#1e1b4b] dark:text-slate-100">First Referral</span>
+                              <p className="text-sm text-slate-500 dark:text-slate-400">Get {referralService.REWARD_POINTS} bonus points</p>
                             </div>
                           </div>
                           {referral.friendsReferred >= 1 ? (
-                            <span className="text-sm font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">✓ Earned</span>
+                            <span className="rounded-full bg-green-100 px-2 py-1 text-sm font-bold text-green-700 dark:bg-green-900/60 dark:text-green-200">✓ Earned</span>
                           ) : (
-                            <span className="text-sm font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Not yet</span>
+                            <span className="rounded-full bg-gray-100 px-2 py-1 text-sm font-bold text-gray-600 dark:bg-slate-700 dark:text-slate-300">Not yet</span>
                           )}
                         </div>
-                        <div className="flex items-center justify-between p-3 bg-white rounded-lg">
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                           <div className="flex items-center space-x-3">
                             <span className="text-2xl">🎯</span>
                             <div>
-                              <span className="font-semibold text-orange-900">5 Referrals</span>
-                              <p className="text-sm text-orange-700">Unlock premium rewards</p>
+                              <span className="font-semibold text-[#1e1b4b] dark:text-slate-100">5 Referrals</span>
+                              <p className="text-sm text-slate-500 dark:text-slate-400">Unlock premium rewards</p>
                             </div>
                           </div>
-                          <span className="text-sm font-bold text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
+                          <span className="rounded-full bg-orange-100 px-2 py-1 text-sm font-bold text-orange-700 dark:bg-orange-900/60 dark:text-orange-200">
                             {Math.min(referral.friendsReferred, 5)}/5
                           </span>
                         </div>
@@ -1698,7 +1718,7 @@ const CustomerDashboard = () => {
 
                 <button
                   onClick={() => setShowReferModal(false)}
-                  className="w-full border-2 border-gray-300 text-gray-700 py-3 px-6 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 transform hover:scale-105"
+                  className="min-h-12 w-full rounded-xl border border-gray-300 px-6 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   Close
                 </button>

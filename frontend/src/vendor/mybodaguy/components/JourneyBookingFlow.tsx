@@ -25,7 +25,7 @@ import { buyICANFromWallet } from '@/services/icanWalletService';
 import { generateTxRef } from '@/services/flutterwaveClient';
 import LocationPickerMap from './LocationPickerMap';
 import FlightResultsPicker, { CabinPicker } from './FlightResultsPicker';
-import { JourneyStepper, StepCard, Field, ChoiceTile, TripSummary, ErrorBanner, FlightSkeleton, type StepperStep } from './JourneyUI';
+import { JourneyStepper, StepCard, Field, TripSummary, ErrorBanner, FlightSkeleton, type StepperStep } from './JourneyUI';
 import { formatIcan, formatMoney, summarizeOffer, todayIsoDate, type CabinClass } from '../services/flightOffers';
 import type { Location } from '../data/locationTypes';
 import { COUNTRIES } from '../data/countries';
@@ -799,12 +799,12 @@ export default function JourneyBookingFlow({
   };
 
   return (
-    <div ref={containerRef} className="mbg-journey mx-auto max-w-2xl scroll-mt-4 space-y-5 py-4 sm:px-4 sm:py-6">
+    <div ref={containerRef} className="mbg-journey mx-auto w-full max-w-2xl scroll-mt-4 space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6">
       <header className="text-center">
         <p className="classic-eyebrow">Door to door</p>
-        <h2 className="mt-1 font-classic-display text-[28px] font-bold leading-tight text-slate-800">Book a full journey</h2>
+        <h2 className="mt-1 font-classic-display text-[26px] font-bold leading-tight tracking-tight text-slate-800 dark:text-slate-100 sm:text-[30px]">Book a full journey</h2>
         <div className="landing-classic-divider mx-auto mt-3 max-w-[14rem]" />
-        <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-slate-500">
+        <p className="mx-auto mt-2 max-w-md text-[13px] leading-6 text-slate-500 dark:text-slate-300 sm:mt-3">
           {bookingKind === 'ship'
             ? 'Cargo carried across the water, with land transport at either end if you want it.'
             : parcelMode
@@ -814,7 +814,7 @@ export default function JourneyBookingFlow({
       </header>
 
       {step !== 'tracking' && step !== 'confirming' && (
-        <div className="classic-card grid grid-cols-2 gap-1 !rounded-2xl p-1" role="group" aria-label="What are you booking?">
+        <div className="classic-card grid grid-cols-2 gap-1 rounded-2xl border border-[#c4a052]/25 p-1 dark:border-slate-700 dark:bg-slate-900" role="group" aria-label="What are you booking?">
           {([['fly', 'Fly', Plane], ['ship', 'Ship Cargo', Ship]] as const).map(([kind, label, Icon]) => {
             const active = bookingKind === kind;
             return (
@@ -823,13 +823,13 @@ export default function JourneyBookingFlow({
                 type="button"
                 aria-pressed={active}
                 onClick={() => changeBookingKind(kind)}
-                className={`flex min-h-[40px] items-center justify-center gap-1 whitespace-nowrap rounded-xl px-1 text-[12px] font-bold leading-none transition-all min-[400px]:min-h-[44px] min-[400px]:gap-2 min-[400px]:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c4a052] ${
+                className={`flex min-h-[44px] items-center justify-center gap-2 rounded-xl text-sm font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c4a052] ${
                   active
                     ? 'bg-gradient-to-br from-[#231b12] to-[#3d2e18] text-[#f6e7bd] shadow-md ring-1 ring-inset ring-[#c4a052]/50'
-                    : 'text-slate-500 hover:bg-[#c4a052]/10 hover:text-[#7a5a12]'
+                    : 'text-slate-500 hover:bg-[#c4a052]/10 hover:text-[#7a5a12] dark:text-slate-300 dark:hover:text-amber-200'
                 }`}
               >
-                <Icon size={14} className="shrink-0 max-[359px]:hidden min-[400px]:h-4 min-[400px]:w-4" /> {label}
+                <Icon size={16} /> {label}
               </button>
             );
           })}
@@ -1052,14 +1052,21 @@ export default function JourneyBookingFlow({
                 { parcel: false, label: 'Travel', desc: 'Rides for you, and your flight', Icon: User },
                 { parcel: true, label: 'Send a parcel', desc: 'Couriers carry it; it flies as baggage', Icon: Package },
               ] as const).map(({ parcel, label, desc, Icon }) => (
-                <ChoiceTile
+                <button
                   key={label}
-                  label={label}
-                  desc={desc}
-                  Icon={Icon}
-                  active={parcelMode === parcel}
+                  type="button"
+                  aria-pressed={parcelMode === parcel}
                   onClick={() => { setParcelMode(parcel); setError(null); }}
-                />
+                  className={`classic-tile flex items-center gap-3 p-3 text-left ${parcelMode === parcel ? 'is-active' : ''}`}
+                >
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                    <Icon size={20} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                    <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                  </span>
+                </button>
               ))}
             </div>
             {parcelMode && (
@@ -1082,14 +1089,21 @@ export default function JourneyBookingFlow({
                         { value: 'motorcycle', label: 'Bike', desc: `Small parcels, up to ${PARCEL_BIKE_MAX_KG} kg`, Icon: Bike },
                         { value: 'car', label: 'Car', desc: 'Bigger or awkward parcels', Icon: Car },
                       ] as const).map(({ value, label, desc, Icon }) => (
-                        <ChoiceTile
+                        <button
                           key={value}
-                          label={label}
-                          desc={desc}
-                          Icon={Icon}
-                          active={effectiveVehicleType === value}
+                          type="button"
+                          aria-pressed={effectiveVehicleType === value}
                           onClick={() => setPickupVehicleType(value)}
-                        />
+                          className={`classic-tile flex items-center gap-3 p-3 ${effectiveVehicleType === value ? 'is-active' : ''}`}
+                        >
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                            <Icon size={20} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                            <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                          </span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -1158,14 +1172,17 @@ export default function JourneyBookingFlow({
                 { on: true, label: parcelMode ? 'BodaGoEra courier' : 'BodaGoEra ride', desc: parcelMode ? 'A rider collects the parcel' : partySize > 1 ? 'A car collects everyone' : 'A driver collects you' },
                 { on: false, label: parcelMode ? "I'll bring it myself" : 'My own way', desc: parcelMode ? 'You take it to the airport' : 'Own car or a friend drives me' },
               ] as const).map(({ on, label, desc }) => (
-                <ChoiceTile
+                <button
                   key={label}
-                  label={label}
-                  desc={desc}
-                  active={wantPickupRide === on}
+                  type="button"
+                  aria-pressed={wantPickupRide === on}
                   disabled={on && !ridesAvailable}
                   onClick={() => { setWantPickupRide(on); setError(null); }}
-                />
+                  className={`classic-tile p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${wantPickupRide === on ? 'is-active' : ''}`}
+                >
+                  <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                  <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                </button>
               ))}
             </div>
             {!wantPickupRide && (
@@ -1182,15 +1199,22 @@ export default function JourneyBookingFlow({
                 { value: 'motorcycle', label: 'Bike', desc: partySize > 1 ? 'Carries one traveller' : 'Quickest through traffic', Icon: Bike },
                 { value: 'car', label: 'Car', desc: 'Room for luggage', Icon: Car },
               ] as const).map(({ value, label, desc, Icon }) => (
-                <ChoiceTile
+                <button
                   key={value}
-                  label={label}
-                  desc={desc}
-                  Icon={Icon}
-                  active={effectiveVehicleType === value}
+                  type="button"
+                  aria-pressed={effectiveVehicleType === value}
                   disabled={partySize > 1 && value === 'motorcycle'}
                   onClick={() => setPickupVehicleType(value)}
-                />
+                  className={`classic-tile flex items-center gap-3 p-3 disabled:cursor-not-allowed disabled:opacity-50 ${effectiveVehicleType === value ? 'is-active' : ''}`}
+                >
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fbf3dc] text-[#a17c28] ring-1 ring-[#c4a052]/40">
+                    <Icon size={20} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-classic-display text-[15px] font-semibold leading-tight text-slate-800">{label}</span>
+                    <span className="block text-[11px] leading-tight text-slate-500">{desc}</span>
+                  </span>
+                </button>
               ))}
             </div>
           </div>
@@ -1271,9 +1295,7 @@ export default function JourneyBookingFlow({
           </Field>
           </>)}
 
-          {/* Sticks to the bottom of the screen so "Continue" is always one
-              tap away on a phone, however long this step gets. */}
-          <div className="sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-[#c4a052]/25 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur min-[420px]:-mx-5 min-[420px]:px-5 dark:bg-slate-800/95">
+          <div className="space-y-2">
             <button
               disabled={(wantPickupRide && ((!selectedAreaId && !manualAddress.trim()) || geocoding)) || (parcelMode && !parcelDescription.trim())}
               onClick={goToFlightStep}
@@ -1637,7 +1659,7 @@ export default function JourneyBookingFlow({
             {!checkingBalance && walletIcan !== null && !hasEnoughBalance && (
               <div className="space-y-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3">
                 <p className="text-sm text-amber-800">
-                  You need {shortfallIcan.toFixed(4)} more ICAN (about UGX {Math.ceil(shortfallIcan * topUpUnitUgx).toLocaleString()} at today's live value) to complete this booking.
+                  You need {shortfallIcan.toFixed(4)} more ICAN (about {quote.local ? formatMoney(Math.ceil(shortfallIcan * quote.local.pricePerIcan * 100) / 100, quote.local.currency) : `UGX ${Math.ceil(shortfallIcan * topUpUnitUgx).toLocaleString()}`} at today's live value) to complete this booking.
                 </p>
                 <button type="button" disabled={toppingUp} onClick={doTopUp} className="classic-btn classic-btn-ink !min-h-[44px] !text-sm">
                   {toppingUp ? <Loader2 className="animate-spin" size={16} /> : <CreditCard size={16} />}

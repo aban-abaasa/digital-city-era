@@ -94,10 +94,9 @@ export default function LocationPickerMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current).setView(DEFAULT_CENTER, 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap, © CartoDB',
-      subdomains: 'abcd',
-      maxZoom: 20,
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
     }).addTo(map);
 
     map.on('click', async (e: L.LeafletMouseEvent) => {

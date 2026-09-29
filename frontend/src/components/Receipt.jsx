@@ -18,13 +18,14 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // Use branding or fallback to defaults
   const branding = supermarketBranding || loadedBranding;
   const storeName = branding?.name || 'Your Supermarket';
-  const storeLocation = receiptData?.receipt?.location || 'Kampala Main Branch';
+  const storeLocation = receiptData?.receipt?.location || '';
   const storeType = branding?.typeLabel || 'Store';
 
   // Invoice vs. receipt: a fully paid sale is a RECEIPT; anything with a
   // balance still owed (unpaid/partial service drop-off, etc.) is an INVOICE.
   const isInvoice = receiptData?.paymentStatus && receiptData.paymentStatus !== 'paid';
   const docLabel = isInvoice ? 'Invoice' : 'Receipt';
+  const receiptQrValue = branding?.publicWebsiteUrl || window.location.origin;
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -75,16 +76,45 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
               body { margin: 10mm; }
             }
             body {
-              font-family: 'Courier New', monospace;
+              font-family: Georgia, 'Times New Roman', serif;
               font-size: 12px;
-              line-height: 1.4;
-              color: #000;
+              line-height: 1.45;
+              color: #283044;
+              background: #f5f2e9;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
+            body > div { max-width: 70mm; margin: 0 auto; padding: 8mm 6mm; background: #fffdf8; }
             .receipt-header {
-              text-align: center;
-              border-bottom: 2px dashed #000;
-              padding-bottom: 10px;
-              margin-bottom: 10px;
+              color: #fffdf8;
+              background: #312e81;
+              border: 0;
+              border-bottom: 3px solid #c4a052;
+              padding: 12px 8px;
+              margin: -8mm -6mm 8mm;
+            }
+            .receipt-header .text-gray-600 { color: #e7e5d5 !important; }
+            .receipt-header .text-2xl, .receipt-header .text-3xl { color: #fffdf8; font-family: Georgia, 'Times New Roman', serif; }
+            .receipt-store-logo { border: 2px solid #e0c476; border-radius: 50%; }
+            .receipt-row { border-bottom: 1px dotted #d6c79f; }
+            .receipt-item { border-color: #e8e1d0; padding: 5px 4px; }
+            .receipt-item:nth-child(even) { background: #faf8f1; }
+            .receipt-qr-block { border: 1px solid #c4a052; background: #faf8f1; padding: 8px; break-inside: avoid; }
+            .receipt-qr-caption { color: #312e81 !important; font-weight: bold; }
+            .receipt-total {
+              color: #fffdf8;
+              background: #312e81;
+              border: 0;
+              border-radius: 4px;
+              padding: 9px 7px;
+              margin-top: 8px;
+            }
+            .receipt-total span { color: #fffdf8 !important; }
+            .receipt-footer {
+              color: #312e81;
+              border-top: 2px solid #c4a052;
+              background: #faf8f1;
+              padding: 10px 5px;
             }
             .receipt-logo {
               font-size: 24px;
@@ -97,29 +127,8 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
               margin: 0 auto 8px auto;
               object-fit: cover;
             }
-            .receipt-row {
-              display: flex;
-              justify-content: space-between;
-              padding: 2px 0;
-            }
-            .receipt-item {
-              border-bottom: 1px dashed #ccc;
-              padding: 5px 0;
-            }
-            .receipt-total {
-              font-weight: bold;
-              font-size: 14px;
-              border-top: 2px solid #000;
-              padding-top: 10px;
-              margin-top: 10px;
-            }
-            .receipt-footer {
-              text-align: center;
-              border-top: 2px dashed #000;
-              padding-top: 10px;
-              margin-top: 15px;
-              font-size: 10px;
-            }
+            .receipt-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+            .receipt-header, .receipt-footer { text-align: center; }
           </style>
         </head>
         <body>
@@ -151,6 +160,8 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
       await receiptGeneratorService.downloadPDFReceipt({
         id: receiptData.id,
         saleNumber: receiptData.receiptNumber,
+        transactionId: receiptData.transactionId,
+        websiteUrl: receiptQrValue,
         createdAt: receiptData.timestamp,
         items: items.map((item) => ({
           name: item.name,
@@ -274,8 +285,8 @@ Transaction ID: ${receiptData.transactionId}
 Webale nyo! (Thank you!)
 Visit us again at ${storeName}
 
-Support: ${receiptData?.receipt?.phone || '+256-700-123456'}
-${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}
+${receiptData?.receipt?.phone || branding?.phone ? `Support: ${receiptData?.receipt?.phone || branding?.phone}` : ''}
+${branding?.publicWebsiteUrl || ''}
     `.trim();
 
     navigator.clipboard.writeText(receiptText);
@@ -394,10 +405,9 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
               )}
               <div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">{storeName}</div>
               <div className="text-xs md:text-sm text-gray-600 mt-2 space-y-1">
-                <p>{storeLocation}</p>
-                <p>{receiptData?.receipt?.address || 'Plot 123, Kampala Road'}</p>
-                <p>Tel: {receiptData?.receipt?.phone || '+256-700-123456'}</p>
-                <p>TIN: 1234567890</p>
+                {storeLocation && <p>{storeLocation}</p>}
+                {(receiptData?.receipt?.address || branding?.address) && <p>{receiptData?.receipt?.address || branding?.address}</p>}
+                {(receiptData?.receipt?.phone || branding?.phone) && <p>Tel: {receiptData?.receipt?.phone || branding?.phone}</p>}
               </div>
             </div>
 
@@ -487,22 +497,17 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
                   </div>
                 </div>
               )}
-              {receiptData.id && (isInvoice || receiptData.jobStatus) && (
-                <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200 flex flex-col items-center gap-2">
+              <div className="receipt-qr-block mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200 flex flex-col items-center gap-2">
                   <QRCodeCanvas
-                    value={`${window.location.origin}/invoice/${receiptData.id}`}
-                    size={120}
+                    value={receiptQrValue}
+                    size={132}
                     level="M"
+                    includeMargin
                   />
-                  <p className="text-xs text-gray-500 text-center">
-                    {isInvoice && receiptData.jobStatus
-                      ? 'Scan to collect payment or update job status later'
-                      : isInvoice
-                      ? 'Scan to collect payment later — no need to search this invoice up again'
-                      : 'Scan to update job status when the customer returns'}
+                  <p className="receipt-qr-caption text-xs text-gray-600 text-center font-semibold">
+                    `Scan to visit ${storeName}`
                   </p>
-                </div>
-              )}
+              </div>
               {receiptData.jobStatus && (
                 <div className="receipt-row flex justify-between">
                   <span className="font-semibold">Job Status:</span>
@@ -527,8 +532,8 @@ ${receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+
                 Exchange & Return within 7 days with receipt
               </p>
               <div className="mt-3 md:mt-4 text-xs text-gray-400 space-y-1">
-                <p>{receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}</p>
-                <p>{receiptData?.receipt?.supportEmail || 'support@' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}</p>
+                {branding?.website && <p>{branding.website}</p>}
+                {(receiptData?.receipt?.supportEmail || branding?.email) && <p>{receiptData?.receipt?.supportEmail || branding.email}</p>}
               </div>
               <div className="mt-3 md:mt-4 text-xl md:text-2xl">
                 🇺🇬

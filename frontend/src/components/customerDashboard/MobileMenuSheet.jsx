@@ -8,8 +8,7 @@ import { FiX, FiCreditCard } from 'react-icons/fi';
 // caller so its fixed positioning isn't affected by that stacking context.
 // `showWallet` (default on) adds the IcanEra Wallet tile; portals whose tabs
 // already include a wallet tab turn it off to avoid a duplicate. The sheet is
-// portaled to <body> so a portal's dark-mode repaint of white surfaces (see
-// supermartkera-portals.css) never turns this light sheet dark.
+// portaled to <body> to keep fixed positioning clear of portal stacking contexts.
 export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSelect, onWallet, name, email, initial, showWallet = true }) {
   // Kept in a ref so callers can pass an inline handler without re-running
   // the effect (and re-toggling body scroll lock) on every parent render.
@@ -38,22 +37,22 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
         onClick={onClose}
         className="absolute inset-0 h-full w-full cursor-default bg-black/50 animate-fade-soft"
       />
-      <div className="animate-sheet-up safe-bottom absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-[28px] bg-white text-slate-800 shadow-2xl">
-        <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-300" />
+      <div className="animate-sheet-up safe-bottom absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-[28px] bg-white text-slate-800 shadow-2xl dark:bg-slate-900 dark:text-slate-100">
+        <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-300 dark:bg-slate-600" />
 
         <div className="flex items-center gap-3 px-5 pb-4 pt-4">
-          <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 font-classic-display text-xl font-bold text-white ring-2 ring-[#e6c980] ring-offset-2 ring-offset-white">
+          <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 font-classic-display text-xl font-bold text-white ring-2 ring-[#e6c980] ring-offset-2 ring-offset-white dark:ring-offset-slate-900">
             {initial}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate font-classic-display text-lg font-semibold leading-tight text-slate-800">{name}</p>
-            {email && <p className="truncate text-xs text-slate-500">{email}</p>}
+            <p className="truncate font-classic-display text-lg font-semibold leading-tight text-slate-800 dark:text-slate-100">{name}</p>
+            {email && <p className="truncate text-xs text-slate-500 dark:text-slate-400">{email}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition-transform active:scale-95"
+            className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition-transform active:scale-95 dark:bg-slate-800 dark:text-slate-300"
           >
             <FiX className="h-4 w-4" />
           </button>
@@ -71,14 +70,14 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
                 onClick={() => onSelect(tab.id)}
                 aria-current={active ? 'page' : undefined}
                 className={`flex flex-col items-center gap-2 rounded-2xl px-2 py-3.5 text-center transition-all active:scale-95 ${
-                  active ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300' : 'bg-slate-50 ring-1 ring-inset ring-slate-100'
+                  active ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300 dark:bg-indigo-950 dark:ring-indigo-800' : 'bg-slate-50 ring-1 ring-inset ring-slate-100 dark:bg-slate-800 dark:ring-slate-700'
                 }`}
               >
                 <span
                   className={`relative grid h-11 w-11 place-items-center rounded-full ${
                     active
                       ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/30'
-                      : 'bg-white text-indigo-600 shadow-sm ring-1 ring-inset ring-slate-100'
+                      : 'bg-white text-indigo-600 shadow-sm ring-1 ring-inset ring-slate-100 dark:bg-slate-700 dark:text-indigo-300 dark:ring-slate-600'
                   }`}
                 >
                   <Icon className="h-5 w-5" />
@@ -86,7 +85,7 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
                     <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{tab.badge}</span>
                   )}
                 </span>
-                <span className={`text-[11px] leading-tight ${active ? 'font-bold text-indigo-700' : 'font-medium text-slate-700'}`}>
+                <span className={`text-[11px] leading-tight ${active ? 'font-bold text-indigo-700 dark:text-indigo-200' : 'font-medium text-slate-700 dark:text-slate-300'}`}>
                   {tab.label}
                 </span>
               </button>
@@ -96,12 +95,12 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
           <button
             type="button"
             onClick={onWallet}
-            className="flex flex-col items-center gap-2 rounded-2xl bg-violet-50 px-2 py-3.5 text-center ring-1 ring-inset ring-violet-100 transition-all active:scale-95"
+            className="flex flex-col items-center gap-2 rounded-2xl bg-violet-50 px-2 py-3.5 text-center ring-1 ring-inset ring-violet-100 transition-all active:scale-95 dark:bg-violet-950 dark:ring-violet-900"
           >
             <span className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-800 text-white shadow-md shadow-violet-500/30">
               <FiCreditCard className="h-5 w-5" />
             </span>
-            <span className="text-[11px] font-semibold leading-tight text-violet-700">IcanEra Wallet</span>
+            <span className="text-[11px] font-semibold leading-tight text-violet-700 dark:text-violet-200">IcanEra Wallet</span>
           </button>
           )}
         </div>

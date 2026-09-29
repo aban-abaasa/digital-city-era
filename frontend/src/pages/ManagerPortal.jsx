@@ -30,6 +30,7 @@ import TillSuppliesOrderManagement from '../components/TillSuppliesOrderManageme
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
+import ClassicNotificationList from '../components/ClassicNotificationList';
 import ICANWalletPage from './ICANWalletPage';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
@@ -9645,31 +9646,22 @@ _Automated Business Report System_`)}`;
   );
 
   const renderAlerts = () => (
-    <div className="space-y-6 animate-fadeInUp">
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">Recent Alerts & Notifications</h3>
-        <div className="space-y-4">
-          {recentAlerts.map((alert) => (
-            <div key={alert.id} className={`border-l-4 p-4 rounded-lg ${
-              alert.type === 'critical' ? 'border-red-500 bg-red-50' :
-              alert.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
-              'border-blue-500 bg-blue-50'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-gray-900">{alert.title}</h4>
-                  <p className="text-gray-600">{alert.message}</p>
-                  <p className="text-sm text-gray-500 mt-1">{alert.timestamp}</p>
-                </div>
-                <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all duration-300">
-                  {alert.action}
-                </button>
-              </div>
-            </div>
-          ))}
+    <ClassicNotificationList
+      notifications={recentAlerts}
+      eyebrow="Manager / Alerts"
+      title="Recent alerts and notifications"
+      description="Expand an alert to review its message and suggested action."
+      emptyMessage="There are no active alerts."
+      idPrefix="manager-alert"
+      getType={(alert) => alert.type}
+      getTime={(alert) => alert.timestamp}
+      renderExpanded={(alert) => alert.action && (
+        <div className="classic-notification-actions">
+          <span className="classic-notification-context">Suggested action: {alert.action}</span>
         </div>
-      </div>
-    </div>
+      )}
+      className="animate-fadeInUp"
+    />
   );
 
   const renderSupplierVerification = () => (
@@ -11507,26 +11499,26 @@ FAREDEAL Uganda Management Team
         <div className="fixed inset-0 z-50" onClick={() => setShowNotifications(false)}>
           <div className="absolute top-20 right-4 w-96 max-w-full">
             <div 
-              className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden transform transition-all duration-300 animate-slideDown"
+              className="manager-notifications-dialog rounded-2xl shadow-2xl border overflow-hidden transform transition-all duration-300 animate-slideDown"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 text-white p-4">
+              <div className="manager-notifications-header p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-                      <FiBell className="h-5 w-5 animate-bounce" />
+                    <div className="manager-notifications-icon w-10 h-10 rounded-full flex items-center justify-center">
+                      <FiBell className="h-5 w-5" />
                     </div>
                     <div>
                       <h3 className="font-bold text-lg">Notifications</h3>
-                      <p className="text-blue-100 text-sm">
+                      <p className="manager-notifications-summary text-sm">
                         {getFilteredNotifications().length} updates • {notificationCount} unread
                       </p>
                     </div>
                   </div>
                   <button 
                     onClick={() => setShowNotifications(false)}
-                    className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                    className="manager-notifications-close p-2 rounded-lg transition-colors"
                   >
                     <FiX className="h-4 w-4" />
                   </button>
@@ -11543,11 +11535,7 @@ FAREDEAL Uganda Management Team
                     <button
                       key={filter.key}
                       onClick={() => setNotificationFilter(filter.key)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                        notificationFilter === filter.key
-                          ? 'bg-white text-purple-600 shadow-lg'
-                          : 'bg-white/20 text-white hover:bg-white/30'
-                      }`}
+                      className={`manager-notifications-filter px-3 py-1 rounded-full text-xs font-medium transition-all ${notificationFilter === filter.key ? 'is-active' : ''}`}
                     >
                       <span className="mr-1">{filter.icon}</span>
                       {filter.label}
@@ -11557,97 +11545,50 @@ FAREDEAL Uganda Management Team
               </div>
 
               {/* Notifications List */}
-              <div className="max-h-96 overflow-y-auto">
-                {getFilteredNotifications().length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">
-                    <FiBell className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                    <p className="text-lg font-medium">No notifications</p>
-                    <p className="text-sm">You're all caught up! 🎉</p>
-                  </div>
-                ) : (
-                  getFilteredNotifications().map((notification, index) => (
-                    <div
-                      key={notification.id}
-                      className={`border-b border-gray-100 p-4 hover:bg-gray-50 transition-all cursor-pointer group ${
-                        notification.unread ? 'bg-blue-50/50' : ''
-                      }`}
-                      onClick={() => handleNotificationAction(notification)}
-                    >
-                      <div className="flex items-start space-x-3">
-                        <div className="flex-shrink-0">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
-                            notification.priority === 'high' ? 'bg-red-100 ring-2 ring-red-500 animate-pulse' :
-                            notification.priority === 'medium' ? 'bg-yellow-100' : 'bg-gray-100'
-                          }`}>
-                            {notification.icon}
-                          </div>
-                        </div>
-                        
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <h4 className={`text-sm font-medium truncate ${
-                              notification.unread ? 'text-gray-900' : 'text-gray-700'
-                            }`}>
-                              {notification.title}
-                            </h4>
-                            <div className="flex items-center space-x-1">
-                              {notification.unread && (
-                                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                              )}
-                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${notification.color}`}>
-                                {notification.type.toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                            {notification.message}
-                          </p>
-                          
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2 text-xs text-gray-500">
-                              <span>{notification.time}</span>
-                              <span>•</span>
-                              <span className="bg-gray-100 px-2 py-1 rounded-full">{notification.ugandaContext}</span>
-                            </div>
-                            
-                            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  markNotificationAsRead(notification.id);
-                                }}
-                                className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600"
-                                title="Mark as read"
-                              >
-                                <FiCheck className="h-3 w-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteNotification(notification.id);
-                                }}
-                                className="p-1 hover:bg-red-100 rounded text-gray-400 hover:text-red-600"
-                                title="Delete"
-                              >
-                                <FiX className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+              <div className="manager-notifications-scroll max-h-96 overflow-y-auto">
+                <ClassicNotificationList
+                  notifications={getFilteredNotifications()}
+                  title="Notifications"
+                  description="Expand an update to review it or take action."
+                  emptyMessage="You're all caught up. New updates will appear here."
+                  showHeading={false}
+                  variant="embedded"
+                  idPrefix="manager-notification"
+                  getType={(notification) => notification.priority || notification.type}
+                  getUnread={(notification) => notification.unread}
+                  onDelete={(notification) => deleteNotification(notification.id)}
+                  renderExpanded={(notification) => (
+                    <div className="classic-notification-actions">
+                      {notification.ugandaContext && (
+                        <span className="classic-notification-context">{notification.ugandaContext}</span>
+                      )}
+                      <button
+                        type="button"
+                        className="classic-notification-action"
+                        onClick={() => handleNotificationAction(notification)}
+                      >
+                        Review update
+                      </button>
+                      <button
+                        type="button"
+                        className="classic-notification-action"
+                        onClick={() => markNotificationAsRead(notification.id)}
+                        disabled={!notification.unread}
+                      >
+                        Mark as read
+                      </button>
                     </div>
-                  ))
-                )}
+                  )}
+                />
               </div>
 
               {/* Footer */}
               {getFilteredNotifications().length > 0 && (
-                <div className="p-4 bg-gray-50 border-t border-gray-100">
+                <div className="manager-notifications-footer p-4">
                   <div className="flex justify-between items-center">
                     <button 
                       onClick={markAllAsRead}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1"
+                      className="manager-notifications-footer-action is-primary text-sm font-medium flex items-center space-x-1"
                     >
                       <FiCheck className="h-4 w-4" />
                       <span>Mark all as read</span>
@@ -11658,7 +11599,7 @@ FAREDEAL Uganda Management Team
                         onClick={() => {
                           addNewNotification('info', 'Test Notification', 'This is a test notification from Uganda', 'system');
                         }}
-                        className="text-sm text-gray-600 hover:text-gray-800 font-medium flex items-center space-x-1"
+                        className="manager-notifications-footer-action text-sm font-medium flex items-center space-x-1"
                       >
                         <FiPlus className="h-4 w-4" />
                         <span>Test</span>
@@ -11669,7 +11610,7 @@ FAREDEAL Uganda Management Team
                           toast.info('📋 Opening full notification center');
                           setShowNotifications(false);
                         }}
-                        className="text-sm text-gray-600 hover:text-gray-800 font-medium flex items-center space-x-1"
+                        className="manager-notifications-footer-action text-sm font-medium flex items-center space-x-1"
                       >
                         <FiExternalLink className="h-4 w-4" />
                         <span>View all</span>

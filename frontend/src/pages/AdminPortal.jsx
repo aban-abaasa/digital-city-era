@@ -6838,19 +6838,14 @@ const AdminPortal = () => {
 
             {/* 🧾 TRANSACTION HISTORY - Admin View */}
             {activeSection === 'transactions' && (
-              <div>
-                <div className={`bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-lg md:rounded-xl ${isMobile ? 'p-3 md:p-6' : 'p-6'} text-white shadow-lg md:shadow-xl mb-4 md:mb-6`}>
-                  <h2 className={`${isMobile ? 'text-base md:text-2xl' : 'text-3xl'} font-bold flex items-center gap-2`}>
-                    <span className="text-lg md:text-2xl flex-shrink-0">🧾</span>
-                    <span className="truncate">All Transactions</span>
-                    <span className="text-sm md:text-lg flex-shrink-0">🇺🇬</span>
-                  </h2>
-                  <p className={`text-yellow-100 mt-2 ${isMobile ? 'text-xs md:text-sm' : 'text-base'}`}>
-                    Complete transaction history with advanced analytics and financial insights
-                  </p>
-                </div>
-                <div className={isMobile ? 'space-y-3 md:space-y-4' : ''}>
-                  <TransactionHistory viewMode="admin" supermarketId={currentAdmin.supermarket_id} />
+              <div className="cashier-receipts-page admin-transactions-page">
+                <header className="cashier-receipts-heading">
+                  <p className="classic-eyebrow">Admin · Sales oversight</p>
+                  <h2><FiFileText aria-hidden="true" /> Transaction ledger</h2>
+                  <p>Search, review and reconcile every sale from your store.</p>
+                </header>
+                <div className="admin-transactions-ledger">
+                  <TransactionHistory viewMode="admin" supermarketId={currentAdmin.supermarket_id} classicLayout />
                 </div>
               </div>
             )}

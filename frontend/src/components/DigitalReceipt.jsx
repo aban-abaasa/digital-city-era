@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import QRCode from 'qrcode';
+import { QRCodeCanvas as ReceiptQrCode } from 'qrcode.react';
 import { 
   FiX, FiDownload, FiMail, FiMessageSquare, FiPrinter, FiShare2,
   FiCheckCircle, FiStar, FiGift, FiHeart, FiCalendar, FiMapPin,
@@ -12,18 +14,17 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
-  const storeSlug = storeName.toLowerCase().replace(/\s+/g, '');
-  const storeWebsite = receiptData?.store?.website || `www.${storeSlug}.com`;
-  const storeSupportEmail = receiptData?.store?.supportEmail || `support@${storeSlug}.com`;
-  const storePhone = receiptData?.store?.phone || '';
-  const storeAddress = receiptData?.store?.address || '';
+  const storeWebsite = branding?.publicWebsiteUrl || receiptData?.store?.website || window.location.origin;
+  const storeWebsiteUrl = /^https?:\/\//i.test(storeWebsite) ? storeWebsite : `https://${storeWebsite}`;
+  const storeSupportEmail = receiptData?.store?.supportEmail || branding?.email || '';
+  const storePhone = receiptData?.store?.phone || branding?.phone || '';
+  const storeAddress = receiptData?.store?.address || branding?.address || '';
   const [emailAddress, setEmailAddress] = useState(receiptData?.customer?.email || '');
   const [phoneNumber, setPhoneNumber] = useState(receiptData?.customer?.phone || '');
   const [sending, setSending] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState('email');
   const [deliveryStatus, setDeliveryStatus] = useState({});
   const [receiptFormat, setReceiptFormat] = useState('standard');
-  const [includeQR, setIncludeQR] = useState(true);
   const [includeLoyalty, setIncludeLoyalty] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -72,7 +73,8 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
   } = receiptData;
 
   // Enhanced receipt delivery functions
-  const generateEnhancedReceiptHTML = () => {
+  const generateEnhancedReceiptHTML = async () => {
+    const qrImage = await QRCode.toDataURL(storeWebsiteUrl, { margin: 1, width: 220 });
     const receiptHTML = `
       <!DOCTYPE html>
       <html>
@@ -232,15 +234,11 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
               </div>
             ` : ''}
 
-            ${includeQR ? `
-              <div class="qr-code">
-                <h3>📱 Receipt QR Code</h3>
-                <div style="width: 120px; height: 120px; background: #ddd; margin: 0 auto; border-radius: 10px; display: flex; align-items: center; justify-content: center;">
-                  QR Code
-                </div>
-                <p><small>Scan to view receipt online</small></p>
-              </div>
-            ` : ''}
+            <div class="qr-code">
+              <h3>Visit ${storeName}</h3>
+              <img src="${qrImage}" alt="QR code for ${storeWebsiteUrl}" style="width:132px;height:132px;background:#fff;padding:8px;border:1px solid #c4a052" />
+              <p><small>Scan to open our public store website</small><br><small>${storeWebsiteUrl}</small></p>
+            </div>
           </div>
 
           <div class="footer">
@@ -259,7 +257,7 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
   const generatePDFReceipt = async () => {
     try {
       setSending(true);
-      const receiptHTML = generateEnhancedReceiptHTML();
+      const receiptHTML = await generateEnhancedReceiptHTML();
       
       // Create a new window for PDF generation
       const printWindow = window.open('', '_blank');
@@ -287,7 +285,7 @@ const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
       setSending(true);
       setDeliveryStatus(prev => ({ ...prev, email: 'sending' }));
       
-      const receiptHTML = generateEnhancedReceiptHTML();
+      const receiptHTML = await generateEnhancedReceiptHTML();
       
       // Simulate API call to email service
       const emailData = {
@@ -457,7 +455,8 @@ _This is an automated message from ${storeName}_
     });
   };
 
-  const generateStyledReceiptHTML = () => {
+  const generateStyledReceiptHTML = async () => {
+    const qrImage = await QRCode.toDataURL(storeWebsiteUrl, { margin: 1, width: 240 });
     return `
       <!DOCTYPE html>
       <html>
@@ -481,6 +480,9 @@ _This is an automated message from ${storeName}_
           .payment-info { border-top: 1px dashed #ccc; padding-top: 15px; margin-bottom: 15px; font-size: 14px; }
           .loyalty-info { background: #f0f9ff; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
           .footer { text-align: center; font-size: 12px; color: #666; border-top: 1px dashed #ccc; padding-top: 15px; }
+          .qr-code { text-align:center; margin:18px 0; padding:16px; border:1px solid #c4a052; border-radius:8px; background:#faf8f1; color:#312e81; }
+          .qr-code img { width:140px; height:140px; padding:8px; background:#fff; }
+          @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
         </style>
       </head>
       <body>
@@ -490,7 +492,7 @@ _This is an automated message from ${storeName}_
             <div class="store-info">
               Your Premium Shopping Destination<br>
               ${storeAddress ? `📍 ${storeAddress}<br>` : ''}
-              📞 ${storePhone || '+256-700-123456'} | 🌐 ${storeWebsite}
+              ${[storePhone && `📞 ${storePhone}`, `🌐 ${storeWebsite}`].filter(Boolean).join(' | ')}
             </div>
           </div>
           
@@ -541,6 +543,13 @@ _This is an automated message from ${storeName}_
             ${payment.cardLast4 ? `<div><strong>Card:</strong> ****${payment.cardLast4}</div>` : ''}
             ${payment.change > 0 ? `<div><strong>Change Given:</strong> ${formatCurrency(payment.change)}</div>` : ''}
           </div>
+
+          <div class="qr-code">
+            <strong>Visit ${storeName}</strong><br>
+            <img src="${qrImage}" alt="QR code for ${storeWebsiteUrl}">
+            <div>Scan to open our public store website</div>
+            <small>${storeWebsiteUrl}</small>
+          </div>
           
           ${customer && loyaltyPointsEarned > 0 ? `
             <div class="loyalty-info">
@@ -559,7 +568,7 @@ _This is an automated message from ${storeName}_
             </div>
             <div>
               Return Policy: 30 days with receipt<br>
-              Customer Service: ${storeSupportEmail}<br>
+              ${storeSupportEmail ? `Customer Service: ${storeSupportEmail}<br>` : ''}
               Follow us: @${storeSlug}
             </div>
             <div style="margin-top: 10px; font-size: 10px;">
@@ -606,10 +615,10 @@ _This is an automated message from ${storeName}_
     }
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     // Create a new window with the receipt HTML
     const printWindow = window.open('', '_blank');
-    printWindow.document.write(generateStyledReceiptHTML());
+    printWindow.document.write(await generateStyledReceiptHTML());
     printWindow.document.close();
     
     // Trigger print dialog
@@ -687,7 +696,7 @@ Thank you for shopping with us!
                 <div className="text-xs text-gray-600">
                   Your Premium Shopping Destination<br/>
                   {storeAddress && <>📍 {storeAddress}<br/></>}
-                  📞 {storePhone || '+256-700-123456'} | 🌐 {storeWebsite}
+                  {[storePhone && `📞 ${storePhone}`, `🌐 ${storeWebsite}`].filter(Boolean).join(' | ')}
                 </div>
               </div>
 
@@ -800,12 +809,18 @@ Thank you for shopping with us!
                 </div>
               )}
 
+              <div className="my-4 flex flex-col items-center rounded-lg border border-amber-300 bg-amber-50 p-3 text-center">
+                <ReceiptQrCode value={storeWebsiteUrl} size={128} includeMargin />
+                <strong className="mt-2 text-indigo-900">Visit {storeName}</strong>
+                <span className="mt-1 break-all text-[10px] text-gray-600">{storeWebsiteUrl}</span>
+              </div>
+
               {/* Footer */}
               <div className="text-center border-t border-dashed border-gray-300 pt-4 text-xs text-gray-600">
                 <div className="font-bold mb-2">Thank you for shopping with {storeName}!</div>
                 <div className="space-y-1">
                   <div>Return Policy: 30 days with receipt</div>
-                  <div>Customer Service: {storeSupportEmail}</div>
+                  {storeSupportEmail && <div>Customer Service: {storeSupportEmail}</div>}
                   <div>Follow us: @{storeSlug}</div>
                 </div>
                 <div className="mt-3 text-xs text-gray-400">

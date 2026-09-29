@@ -27,6 +27,8 @@ const BUSINESS_TYPE_META = {
  */
 export const useSupermarketBranding = () => {
   const [supermarket, setSupermarket] = useState(null);
+  const [publicWebsiteUrl, setPublicWebsiteUrl] = useState('');
+  const [businessProfile, setBusinessProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -35,6 +37,7 @@ export const useSupermarketBranding = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setSupermarket(null);
+        setPublicWebsiteUrl(window.location.origin);
         return;
       }
 
@@ -45,20 +48,43 @@ export const useSupermarketBranding = () => {
 
       if (!supermarketId) {
         setSupermarket(null);
+        setPublicWebsiteUrl(window.location.origin);
         return;
       }
 
       const { data: supermarketRow, error } = await supabase
         .from('supermarkets')
-        .select('id, name, background_image_url, logo_url, business_type, pichin_business_profile_id, supports_supply_orders, can_receive_supplier_orders, can_dispatch_supplier_orders')
+        .select('*')
         .eq('id', supermarketId)
         .maybeSingle();
 
       if (error) throw error;
       setSupermarket(supermarketRow || null);
+      setBusinessProfile(null);
+
+      // A linked CMMS public board is the store's website for jobs,
+      // announcements and business information. Reuse the same public URL
+      // on receipts so scans land on the store's real public presence.
+      if (supermarketRow?.pichin_business_profile_id) {
+        try {
+          const { data: cmmsProfile } = await supabase
+            .from('cmms_company_profiles')
+            .select('*')
+            .eq('pichin_business_profile_id', supermarketRow.pichin_business_profile_id)
+            .maybeSingle();
+          setBusinessProfile(cmmsProfile || null);
+          setPublicWebsiteUrl(cmmsProfile?.id ? `${window.location.origin}/notices/${cmmsProfile.id}` : (supermarketRow.website_url || supermarketRow.website || window.location.origin));
+        } catch (error) {
+          console.warn('Could not resolve the store public CMMS website:', error);
+          setPublicWebsiteUrl(window.location.origin);
+        }
+      } else {
+        setPublicWebsiteUrl(supermarketRow?.website_url || supermarketRow?.website || window.location.origin);
+      }
     } catch (error) {
       console.error('Error loading supermarket branding:', error);
       setSupermarket(null);
+      setPublicWebsiteUrl(window.location.origin);
     } finally {
       setLoading(false);
     }
@@ -73,6 +99,11 @@ export const useSupermarketBranding = () => {
 
   return {
     name: supermarket?.name || FALLBACK_NAME,
+    email: businessProfile?.contact_email || businessProfile?.email || supermarket?.support_email || supermarket?.email || '',
+    phone: businessProfile?.contact_phone || businessProfile?.phone || supermarket?.phone || '',
+    address: businessProfile?.address || businessProfile?.location || supermarket?.address || '',
+    website: businessProfile?.website || businessProfile?.website_url || supermarket?.website_url || supermarket?.website || '',
+    publicWebsiteUrl: publicWebsiteUrl || (typeof window !== 'undefined' ? window.location.origin : ''),
     backgroundUrl: supermarket?.background_image_url || null,
     logoUrl: supermarket?.logo_url || null,
     supermarketId: supermarket?.id || null,

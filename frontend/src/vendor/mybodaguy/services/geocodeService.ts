@@ -13,6 +13,21 @@ export interface GeocodeResult {
   displayName: string;
 }
 
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+async function googleGeocode(params: URLSearchParams): Promise<any | null> {
+  if (!GOOGLE_MAPS_API_KEY) return null;
+  params.set('key', GOOGLE_MAPS_API_KEY);
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.status === 'OK' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 // Nominatim's usage policy caps free public use at 1 request/second per
 // client. This booking flow can fire several geocode calls close together
 // (pickup address, city autocomplete, a dropped map pin's reverse lookup,
@@ -58,6 +73,18 @@ function throttledFetch(url: string, init?: RequestInit): Promise<Response> {
 export async function geocodeAddress(query: string, countryHint?: string): Promise<GeocodeResult | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
+
+  const googleQuery = countryHint && !trimmed.toLowerCase().includes(countryHint.toLowerCase())
+    ? `${trimmed}, ${countryHint}`
+    : trimmed;
+  const googleResult = (await googleGeocode(new URLSearchParams({ address: googleQuery })))?.results?.[0];
+  if (googleResult) {
+    const lat = Number(googleResult.geometry?.location?.lat);
+    const lng = Number(googleResult.geometry?.location?.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng, displayName: googleResult.formatted_address || googleQuery };
+    }
+  }
 
   // Put the country-qualified query first. This is especially important for
   // short local names such as "Bugazi", "Kubiri" or "Ntinda", which can
@@ -135,6 +162,9 @@ export async function geocodeAddress(query: string, countryHint?: string): Promi
  * sees real text in the pickup/dropoff field instead of raw coordinates.
  */
 export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  const googleResult = (await googleGeocode(new URLSearchParams({ latlng: `${lat},${lng}` })))?.results?.[0];
+  if (googleResult?.formatted_address) return googleResult.formatted_address;
+
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=en`;
   try {
     const res = await throttledFetch(url, { headers: { Accept: 'application/json' } });
@@ -225,6 +255,21 @@ export async function searchCities(query: string, countryIso2?: string): Promise
 export async function searchAddresses(query: string, countryIso2?: string, city?: string): Promise<AddressSuggestion[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
+
+  const googleQuery = [trimmed, city, countryIso2?.toUpperCase() === 'UG' ? 'Uganda' : ''].filter(Boolean).join(', ');
+  const googleData = await googleGeocode(new URLSearchParams({ address: googleQuery }));
+  if (googleData?.results?.length) {
+    const googleResults = googleData.results
+      .slice(0, 8)
+      .map((result: any) => ({
+        name: result.address_components?.[0]?.long_name || result.formatted_address?.split(',')[0] || trimmed,
+        displayName: result.formatted_address || googleQuery,
+        lat: Number(result.geometry?.location?.lat),
+        lng: Number(result.geometry?.location?.lng),
+      }))
+      .filter((result: AddressSuggestion) => Number.isFinite(result.lat) && Number.isFinite(result.lng));
+    if (googleResults.length) return googleResults;
+  }
 
   const params = new URLSearchParams({
     format: 'json',

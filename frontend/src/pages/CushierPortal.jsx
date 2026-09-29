@@ -24,6 +24,7 @@ import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import AddProductModal from '../components/AddProductModal';
 import Receipt from '../components/Receipt';
 import TransactionHistory from '../components/TransactionHistory';
+import ClassicNotificationList from '../components/ClassicNotificationList';
 import TillSuppliesSection from '../components/TillSuppliesSection';
 import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
@@ -3132,47 +3133,15 @@ const CashierPortal = () => {
   );
 
   const renderNotifications = () => (
-    <div className="space-y-6 animate-slideInRight container-glass shadow-xl rounded-2xl p-8 border border-blue-200">
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">🔔 Notifications</h3>
-        <div className="space-y-4">
-          {notifications.map((notification) => (
-            <div key={notification.id} className={`p-4 border rounded-lg transition-all duration-300 ${
-              notification.read ? 'bg-gray-50 border-gray-200' : 
-              notification.type === 'urgent' ? 'bg-red-50 border-red-200' :
-              notification.type === 'warning' ? 'bg-yellow-50 border-yellow-200' :
-              'bg-blue-50 border-blue-200'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  {!notification.read && (
-                    <div className={`w-2 h-2 rounded-full ${
-                      notification.type === 'urgent' ? 'bg-red-500' :
-                      notification.type === 'warning' ? 'bg-yellow-500' :
-                      'bg-blue-500'
-                    }`}></div>
-                  )}
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h4 className="font-semibold text-gray-900">{notification.title}</h4>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        notification.type === 'urgent' ? 'bg-red-100 text-red-800' :
-                        notification.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {notification.type}
-                      </span>
-                    </div>
-                    <p className="text-gray-600">{notification.message}</p>
-                    <p className="text-sm text-gray-500 mt-1">{notification.time}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <ClassicNotificationList
+      notifications={notifications}
+      eyebrow="Cashier / Updates"
+      description="Select a notification to read the full message."
+      idPrefix="legacy-cashier-notification"
+      storageKey={`legacy-cashier-notification-dismissals:${cashierProfile.user_id || cashierProfile.id || 'default'}`}
+      className="animate-slideInRight"
+      onDelete={(notification) => setNotifications((current) => current.filter((item) => item.id !== notification.id))}
+    />
   );
 
   // "My Profile" no longer lives here - it's reachable from the avatar

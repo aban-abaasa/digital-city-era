@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import ClassicNotificationList from '../components/ClassicNotificationList';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import OrderModal from '../components/OrderModal';
@@ -2068,62 +2069,26 @@ const Suppliers = () => {
           </div>
 
           {/* Notifications Panel */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 p-4">
-              <h3 className="text-xl font-bold text-white">🔔 Recent Notifications</h3>
-            </div>
-            <div className="p-6">
-              <div className="space-y-3">
-                {notifications.slice(0, 8).map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={`p-4 rounded-lg border-l-4 ${
-                      notification.priority === 'high' ? 'border-red-500 bg-red-50' :
-                      notification.priority === 'medium' ? 'border-yellow-500 bg-yellow-50' :
-                      'border-blue-500 bg-blue-50'
-                    } ${!notification.read ? 'ring-2 ring-blue-200' : ''}`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                            notification.type === 'order' ? 'bg-green-100 text-green-800' :
-                            notification.type === 'payment' ? 'bg-blue-100 text-blue-800' :
-                            notification.type === 'delivery' ? 'bg-purple-100 text-purple-800' :
-                            notification.type === 'alert' ? 'bg-red-100 text-red-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {notification.type.toUpperCase()}
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${
-                            notification.priority === 'high' ? 'bg-red-100 text-red-800' :
-                            notification.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {notification.priority.toUpperCase()}
-                          </span>
-                        </div>
-                        <p className="text-gray-800 font-medium">{notification.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(notification.timestamp).toLocaleString('en-UG')}
-                        </p>
-                      </div>
-                      {!notification.read && (
-                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {notifications.length > 8 && (
-                <div className="text-center mt-4">
-                  <button className="text-orange-600 hover:text-orange-800 font-medium">
-                    View all {notifications.length} notifications →
-                  </button>
+          {notifications.length > 0 && (
+            <ClassicNotificationList
+              notifications={notifications.slice(0, 8)}
+              eyebrow="Supplier management / Updates"
+              title="Recent notifications"
+              description="Expand an update to read the full message."
+              idPrefix="supplier-management-notification"
+              getTitle={(notification) => `${String(notification.type || 'system').replaceAll('_', ' ')} update`}
+              getType={(notification) => notification.priority}
+              getTime={(notification) => new Date(notification.timestamp).toLocaleString('en-UG')}
+              getMessage={(notification) => notification.message}
+              getUnread={(notification) => !notification.read}
+              onDelete={(notification) => setNotifications((current) => current.filter((item) => item.id !== notification.id))}
+              renderExpanded={(notification) => notification.supplier && (
+                <div className="classic-notification-actions">
+                  <span className="classic-notification-context">Supplier reference: {notification.supplier}</span>
                 </div>
               )}
-            </div>
-          </div>
+            />
+          )}
         </div>
       )}
 

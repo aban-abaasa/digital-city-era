@@ -21,6 +21,7 @@ import {
 } from 'recharts';
 import { supabase } from '../services/supabase';
 import { notificationService } from '../services/notificationService';
+import ClassicNotificationList from '../components/ClassicNotificationList';
 import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
@@ -2608,37 +2609,16 @@ const SupplierPortal = () => {
   );
 
   const renderNotifications = () => (
-    <div className="space-y-6 animate-fadeInUp">
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">Notifications</h3>
-        <div className="space-y-4">
-          {notifications.length === 0 && (
-            <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500">
-              No supplier activity yet. New orders and application decisions will appear here automatically.
-            </div>
-          )}
-          {notifications.map((notification) => (
-            <div key={notification.id} className={`border-l-4 p-4 rounded-lg ${
-              notification.type === 'order' ? 'border-blue-500 bg-blue-50' :
-              notification.type === 'payment' ? 'border-green-500 bg-green-50' :
-              notification.type === 'inventory' ? 'border-yellow-500 bg-yellow-50' :
-              'border-purple-500 bg-purple-50'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-gray-900">{notification.title}</h4>
-                  <p className="text-gray-600">{notification.message}</p>
-                   <p className="text-sm text-gray-500 mt-1">{new Date(notification.time).toLocaleString()}</p>
-                </div>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <FiEye className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <ClassicNotificationList
+      notifications={notifications}
+      eyebrow="Supplier / Updates"
+      description="Select an order or application update to read the details."
+      emptyMessage="No supplier activity yet. New orders and application decisions will appear here."
+      idPrefix="supplier-notification"
+      getTime={(notification) => notification.time ? new Date(notification.time).toLocaleString() : ''}
+      className="animate-fadeInUp"
+      onDelete={(notification) => setNotifications((current) => current.filter((item) => item.id !== notification.id))}
+    />
   );
 
   const renderPayments = () => {

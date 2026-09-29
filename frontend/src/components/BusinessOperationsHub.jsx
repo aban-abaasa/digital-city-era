@@ -336,35 +336,35 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
   };
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 p-5 text-white shadow-xl">
+    <div className="mx-auto w-full min-w-0 space-y-4 sm:space-y-5">
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-4 text-white shadow-lg sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-indigo-200">
               <FiBriefcase />
               <span className="text-xs font-semibold uppercase tracking-wider">Business operations</span>
             </div>
-            <h2 className="text-2xl font-bold">{businessName || 'Store'} workforce tools</h2>
-            <p className="mt-1 max-w-2xl text-sm text-slate-300">
+            <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{businessName || 'Store'} workforce tools</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
               Manage employees, payroll, assets, fleet and transport in the shared CMMS workspace.
             </p>
           </div>
-          <span className="rounded-full border border-indigo-300/30 bg-indigo-400/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-indigo-100">
+          <span className="w-fit rounded-full border border-indigo-300/30 bg-indigo-400/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-100">
             {loading ? 'Checking plan…' : `${plan} plan`}
           </span>
         </div>
       </div>
 
-      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-200">{error}</div>}
 
       {!resolvedBusinessProfileId && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
           <p className="font-semibold">Complete the business profile to activate payroll and transport.</p>
           <p className="mt-1">The Pichin business profile is the administrator authority shared with CMMS. POS access is unchanged.</p>
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-3 sm:gap-4 md:grid-cols-2">
         <OperationCard
           icon={FiUsers}
           title="Payroll"
@@ -397,11 +397,11 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
         />
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-semibold text-slate-900">{isEnterprise ? 'Enterprise CMMS workspace' : 'Shared CMMS workspace'}</p>
-            <p className="text-sm text-slate-500">
+            <p className="font-semibold text-slate-900 dark:text-slate-100">{isEnterprise ? 'Enterprise CMMS workspace' : 'Shared CMMS workspace'}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
                {requiresFullCmms
                 ? 'Use the full ICANera CMMS workspace for payroll, assets and transport.'
                 : 'Simple stores can work here or open the full CMMS workspace at any time.'}
@@ -411,7 +411,7 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
             type="button"
              onClick={openCmms}
              disabled={loading || !resolvedBusinessProfileId}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 w-full shrink-0 touch-manipulation inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             Open ICANera CMMS <FiExternalLink size={15} />
           </button>
@@ -419,28 +419,28 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
       </div>
 
       {!requiresFullCmms && resolvedBusinessProfileId && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <section id="simple-payroll-form" className={`rounded-2xl border bg-white p-5 shadow-sm ${activeOperation === 'payroll' ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-emerald-200'}`}>
-            <div className="mb-4 flex items-center gap-2 text-emerald-700"><FiDollarSign /><h3 className="text-lg font-bold text-slate-900">Simple payroll</h3></div>
-            {error && <p className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-            {message && <p className="mb-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-700">{message}</p>}
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <section id="simple-payroll-form" className={`min-w-0 scroll-mt-4 rounded-2xl border bg-white p-4 shadow-sm sm:p-5 dark:bg-slate-900 ${activeOperation === 'payroll' ? 'border-emerald-400 ring-2 ring-emerald-100 dark:border-emerald-700 dark:ring-emerald-950' : 'border-emerald-200 dark:border-slate-700'}`}>
+            <div className="mb-4 flex items-center gap-2 text-emerald-700 dark:text-emerald-400"><FiDollarSign /><h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Simple payroll</h3></div>
+            {error && <p className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950/60 dark:text-red-200">{error}</p>}
+            {message && <p className="mb-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200">{message}</p>}
             <form onSubmit={savePayroll} className="space-y-3">
-              <select required value={selectedEmployee} onChange={(event) => setSelectedEmployee(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" style={{ colorScheme: 'light' }}><option value="" className="bg-white text-slate-900">Select worker</option>{employees.map(employee => <option key={employee.id} value={employee.id} className="bg-white text-slate-900">{employee.full_name || employee.email}</option>)}</select>
-              <input required min="1" type="number" value={salary} onChange={(event) => setSalary(event.target.value)} placeholder="Monthly salary (UGX)" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" />
-              <button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{saving ? <FiLoader className="animate-spin" /> : <FiCheck />} Save payroll</button>
+              <select required value={selectedEmployee} onChange={(event) => setSelectedEmployee(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" style={{ colorScheme: 'light dark' }}><option value="" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">Select worker</option>{employees.map(employee => <option key={employee.id} value={employee.id} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">{employee.full_name || employee.email}</option>)}</select>
+              <input required min="1" type="number" value={salary} onChange={(event) => setSalary(event.target.value)} placeholder="Monthly salary (UGX)" className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400" />
+              <button disabled={saving} className="min-h-11 w-full touch-manipulation inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50 sm:w-auto">{saving ? <FiLoader className="animate-spin" /> : <FiCheck />} Save payroll</button>
             </form>
-            <div className="mt-5 space-y-2">{payroll.map(record => <div key={record.id} className="flex justify-between rounded-lg bg-slate-50 p-3 text-sm text-slate-900"><span className="font-medium text-slate-900">{employees.find(employee => employee.id === record.employee_user_id)?.full_name || employees.find(employee => employee.id === record.employee_user_id)?.email || 'Worker'}</span><strong className="text-slate-900">UGX {Number(record.base_salary || 0).toLocaleString()}</strong></div>)}</div>
+            <div className="mt-5 space-y-2">{payroll.map(record => <div key={record.id} className="flex min-w-0 justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-900 dark:bg-slate-800 dark:text-slate-100"><span className="min-w-0 break-words font-medium text-slate-900 dark:text-slate-100">{employees.find(employee => employee.id === record.employee_user_id)?.full_name || employees.find(employee => employee.id === record.employee_user_id)?.email || 'Worker'}</span><strong className="shrink-0 text-slate-900 dark:text-slate-100">UGX {Number(record.base_salary || 0).toLocaleString()}</strong></div>)}</div>
           </section>
-          <section className={`rounded-2xl border bg-white p-5 shadow-sm ${activeOperation === 'transport' ? 'border-orange-400 ring-2 ring-orange-100' : 'border-orange-200'}`}>
-            <div className="mb-4 flex items-center gap-2 text-orange-700"><FiTruck /><h3 className="text-lg font-bold text-slate-900">Simple transport</h3></div>
-            <form onSubmit={assignTransportWorker} className="mb-5 space-y-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3">
-              <p className="text-sm text-orange-800">Assign the worker here. The worker places each ride order from their own BodaGo/Supermarkera customer page.</p>
-              <select required value={transportWorkerEmail} onChange={(event) => setTransportWorkerEmail(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"><option value="">Select existing employee</option>{employees.filter(employee => employee.email).map(employee => <option key={employee.id} value={employee.email}>{employee.full_name || employee.email} — {employee.email}</option>)}</select>
-              <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm text-slate-600">Assignment starts<input required type="datetime-local" value={transportStartsAt} onChange={(event) => setTransportStartsAt(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /></label><label className="text-sm text-slate-600">Assignment ends<input type="datetime-local" value={transportEndsAt} onChange={(event) => setTransportEndsAt(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /></label></div>
-              <div className="grid gap-3 sm:grid-cols-3"><label className="text-sm text-slate-600">Daily from<input required type="time" value={transportDailyStart} onChange={(event) => setTransportDailyStart(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /></label><label className="text-sm text-slate-600">Daily until<input required type="time" value={transportDailyEnd} onChange={(event) => setTransportDailyEnd(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /></label><label className="text-sm text-slate-600">Billing<select value={transportBillingMode} onChange={(event) => setTransportBillingMode(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"><option value="monthly">Monthly</option><option value="per_ride">Per ride</option></select></label></div>
+          <section className={`min-w-0 rounded-2xl border bg-white p-4 shadow-sm sm:p-5 dark:bg-slate-900 ${activeOperation === 'transport' ? 'border-orange-400 ring-2 ring-orange-100 dark:border-orange-700 dark:ring-orange-950' : 'border-orange-200 dark:border-slate-700'}`}>
+            <div className="mb-4 flex items-center gap-2 text-orange-700 dark:text-orange-400"><FiTruck /><h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Simple transport</h3></div>
+            <form onSubmit={assignTransportWorker} className="mb-5 space-y-3 rounded-xl border border-orange-200 bg-orange-50/50 p-3 dark:border-orange-900 dark:bg-orange-950/20">
+              <p className="text-sm text-orange-800 dark:text-orange-200">Assign the worker here. The worker places each ride order from their own BodaGo/Supermarkera customer page.</p>
+              <select required value={transportWorkerEmail} onChange={(event) => setTransportWorkerEmail(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"><option value="">Select existing employee</option>{employees.filter(employee => employee.email).map(employee => <option key={employee.id} value={employee.email}>{employee.full_name || employee.email} — {employee.email}</option>)}</select>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm text-slate-600 dark:text-slate-300">Assignment starts<input required type="datetime-local" value={transportStartsAt} onChange={(event) => setTransportStartsAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" /></label><label className="text-sm text-slate-600 dark:text-slate-300">Assignment ends<input type="datetime-local" value={transportEndsAt} onChange={(event) => setTransportEndsAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" /></label></div>
+              <div className="grid gap-3 sm:grid-cols-3"><label className="text-sm text-slate-600 dark:text-slate-300">Daily from<input required type="time" value={transportDailyStart} onChange={(event) => setTransportDailyStart(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" /></label><label className="text-sm text-slate-600 dark:text-slate-300">Daily until<input required type="time" value={transportDailyEnd} onChange={(event) => setTransportDailyEnd(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" /></label><label className="text-sm text-slate-600 dark:text-slate-300">Billing<select value={transportBillingMode} onChange={(event) => setTransportBillingMode(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"><option value="monthly">Monthly</option><option value="per_ride">Per ride</option></select></label></div>
               <button disabled={saving} className="rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{saving ? 'Assigning...' : 'Assign worker transport'}</button>
             </form>
-            <div className="mb-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3"><div><h4 className="font-semibold text-slate-900">Employee transport usage</h4><p className="text-xs text-slate-500">Last 30 days: orders, completed rides, total fare, and order times.</p></div>{transportUsage.length === 0 ? <p className="text-sm text-slate-500">No assigned employees or rides recorded yet.</p> : transportUsage.map(row => <div key={row.allocation_id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong className="text-slate-900">{row.employee_email}</strong><span className="text-orange-700">{row.ride_count} orders</span></div><p className="text-xs text-slate-600">{row.completed_ride_count} completed · UGX {Number(row.total_fare || 0).toLocaleString()} · {row.last_order_at ? 'Last order ' + new Date(row.last_order_at).toLocaleString() : 'No orders yet'}</p>{row.order_times?.length > 0 && <details className="mt-1"><summary className="cursor-pointer text-xs text-orange-700">View order times</summary>{row.order_times.map(order => <p key={order.ride_id} className="mt-1 text-xs text-slate-500">{new Date(order.ordered_at).toLocaleString()} · {order.pickup} → {order.dropoff}</p>)}</details>}</div>)}</div>
+            <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800"><div><h4 className="font-semibold text-slate-900 dark:text-slate-100">Employee transport usage</h4><p className="text-xs text-slate-500 dark:text-slate-400">Last 30 days: orders, completed rides, total fare, and order times.</p></div>{transportUsage.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">No assigned employees or rides recorded yet.</p> : transportUsage.map(row => <div key={row.allocation_id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-700 dark:bg-slate-900"><div className="flex flex-wrap justify-between gap-2"><strong className="text-slate-900 dark:text-slate-100">{row.employee_email}</strong><span className="text-orange-700 dark:text-orange-300">{row.ride_count} orders</span></div><p className="text-xs text-slate-600 dark:text-slate-300">{row.completed_ride_count} completed · UGX {Number(row.total_fare || 0).toLocaleString()} · {row.last_order_at ? 'Last order ' + new Date(row.last_order_at).toLocaleString() : 'No orders yet'}</p>{row.order_times?.length > 0 && <details className="mt-1"><summary className="cursor-pointer text-xs text-orange-700 dark:text-orange-300">View order times</summary>{row.order_times.map(order => <p key={order.ride_id} className="mt-1 text-xs text-slate-500 dark:text-slate-400">{new Date(order.ordered_at).toLocaleString()} · {order.pickup} → {order.dropoff}</p>)}</details>}</div>)}</div>
             {transportContracts.length === 0 ? <p className="hidden rounded-lg bg-orange-50 p-3 text-sm text-orange-800">No active transport contract is configured yet.</p> : <form onSubmit={submitTransportRequest} className="hidden space-y-3">
               <select required value={transportForm.contract_id} onChange={(event) => setTransportForm({ ...transportForm, contract_id: event.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" style={{ colorScheme: 'light' }}><option value="">Select contract</option>{transportContracts.map(contract => <option key={contract.id} value={contract.id}>{contract.contract_name} — {contract.billing_cycle}</option>)}</select>
               <div className="grid gap-3 sm:grid-cols-2"><input required value={transportForm.pickup} onChange={(event) => setTransportForm({ ...transportForm, pickup: event.target.value })} placeholder="Pickup location" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /><input required value={transportForm.dropoff} onChange={(event) => setTransportForm({ ...transportForm, dropoff: event.target.value })} placeholder="Drop-off location" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /></div>
@@ -457,22 +457,22 @@ export default function BusinessOperationsHub({ supermarketId, businessProfileId
 
 function OperationCard({ icon: Icon, title, description, color, onClick, disabled }) {
   const colors = color === 'emerald'
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400'
-    : 'border-orange-200 bg-orange-50 text-orange-700 hover:border-orange-400';
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:border-emerald-700'
+    : 'border-orange-200 bg-orange-50 text-orange-700 hover:border-orange-400 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-300 dark:hover:border-orange-700';
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`group rounded-2xl border-2 p-5 text-left transition ${colors} disabled:cursor-not-allowed disabled:opacity-50`}
+      className={`group min-h-36 w-full touch-manipulation rounded-2xl border-2 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 sm:p-5 disabled:cursor-not-allowed disabled:opacity-50 ${colors}`}
     >
       <div className="flex items-start justify-between gap-4">
-        <span className="rounded-xl bg-white p-3 shadow-sm">{React.createElement(Icon, { size: 24 })}</span>
+        <span className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-800">{React.createElement(Icon, { size: 22 })}</span>
         <FiArrowRight className="transition-transform group-hover:translate-x-1" />
       </div>
-      <h3 className="mt-5 text-lg font-bold text-slate-900">{title}</h3>
-      <p className="mt-1 text-sm text-slate-600">{description}</p>
+      <h3 className="mt-4 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">{title}</h3>
+      <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">{description}</p>
       <p className="mt-4 text-xs font-semibold uppercase tracking-wide">Open in CMMS</p>
     </button>
   );

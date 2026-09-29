@@ -1,12 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FiBell, FiCheckCircle, FiLock, FiX, FiXCircle } from 'react-icons/fi';
+import ClassicNotificationList from './ClassicNotificationList';
 import { supabase } from '../services/supabase';
 import { enablePushAlerts, getPushStatus, refreshPushRegistration } from '../services/pushAlertsService';
 
 const SEEN_KEY = 'sk_wallet_approvals_seen';
+const DISMISSED_APPROVALS_KEY = 'sk_wallet_approvals_dismissed';
 const readSeen = () => {
   try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); }
+};
+const readDismissedApprovals = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(DISMISSED_APPROVALS_KEY) || '[]').map(String)); } catch { return new Set(); }
+};
+const writeDismissedApprovals = (ids) => {
+  try { localStorage.setItem(DISMISSED_APPROVALS_KEY, JSON.stringify([...ids])); } catch { /* dismissal still applies in memory */ }
 };
 const writeSeen = (ids) => {
   try { localStorage.setItem(SEEN_KEY, JSON.stringify([...ids].slice(-200))); } catch { /* private mode: alerts may repeat after reload */ }
@@ -61,6 +69,7 @@ const showDeviceNotification = async (title, body) => {
 // The PIN is sent only to the approval RPC; balances are never touched here.
 export default function SupermarketaWalletApprovalBell() {
   const [requests, setRequests] = useState([]);
+  const dismissedApprovalIdsRef = useRef(readDismissedApprovals());
   const [open, setOpen] = useState(false);
   const [approvalRequest, setApprovalRequest] = useState(null);
   const [pin, setPin] = useState('');
@@ -83,8 +92,16 @@ export default function SupermarketaWalletApprovalBell() {
     if (loadError) { setError(loadError.message); return; }
     const pending = (data || []).filter((item) => item.status === 'pending_approval' &&
       /supermartkera purchase order|supplier order/i.test(item.note || ''));
-    setRequests(pending);
+    setRequests(pending.filter((item) => !dismissedApprovalIdsRef.current.has(String(item.notification_id))));
     announceNew(pending);
+  };
+
+  const dismissApprovalNotification = (request) => {
+    const nextDismissed = new Set(dismissedApprovalIdsRef.current);
+    nextDismissed.add(String(request.notification_id));
+    dismissedApprovalIdsRef.current = nextDismissed;
+    writeDismissedApprovals(nextDismissed);
+    setRequests((current) => current.filter((item) => item.notification_id !== request.notification_id));
   };
 
   // Alert once per request (remembered across reloads): a banner on screen while
@@ -201,14 +218,32 @@ export default function SupermarketaWalletApprovalBell() {
         role="dialog"
         aria-label="Supplier payment approvals"
         style={{ top: panelTop, maxHeight: `calc(100vh - ${panelTop}px - 12px)` }}
-        className="fixed left-3 right-3 z-[70] overflow-y-auto overscroll-contain rounded-xl border border-indigo-200 bg-white p-4 text-slate-900 shadow-2xl sm:left-auto sm:right-4 sm:w-96">
-      <div className="mb-3 flex items-center gap-2"><FiLock className="text-indigo-600" /><div><strong>Supplier payment approvals</strong><p className="text-xs text-slate-500">Only an authorized business-wallet administrator can approve with the business-wallet PIN.</p></div></div>
+        className="classic-wallet-notification-dialog fixed left-3 right-3 z-[70] overflow-y-auto overscroll-contain rounded-xl p-4 shadow-2xl sm:left-auto sm:right-4 sm:w-96">
+      <div className="classic-wallet-notification-heading mb-3 flex items-center gap-2"><FiLock /><div><strong>Supplier payment approvals</strong><p className="text-xs">Only an authorized business-wallet administrator can approve with the business-wallet PIN.</p></div></div>
       {!pushOn && permission !== 'denied' && permission !== 'unsupported' && <button onClick={enableAlerts} className="mb-3 flex w-full items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-left text-sm font-semibold text-indigo-900"><FiBell className="flex-none" />Turn on phone alerts — works even when the app is closed</button>}
       {alertNote && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{alertNote}</p>}
       {permission === 'denied' && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Pop-up alerts are blocked. Allow notifications for this site in your browser settings to get them.</p>}
-      {requests.length === 0 ? <p className="text-sm text-slate-500">No supplier payments need approval.</p> : <>
-        <div className="space-y-2">{requests.map((request) => <div key={request.notification_id} className="rounded-lg border border-slate-200 p-3 text-sm"><p className="font-semibold">{request.note || 'Supplier payment'}</p><p className="text-slate-500">{Number(request.amount_ican || 0).toLocaleString()} ICAN</p><div className="mt-2 flex gap-2"><button disabled={working === request.transaction_id} onClick={() => decide(request, 'rejected')} className="rounded bg-red-100 px-2 py-1 text-red-700"><FiXCircle className="mr-1 inline" />Reject</button><button disabled={working === request.transaction_id} onClick={() => { setApprovalRequest(request); setPin(''); setError(''); }} className="rounded bg-emerald-600 px-2 py-1 font-semibold text-white"><FiCheckCircle className="mr-1 inline" />Approve</button></div></div>)}</div>
-        {approvalRequest && <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3"><p className="mb-2 text-sm font-semibold text-indigo-950">Enter the business-wallet PIN to approve this payment.</p><input autoFocus type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Business-wallet PIN" className="mb-2 w-full rounded border border-slate-300 px-3 py-2" /><div className="flex justify-end gap-2"><button onClick={() => { setApprovalRequest(null); setPin(''); }} className="rounded px-2 py-1 text-slate-700">Cancel</button><button disabled={working === approvalRequest.transaction_id || pin.length < 4} onClick={() => decide(approvalRequest, 'approved')} className="rounded bg-emerald-600 px-2 py-1 font-semibold text-white">Confirm approval</button></div></div>}
+      {requests.length === 0 ? <p className="classic-wallet-notification-empty text-sm">No supplier payments need approval.</p> : <>
+        <ClassicNotificationList
+          notifications={requests}
+          showHeading={false}
+          variant="embedded"
+          idPrefix="ican-wallet-approval"
+          storageKey={DISMISSED_APPROVALS_KEY}
+          getId={(request) => request.notification_id}
+          getTitle={(request) => request.note || 'Supplier payment'}
+          getType={() => 'Approval'}
+          getTime={() => 'Waiting for approval'}
+          getMessage={(request) => `Amount: ${Number(request.amount_ican || 0).toLocaleString()} ICAN`}
+          onDelete={dismissApprovalNotification}
+          renderExpanded={(request) => (
+            <div className="classic-notification-actions">
+              <button disabled={working === request.transaction_id} onClick={() => decide(request, 'rejected')} className="classic-notification-action is-danger"><FiXCircle className="mr-1 inline" />Reject</button>
+              <button disabled={working === request.transaction_id} onClick={() => { setApprovalRequest(request); setPin(''); setError(''); }} className="classic-notification-action is-primary"><FiCheckCircle className="mr-1 inline" />Approve</button>
+            </div>
+          )}
+        />
+        {approvalRequest && <div className="classic-wallet-pin-panel mt-3 rounded-lg p-3"><p className="mb-2 text-sm font-semibold">Enter the business-wallet PIN to approve this payment.</p><input autoFocus type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Business-wallet PIN" className="mb-2 w-full rounded border px-3 py-2" /><div className="flex justify-end gap-2"><button onClick={() => { setApprovalRequest(null); setPin(''); }} className="classic-wallet-cancel rounded px-2 py-1">Cancel</button><button disabled={working === approvalRequest.transaction_id || pin.length < 4} onClick={() => decide(approvalRequest, 'approved')} className="rounded bg-emerald-600 px-2 py-1 font-semibold text-white">Confirm approval</button></div></div>}
       </>}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
@@ -219,16 +254,16 @@ export default function SupermarketaWalletApprovalBell() {
         role="alert"
         onClick={() => { placePanel(); setOpen(true); setToast(null); }}
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)', animation: 'skToastIn 0.35s ease-out' }}
-        className="fixed left-3 right-3 z-[80] flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-200 bg-white p-3 text-slate-900 shadow-2xl sm:left-auto sm:right-4 sm:w-96"
+        className="classic-wallet-approval-toast fixed left-3 right-3 z-[80] flex cursor-pointer items-start gap-3 rounded-2xl p-3 shadow-2xl sm:left-auto sm:right-4 sm:w-96"
       >
         <style>{'@keyframes skToastIn{from{transform:translateY(-130%);opacity:0}to{transform:none;opacity:1}}'}</style>
-        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-indigo-700 text-white"><FiBell /></span>
+        <span className="classic-wallet-approval-toast-icon flex h-10 w-10 flex-none items-center justify-center rounded-full text-white"><FiBell /></span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-bold">{toast.title}</span>
-          <span className="block truncate text-sm text-slate-600">{toast.body}</span>
-          <span className="mt-0.5 block text-xs font-semibold text-indigo-700">Tap to review</span>
+          <span className="classic-wallet-approval-toast-body block truncate text-sm">{toast.body}</span>
+          <span className="classic-wallet-approval-toast-link mt-0.5 block text-xs font-semibold">Tap to review</span>
         </span>
-        <button onClick={(event) => { event.stopPropagation(); setToast(null); }} aria-label="Dismiss" className="flex-none rounded-full p-1 text-slate-500 hover:bg-slate-100"><FiX /></button>
+        <button onClick={(event) => { event.stopPropagation(); setToast(null); }} aria-label="Dismiss" className="classic-wallet-approval-toast-dismiss flex-none rounded-full p-1"><FiX /></button>
       </div>,
       document.body
     )}

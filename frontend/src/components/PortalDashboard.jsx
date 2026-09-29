@@ -4,7 +4,7 @@ import {
   FiPieChart, FiTarget, FiAward, FiClock, FiAlertTriangle,
   FiCalendar, FiMail, FiBell, FiSettings, FiLogOut, FiSearch,
   FiFilter, FiDownload, FiRefreshCw, FiEye, FiEdit, FiTrash2,
-  FiPlus, FiMinus, FiChevronRight, FiChevronDown, FiStar,
+  FiPlus, FiMinus, FiChevronRight, FiStar,
   FiHeart, FiZap, FiShield, FiGift, FiNavigation, FiMapPin,
   FiSmartphone, FiHeadphones, FiCamera, FiWatch, FiHome,
   FiCreditCard, FiMessageCircle, FiShare2, FiThumbsUp,
@@ -16,6 +16,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, ComposedChart
 } from 'recharts';
+import ClassicNotificationList from './ClassicNotificationList';
 
 const PortalDashboard = ({ 
   userType, 
@@ -211,37 +212,21 @@ const PortalDashboard = ({
   );
 
   const renderNotifications = () => (
-    <div className="bg-white rounded-xl p-6 shadow-lg">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-gray-900">Notifications</h3>
-        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-          Mark all as read
-        </button>
-      </div>
-      <div className="space-y-4">
-        {notifications?.map((notification, index) => (
-          <div key={index} className={`border-l-4 p-4 rounded-lg ${
-            notification.type === 'critical' ? 'border-red-500 bg-red-50' :
-            notification.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
-            notification.type === 'info' ? 'border-blue-500 bg-blue-50' :
-            'border-green-500 bg-green-50'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-semibold text-gray-900">{notification.title}</h4>
-                <p className="text-gray-600">{notification.message}</p>
-                <p className="text-sm text-gray-500 mt-1">{notification.timestamp}</p>
-              </div>
-              {notification.action && (
-                <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all duration-300 text-sm">
-                  {notification.action}
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <ClassicNotificationList
+      notifications={notifications || []}
+      eyebrow="Portal / Updates"
+      description="Select a notification to review the full message."
+      idPrefix="portal-dashboard-notification"
+      getType={(notification) => notification.type}
+      getTime={(notification) => notification.timestamp}
+      renderExpanded={(notification) => notification.action && (
+        <div className="classic-notification-actions">
+          <button className="classic-notification-action is-primary" onClick={() => onAction?.(notification)}>
+            {notification.action}
+          </button>
+        </div>
+      )}
+    />
   );
 
   return (

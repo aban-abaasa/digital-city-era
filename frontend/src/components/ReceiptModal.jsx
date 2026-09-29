@@ -25,6 +25,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen || !saleData) return null;
+  const brandedSaleData = { ...saleData, websiteUrl: branding?.publicWebsiteUrl || window.location.origin };
 
   const handleSendSMS = async () => {
     if (!customerPhone.trim()) {
@@ -34,7 +35,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
 
     setIsLoading(true);
     try {
-      const result = await receiptService.sendSMSReceipt(customerPhone, saleData);
+      const result = await receiptService.sendSMSReceipt(customerPhone, brandedSaleData);
       if (result.success) {
         toast.success(`📱 ${result.message}`);
         setCustomerPhone('');
@@ -59,7 +60,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
 
     setIsLoading(true);
     try {
-      const result = await receiptService.sendEmailReceipt(customerEmail, saleData);
+      const result = await receiptService.sendEmailReceipt(customerEmail, brandedSaleData);
       if (result.success) {
         toast.success(`📧 ${result.message}`);
         setCustomerEmail('');
@@ -74,7 +75,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   const handleDownloadPDF = async () => {
     setIsLoading(true);
     try {
-      const result = await receiptService.downloadPDFReceipt(saleData);
+      const result = await receiptService.downloadPDFReceipt(brandedSaleData);
       if (result.success) {
         toast.success(`📄 ${result.message}`);
       }
@@ -87,7 +88,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
 
   const handlePrint = async () => {
     try {
-      const result = await receiptService.printReceipt(saleData);
+      const result = await receiptService.printReceipt(brandedSaleData);
       if (result.success) {
         toast.success(`🖨️ ${result.message}`);
       }
@@ -105,7 +106,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
     }).format(amount);
   };
 
-  const receiptData = receiptService.generateReceiptData(saleData);
+  const receiptData = receiptService.generateReceiptData(brandedSaleData);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

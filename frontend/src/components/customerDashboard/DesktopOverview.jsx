@@ -14,10 +14,10 @@ export default function DesktopOverview({
   const toNext = POINTS_PER_REWARD - (points % POINTS_PER_REWARD);
 
   const ledger = [
-    { label: 'Active orders', icon: FiPackage, tone: 'text-blue-600 bg-blue-50', value: <AnimatedCounter value={activeOrders} duration={1000} />, onClick: onTrackOrders, hint: 'Track' },
-    { label: 'Rewards ready', icon: FiGift, tone: 'text-emerald-600 bg-emerald-50', value: <AnimatedCounter value={availableRewards} duration={1200} />, onClick: onRedeemRewards, hint: 'Redeem' },
-    { label: 'Member since', icon: FiStar, tone: 'text-amber-600 bg-amber-50', value: memberSinceYear },
-    { label: 'Next reward in', icon: FiTrendingUp, tone: 'text-violet-600 bg-violet-50', value: <>{toNext.toLocaleString()}<span className="ml-1 text-base font-semibold text-slate-500">pts</span></> },
+    { label: 'Active orders', icon: FiPackage, tone: 'text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-300', value: <AnimatedCounter value={activeOrders} duration={1000} />, onClick: onTrackOrders, hint: 'Track' },
+    { label: 'Rewards ready', icon: FiGift, tone: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300', value: <AnimatedCounter value={availableRewards} duration={1200} />, onClick: onRedeemRewards, hint: 'Redeem' },
+    { label: 'Member since', icon: FiStar, tone: 'text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-300', value: memberSinceYear },
+    { label: 'Next reward in', icon: FiTrendingUp, tone: 'text-violet-600 bg-violet-50 dark:bg-violet-950 dark:text-violet-300', value: <>{toNext.toLocaleString()}<span className="ml-1 text-base font-semibold text-slate-500 dark:text-slate-400">pts</span></> },
   ];
 
   const steps = [
@@ -53,9 +53,9 @@ export default function DesktopOverview({
           firstName={firstName}
         />
 
-        <section className="classic-card classic-rise flex flex-col p-7" style={{ '--d': '100ms' }} aria-label="Your figures">
+        <section className="classic-card classic-rise flex flex-col p-7 dark:border-slate-700 dark:bg-slate-900" style={{ '--d': '100ms' }} aria-label="Your figures">
           <p className="classic-eyebrow">At a glance</p>
-          <h2 className="font-classic-display mt-1 text-[28px] font-semibold leading-tight text-[#1e1b4b]">
+          <h2 className="font-classic-display mt-1 text-[28px] font-semibold leading-tight text-[#1e1b4b] dark:text-slate-100">
             Welcome back, {firstName}
           </h2>
           <div className="gold-rule mt-4" />
@@ -68,14 +68,14 @@ export default function DesktopOverview({
                   key={item.label}
                   type={item.onClick ? 'button' : undefined}
                   onClick={item.onClick}
-                  className={`group flex items-center gap-4 py-5 text-left ${i % 2 === 0 ? 'pr-5' : 'pl-6'} ${i > 1 ? 'border-t border-[#c4a052]/25' : ''} ${item.onClick ? 'cursor-pointer' : ''}`}
+                  className={`group flex items-center gap-4 py-5 text-left ${i % 2 === 0 ? 'pr-5' : 'pl-6'} ${i > 1 ? 'border-t border-[#c4a052]/25 dark:border-slate-700' : ''} ${item.onClick ? 'cursor-pointer' : ''}`}
                 >
                   <span className={`grid h-12 w-12 flex-shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/5 transition-transform group-hover:scale-105 ${item.tone}`}>
                     <item.icon className="h-5 w-5" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block font-classic-display text-3xl font-bold leading-none tabular-nums text-slate-900">{item.value}</span>
-                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                    <span className="block font-classic-display text-3xl font-bold leading-none tabular-nums text-slate-900 dark:text-slate-100">{item.value}</span>
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                       {item.label}
                       {item.hint && <span className="text-[#a17c28] normal-case tracking-normal">· {item.hint} <FiArrowRight className="classic-arrow inline h-3 w-3" /></span>}
                     </span>
@@ -102,7 +102,7 @@ export default function DesktopOverview({
             className={`group classic-rise classic-lift relative overflow-hidden rounded-[22px] border p-6 text-left ${
               s.dark
                 ? 'border-[#c4a052]/50 bg-gradient-to-br from-[#1e1b4b] via-[#28246b] to-[#3b2a6e] text-white shadow-[0_18px_34px_-18px_rgba(30,27,75,0.75)]'
-                : 'border-[#c4a052]/30 bg-gradient-to-b from-white to-[#fbf8f0] text-slate-800 shadow-[0_12px_26px_-20px_rgba(30,27,75,0.4)]'
+                : 'border-[#c4a052]/30 bg-gradient-to-b from-white to-[#fbf8f0] text-slate-800 shadow-[0_12px_26px_-20px_rgba(30,27,75,0.4)] dark:border-slate-700 dark:from-slate-900 dark:to-slate-800 dark:text-slate-100'
             }`}
           >
             <span aria-hidden className={`pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border ${s.dark ? 'border-[#c4a052]/30' : 'border-[#c4a052]/25'}`} />
@@ -110,10 +110,10 @@ export default function DesktopOverview({
             <span className={`relative grid h-12 w-12 place-items-center rounded-full ring-1 ${s.dark ? 'bg-white/10 text-[#e6c980] ring-[#c4a052]/60' : 'bg-[#1e1b4b] text-[#e6c980] ring-[#c4a052]/50'}`}>
               <s.icon className="h-5 w-5" />
             </span>
-            <p className={`relative mt-5 text-[10px] font-semibold uppercase tracking-[0.24em] ${s.dark ? 'text-[#e6c980]' : 'text-[#a17c28]'}`}>{s.eyebrow}</p>
+            <p className={`relative mt-5 text-[10px] font-semibold uppercase tracking-[0.24em] ${s.dark ? 'text-[#e6c980]' : 'text-[#a17c28] dark:text-amber-300'}`}>{s.eyebrow}</p>
             <h4 className="font-classic-display relative mt-1 text-2xl font-bold leading-tight">{s.title}</h4>
-            <p className={`relative mt-2 text-sm leading-relaxed ${s.dark ? 'text-indigo-100/80' : 'text-slate-500'}`}>{s.desc}</p>
-            <span className={`relative mt-5 inline-flex items-center gap-2 text-sm font-semibold ${s.dark ? 'text-[#f3dc9b]' : 'text-[#1e1b4b]'}`}>
+            <p className={`relative mt-2 text-sm leading-relaxed ${s.dark ? 'text-indigo-100/80' : 'text-slate-500 dark:text-slate-300'}`}>{s.desc}</p>
+            <span className={`relative mt-5 inline-flex items-center gap-2 text-sm font-semibold ${s.dark ? 'text-[#f3dc9b]' : 'text-[#1e1b4b] dark:text-indigo-200'}`}>
               {s.cta} <FiArrowRight className="classic-arrow h-4 w-4" />
             </span>
           </button>

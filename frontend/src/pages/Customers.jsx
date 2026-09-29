@@ -22,10 +22,11 @@ import {
   FiMapPin
 } from 'react-icons/fi';
 import AnimatedCounter from '../components/AnimatedCounter';
+import ClassicNotificationList from '../components/ClassicNotificationList';
 import { useApp } from '../contexts/AppContext';
 
 const Customers = () => {
-  const { state } = useApp();
+  const { state, actions } = useApp();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -536,27 +537,18 @@ const Customers = () => {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Recent Activity */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <FiActivity className="h-5 w-5 mr-2 text-blue-600" />
-              Recent Activity
-            </h3>
-            <div className="space-y-3">
-              {state.notifications?.slice(0, 5).map((notification, index) => (
-                <div key={index} className="flex items-center space-x-3 text-sm">
-                  <div className={`w-2 h-2 rounded-full ${
-                    notification.type === 'success' ? 'bg-green-500' :
-                    notification.type === 'warning' ? 'bg-yellow-500' :
-                    notification.type === 'error' ? 'bg-red-500' : 'bg-blue-500'
-                  }`} />
-                  <span className="text-gray-700 flex-1">{notification.message}</span>
-                  <span className="text-gray-400 text-xs">
-                    {new Date(notification.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ClassicNotificationList
+            notifications={state.notifications?.slice(0, 5)}
+            eyebrow="Customers / Updates"
+            title="Recent activity"
+            description="Expand an update to read the full message."
+            idPrefix="customers-notification"
+            getTitle={(notification) => `${notification.type || 'System'} update`}
+            getMessage={(notification) => notification.message}
+            getTime={(notification) => notification.timestamp ? new Date(notification.timestamp).toLocaleTimeString() : ''}
+            getType={(notification) => notification.type}
+            onDelete={(notification) => actions.removeNotification(notification.id)}
+          />
 
           {/* Top Customers */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">

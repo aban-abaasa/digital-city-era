@@ -813,19 +813,19 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
   }
 
   return (
-    <div className="space-y-6">
+    <div className="ride-booking-flow space-y-4 sm:space-y-6">
       {/* Search Form */}
-      <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg sm:p-6 dark:border-slate-700 dark:bg-slate-900">
         {showJourneyOption && (
           <button
             onClick={() => setBookingMode('journey')}
-            className="w-full mb-4 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 border-dashed border-orange-300 text-orange-700 hover:bg-orange-50 transition-all"
+            className="mb-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-orange-300 py-2.5 text-sm font-semibold text-orange-700 transition-all hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-950/40"
           >
             <Plane size={16} /> Flying somewhere? Book a full journey instead
           </button>
         )}
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg sm:text-xl font-bold text-slate-800">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 sm:text-xl">
             {serviceType === 'ride'
               ? 'Book a Ride'
               : deliveryMode === 'supermarket'
@@ -835,7 +835,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           {(pickup || dropoff) && (
             <button
               onClick={handleClearSearch}
-              className="text-sm text-slate-600 hover:text-orange-600 flex items-center gap-1"
+              className="flex min-h-10 items-center gap-1 text-sm text-slate-600 hover:text-orange-600 dark:text-slate-300"
             >
               <X size={16} />
               Clear
@@ -851,7 +851,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           <button
             onClick={() => setServiceType('ride')}
             className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-              serviceType === 'ride' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
+              serviceType === 'ride' ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
             }`}
           >
             <Bike size={16} /> Ride
@@ -859,7 +859,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           <button
             onClick={() => setServiceType('delivery')}
             className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-              serviceType === 'delivery' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
+              serviceType === 'delivery' ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
             }`}
           >
             <Package size={16} /> Delivery
@@ -874,7 +874,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
               <button
                 onClick={() => setDeliveryMode('supermarket')}
                 className={`py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                  deliveryMode === 'supermarket' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'
+                  deliveryMode === 'supermarket' ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
                 }`}
               >
                 🏬 From a Store
@@ -882,7 +882,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
               <button
                 onClick={() => setDeliveryMode('normal')}
                 className={`py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                  deliveryMode === 'normal' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'
+                  deliveryMode === 'normal' ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
                 }`}
               >
                 📦 Normal Delivery
@@ -896,7 +896,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                       key={f.value}
                       onClick={() => setStoreTypeFilter(f.value)}
                       className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                        storeTypeFilter === f.value ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
+                        storeTypeFilter === f.value ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-200'
                       }`}
                     >
                       <span>{f.emoji}</span> {f.label}
@@ -907,7 +907,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                 <select
                   value={selectedSupermarketId}
                   onChange={(e) => setSelectedSupermarketId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 >
                   <option value="">Select a store…</option>
                   {filteredStores.map(sm => (
@@ -930,7 +930,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             below don't apply to cargo couriers, so hide them and explain
             what's actually happening instead. */}
         {needsCrossBorderPath && (
-          <div className="mb-4 p-3 rounded-lg border-2 border-orange-200 bg-orange-50 text-sm text-orange-800 flex items-start gap-2">
+          <div className="mb-4 flex items-start gap-2 rounded-xl border-2 border-orange-200 bg-orange-50 p-3 text-sm text-orange-800 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-200">
             <Truck size={16} className="mt-0.5 shrink-0" />
             <span>
               Cross-border delivery ({pickupCountry?.name} → {dropoffCountry?.name}) — matched with cargo couriers
@@ -943,7 +943,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
         <>
         {/* Ride mode preference — filters matched riders by their real pricing mode */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 mb-2">Ride Type</label>
+          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">Ride Type</label>
           <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
             {(
               [
@@ -959,8 +959,8 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                 <button
                   key={opt.id}
                   onClick={() => setModePreference(opt.id)}
-                  className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg text-[10px] sm:text-xs font-semibold border-2 transition-all ${
-                    isSelected ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
+                  className={`flex min-h-20 flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[10px] font-semibold border-2 transition-all sm:min-h-20 sm:text-xs ${
+                    isSelected ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {Icon && <Icon size={14} />}
@@ -972,8 +972,8 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           </div>
           <button
             onClick={() => setModePreference(modePreference === 'return' ? 'all' : 'return')}
-            className={`mt-1.5 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] sm:text-xs font-semibold border-2 transition-all ${
-              modePreference === 'return' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'
+            className={`mt-2 min-h-11 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-[10px] font-semibold border-2 transition-all sm:text-xs ${
+              modePreference === 'return' ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
             }`}
           >
             <Home size={14} />
@@ -996,8 +996,8 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             <button
               key={opt.id}
               onClick={() => setVehicleTypeFilter(opt.id)}
-              className={`flex items-center justify-center gap-1 py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                vehicleTypeFilter === opt.id ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'
+              className={`flex min-h-12 items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold border-2 transition-all sm:text-sm ${
+                vehicleTypeFilter === opt.id ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
               }`}
             >
               {opt.icon && <opt.icon size={14} />}
@@ -1016,7 +1016,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                 key={opt}
                 onClick={() => setPowerFilter(opt)}
                 className={`flex items-center justify-center gap-1 py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                  powerFilter === opt ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'
+                  powerFilter === opt ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
                 }`}
               >
                 {opt === 'electric' ? <Zap size={14} /> : opt === 'fuel' ? <Fuel size={14} /> : null}
@@ -1026,7 +1026,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             <button
               onClick={() => setUmbrellaRequired(!umbrellaRequired)}
               className={`col-span-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                umbrellaRequired ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'
+                umbrellaRequired ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
               }`}
             >
               <Umbrella size={14} /> {umbrellaRequired ? 'Rain cover required' : 'Rain cover not required'}
@@ -1040,12 +1040,12 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             trip ends (fare + 7% convenience surcharge); Cash means paying
             the rider directly in person, no surcharge. */}
         <div className="mb-4">
-          <p className="text-xs font-semibold text-slate-500 mb-2">Payment method</p>
+          <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-300">Payment method</p>
           <div className={companyTransport.eligible ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}>
             {companyTransport.eligible && (
               <button
                 onClick={() => setPaymentMethod('company')}
-                className="flex items-center justify-center gap-2 py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 border-blue-500 bg-blue-50 text-blue-700"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl border-2 border-blue-500 bg-blue-50 py-2 text-xs font-semibold text-blue-700 dark:bg-blue-950/50 dark:text-blue-200 sm:text-sm"
               >
                 🏢 Company
               </button>
@@ -1053,7 +1053,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             <button
               onClick={() => setPaymentMethod('wallet')}
               className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                paymentMethod === 'wallet' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'
+                paymentMethod === 'wallet' ? 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
               }`}
             >
               🪙 ICANera Wallet
@@ -1061,7 +1061,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             <button
               onClick={() => setPaymentMethod('cash')}
               className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
-                paymentMethod === 'cash' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'
+                paymentMethod === 'cash' ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
               }`}
             >
               💵 Cash
@@ -1081,7 +1081,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
               as typing a suggestion below; either method works, and they
               stay in sync with each other. */}
           <div className="flex items-center justify-between">
-            <label className="block text-sm font-medium text-slate-700">Pick locations on the map</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Pick locations on the map</label>
             <button
               type="button"
               onClick={() => setShowMap(!showMap)}
@@ -1104,7 +1104,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
 
           {/* Pickup Location */}
           <div ref={pickupRef} className="relative">
-            <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
               Pickup Location
               {pickupIsAutoFromSupermarket && (
                 <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-semibold">
@@ -1121,8 +1121,8 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                 onChange={(e) => !pickupIsAutoFromSupermarket && handlePickupChange(e.target.value)}
                 onFocus={() => !pickupIsAutoFromSupermarket && pickup && setShowPickupSuggestions(true)}
                 placeholder="Where are you now? (e.g., Kampala Road, Acacia Mall)"
-                className={`w-full pl-11 pr-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none text-slate-800 placeholder-slate-400 ${
-                  pickupIsAutoFromSupermarket ? 'border-green-300 bg-green-50 cursor-default' : 'border-slate-300'
+                className={`min-h-12 w-full rounded-xl border-2 bg-white py-3 pl-11 pr-4 text-slate-800 placeholder-slate-400 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400 ${
+                  pickupIsAutoFromSupermarket ? 'border-green-300 bg-green-50 cursor-default dark:border-green-800 dark:bg-green-950/40' : 'border-slate-300 dark:border-slate-600'
                 }`}
               />
               {selectedPickup && (
@@ -1137,18 +1137,18 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
 
             {/* Pickup Suggestions */}
             {!pickupIsAutoFromSupermarket && showPickupSuggestions && pickupSuggestions.length > 0 && (
-              <div className="absolute z-10 w-full mt-2 bg-white border-2 border-slate-200 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+              <div className="absolute z-10 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border-2 border-slate-200 bg-white shadow-xl dark:border-slate-600 dark:bg-slate-800">
                 {pickupSuggestions.map((location) => (
                   <button
                     key={location.id}
                     onClick={() => selectPickupLocation(location)}
-                    className="w-full text-left px-4 py-3 hover:bg-orange-50 border-b border-slate-100 last:border-b-0 transition-colors"
+                    className="w-full border-b border-slate-100 px-4 py-3 text-left transition-colors hover:bg-orange-50 last:border-b-0 dark:border-slate-700 dark:hover:bg-slate-700"
                   >
                     <div className="flex items-start gap-3">
                       <MapPin className="text-orange-500 mt-1 flex-shrink-0" size={18} />
                       <div>
-                        <div className="font-semibold text-slate-800">{location.name}</div>
-                        <div className="text-sm text-slate-600">{location.fullAddress}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-100">{location.name}</div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">{location.fullAddress}</div>
                       </div>
                     </div>
                   </button>
@@ -1159,7 +1159,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
 
           {/* Dropoff Location */}
           <div ref={dropoffRef} className="relative">
-            <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+              <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
               Drop-off Location
               {defaultDropoff && selectedDropoff?.id === defaultDropoff.id && (
                 <span className="text-[10px] px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-semibold">
@@ -1175,7 +1175,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                 onChange={(e) => handleDropoffChange(e.target.value)}
                 onFocus={() => dropoff && setShowDropoffSuggestions(true)}
                 placeholder="Where do you want to go? (e.g., Ntinda, Garden City)"
-                className="w-full pl-11 pr-4 py-3 border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none text-slate-800 placeholder-slate-400"
+                className="min-h-12 w-full rounded-xl border-2 border-slate-300 bg-white py-3 pl-11 pr-4 text-slate-800 placeholder-slate-400 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
               />
               {selectedDropoff && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 w-2 h-2 bg-red-500 rounded-full" />
@@ -1184,18 +1184,18 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
 
             {/* Dropoff Suggestions */}
             {showDropoffSuggestions && dropoffSuggestions.length > 0 && (
-              <div className="absolute z-10 w-full mt-2 bg-white border-2 border-slate-200 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+              <div className="absolute z-10 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border-2 border-slate-200 bg-white shadow-xl dark:border-slate-600 dark:bg-slate-800">
                 {dropoffSuggestions.map((location) => (
                   <button
                     key={location.id}
                     onClick={() => selectDropoffLocation(location)}
-                    className="w-full text-left px-4 py-3 hover:bg-orange-50 border-b border-slate-100 last:border-b-0 transition-colors"
+                    className="w-full border-b border-slate-100 px-4 py-3 text-left transition-colors hover:bg-orange-50 last:border-b-0 dark:border-slate-700 dark:hover:bg-slate-700"
                   >
                     <div className="flex items-start gap-3">
                       <MapPin className="text-orange-500 mt-1 flex-shrink-0" size={18} />
                       <div>
-                        <div className="font-semibold text-slate-800">{location.name}</div>
-                        <div className="text-sm text-slate-600">{location.fullAddress}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-100">{location.name}</div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">{location.fullAddress}</div>
                       </div>
                     </div>
                   </button>
@@ -1205,8 +1205,8 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           </div>
 
           {routeInfo && (
-            <p className="text-xs text-slate-500 -mt-2">
-              Estimated road distance: <span className="font-semibold text-slate-700">{routeInfo.distanceKm.toFixed(1)} km</span>
+            <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Estimated road distance: <span className="font-semibold text-slate-700 dark:text-slate-200">{routeInfo.distanceKm.toFixed(1)} km</span>
               {' '}(~{Math.round(routeInfo.durationMin)} min)
             </p>
           )}
@@ -1214,7 +1214,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           <button
             onClick={handleSearchRiders}
             disabled={searching || !selectedPickup || !selectedDropoff}
-            className="w-full py-4 bg-gradient-to-r from-orange-500 to-yellow-500 text-white font-bold text-lg rounded-xl hover:from-orange-600 hover:to-yellow-600 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="min-h-14 w-full rounded-xl bg-gradient-to-r from-orange-500 to-yellow-500 py-4 text-lg font-bold text-white shadow-lg transition-all hover:from-orange-600 hover:to-yellow-600 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {searching ? (
               <>
