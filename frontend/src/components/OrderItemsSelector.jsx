@@ -13,6 +13,15 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import './OrderItemsSelector.css';
+
+// products.images can be an array of URLs, a single URL, or empty.
+const firstImage = (images) => (Array.isArray(images) ? images[0] : images) || null;
+
+// Framed picture, or a patterned placeholder when no photo was uploaded.
+const Picture = ({ src, name }) => (src
+  ? <img src={src} alt={name} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+  : <span className="ois-plate-empty" aria-hidden="true">📦</span>);
 
 const OrderItemsSelector = ({ 
   orderItems, 
@@ -36,6 +45,8 @@ const OrderItemsSelector = ({
   const [supplierPrices, setSupplierPrices] = useState({});
   const [supplierCatalogItems, setSupplierCatalogItems] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
+  const [catalogFilter, setCatalogFilter] = useState('');
+  const [showAllProducts, setShowAllProducts] = useState(false);
   const searchInputRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -131,6 +142,7 @@ const OrderItemsSelector = ({
       supplier_catalog_item_id: catalogItem.id,
       product_id: null,
       product_name: catalogItem.name,
+      image_url: catalogItem.image_url || null,
       quantity,
       display_quantity: quantity,
       unit_type: catalogItem.unit || 'units',
@@ -205,6 +217,7 @@ const OrderItemsSelector = ({
           selling_price,
           cost_price,
           wholesale_price,
+          images,
           category_id,
           supermarket_id,
           inventory(current_stock,supermarket_id)
@@ -222,6 +235,7 @@ const OrderItemsSelector = ({
       const transformedData = (data || []).map(product => ({
         ...product,
         current_stock: product.inventory?.[0]?.current_stock || 0,
+        image_url: firstImage(product.images),
         inventory: undefined // Remove nested inventory object
       }));
       
@@ -308,6 +322,7 @@ const OrderItemsSelector = ({
       id: editingIndex !== null ? orderItems[editingIndex].id : Date.now(),
       product_id: selectedProduct.id,
       product_name: selectedProduct.name,
+      image_url: selectedProduct.image_url || null,
       sku: selectedProduct.sku,
       quantity: totalUnits,
       display_quantity: quantity,
@@ -386,6 +401,7 @@ const OrderItemsSelector = ({
         id: Date.now(),
         product_id: product.id,
         product_name: product.name,
+        image_url: product.image_url || null,
         sku: product.sku,
         quantity: 1,
         display_quantity: 1,
@@ -424,6 +440,7 @@ const OrderItemsSelector = ({
     setSelectedProduct({
       id: item.product_id,
       name: item.product_name,
+      image_url: item.image_url || null,
       sku: item.sku,
       selling_price: item.unit_price,
       cost_price: item.buying_price
@@ -553,361 +570,286 @@ const OrderItemsSelector = ({
     }
   };
 
+  const priceLabel = pricingMode === 'supplier_price' ? 'Supplier price' : 'Admin price';
+  const filterText = catalogFilter.trim().toLowerCase();
+  const catalogMatches = filterText
+    ? products.filter((p) =>
+        (p.name || '').toLowerCase().includes(filterText) ||
+        (p.sku || '').toLowerCase().includes(filterText) ||
+        (p.barcode || '').includes(filterText))
+    : products;
+  const PAGE_SIZE = 12;
+  const visibleProducts = showAllProducts || filterText ? catalogMatches : catalogMatches.slice(0, PAGE_SIZE);
+  const qtyInOrder = (productId) => orderItems
+    .filter((item) => item.product_id === productId)
+    .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
   return (
     <div className="ois space-y-6">
-      {/* Product Selection Card */}
-      <div className="ois-card bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
-        <h3 className="ois-card-title text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
-          <FiBox className="h-5 w-5" />
-          🛒 Order Items - Select from Catalog
+      {/* ===== The Catalogue: store products as framed plates ===== */}
+      <section className="ois-catalogue">
+        <h3 className="ois-heading">
+          <span className="ois-orn">❦</span> The Catalogue <small>{products.length} {products.length === 1 ? 'article' : 'articles'}</small>
         </h3>
 
-        {/* Quick Select Dropdown - All Products */}
-        <div className="ois-quick mb-4 p-4 bg-white rounded-lg border-2 border-blue-200">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            ⚡ Quick Select - All Products ({products.length})
-          </label>
-          <select
-            onChange={(e) => {
-              if (e.target.value) {
-                const product = products.find(p => p.id === e.target.value);
-                if (product) addCatalogProduct(product);
-                e.target.value = '';
-              }
-            }}
-            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none bg-white"
-          >
-            <option value="">-- Click to Browse All Products --</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name} ({product.sku}) - {formatCurrency(product.selling_price)}
-              </option>
-            ))}
-          </select>
+        <div className="ois-search">
+          <FiSearch className="h-5 w-5" />
+          <input
+            type="text"
+            value={catalogFilter}
+            onChange={(e) => setCatalogFilter(e.target.value)}
+            placeholder="Search the catalogue by name, SKU or barcode…"
+            aria-label="Search the catalogue"
+          />
         </div>
 
-        {supplierId && (
-          <div className="mb-4 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="font-bold text-emerald-900">Supplier catalog ({supplierCatalogItems.length})</p>
-                <p className="text-xs text-emerald-700">Select an item to add its published supplier price and minimum quantity.</p>
-              </div>
-            </div>
-            {supplierCatalogItems.length === 0 ? <p className="text-sm text-emerald-800">No available catalog items found for this supplier.</p> : (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                {supplierCatalogItems.map(item => (
-                  <button type="button" key={item.id} onClick={() => addSupplierCatalogItem(item)} className="overflow-hidden rounded-xl border border-emerald-100 bg-white text-left shadow-sm transition hover:border-emerald-500 hover:shadow-md">
-                    {item.image_url ? <img src={item.image_url} alt={item.name} className="h-24 w-full object-cover" /> : <div className="flex h-24 items-center justify-center bg-emerald-50 text-3xl">📦</div>}
-                    <div className="p-2">
-                      <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
-                      <p className="text-xs text-emerald-700">{formatCurrency(item.price_per_unit)} / {item.unit || 'unit'}</p>
-                      {item.admin_selling_price > 0 && <p className="text-[11px] text-blue-700">Sell: {formatCurrency(item.admin_selling_price)}</p>}
-                      <p className="text-[11px] text-gray-500">Min {item.min_order_qty || 1}</p>
+        {visibleProducts.length === 0 ? (
+          <p className="ois-empty">{products.length === 0 ? 'No products in your store catalogue yet.' : `Nothing matches “${catalogFilter}”.`}</p>
+        ) : (
+          <div className="ois-grid">
+            {visibleProducts.map((product) => {
+              const price = priceFor(product);
+              const inOrder = qtyInOrder(product.id);
+              const stock = Number(product.current_stock || 0);
+              return (
+                <button
+                  type="button"
+                  key={product.id}
+                  onClick={() => addCatalogProduct(product)}
+                  className={`ois-card-item ${price > 0 ? '' : 'is-unpriced'}`}
+                  title={price > 0 ? `Add ${product.name} to the order` : 'No price set yet'}
+                >
+                  <div className="ois-plate">
+                    <Picture src={product.image_url} name={product.name} />
+                    {inOrder > 0 && <span className="ois-badge">× {inOrder} in order</span>}
+                    <span className={`ois-stock ${stock <= 5 ? 'is-low' : ''}`}>Stock {stock}</span>
+                  </div>
+                  <div className="ois-caption">
+                    <b>{product.name}</b>
+                    {product.sku && <span className="ois-sku">{product.sku}</span>}
+                    <div className="ois-price">
+                      <em>{priceLabel}</em>
+                      <strong>{price > 0 ? formatCurrency(price) : 'Not set'}</strong>
                     </div>
-                  </button>
-                ))}
-              </div>
-            )}
+                    {Number(product.selling_price) > 0 && <span className="ois-meta">Shelf price {formatCurrency(product.selling_price)}</span>}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Product Search */}
-          <div className="lg:col-span-5 relative" ref={dropdownRef}>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              📦 Product Name
-            </label>
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowDropdown(true);
-                  setSelectedProduct(null);
-                }}
-                onFocus={() => setShowDropdown(true)}
-                placeholder="Search product name, SKU, or barcode..."
-                className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none transition-colors"
-              />
-            </div>
+        {!filterText && catalogMatches.length > PAGE_SIZE && (
+          <button type="button" className="ois-more" onClick={() => setShowAllProducts((v) => !v)}>
+            {showAllProducts ? 'Show fewer' : `Show all ${catalogMatches.length} articles`}
+          </button>
+        )}
+      </section>
 
-            {/* Dropdown */}
-            {showDropdown && filteredProducts.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-blue-300 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                {filteredProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => selectProduct(product)}
-                    className="w-full text-left px-4 py-3 hover:bg-blue-100 border-b border-gray-100 transition-colors last:border-b-0"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold text-gray-800">{product.name}</p>
-                        <p className="text-sm text-gray-600">SKU: {product.sku}</p>
+      {/* ===== Supplier shelf ===== */}
+      {supplierId && (
+        <section className="ois-catalogue ois-supplier">
+          <h3 className="ois-heading">
+            <span className="ois-orn">❦</span> Supplier’s Shelf <small>{supplierCatalogItems.length} offered</small>
+          </h3>
+          {supplierCatalogItems.length === 0 ? (
+            <p className="ois-empty">No available catalogue items found for this supplier.</p>
+          ) : (
+            <div className="ois-grid">
+              {supplierCatalogItems.map((item) => {
+                const shownPrice = pricingMode === 'admin_price'
+                  ? (Number(item.admin_buying_price) || Number(item.price_per_unit) || 0)
+                  : (Number(item.price_per_unit) || 0);
+                const inOrder = orderItems
+                  .filter((row) => row.supplier_catalog_item_id === item.id)
+                  .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+                return (
+                  <button type="button" key={item.id} onClick={() => addSupplierCatalogItem(item)} className={`ois-card-item ${shownPrice > 0 ? '' : 'is-unpriced'}`}>
+                    <div className="ois-plate">
+                      <Picture src={item.image_url} name={item.name} />
+                      {inOrder > 0 && <span className="ois-badge">× {inOrder} in order</span>}
+                    </div>
+                    <div className="ois-caption">
+                      <b>{item.name}</b>
+                      {item.category && <span className="ois-sku">{item.category}</span>}
+                      <div className="ois-price">
+                        <em>per {item.unit || 'unit'}</em>
+                        <strong>{shownPrice > 0 ? formatCurrency(shownPrice) : 'Not set'}</strong>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
-                        <p className="text-xs text-gray-500">Stock: {product.current_stock || 0}</p>
-                      </div>
+                      <span className="ois-meta">Minimum order {item.min_order_qty || 1}</span>
                     </div>
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
-            {showDropdown && searchQuery && filteredProducts.length === 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-amber-50 border-2 border-amber-300 rounded-lg shadow-xl z-50 overflow-hidden">
-                <div className="p-4">
-                  <p className="text-sm text-amber-800 mb-3">
-                    ⚠️ No products found matching "{searchQuery}"
-                  </p>
-                  <button
-                    onClick={addNewProduct}
-                    type="button"
-                    className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-lg hover:from-green-600 hover:to-green-700 transition-all flex items-center justify-center gap-2"
-                  >
-                    <FiPlus className="h-5 w-5" />
-                    ✨ Add "{searchQuery}" to Catalog
-                  </button>
-                  <p className="text-xs text-amber-700 mt-2">
-                    💡 New product will be added & admin will be notified
-                  </p>
-                </div>
-              </div>
-            )}
+      {/* ===== Order slip: quantity, unit and price for the chosen article ===== */}
+      <section className="ois-form">
+        <h3 className="ois-heading">
+          <span className="ois-orn">❦</span> {editingIndex !== null ? 'Amend the Line' : 'Order Slip'}
+        </h3>
+
+        {selectedProduct && (
+          <div className="ois-chosen" style={{ marginBottom: 14 }}>
+            <div className="ois-thumb"><Picture src={selectedProduct.image_url} name={selectedProduct.name} /></div>
+            <div>
+              <p className="ois-chosen-name">{selectedProduct.name}</p>
+              <p className="ois-chosen-sub">{selectedProduct.sku ? `SKU ${selectedProduct.sku} · ` : ''}Stock {selectedProduct.current_stock || 0}</p>
+            </div>
           </div>
+        )}
 
-          {/* Quantity Section */}
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              📊 Quantity
-            </label>
+        <div className="relative" ref={dropdownRef}>
+          <label htmlFor="ois-product-search">Product name</label>
+          <div className="ois-search" style={{ marginBottom: 0 }}>
+            <FiSearch className="h-5 w-5" />
             <input
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              min="1"
-              className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-bold"
+              id="ois-product-search"
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowDropdown(true);
+                setSelectedProduct(null);
+              }}
+              onFocus={() => setShowDropdown(true)}
+              placeholder="Search product name, SKU, or barcode…"
             />
           </div>
 
-          {/* Unit Type */}
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              📦 Unit Type
-            </label>
-            <select
-              value={unitType}
-              onChange={(e) => setUnitType(e.target.value)}
-              className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            >
+          {showDropdown && filteredProducts.length > 0 && (
+            <div className="ois-search-drop">
+              {filteredProducts.map((product) => (
+                <button type="button" key={product.id} onClick={() => selectProduct(product)}>
+                  <div className="ois-thumb"><Picture src={product.image_url} name={product.name} /></div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <p className="ois-chosen-name" style={{ fontSize: '0.95rem' }}>{product.name}</p>
+                    <p className="ois-chosen-sub">SKU {product.sku || '—'} · Stock {product.current_stock || 0}</p>
+                  </div>
+                  <strong style={{ fontFamily: 'var(--serif, Georgia, serif)', color: 'var(--ok, #047857)', whiteSpace: 'nowrap' }}>
+                    {formatCurrency(priceFor(product))}
+                  </strong>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showDropdown && searchQuery && filteredProducts.length === 0 && (
+            <div className="ois-search-drop" style={{ padding: 14 }}>
+              <p className="ois-chosen-sub" style={{ marginBottom: 10 }}>No products found matching “{searchQuery}”.</p>
+              <button type="button" onClick={addNewProduct} className="ois-add" style={{ marginTop: 0 }}>
+                <FiPlus className="h-5 w-5" /> Add “{searchQuery}” to Catalogue
+              </button>
+              <p className="ois-chosen-sub" style={{ marginTop: 8 }}>The new product is added and the admin is notified.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="ois-form-row">
+          <div>
+            <label htmlFor="ois-qty">Quantity</label>
+            <input id="ois-qty" type="number" value={quantity} min="1" onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
+          </div>
+          <div>
+            <label htmlFor="ois-unit">Unit type</label>
+            <select id="ois-unit" value={unitType} onChange={(e) => setUnitType(e.target.value)}>
               <option value="units">Units</option>
               <option value="boxes">Boxes</option>
             </select>
           </div>
-
-          {/* Units per Box (if boxes selected) */}
           {unitType === 'boxes' && (
-            <div className="lg:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                📦 Units/Box
-              </label>
-              <input
-                type="number"
-                value={unitsPerBox}
-                onChange={(e) => setUnitsPerBox(Math.max(1, parseInt(e.target.value) || 12))}
-                min="1"
-                className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-bold"
-              />
+            <div>
+              <label htmlFor="ois-upb">Units / box</label>
+              <input id="ois-upb" type="number" value={unitsPerBox} min="1" onChange={(e) => setUnitsPerBox(Math.max(1, parseInt(e.target.value) || 12))} />
             </div>
           )}
-
-          {/* Unit Price */}
-          <div className="lg:col-span-3">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              💰 {pricingMode === 'supplier_price' ? 'Supplier Price' : 'Admin Buying Price'} (UGX)
-            </label>
-            <input
-              type="number"
-              value={unitPrice}
-              onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
-              min="0"
-              step="100"
-              className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-bold text-green-600"
-            />
+          <div>
+            <label htmlFor="ois-price">{priceLabel} (UGX)</label>
+            <input id="ois-price" type="number" value={unitPrice} min="0" step="100" onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))} />
           </div>
-
-          {/* Buying Price */}
-          <div className="lg:col-span-3">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              🏪 Buying Price (UGX)
-            </label>
-            <input
-              type="number"
-              value={buyingPrice}
-              onChange={(e) => setBuyingPrice(Math.max(0, parseFloat(e.target.value) || 0))}
-              min="0"
-              step="100"
-              className="w-full px-3 py-3 border-2 border-orange-300 rounded-lg focus:border-orange-500 focus:outline-none font-bold text-orange-600"
-            />
+          <div>
+            <label htmlFor="ois-buy">Buying price (UGX)</label>
+            <input id="ois-buy" type="number" value={buyingPrice} min="0" step="100" onChange={(e) => setBuyingPrice(Math.max(0, parseFloat(e.target.value) || 0))} />
           </div>
         </div>
 
-        {/* Smart Info Display */}
         {selectedProduct && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="bg-blue-100 rounded-lg p-3 border-l-4 border-blue-500">
-              <p className="text-xs text-blue-600 font-semibold">Total Units</p>
-              <p className="text-lg font-bold text-blue-900">{getTotalUnits()}</p>
+          <div className="ois-stats">
+            <div className="ois-stat"><span>Total units</span><b>{getTotalUnits()}</b></div>
+            <div className="ois-stat"><span>Line total</span><b>{formatCurrency(calculateTotalPrice())}</b></div>
+            <div className={`ois-stat ${buyingPrice > 0 && unitPrice > buyingPrice ? 'is-good' : 'is-bad'}`}>
+              <span>Margin</span>
+              <b>{buyingPrice > 0 ? `${((unitPrice - buyingPrice) / buyingPrice * 100).toFixed(1)}%` : 'N/A'}</b>
             </div>
-            <div className="bg-green-100 rounded-lg p-3 border-l-4 border-green-500">
-              <p className="text-xs text-green-600 font-semibold">Item Total</p>
-              <p className="text-lg font-bold text-green-900">{formatCurrency(calculateTotalPrice())}</p>
-            </div>
-            <div className={`rounded-lg p-3 border-l-4 ${buyingPrice > 0 && unitPrice > buyingPrice ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500'}`}>
-              <p className="text-xs font-semibold">Profit Margin</p>
-              <p className={`text-lg font-bold ${buyingPrice > 0 && unitPrice > buyingPrice ? 'text-green-900' : 'text-red-900'}`}>
-                {buyingPrice > 0 ? `${((unitPrice - buyingPrice) / buyingPrice * 100).toFixed(1)}%` : 'N/A'}
-              </p>
-            </div>
-            <div className="bg-purple-100 rounded-lg p-3 border-l-4 border-purple-500">
-              <p className="text-xs text-purple-600 font-semibold">Current Stock</p>
-              <p className="text-lg font-bold text-purple-900">{selectedProduct.current_stock || 0}</p>
-            </div>
+            <div className="ois-stat"><span>In stock</span><b>{selectedProduct.current_stock || 0}</b></div>
           </div>
         )}
 
-        {/* Add Button */}
-        <button
-          onClick={addOrUpdateItem}
-          disabled={!selectedProduct}
-          className={`w-full mt-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all duration-300 ${
-            selectedProduct
-              ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:shadow-lg'
-              : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-          }`}
-        >
+        <button type="button" onClick={addOrUpdateItem} disabled={!selectedProduct} className="ois-add">
           <FiPlus className="h-5 w-5" />
-          {editingIndex !== null ? 'Update Item' : 'Add Item to Order'}
+          {editingIndex !== null ? 'Update Line' : 'Add to Order'}
         </button>
-      </div>
+      </section>
 
-      {/* Items List */}
-      <div className="ois-list">
-        <h3 className="ois-list-title text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <FiCheckCircle className="h-5 w-5 text-blue-600" />
-          📋 Order Items ({orderItems.length} items)
+      {/* ===== The Ledger: order lines with pictures ===== */}
+      <section className="ois-ledger ois-list">
+        <h3 className="ois-heading ois-list-title">
+          <FiCheckCircle className="h-5 w-5 ois-orn" /> The Ledger <small>{orderItems.length} {orderItems.length === 1 ? 'line' : 'lines'}</small>
         </h3>
 
         {orderItems.length > 0 ? (
-          <div className="space-y-3">
-            {orderItems.map((item, index) => (
-              <div
-                key={item.id}
-                className={`bg-white border-2 rounded-lg p-4 hover:shadow-md transition-all ${
-                  editingIndex === index ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                }`}
-              >
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  {/* Product Info */}
-                  <div className="md:col-span-3">
-                    <p className="font-bold text-gray-800">{item.product_name}</p>
-                    <p className="text-sm text-gray-600">SKU: {item.sku}</p>
+          <>
+            <div className="ois-lines">
+              {orderItems.map((item, index) => (
+                <article key={item.id} className={`ois-line ${editingIndex === index ? 'is-editing' : ''}`}>
+                  <div className="ois-thumb"><Picture src={item.image_url} name={item.product_name} /></div>
+                  <div style={{ minWidth: 0 }}>
+                    <p className="ois-line-name">{item.product_name}</p>
+                    {item.sku && <p className="ois-line-sku">SKU {item.sku}</p>}
+                    <div className="ois-line-figures">
+                      <div className="ois-fig">
+                        <span>Quantity</span>
+                        <b>
+                          {item.display_quantity} {item.unit_type === 'boxes' ? 'boxes' : (item.unit_type === 'units' ? 'units' : item.unit_type)}
+                          {item.unit_type === 'boxes' && <small style={{ fontWeight: 400 }}> ({item.quantity} units)</small>}
+                        </b>
+                      </div>
+                      <div className="ois-fig"><span>{priceLabel}</span><b className="po-ok">{formatCurrency(item.unit_price)}</b></div>
+                      <div className="ois-fig">
+                        <span>Margin</span>
+                        <b style={{ color: item.margin >= 0 ? 'var(--ok, #047857)' : 'var(--due, #be123c)' }}>{item.margin_percent}%</b>
+                      </div>
+                      <div className="ois-fig is-total"><span>Line total</span><b>{formatCurrency(item.total)}</b></div>
+                    </div>
+                    <div className="ois-line-actions">
+                      <button type="button" onClick={() => editItem(index)}><FiEdit2 className="h-4 w-4" /> Amend</button>
+                      <button type="button" className="is-danger" onClick={() => removeItem(index)}><FiX className="h-4 w-4" /> Strike out</button>
+                    </div>
                   </div>
-
-                  {/* Quantity Info */}
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Quantity</p>
-                    <p className="font-bold text-blue-600">
-                      {item.display_quantity} {item.unit_type === 'boxes' ? 'boxes' : 'units'}
-                      {item.unit_type === 'boxes' && <span className="text-sm text-gray-600"> ({item.quantity} units)</span>}
-                    </p>
-                  </div>
-
-                  {/* Prices */}
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Selling Price</p>
-                    <p className="font-bold text-green-600">{formatCurrency(item.unit_price)}</p>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Buying Price</p>
-                    <p className="font-bold text-orange-600">{formatCurrency(item.buying_price)}</p>
-                  </div>
-
-                  {/* Margin */}
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Margin</p>
-                    <p className={`font-bold ${item.margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {item.margin_percent}%
-                    </p>
-                  </div>
-
-                  {/* Total */}
-                  <div className="md:col-span-1">
-                    <p className="text-xs text-gray-600 font-semibold">Total</p>
-                    <p className="font-bold text-gray-900">{formatCurrency(item.total)}</p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="md:col-span-2 flex gap-2">
-                    <button
-                      onClick={() => editItem(index)}
-                      className="flex-1 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-1 text-sm font-semibold"
-                    >
-                      <FiEdit2 className="h-4 w-4" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => removeItem(index)}
-                      className="flex-1 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-1 text-sm font-semibold"
-                    >
-                      <FiX className="h-4 w-4" />
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* Totals Summary */}
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4 border-2 border-gray-200 mt-4">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">Total Items</p>
-                  <p className="text-2xl font-bold text-blue-600">{orderItems.length}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">Total Units</p>
-                  <p className="text-2xl font-bold text-purple-600">{calculatedTotalUnits}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">Subtotal</p>
-                  <p className="text-2xl font-bold text-gray-800">{formatCurrency(totals.subtotal)}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">VAT (18%)</p>
-                  <p className="text-2xl font-bold text-orange-600">{formatCurrency(totals.tax)}</p>
-                </div>
-                <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-lg p-3 text-white">
-                  <p className="text-xs font-semibold">TOTAL</p>
-                  <p className="text-2xl font-bold">{formatCurrency(totals.total)}</p>
-                </div>
-              </div>
+                </article>
+              ))}
             </div>
-          </div>
+
+            <div className="ois-receipt">
+              <div><span>Articles</span><b>{orderItems.length}</b></div>
+              <div><span>Total units</span><b>{calculatedTotalUnits}</b></div>
+              <div><span>Subtotal</span><b>{formatCurrency(totals.subtotal)}</b></div>
+              <div><span>VAT (18%)</span><b>{formatCurrency(totals.tax)}</b></div>
+              <div className="ois-grand"><span>Total</span><b>{formatCurrency(totals.total)}</b></div>
+            </div>
+          </>
         ) : (
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-8 text-center">
-            <FiAlertCircle className="h-12 w-12 text-blue-500 mx-auto mb-3" />
-            <p className="text-blue-800 font-semibold">No items added yet</p>
-            <p className="text-sm text-blue-600 mt-1">Search and add products above to start building your order</p>
+          <div className="ois-blank">
+            <FiAlertCircle className="h-10 w-10 ois-orn" style={{ margin: '0 auto' }} />
+            <p>The ledger is empty</p>
+            <small>Choose articles from the catalogue above to begin your order.</small>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 };

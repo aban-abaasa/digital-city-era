@@ -1,0 +1,157 @@
+/* =====================================================================
+   ORDER ITEMS SELECTOR — "The Catalogue"
+   A classic mercantile look: parchment paper, ink serif type, gold rules,
+   framed product plates and a double-ruled ledger. Tokens fall back to the
+   shared palette so it also works outside the purchase-order sheet.
+   ===================================================================== */
+.ois {
+  --o-ink: var(--ink, #1e1b4b);
+  --o-ink-2: var(--ink-2, #312e81);
+  --o-muted: var(--muted, #64748b);
+  --o-gold: var(--gold, #c4a052);
+  --o-gold-soft: var(--gold-soft, rgba(196, 160, 82, 0.3));
+  --o-paper: var(--paper, #ffffff);
+  --o-paper-2: var(--paper-2, #faf8f3);
+  --o-ok: var(--ok, #047857);
+  --o-due: var(--due, #be123c);
+  --o-serif: var(--serif, "Playfair Display", Georgia, "Times New Roman", serif);
+  color: var(--o-ink);
+}
+
+/* ---------- section headings: small-caps title with a gold rule ---------- */
+.ois-heading {
+  display: flex; align-items: center; gap: 12px; margin: 0 0 12px;
+  font-family: var(--o-serif); font-size: 1.05rem; font-weight: 700; letter-spacing: 0.04em; color: var(--o-ink);
+}
+.ois-heading::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--o-gold), transparent); }
+.ois-heading small { font-family: inherit; font-size: 0.78rem; font-weight: 600; color: var(--o-muted); letter-spacing: 0; }
+.ois-orn { color: var(--o-gold); }
+
+/* ---------- catalogue ---------- */
+.ois-catalogue {
+  padding: 16px; border-radius: 16px; background: var(--o-paper-2);
+  border: 1px solid var(--o-gold-soft);
+  box-shadow: inset 0 0 0 4px var(--o-paper), inset 0 0 0 5px var(--o-gold-soft);
+}
+.ois-search { position: relative; margin-bottom: 14px; }
+.ois-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--o-gold); }
+.ois-search input {
+  width: 100%; padding: 12px 14px 12px 40px; border-radius: 12px; font-family: var(--o-serif);
+  border: 1.5px solid var(--o-gold-soft); background: var(--o-paper); color: var(--o-ink);
+}
+.ois-search input:focus { outline: none; border-color: var(--o-gold); box-shadow: 0 0 0 3px var(--o-gold-soft); }
+
+.ois-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 560px) { .ois-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .ois-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* product plate: framed picture, caption underneath */
+.ois-card-item {
+  position: relative; display: flex; flex-direction: column; padding: 0; text-align: left; overflow: hidden; cursor: pointer;
+  border-radius: 14px; background: var(--o-paper); border: 1px solid var(--o-gold-soft);
+  box-shadow: 0 1px 2px rgba(30, 27, 75, 0.05), 0 12px 24px -18px rgba(30, 27, 75, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.ois-card-item:hover { transform: translateY(-3px); border-color: var(--o-gold); box-shadow: 0 16px 30px -16px rgba(30, 27, 75, 0.45); }
+.ois-card-item:active { transform: scale(0.98); }
+.ois-card-item:focus-visible { outline: 2px solid var(--o-gold); outline-offset: 2px; }
+.ois-card-item.is-unpriced { opacity: 0.6; }
+
+.ois-plate { position: relative; aspect-ratio: 4 / 3; margin: 8px 8px 0; border-radius: 9px; overflow: hidden; background: var(--o-paper-2); box-shadow: 0 0 0 1px var(--o-gold-soft), 0 0 0 4px var(--o-paper), 0 0 0 5px var(--o-gold-soft); }
+.ois-plate img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
+.ois-card-item:hover .ois-plate img { transform: scale(1.06); }
+.ois-plate-empty { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 2.2rem; color: var(--o-gold); background: repeating-linear-gradient(45deg, var(--o-paper-2), var(--o-paper-2) 8px, var(--o-paper) 8px, var(--o-paper) 16px); }
+.ois-badge { position: absolute; top: 6px; right: 6px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #3b2f0b; background: linear-gradient(135deg, #f8e7b0, #e2c46b 60%, #c4a052); box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.5); }
+.ois-stock { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: #fff; background: rgba(30, 27, 75, 0.72); backdrop-filter: blur(2px); }
+.ois-stock.is-low { background: rgba(190, 18, 60, 0.85); }
+
+.ois-caption { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ois-caption b { font-family: var(--o-serif); font-size: 0.92rem; line-height: 1.25; color: var(--o-ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ois-caption .ois-sku { font-size: 11px; color: var(--o-muted); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ois-price { margin-top: 4px; padding-top: 6px; border-top: 1px dotted var(--o-gold); display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.ois-price em { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--o-muted); }
+.ois-price strong { font-family: var(--o-serif); font-size: 0.98rem; color: var(--o-ok); white-space: nowrap; }
+.ois-meta { font-size: 11px; color: var(--o-muted); }
+
+.ois-more { display: block; margin: 14px auto 0; padding: 9px 22px; border-radius: 999px; font-family: var(--o-serif); font-weight: 700; color: var(--o-ink-2); background: var(--o-paper); border: 1px solid var(--o-gold-soft); }
+.ois-more:hover { border-color: var(--o-gold); }
+.ois-empty { padding: 28px 12px; text-align: center; font-family: var(--o-serif); font-style: italic; color: var(--o-muted); }
+
+/* supplier shelf sits beside the store catalogue with a slightly different mood */
+.ois-supplier { margin-bottom: 18px; }
+
+/* ---------- manual entry form ---------- */
+.ois-form { margin-top: 18px; padding: 16px; border-radius: 16px; background: var(--o-paper); border: 1px solid var(--o-gold-soft); }
+.ois-form label { display: block; margin-bottom: 6px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--o-muted); }
+.ois-form input, .ois-form select { width: 100%; padding: 10px 12px; border-radius: 11px; border: 1.5px solid var(--o-gold-soft); background: var(--o-paper); color: var(--o-ink); font-weight: 600; }
+.ois-form input:focus, .ois-form select:focus { outline: none; border-color: var(--o-gold); box-shadow: 0 0 0 3px var(--o-gold-soft); }
+.ois-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+@media (min-width: 720px) { .ois-form-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.ois-chosen { display: flex; align-items: center; gap: 14px; padding: 10px; border-radius: 14px; background: var(--o-paper-2); border: 1px dashed var(--o-gold); }
+.ois-chosen .ois-thumb { width: 84px; height: 84px; }
+.ois-chosen-name { font-family: var(--o-serif); font-size: 1.1rem; font-weight: 700; }
+.ois-chosen-sub { font-size: 12px; color: var(--o-muted); }
+.ois-search-drop { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0; max-height: 300px; overflow-y: auto; border-radius: 14px; background: var(--o-paper); border: 1px solid var(--o-gold); box-shadow: 0 24px 40px -20px rgba(30, 27, 75, 0.55); }
+.ois-search-drop button { display: flex; width: 100%; align-items: center; gap: 12px; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--o-gold-soft); background: none; }
+.ois-search-drop button:last-child { border-bottom: 0; }
+.ois-search-drop button:hover { background: var(--o-paper-2); }
+.ois-search-drop .ois-thumb { width: 46px; height: 46px; }
+
+.ois-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+@media (min-width: 720px) { .ois-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ois-stat { padding: 10px 12px; border-radius: 12px; background: var(--o-paper-2); border: 1px solid var(--o-gold-soft); border-left: 4px solid var(--o-gold); }
+.ois-stat span { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--o-muted); }
+.ois-stat b { font-family: var(--o-serif); font-size: 1.15rem; }
+.ois-stat.is-bad { border-left-color: var(--o-due); }
+.ois-stat.is-bad b { color: var(--o-due); }
+.ois-stat.is-good b { color: var(--o-ok); }
+
+.ois-thumb { flex: none; overflow: hidden; border-radius: 10px; background: var(--o-paper-2); box-shadow: 0 0 0 1px var(--o-gold-soft), 0 0 0 3px var(--o-paper), 0 0 0 4px var(--o-gold-soft); }
+.ois-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ois-thumb .ois-plate-empty { font-size: 1.4rem; }
+
+.ois-add { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; padding: 13px; border-radius: 13px; font-family: var(--o-serif); font-size: 1rem; font-weight: 700; letter-spacing: 0.03em; color: #3b2f0b; border: 1px solid #fff3c9; background: linear-gradient(135deg, #f8e7b0 0%, #e2c46b 55%, #c4a052 100%); box-shadow: 0 12px 22px -14px rgba(0, 0, 0, 0.6); transition: transform 0.15s ease, filter 0.15s ease; }
+.ois-add:hover:not(:disabled) { filter: brightness(1.05); }
+.ois-add:active:not(:disabled) { transform: scale(0.98); }
+.ois-add:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+/* ---------- the ledger (order lines) ---------- */
+.ois-ledger { margin-top: 22px; }
+.ois-lines { display: flex; flex-direction: column; gap: 10px; }
+.ois-line { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; padding: 12px; border-radius: 14px; background: var(--o-paper); border: 1px solid var(--o-gold-soft); box-shadow: 0 10px 22px -20px rgba(30, 27, 75, 0.5); transition: border-color 0.2s ease; }
+.ois-line.is-editing { border-color: var(--o-gold); background: var(--o-paper-2); }
+.ois-line .ois-thumb { width: 72px; height: 72px; }
+.ois-line-name { font-family: var(--o-serif); font-weight: 700; font-size: 1rem; line-height: 1.25; }
+.ois-line-sku { font-size: 11px; color: var(--o-muted); letter-spacing: 0.04em; }
+.ois-line-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin-top: 8px; }
+@media (min-width: 640px) { .ois-line-figures { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ois-fig span { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--o-muted); }
+.ois-fig b { font-size: 0.92rem; }
+.ois-fig.is-total b { font-family: var(--o-serif); font-size: 1.05rem; }
+.ois-line-actions { display: flex; gap: 8px; margin-top: 10px; }
+.ois-line-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700; background: var(--o-paper); border: 1px solid var(--o-gold-soft); color: var(--o-ink-2); }
+.ois-line-actions button:hover { border-color: var(--o-gold); }
+.ois-line-actions .is-danger { color: var(--o-due); border-color: rgba(190, 18, 60, 0.3); }
+.ois-line-actions .is-danger:hover { border-color: var(--o-due); }
+
+/* receipt-style totals with a double rule */
+.ois-receipt { margin-top: 16px; padding: 14px 16px; border-radius: 14px; background: var(--o-paper-2); border: 1px solid var(--o-gold-soft); }
+.ois-receipt div { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13.5px; color: var(--o-muted); }
+.ois-receipt div b { color: var(--o-ink); }
+.ois-receipt .ois-grand { margin-top: 6px; padding-top: 10px; border-top: 3px double var(--o-gold); font-family: var(--o-serif); font-size: 1.1rem; font-weight: 700; color: var(--o-ink); }
+.ois-receipt .ois-grand b { font-size: 1.4rem; }
+
+.ois-blank { padding: 30px 16px; text-align: center; border-radius: 14px; border: 1.5px dashed var(--o-gold); background: var(--o-paper-2); }
+.ois-blank-icon { font-size: 2.2rem; }
+.ois-blank p { margin: 6px 0 0; font-family: var(--o-serif); color: var(--o-ink); }
+.ois-blank small { color: var(--o-muted); }
+
+/* ---------- dark theme (matches the purchase-order sheet) ---------- */
+[data-theme="dark"] .ois-stock { background: rgba(0, 0, 0, 0.6); }
+[data-theme="dark"] .ois-badge, [data-theme="dark"] .ois-add { color: #3b2f0b; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ois-card-item, .ois-plate img, .ois-add { transition: none; }
+  .ois-card-item:hover { transform: none; }
+}
