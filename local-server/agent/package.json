@@ -1,0 +1,12 @@
+{
+  "name": "digital-city-era-local-sync-agent",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}

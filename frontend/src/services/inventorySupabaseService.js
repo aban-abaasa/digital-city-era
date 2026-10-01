@@ -10,7 +10,7 @@
  * This service ensures all portals work with the same real-time inventory data
  */
 
-import { supabase, utils } from './supabase';
+import { supabase, supabaseConfig, utils } from './supabase';
 import { toast } from 'react-toastify';
 
 /**
@@ -148,6 +148,38 @@ class InventorySupabaseService {
         offset = 0,
         includeInactive = false
       } = options;
+
+      if (supabaseConfig.localBusinessServer) {
+        if (supabaseConfig.businessType !== 'supermarket' || !supabaseConfig.businessId) return [];
+
+        let localQuery = supabase
+          .from('business_local_catalog')
+          .select('product_id, name, sku, barcode, price, selling_price, tax_rate, category_id, inventory_mode, is_active, current_stock, reserved_stock, minimum_stock, reorder_point')
+          .eq('business_id', supabaseConfig.businessId);
+
+        if (!includeInactive) localQuery = localQuery.eq('is_active', true);
+        if (category) localQuery = localQuery.eq('category_id', category);
+        if (search) localQuery = localQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%,barcode.ilike.%${search}%`);
+
+        const localSort = ['name', 'price', 'selling_price', 'sku'].includes(sortBy) ? sortBy : 'name';
+        const { data, error } = await localQuery
+          .order(localSort, { ascending: sortOrder === 'asc' })
+          .range(offset, offset + limit - 1);
+        if (error) throw error;
+
+        return (data || []).map((product) => ({
+          ...product,
+          id: product.product_id,
+          stock: Number(product.current_stock) || 0,
+          available_stock: (Number(product.current_stock) || 0) - (Number(product.reserved_stock) || 0),
+          reserved_stock: Number(product.reserved_stock) || 0,
+          minStock: Number(product.minimum_stock) || 0,
+          reorderPoint: Number(product.reorder_point) || 0,
+          categoryName: 'General',
+          supplierName: 'No Supplier',
+          inventoryMode: product.inventory_mode || 'stock_controlled',
+        }));
+      }
 
       let query = supabase
         .from('products')

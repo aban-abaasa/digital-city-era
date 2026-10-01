@@ -12,7 +12,7 @@ import {
   FiShoppingCart, FiTag, FiHash, FiImage, FiInfo, FiHelpCircle,
   FiBarChart, FiPieChart, FiActivity, FiGift, FiNavigation,
   FiX, FiXCircle, FiCheck, FiPercent, FiPhone, FiWifi, FiGlobe, FiCamera,
-  FiSun, FiMoon
+  FiSun, FiMoon, FiServer
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -35,7 +35,8 @@ import {
   saveCatalog, loadCatalog, saveCachedProfile, loadCachedProfile,
   getCachedIdentity, saveCachedIdentity, isNetworkFailure, precacheAppForOffline
 } from '../services/posOfflineCache';
-import { supabase } from '../services/supabase';
+import { supabase, supabaseConfig } from '../services/supabase';
+import { clearLocalStaffSession, getLocalStaffSession } from '../services/localBusinessStaffService';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalHeader from '../components/PortalHeader';
@@ -252,6 +253,23 @@ const CashierPortal = () => {
     // Then load products
     loadProductsFromSupabase();
     
+    if (supabaseConfig.localBusinessServer) {
+      const localCatalogChannel = supabase
+        .channel(`local_catalog_${supabaseConfig.businessId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'business_local_catalog',
+            filter: `business_id=eq.${supabaseConfig.businessId}`,
+          },
+          () => loadProductsFromSupabase()
+        )
+        .subscribe();
+      return () => { supabase.removeChannel(localCatalogChannel); };
+    }
+
     // Subscribe to real-time product updates
     const productSubscription = inventoryService.subscribeToProductChanges((payload) => {
       console.log('📡 Product change detected in Cashier Portal:', payload);
@@ -333,7 +351,9 @@ const CashierPortal = () => {
       // The first product load can run before the profile request completes.
       // Resolve the authenticated user's supermarket directly so this query
       // always reads the catalog created by that supermarket's admin.
-      let supermarketId = cashierProfile?.supermarket_id;
+      let supermarketId = supabaseConfig.localBusinessServer
+        ? (supabaseConfig.businessType === 'supermarket' ? supabaseConfig.businessId : null)
+        : cashierProfile?.supermarket_id;
       if (!supermarketId && navigator.onLine) {
         try {
           supermarketId = await inventoryService.getCurrentSupermarketId();
@@ -371,18 +391,69 @@ const CashierPortal = () => {
       // Reads every row of a store's table (the API returns at most 1000 per
       // request) — the saved offline copy has to hold the whole catalog, not
       // the first 100 products. Ordered by id so pages can't overlap or skip.
-      const fetchAllRows = async (buildQuery) => {
+      const fetchAllRows = async (buildQuery, orderColumn = 'id') => {
         const PAGE_SIZE = 1000;
         const MAX_ROWS = 20000;
         const rows = [];
         for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-          const { data, error } = await buildQuery().order('id').range(from, from + PAGE_SIZE - 1);
+          const { data, error } = await buildQuery().order(orderColumn).range(from, from + PAGE_SIZE - 1);
           if (error) return { data: [], error };
           rows.push(...(data || []));
           if (!data || data.length < PAGE_SIZE) break;
         }
         return { data: rows, error: null };
       };
+
+      if (supabaseConfig.localBusinessServer) {
+        const catalogResult = await fetchAllRows(
+          () => supabase
+            .from('business_local_catalog')
+            .select('product_id, name, sku, barcode, price, selling_price, tax_rate, category_id, inventory_mode, is_active, current_stock, reserved_stock')
+            .eq('business_id', supermarketId)
+            .eq('is_active', true),
+          'product_id'
+        );
+
+        if (catalogResult.error) {
+          console.warn('Local catalog is unavailable:', catalogResult.error);
+          if (await showSavedCatalog()) {
+            toast.info('Using the last catalog saved on this device while the local server reconnects.');
+          } else {
+            toast.info('The local server catalog is still syncing or is unavailable. Try refresh in a moment.');
+          }
+          return;
+        }
+
+        const localProducts = (catalogResult.data || []).map((row) => ({
+          id: row.product_id,
+          name: row.name,
+          sku: row.sku || `SKU-${row.product_id.slice(0, 8)}`,
+          selling_price: Number(row.selling_price) || 0,
+          price: Number(row.price ?? row.selling_price) || 0,
+          stock: Number(row.current_stock) || 0,
+          available_stock: (Number(row.current_stock) || 0) - (Number(row.reserved_stock) || 0),
+          barcode: row.barcode,
+          inventoryMode: row.inventory_mode || 'stock_controlled',
+          tax_rate: Number(row.tax_rate) || 0,
+          category_id: row.category_id,
+          priceTiers: [],
+          variants: [],
+          category: 'General',
+          categoryName: 'General',
+        }));
+
+        setCatalogSavedAt(null);
+        setProducts(localProducts);
+        saveCatalog(supermarketId, localProducts);
+        saveCachedIdentity({ supermarketId });
+        if (localProducts.length) {
+          toast.success(`Loaded ${localProducts.length} products from the business server.`);
+        } else {
+          toast.info('No products have synced to this business server yet.');
+        }
+        return;
+      }
+
       const LOAD_TIMEOUT_MS = 8000;
 
       // Load products and inventory in parallel with timeouts
@@ -523,6 +594,39 @@ const CashierPortal = () => {
     };
 
     try {
+      if (supabaseConfig.localBusinessServer) {
+        const localStaff = getLocalStaffSession()?.user;
+        if (!localStaff) {
+          setCashierProfile((prev) => ({ ...prev, name: 'Local staff', email: '', supermarket_id: supabaseConfig.businessType === 'supermarket' ? supabaseConfig.businessId : null }));
+          return;
+        }
+        const loadedProfile = {
+          id: localStaff.id,
+          user_id: localStaff.id,
+          local_staff_id: localStaff.id,
+          supermarket_id: supabaseConfig.businessType === 'supermarket' ? supabaseConfig.businessId : null,
+          businessType: null,
+          name: localStaff.name || localStaff.full_name || localStaff.username,
+          phone: '',
+          email: localStaff.username,
+          role: localStaff.role,
+          department: 'Business team',
+          employeeId: localStaff.username,
+          joinDate: new Date().toISOString().slice(0, 10),
+          avatar: '🛒',
+          avatar_url: null,
+          shift: 'Local Shift',
+          register: 'Local Till',
+          manager: 'Business owner',
+          location: 'Business LAN',
+          languages: ['English'],
+          permissions: { pos: true, returns: false, voidTransactions: false, mobileMoneyTransactions: false, foreignCurrency: false, loyaltyProgram: false },
+        };
+        setCashierProfile(loadedProfile);
+        saveCachedProfile(loadedProfile);
+        return;
+      }
+
       if (!navigator.onLine) {
         await useSavedProfile();
         return;
@@ -876,6 +980,12 @@ const CashierPortal = () => {
 
   const handleLogout = async () => {
     if (!window.confirm('Are you sure you want to logout?')) return;
+    if (supabaseConfig.localBusinessServer) {
+      clearLocalStaffSession();
+      toast.success('Signed out of the local business server.');
+      navigate('/local-staff-login', { replace: true });
+      return;
+    }
     try {
       await supabase.auth.signOut();
       localStorage.clear();
@@ -1569,6 +1679,11 @@ const CashierPortal = () => {
   };
 
   const processPayment = async (paymentMethodId) => {
+    if (supabaseConfig.localBusinessServer) {
+      toast.error('Sales are not enabled on this local server yet. Do not take payment through this preview.');
+      return;
+    }
+
     console.log('🔔 processPayment called with:', paymentMethodId);
 
     // Only a cash sale can go through with no connection — the money's
@@ -2254,7 +2369,7 @@ const CashierPortal = () => {
               {(() => {
                 const cashOk = billLater || !cashReceived || parseFloat(cashReceived) >= currentTransaction.total;
                 const jobOk = !hasServiceItem || billLater || jobStatus === 'ready_for_collection';
-                const canProceed = cashOk && jobOk;
+                const canProceed = cashOk && jobOk && !supabaseConfig.localBusinessServer;
                 return (
                   <button
                     onClick={() => setPaymentModal(true)}
@@ -2265,7 +2380,9 @@ const CashierPortal = () => {
                         : 'bg-gradient-to-r from-yellow-500 to-red-600 text-white hover:from-yellow-600 hover:to-red-700'
                     }`}
                   >
-                    {billLater ? (
+                    {supabaseConfig.localBusinessServer ? (
+                      <>Local sales are not enabled yet</>
+                    ) : billLater ? (
                       <>🧾 Create Invoice</>
                     ) : cashReceived && parseFloat(cashReceived) >= currentTransaction.total ? (
                       <>✅ Confirm - Change: {formatUGX(parseFloat(cashReceived) - currentTransaction.total).replace('USh ', '')}</>
@@ -3879,6 +3996,21 @@ const CashierPortal = () => {
                   <option value="lg">Luganda</option>
                   <option value="sw">Swahili</option>
                 </select>
+              </div>
+
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <FiServer className="mt-1 h-5 w-5 shrink-0 text-cyan-800" />
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Optional offline business server</h3>
+                      <p className="mt-1 text-sm leading-5 text-gray-600">Manage a local server for your business and its cloud sync pairing.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => navigate('/business-local-server?returnTo=%2Fcashier-portal')} className="shrink-0 rounded-lg bg-cyan-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-800">
+                    Open server settings
+                  </button>
+                </div>
               </div>
             </div>
 

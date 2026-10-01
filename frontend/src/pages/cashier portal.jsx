@@ -30,6 +30,11 @@ import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
 import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
+import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount, generateTransactionId } from '../services/posOfflineQueue';
+import {
+  saveCatalog, loadCatalog, saveCachedProfile, loadCachedProfile,
+  getCachedIdentity, saveCachedIdentity, isNetworkFailure, precacheAppForOffline
+} from '../services/posOfflineCache';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
 import ICANWalletPage from './ICANWalletPage';
@@ -91,6 +96,16 @@ const CashierPortal = () => {
   // support. Reset with the cart via clearTransaction/removeItemFromTransaction.
   const [jobStatus, setJobStatus] = useState('pending');
   const [billLater, setBillLater] = useState(false);
+  // Cash sales recorded while offline, queued in posOfflineQueue's IndexedDB
+  // and not yet synced — see processPayment's offline branch.
+  const [pendingSalesCount, setPendingSalesCount] = useState(0);
+  // Browser's own connectivity flag — drives the offline banner. Whether the
+  // *backend* is reachable is decided per request (see isNetworkFailure).
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  // Effects set up once on mount would keep calling the first render's
+  // loaders; pointed at the latest ones after they're defined.
+  const loadersRef = useRef({});
+  const [catalogSavedAt, setCatalogSavedAt] = useState(null); // set while showing the on-device product copy
   const JOB_STATUS_STAGES = [
     { value: 'pending', label: 'Pending', icon: '🕓' },
     { value: 'in_progress', label: 'In Progress', icon: '🧺' },
@@ -256,6 +271,46 @@ const CashierPortal = () => {
   // Notifications - Load from Supabase
   const [notifications, setNotifications] = useState([]);
 
+  // Track connectivity; on reconnect refresh products/profile from the backend
+  // (replacing the saved on-device copy).
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOnline(true);
+      loadersRef.current.loadProducts?.();
+      loadersRef.current.loadProfile?.();
+    };
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+  // Keep the whole build on the device so an installed till still launches
+  // after the connection is gone.
+  useEffect(() => { precacheAppForOffline(); }, []);
+
+  // Cash sales recorded offline sync automatically once back online.
+  useEffect(() => {
+    getPendingSalesCount().then(setPendingSalesCount).catch(() => {});
+    const stopSync = initPosOfflineSync({ transactionService, inventoryService });
+    const unsubscribe = onSyncStateChange((state) => {
+      if (state.status === 'synced' || state.status === 'sync-error') {
+        getPendingSalesCount().then(setPendingSalesCount).catch(() => {});
+        if (state.synced > 0) {
+          toast.success(`🔄 Synced ${state.synced} offline sale${state.synced !== 1 ? 's' : ''}.`);
+          loadersRef.current.loadProducts?.();
+        }
+        if (state.failed > 0) {
+          toast.warning(`⚠️ ${state.failed} offline sale${state.failed !== 1 ? 's' : ''} still pending sync — will retry.`);
+        }
+      }
+    });
+    return () => { stopSync(); unsubscribe(); };
+  }, []);
+
   // 🔥 Load products from Supabase on component mount
   useEffect(() => {
     loadProductsFromSupabase();
@@ -301,11 +356,36 @@ const CashierPortal = () => {
       // the same catalog created by that supermarket's admin.
       // Always use the canonical store assignment. This prevents an admin
       // opening the cashier role from inheriting a stale profile ID.
-      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      let supermarketId = null;
+      if (navigator.onLine) {
+        try {
+          supermarketId = await inventoryService.getCurrentSupermarketId();
+        } catch { /* backend unreachable — use the remembered one below */ }
+      }
+      // Offline, or the lookup couldn't reach the backend: the supermarket
+      // this till last loaded is the one it belongs to.
+      if (!supermarketId) supermarketId = getCachedIdentity()?.supermarketId;
 
       if (!supermarketId) {
         setProducts([]);
         toast.info('No supermarket is assigned to this cashier account.');
+        return;
+      }
+
+      // The last good copy of this store's products, kept on the device. Used
+      // whenever the live load can't complete, so the till never goes blank.
+      const showSavedCatalog = async () => {
+        const saved = await loadCatalog(supermarketId);
+        if (!saved || saved.products.length === 0) return false;
+        setProducts(saved.products);
+        setCatalogSavedAt(saved.savedAt);
+        return true;
+      };
+
+      if (!navigator.onLine) {
+        if (!(await showSavedCatalog())) {
+          toast.info('📴 Offline and no saved products on this device yet. Open the till once while online to save them.');
+        }
         return;
       }
 
@@ -322,6 +402,10 @@ const CashierPortal = () => {
       
       if (productsError) {
         console.error('❌ Error loading products:', productsError);
+        if (isNetworkFailure(productsError) && await showSavedCatalog()) {
+          toast.info('Using the last products saved on this device — the server could not be reached.');
+          return;
+        }
         throw productsError;
       }
 
@@ -410,6 +494,12 @@ const CashierPortal = () => {
       console.log('🏪 Supermarket ID:', cashierProfile?.supermarket_id);
       console.log('📦 Sample product:', allProducts[0]);
       
+      // Live copy loaded: it replaces the saved one and clears the "saved copy"
+      // notice. Saved even when empty so deleted products don't come back.
+      setCatalogSavedAt(null);
+      saveCatalog(supermarketId, allProducts);
+      saveCachedIdentity({ supermarketId });
+
       if (allProducts.length > 0) {
         setProducts(allProducts);
         const inStock = allProducts.filter(p => p.stock > 0).length;
@@ -424,8 +514,8 @@ const CashierPortal = () => {
       }
     } catch (error) {
       console.error('❌ Error loading products:', error);
+      // Keep whatever is on screen (live or saved) instead of blanking the till.
       toast.error('Failed to load products: ' + error.message);
-      setProducts([]);
     } finally {
       setProductsLoading(false);
       setRefreshingProducts(false);
@@ -434,11 +524,29 @@ const CashierPortal = () => {
 
   // Load cashier profile from Supabase
   const loadCashierProfile = async () => {
+    // Last profile loaded while online, kept on the device. Without it an
+    // offline till has no supermarket_id/cashier name, so it can't load
+    // products or stamp sales with who rang them up.
+    const useSavedProfile = async () => {
+      const saved = await loadCachedProfile();
+      if (!saved) return false;
+      setCashierProfile(prev => ({ ...prev, ...saved }));
+      if (saved.avatar_url) setProfilePicUrl(saved.avatar_url);
+      return true;
+    };
+
     try {
+      if (!navigator.onLine) {
+        await useSavedProfile();
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
+        // Signed out, or the backend just isn't reachable so getUser() couldn't confirm.
         console.error('❌ No authenticated user found');
+        await useSavedProfile();
         return;
       }
 
@@ -453,6 +561,7 @@ const CashierPortal = () => {
 
       if (error && error.code !== 'PGRST116') {
         console.error('❌ Error loading cashier profile:', error);
+        if (isNetworkFailure(error)) await useSavedProfile();
         return;
       }
 
@@ -494,12 +603,15 @@ const CashierPortal = () => {
         // inventorySupabaseService.js's businessType lookup.
         let businessType = null;
         if (cashierData.supermarket_id) {
-          const { data: store } = await supabase
+          const { data: store, error: storeError } = await supabase
             .from('supermarkets')
             .select('business_type')
             .eq('id', cashierData.supermarket_id)
             .maybeSingle();
           businessType = store?.business_type || null;
+          // Couldn't ask (flaky link) — don't downgrade a known business type
+          // to "unknown", which would switch off wholesale/boutique behavior.
+          if (!businessType && storeError) businessType = (await loadCachedProfile())?.businessType || null;
         }
 
         const profileData = {
@@ -539,6 +651,8 @@ const CashierPortal = () => {
         };
         
         setCashierProfile(profileData);
+        saveCachedProfile(profileData);
+        saveCachedIdentity({ userId: user.id, supermarketId: profileData.supermarket_id });
         console.log('✅ Cashier profile successfully loaded and set:', profileData);
         
         // Set profile pic URL state
@@ -583,9 +697,13 @@ const CashierPortal = () => {
       }
     } catch (error) {
       console.error('❌ Exception in loadCashierProfile:', error);
-      
+
+      // Unreachable backend: the saved profile beats a generic placeholder.
+      if (isNetworkFailure(error) && await useSavedProfile()) return;
+
       // Always set a fallback on error
-      const { data: { user } } = await supabase.auth.getUser();
+      let user = null;
+      try { user = (await supabase.auth.getUser()).data.user; } catch { /* offline */ }
       if (user) {
         setCashierProfile({
           id: user.id,
@@ -617,8 +735,13 @@ const CashierPortal = () => {
     }
   };
 
+  loadersRef.current = { loadProducts: loadProductsFromSupabase, loadProfile: loadCashierProfile };
+
   // Update profile data in Supabase (for empty fields)
   const ensureProfileDataInDatabase = async () => {
+    // Nothing to repair without the backend — and a failed lookup must never
+    // be mistaken for "no profile row" and trigger an insert.
+    if (!navigator.onLine) return;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -626,11 +749,12 @@ const CashierPortal = () => {
       console.log('🔄 Ensuring profile data exists in database...');
 
       // Check if user has a profile record
-      const { data: existingProfile } = await supabase
+      const { data: existingProfile, error: existingProfileError } = await supabase
         .from('users')
         .select('*')
         .eq('auth_id', user.id)
         .maybeSingle();
+      if (existingProfileError) return;
 
       if (!existingProfile) {
         console.log('📝 Creating new profile record...');
@@ -1695,6 +1819,12 @@ const CashierPortal = () => {
 
     // IcanEra Wallet - Open wallet page with receive modal pre-filled
     if (paymentMethodId === 'icanera_wallet') {
+      // The wallet needs a live QR scan/verification round trip; only cash can
+      // be recorded on the device and sent later.
+      if (!navigator.onLine) {
+        toast.error('📴 IcanEra Wallet needs an internet connection. Take cash instead, or wait until you are back online.');
+        return;
+      }
       if (!currentTransaction.items.length) {
         toast.error('Add products before accepting an IcanEra payment.');
         return;
@@ -1791,36 +1921,104 @@ const CashierPortal = () => {
       };
       
       setPaymentResult(result);
-      
+
+      // Items with no POS inventory row (services, listing-only) and variant
+      // items (deducted by the DB trigger) are skipped for stock updates.
+      const itemsForStockUpdate = currentTransaction.items
+        .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
+        .map(item => ({
+          product_id: item.id,
+          quantity: item.quantity
+        }));
+
+      const transactionPayload = {
+        items: currentTransaction.items,
+        subtotal: currentTransaction.subtotal,
+        tax: currentTransaction.tax,
+        total: currentTransaction.total,
+        paymentMethod: paymentMethod,
+        paymentReference: result.transactionId,
+        paymentFee: fee,
+        amountPaid: amountPaidNow,
+        changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+        jobStatus: hasServiceItem ? jobStatus : null,
+        customer: currentTransaction.customer || { name: 'Walk-in Customer' },
+        cashier: cashierProfile,
+        register: cashierProfile.register,
+        location: cashierProfile.location || 'Kampala Main Branch',
+        supermarket_id: cashierProfile.supermarket_id, // Add supermarket_id for proper isolation
+        // Fixed up front so a sale that was sent but never acknowledged can be
+        // replayed without inserting twice; soldAt keeps the real time of sale.
+        clientTransactionId: generateTransactionId(),
+        soldAt: result.timestamp
+      };
+
+      // Records the sale on this device to be sent once the backend is
+      // reachable: the cash is already collected, so the sale is real now.
+      // Replayed through the same saveTransaction/adjustStockAfterSale.
+      const recordSaleOffline = async () => {
+        await queueSale(transactionPayload, itemsForStockUpdate.length ? {
+          items: itemsForStockUpdate, saleId, supermarketId: cashierProfile?.supermarket_id || null
+        } : null);
+        setPendingSalesCount((n) => n + 1);
+
+        // The server's stock doesn't know about this sale yet, so take it off
+        // the on-device copy too, or the same last unit could be sold again.
+        if (itemsForStockUpdate.length) {
+          const sold = new Map(itemsForStockUpdate.map(i => [i.product_id, i.quantity]));
+          const updated = products.map(p => sold.has(p.id)
+            ? { ...p, stock: Math.max(0, p.stock - sold.get(p.id)), available_stock: p.available_stock - sold.get(p.id) }
+            : p);
+          setProducts(updated);
+          if (cashierProfile?.supermarket_id) {
+            saveCatalog(cashierProfile.supermarket_id, updated, { keepSavedAt: true });
+          }
+        }
+
+        setReceiptData({
+          ...result,
+          id: null,
+          receiptNumber: `PENDING-${saleId}`,
+          transactionId: result.transactionId,
+          amountPaid: amountPaidNow,
+          changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
+          paymentStatus: amountPaidNow >= currentTransaction.total ? 'paid' : (amountPaidNow > 0 ? 'partial' : 'unpaid'),
+          balanceDue: Math.max(0, currentTransaction.total - amountPaidNow),
+          jobStatus: hasServiceItem ? jobStatus : null,
+          pendingSync: true
+        });
+
+        setTimeout(() => setShowReceiptModal(true), 500);
+        toast.success('📴 Sale recorded on this device — will sync automatically when the connection is back.');
+      };
+
+      // Set when the sale went to the queue (which also covers its stock update).
+      let queuedInstead = false;
+
       // 🔥 NEW: Save transaction to database
       let receiptSaved = false;
       let savedReceiptNumber = null;
-      
-      try {
+
+      if (!navigator.onLine) {
+        await recordSaleOffline();
+        queuedInstead = true;
+      } else try {
         console.log('💾 Attempting to save transaction:', {
           items: currentTransaction.items.length,
           total: currentTransaction.total,
           supermarket_id: cashierProfile?.supermarket_id,
           cashier: cashierProfile?.name
         });
-        
-        const saveResult = await transactionService.saveTransaction({
-          items: currentTransaction.items,
-          subtotal: currentTransaction.subtotal,
-          tax: currentTransaction.tax,
-          total: currentTransaction.total,
-          paymentMethod: paymentMethod,
-          paymentReference: result.transactionId,
-          paymentFee: fee,
-          amountPaid: amountPaidNow,
-          changeGiven: amountPaidNow > currentTransaction.total ? amountPaidNow - currentTransaction.total : 0,
-          jobStatus: hasServiceItem ? jobStatus : null,
-          customer: currentTransaction.customer || { name: 'Walk-in Customer' },
-          cashier: cashierProfile,
-          register: cashierProfile.register,
-          location: cashierProfile.location || 'Kampala Main Branch',
-          supermarket_id: cashierProfile.supermarket_id // Add supermarket_id for proper isolation
-        });
+
+        // "Online" per the browser can still mean a dead uplink where a request
+        // hangs. Past this, queue the sale (the fixed clientTransactionId makes
+        // a late-arriving original harmless).
+        const saveResult = await Promise.race([
+          transactionService.saveTransaction(transactionPayload),
+          new Promise((resolve) => setTimeout(
+            () => resolve({ success: false, error: 'Request timed out' }), 15000
+          ))
+        ]);
 
         if (saveResult && saveResult.success) {
           console.log('✅ Transaction saved successfully:', {
@@ -1908,6 +2106,11 @@ const CashierPortal = () => {
               ? `✅ Payment successful! Receipt: ${savedReceiptNumber}`
               : `🧾 Invoice created: ${savedReceiptNumber} — balance due ${formatUGX(saveResult.balanceDue)}`
           );
+        } else if (isNetworkFailure(saveResult?.error)) {
+          // Browser says online but the backend didn't answer: queue it.
+          console.warn('⚠️ Backend unreachable, queueing sale:', saveResult?.error);
+          await recordSaleOffline();
+          queuedInstead = true;
         } else {
           console.error('❌ Failed to save transaction:', saveResult?.error);
           
@@ -1955,7 +2158,11 @@ const CashierPortal = () => {
         }
       } catch (saveError) {
         console.error('❌ Error saving transaction:', saveError);
-        
+
+        if (isNetworkFailure(saveError)) {
+          await recordSaleOffline();
+          queuedInstead = true;
+        } else {
         // Fallback: Save to localStorage
         savedReceiptNumber = `RCP-${Date.now()}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
         
@@ -1995,24 +2202,13 @@ const CashierPortal = () => {
         }, 500);
         
         toast.warning('⚠️ Receipt saved locally - will sync when online');
+        }
       }
-      
-      // 🔥 Update stock in Supabase after successful payment
-      // Services and listing-only items have no POS inventory row (see
-      // inventorySupabaseService.js) — skip them or adjustStockAfterSale's
-      // .single() lookup throws for every line in the sale. Variant items
-      // (boutique size/color) are also skipped here — the DB trigger
-      // (deduct_inventory_on_transaction) already deducts product_variants
-      // stock for them; deducting the shared product's inventory row too
-      // would double-count the sale.
-      try {
-        const itemsForStockUpdate = currentTransaction.items
-          .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
-          .map(item => ({
-            product_id: item.id,
-            quantity: item.quantity
-          }));
 
+      // 🔥 Update stock in Supabase after successful payment (skipped when the
+      // sale was queued — the queue replays the stock update with the sale).
+      // See itemsForStockUpdate above for which lines are excluded and why.
+      if (!queuedInstead) try {
         const stockUpdated = itemsForStockUpdate.length === 0
           ? true
           : await inventoryService.adjustStockAfterSale(itemsForStockUpdate, saleId);
@@ -3494,6 +3690,23 @@ const CashierPortal = () => {
 
       {/* Main Content */}
       <div className={`${isMobile ? 'w-full px-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} ${isMobile ? 'pt-4 pb-6' : 'py-8'}`}>
+        {(!isOnline || catalogSavedAt || pendingSalesCount > 0) && (
+          <div role="status" className="mb-4 mx-4 md:mx-0 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 flex flex-wrap gap-x-4 gap-y-1">
+            {!isOnline && (
+              <span title="No internet connection. Cash sales are saved on this device and sent automatically when it returns.">📴 Offline mode — cash sales only</span>
+            )}
+            {catalogSavedAt && (
+              <span title="Products and stock levels shown are the last copy saved on this device, not live.">
+                📦 Saved products (as of {new Date(catalogSavedAt).toLocaleString('en-UG', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })})
+              </span>
+            )}
+            {pendingSalesCount > 0 && (
+              <span title="Cash sales recorded offline, syncing automatically once back online">
+                📴 {pendingSalesCount} sale{pendingSalesCount !== 1 ? 's' : ''} pending sync
+              </span>
+            )}
+          </div>
+        )}
         {activeTab === 'pos' && renderPOS()}
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'transactions' && (

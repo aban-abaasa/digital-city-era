@@ -1479,9 +1479,13 @@ const SupplierPortal = () => {
                 <FiEdit className="h-4 w-4" />
                 <span>Edit Profile</span>
               </button>
-              <button className="px-4 py-2 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition-all flex items-center space-x-2 font-medium">
+              <button
+                type="button"
+                onClick={() => navigate('/business-local-server?returnTo=%2Fsupplier-portal')}
+                className="px-4 py-2 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition-all flex items-center space-x-2 font-medium"
+              >
                 <FiSettings className="h-4 w-4" />
-                <span>Settings</span>
+                <span>Offline server settings</span>
               </button>
             </div>
           </div>

@@ -22,6 +22,12 @@ import { getCachedIdentity, isInstalledApp } from '@/services/posOfflineCache';
 const opensStraightToTill = () =>
   isInstalledApp() && ['cashier', 'employee'].includes(getCachedIdentity()?.role);
 
+const getLocalLandingRoute = () => {
+  const session = getLocalStaffSession();
+  if (!session) return '/local-staff-login';
+  return session.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal';
+};
+
 // Portals are separate lazily-loaded pages (see utils/portalPages.js)
 import { PORTAL_LOADERS, loadCashierStation } from '@/utils/portalPages';
 import PortalPageFallback from '@/components/PortalPageFallback';
@@ -60,6 +66,11 @@ import UnifiedProfilePage from '@/pages/UnifiedProfilePage';
 import DevPanel from '@/pages/DevPanel';
 import InvoicePublicPage from '@/pages/InvoicePublicPage';
 import PayRequestPublicPage from '@/pages/PayRequestPublicPage';
+import BusinessLocalServerSetup from '@/pages/BusinessLocalServerSetup';
+import LocalStaffLogin from '@/pages/LocalStaffLogin';
+import LocalBusinessStaffPage from '@/pages/LocalBusinessStaffPage';
+import { supabaseConfig } from '@/services/supabase';
+import { getLocalStaffSession } from '@/services/localBusinessStaffService';
 
 // Styles
 import 'react-toastify/dist/ReactToastify.css';
@@ -209,7 +220,9 @@ function App() {
                 path="/" 
                 element={
                   // If OAuth token in hash, redirect to the appropriate auth page
-                    hasOAuthToken
+                    supabaseConfig.localBusinessServer
+                    ? <Navigate to={getLocalLandingRoute()} replace />
+                    : hasOAuthToken
                     ? <Navigate to="/auth/callback" replace />
                     : window.location.hash === '#admin' || window.location.hash === '#/admin' 
                       ? <Navigate to="/admin-login" replace /> 
@@ -340,6 +353,9 @@ function App() {
               <Route path="/payment-dashboard" element={<PaymentDashboard />} />
               <Route path="/ican-wallet" element={<ICANWalletPage />} />
               <Route path="/profile" element={<UnifiedProfilePage />} />
+              <Route path="/business-local-server" element={<BusinessLocalServerSetup />} />
+              <Route path="/local-staff-login" element={<LocalStaffLogin />} />
+              <Route path="/local-staff" element={<RoleProtectedRoute minLevel={3}><LocalBusinessStaffPage /></RoleProtectedRoute>} />
 
               {/* Developer panel — hardcoded credentials, not for end users */}
               <Route path="/dev-panel" element={<DevPanel />} />

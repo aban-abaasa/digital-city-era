@@ -1,8 +1,25 @@
 import { createClient } from '@supabase/supabase-js'
 
 // Supabase configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// A locally hosted business deployment can provide a public runtime config
+// in /runtime-config.js. Build-time Vite values remain the default for the
+// existing cloud deployments and development environments.
+const runtimeConfig = typeof window !== 'undefined'
+  ? (window.__APP_RUNTIME_CONFIG__ || {})
+  : {};
+const hasRuntimeSupabaseConfig = Boolean(runtimeConfig.supabaseUrl || runtimeConfig.supabaseAnonKey);
+const supabaseUrl = hasRuntimeSupabaseConfig ? runtimeConfig.supabaseUrl : import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = hasRuntimeSupabaseConfig ? runtimeConfig.supabaseAnonKey : import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// These are public client settings. The installer may need them to claim a
+// node through the cloud RPC; never add a service-role/secret key here.
+export const supabaseConfig = Object.freeze({
+  supabaseUrl,
+  supabaseAnonKey,
+  localBusinessServer: runtimeConfig.localBusinessServer === true,
+  businessType: runtimeConfig.businessType || null,
+  businessId: runtimeConfig.businessId || null,
+});
 
 console.log('🔧 [SUPABASE] Loading config...');
 console.log('🔧 [SUPABASE] URL:', supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : '❌ MISSING');
@@ -101,6 +118,22 @@ function initSupabase() {
           'Connection': 'keep-alive'
         },
         fetch: function(url, init) {
+          // Local staff tokens are signed by the node's private JWT secret.
+          // Keep Supabase Auth available for the online app, but attach this
+          // custom session to local REST/Storage requests in business-server
+          // mode so Postgres RLS validates the staff role on every write.
+          const authTarget = String(url).includes('/rest/v1/') || String(url).includes('/storage/v1/');
+          if (runtimeConfig.localBusinessServer && authTarget && typeof sessionStorage !== 'undefined') {
+            try {
+              const localSession = JSON.parse(sessionStorage.getItem('business_local_staff_session_v1') || 'null');
+              if (localSession?.accessToken && Number(localSession.expiresAt) > Date.now()) {
+                const requestHeaders = new Headers(init?.headers || {});
+                requestHeaders.set('Authorization', `Bearer ${localSession.accessToken}`);
+                init = { ...init, headers: requestHeaders };
+              }
+            } catch { /* no signed-in local staff session */ }
+          }
+
           // Add 45 second timeout for API calls (increased for mobile networks)
           const controller = new AbortController();
           const timeoutId = setTimeout(() => {

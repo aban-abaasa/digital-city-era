@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { mockService } from '../services/mockData';
+import { supabaseConfig } from '../services/supabase';
+import { clearLocalStaffSession, getLocalStaffSession } from '../services/localBusinessStaffService';
 
 const AuthContext = createContext({});
 
@@ -26,6 +28,14 @@ export const AuthProvider = ({ children }) => {
     // Check for existing user session on mount
     const checkUser = async () => {
       try {
+        if (supabaseConfig.localBusinessServer) {
+          const localSession = getLocalStaffSession();
+          const localUser = normalizeUser(localSession?.user || null);
+          setUser(localUser);
+          setCustomer(localUser);
+          return;
+        }
+
         // Add timeout to prevent hanging
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Auth check timeout')), 3000)
@@ -64,6 +74,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    if (supabaseConfig.localBusinessServer) {
+      clearLocalStaffSession();
+      setUser(null);
+      setCustomer(null);
+      return;
+    }
     try {
       await mockService.logout();
       setUser(null);

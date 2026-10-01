@@ -7154,8 +7154,8 @@ _Automated Business Report System_`)}`;
               { name: 'receiptFooter', label: 'Tax Receipt Footer', type: 'textarea', value: 'VAT Inclusive. TIN: UG-TIN-987654321' }
             ]
           },
-          { 
-            label: 'Inventory Management Rules', 
+          {
+            label: 'Inventory Management Rules',
             icon: '📦', 
             type: 'form',
             fields: [
@@ -7166,6 +7166,13 @@ _Automated Business Report System_`)}`;
               { name: 'barcodeFormat', label: 'Barcode Format', type: 'select', value: 'code128', options: ['code128', 'ean13', 'ean8', 'upc'] },
               { name: 'inventoryMethod', label: 'Inventory Valuation Method', type: 'select', value: 'fifo', options: ['fifo', 'lifo', 'average'] }
             ]
+          },
+          {
+            label: 'Optional Offline Business Server',
+            icon: '🖥️',
+            type: 'link',
+            href: '/business-local-server?returnTo=%2Fmanager-portal',
+            description: 'Set up a business LAN server, pair it to cloud sync, and manage registered local servers.'
           }
         ]
       }
@@ -7528,7 +7535,24 @@ _Automated Business Report System_`)}`;
     // Generate editable forms based on setting type
     window.generateSettingForm = (item, index, categoryKey) => {
       const animationDelay = index * 0.1;
-      
+
+      if (item.type === 'link') {
+        return `
+          <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 animate-slide-in" style="animation-delay: ${animationDelay}s">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl flex items-center justify-center text-white text-lg">${item.icon}</div>
+                <div>
+                  <h4 class="text-xl font-bold text-gray-900 dark:text-white">${item.label}</h4>
+                  <p class="mt-1 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">${item.description}</p>
+                </div>
+              </div>
+              <a href="${item.href}" class="inline-flex shrink-0 items-center justify-center rounded-lg bg-cyan-700 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-800">Open server settings</a>
+            </div>
+          </div>
+        `;
+      }
+
       if (item.type === 'form') {
         return `
           <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 animate-slide-in" style="animation-delay: ${animationDelay}s">

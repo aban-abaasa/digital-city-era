@@ -1,0 +1,57 @@
+# Merge this file with Supabase's official self-hosted docker-compose.yml.
+# Run Compose from the Supabase project directory so the default network and
+# existing .env variables are shared with the Supabase services. The LAN app
+# and gateway use HTTP in this preview; keep both ports on a trusted LAN only.
+services:
+  business-local-app:
+    image: nginx:stable-alpine3.24
+    restart: unless-stopped
+    depends_on:
+      - api-gw
+      - business-local-sync-agent
+    ports:
+      - "${LOCAL_SERVER_BIND_IP:?Set the server LAN IPv4 address}:8080:80/tcp"
+    volumes:
+      - ./local-server/web/app:/usr/share/nginx/html:ro
+      - ./local-server/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./local-server/web/runtime-config.js:/usr/share/nginx/html/runtime-config.js:ro
+  api-gw:
+    # Expose the REST/Auth/Realtime/Storage gateway only on the selected
+    # business LAN interface; never bind it to every host interface.
+    ports: !override
+      - "${LOCAL_SERVER_BIND_IP:?Set the server LAN IPv4 address}:8000:8000/tcp"
+  # Only the gateway is reachable by client devices. Database access remains
+  # inside the Compose network; Supavisor's default public ports are removed.
+  supavisor:
+    ports: !reset []
+  # Supabase Studio is an administration interface and is not needed by staff
+  # clients; do not publish its upstream default host port on the business LAN.
+  studio:
+    ports: !reset []
+  # A Docker named volume avoids macOS bind-mount permission/xattr problems
+  # documented for Supabase Storage and persists uploads across restarts.
+  storage:
+    volumes: !override
+      - local-business-storage:/var/lib/storage
+  business-local-sync-agent:
+    build:
+      context: ./local-server/agent
+    restart: unless-stopped
+    depends_on:
+      - api-gw
+    environment:
+      LOCAL_SUPABASE_URL: http://kong:8000
+      LOCAL_SUPABASE_ANON_KEY: ${ANON_KEY:?Set ANON_KEY in the Supabase .env file}
+      LOCAL_SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?Set SERVICE_ROLE_KEY in the Supabase .env file}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the Supabase .env file}
+      LOCAL_SETUP_TOKEN: ${LOCAL_SETUP_TOKEN:?Create local owner setup token during installation}
+      LOCAL_AUTH_PORT: 3010
+      CLOUD_SUPABASE_URL: ${CLOUD_SUPABASE_URL:?Set CLOUD_SUPABASE_URL in .env.local-sync}
+      CLOUD_SUPABASE_ANON_KEY: ${CLOUD_SUPABASE_ANON_KEY:?Set CLOUD_SUPABASE_ANON_KEY in .env.local-sync}
+      BUSINESS_SYNC_NODE_ID: ${BUSINESS_SYNC_NODE_ID:?Pair this server before starting sync}
+      BUSINESS_SYNC_NODE_SECRET: ${BUSINESS_SYNC_NODE_SECRET:?Pair this server before starting sync}
+      BUSINESS_SYNC_BUSINESS_TYPE: ${BUSINESS_SYNC_BUSINESS_TYPE:?Pair this server before starting sync}
+      BUSINESS_SYNC_BUSINESS_ID: ${BUSINESS_SYNC_BUSINESS_ID:?Pair this server before starting sync}
+      BUSINESS_SYNC_POLL_MS: ${BUSINESS_SYNC_POLL_MS:-15000}
+volumes:
+  local-business-storage:

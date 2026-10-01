@@ -20,6 +20,7 @@ import {
   subscribeToMessages,
   subscribeToConversation,
 } from '../services/chatService';
+import { supabase, supabaseConfig } from '../services/supabase';
 import {
   createLandingMessage,
   fetchPublicThreads,
@@ -106,6 +107,7 @@ const ChatWidget = () => {
   const [teamConvId, setTeamConvId] = useState(null);
   const [teamMessages, setTeamMessages] = useState([]);
   const [teamUnread, setTeamUnread] = useState(false);
+  const [localSyncStatus, setLocalSyncStatus] = useState(null);
 
   const [communityThreads, setCommunityThreads] = useState([]);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
@@ -186,7 +188,7 @@ const ChatWidget = () => {
   const teamLive = useCommunityLive({
     selfId: identity?.userId || null,
     selfName,
-    canBroadcast: canTeamChat,
+    canBroadcast: canTeamChat && !supabaseConfig.localBusinessServer,
     scope: identity?.supermarketId ? `team:${identity.supermarketId}` : 'team:none',
   });
   const showTeamLiveStage = teamLive.role === 'broadcasting' || teamLive.role === 'watching';
@@ -333,6 +335,27 @@ const ChatWidget = () => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canTeamChat, identity?.supermarketId]);
+
+  useEffect(() => {
+    if (!supabaseConfig.localBusinessServer) {
+      setLocalSyncStatus(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const refreshStatus = async () => {
+      const { data, error } = await supabase.rpc('get_business_local_sync_status');
+      if (!cancelled) setLocalSyncStatus(!error && data?.success ? data : null);
+    };
+    refreshStatus();
+    const timer = setInterval(refreshStatus, 15000);
+    window.addEventListener('online', refreshStatus);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('online', refreshStatus);
+    };
+  }, []);
 
   useEffect(() => {
     if (!teamConvId) return;
@@ -689,6 +712,23 @@ const ChatWidget = () => {
           </div>
 
           <div ref={scrollRef} onScroll={handleListScroll} className={`flex-1 space-y-2 overflow-y-auto px-3 py-3 ${dark ? 'bg-[#0b1220]' : 'bg-slate-50'}`}>
+            {channel === 'team' && supabaseConfig.localBusinessServer && (
+              <p className={`rounded-lg border border-amber-300 px-2.5 py-2 text-[10px] leading-4 ${dark ? 'bg-amber-950/40 text-amber-200' : 'bg-amber-50 text-amber-900'}`}>
+                Local preview chat: names are not verified and messages are visible to devices on this Wi-Fi. Do not share sensitive information.
+                <span className="mt-1 block font-semibold">
+                  {!localSyncStatus
+                    ? 'Sync status unavailable.'
+                    : localSyncStatus.hasError
+                      ? 'Cloud sync is having trouble; local messages stay saved on this server.'
+                      : Number(localSyncStatus.pendingOutbound || 0) > 0
+                        ? `${localSyncStatus.pendingOutbound} message(s) waiting for cloud sync.`
+                        : localSyncStatus.lastSyncAt
+                          ? `Last cloud sync: ${new Date(localSyncStatus.lastSyncAt).toLocaleString()}.`
+                          : 'Waiting for the first cloud sync.'}
+                  {Number(localSyncStatus?.quarantined || 0) > 0 && ' Some sync items need server admin attention.'}
+                </span>
+              </p>
+            )}
             {channel === 'community' ? (
               selectedThread ? (
                 <>
@@ -898,14 +938,14 @@ const ChatWidget = () => {
             {attachmentError && <p className="mb-1.5 text-[11px] text-red-400">{attachmentError}</p>}
             <div className="flex items-center gap-2">
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelected} className="hidden" />
-            <button
+            {!(channel === 'team' && supabaseConfig.localBusinessServer) && <button
               onClick={handlePickImage}
               disabled={attachmentUploading}
               className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition disabled:opacity-40 ${dark ? 'text-slate-500 hover:bg-white/10 hover:text-cyan-400' : 'text-slate-400 hover:bg-slate-100 hover:text-cyan-600'}`}
               title="Attach an image"
             >
               <FiImage className="h-4 w-4" />
-            </button>
+            </button>}
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

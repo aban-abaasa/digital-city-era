@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { createClient } from '@supabase/supabase-js';
+import { supabase as sharedSupabase, supabaseConfig } from '../services/supabase';
 import ReceiptModal from '../components/ReceiptModal';
 import DualScannerInterface from '../components/DualScannerInterface';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
@@ -39,18 +41,23 @@ import {
   FiVolume2,
   FiPackage,
   FiFileText,
-  FiTruck
+  FiTruck,
+  FiServer
 } from 'react-icons/fi';
 
 const POS = () => {
+  const navigate = useNavigate();
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
 
-  // Initialize Supabase
-  const supabase = createClient(
-    'https://zwmupgbixextqlexknnu.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3bXVwZ2JpeGV4dHFsZXhrbiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzAyNTU3MzE2LCJleHAiOjE3MzQwOTMzMTZ9.OjSqZ_Qz1VdxfCXUBh5B9gZGo1V6Gu3q1sN3y4pV8BA'
-  );
+  // Local business deployments reuse the configured app client. Cloud-only
+  // deployments retain this page's existing Supabase project until its data
+  // source is intentionally migrated.
+  const runtimeConfig = typeof window !== 'undefined' ? (window.__APP_RUNTIME_CONFIG__ || {}) : {};
+  const hasRuntimeSupabaseConfig = Boolean(runtimeConfig.supabaseUrl || runtimeConfig.supabaseAnonKey);
+  const supabase = hasRuntimeSupabaseConfig
+    ? sharedSupabase
+    : createClient('https://zwmupgbixextqlexknnu.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3bXVwZ2JpeGV4dHFsZXhrbiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzAyNTU3MzE2LCJleHAiOjE3MzQwOTMzMTZ9.OjSqZ_Qz1VdxfCXUBh5B9gZGo1V6Gu3q1sN3y4pV8BA');
 
   // Core state
   const [products, setProducts] = useState([]);
@@ -202,12 +209,15 @@ const POS = () => {
         {
           event: '*', // Listen to all events: INSERT, UPDATE, DELETE
           schema: 'public',
-          table: 'products'
+          table: supabaseConfig.localBusinessServer ? 'business_local_catalog' : 'products',
+          ...(supabaseConfig.localBusinessServer && supabaseConfig.businessId
+            ? { filter: `business_id=eq.${supabaseConfig.businessId}` }
+            : {})
         },
         (payload) => {
           console.log('🔄 Real-time product update:', payload);
           
-          if (payload.eventType === 'INSERT') {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
             // New product added - refresh the products list
             console.log('🆕 New product detected:', payload.new.name);
             fetchProducts();
@@ -230,6 +240,42 @@ const POS = () => {
 
   const fetchProducts = async () => {
     try {
+      if (supabaseConfig.localBusinessServer) {
+        if (supabaseConfig.businessType !== 'supermarket' || !supabaseConfig.businessId) {
+          setProducts([]);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('business_local_catalog')
+          .select('product_id, name, price, selling_price, tax_rate, barcode, sku, category_id, is_active, current_stock')
+          .eq('business_id', supabaseConfig.businessId)
+          .eq('is_active', true)
+          .order('name')
+          .limit(1000);
+        if (error) throw error;
+
+        setProducts((data || []).map((product) => ({
+          _id: product.product_id,
+          id: product.product_id,
+          name: product.name,
+          price: Number(product.price ?? product.selling_price) || 0,
+          selling_price: Number(product.selling_price) || 0,
+          tax_rate: Number(product.tax_rate) || 0,
+          barcode: product.barcode,
+          sku: product.sku,
+          stock: Number(product.current_stock) || 0,
+          minimum_stock: 0,
+          maximum_stock: 1000,
+          category_id: product.category_id,
+          isActive: product.is_active,
+          inventoryStatus: 'available',
+          sourcePortal: 'Business Local Server',
+          source: 'business_local_server',
+        })));
+        return;
+      }
+
       // OPTIMIZED: Load products and inventory in parallel
       const [productsResult, inventoryResult] = await Promise.all([
         // Load products with timeout
@@ -798,6 +844,16 @@ const POS = () => {
             >
               <FiVolume2 className="h-6 w-6" />
             </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/business-local-server?returnTo=%2Fpos')}
+              className="px-4 py-3 rounded-xl bg-cyan-100 text-cyan-800 transition-all hover:bg-cyan-200"
+              aria-label="Open offline business server settings"
+              title="Offline business server settings"
+            >
+              <FiServer className="h-6 w-6" />
+            </button>
           </div>
 
           {/* Barcode Scanner Input */}
@@ -1217,7 +1273,7 @@ const POS = () => {
                       className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       <option value="all">All Stock</option>
-                      <option value="in-stock">In Stock (>10)</option>
+                      <option value="in-stock">In Stock (&gt;10)</option>
                       <option value="low-stock">Low Stock (1-10)</option>
                       <option value="out-of-stock">Out of Stock</option>
                     </select>

@@ -4056,6 +4056,21 @@ const AdminPortal = () => {
           </div>
         </div>
       </div>
+
+      <section className="container-glass rounded-xl border border-cyan-200 p-6 shadow-lg">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-4">
+            <span className="rounded-xl bg-cyan-50 p-3 text-cyan-800"><FiServer className="h-6 w-6" /></span>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Optional offline business server</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">Set up a business-owned LAN server, create a one-time pairing code, and manage registered local servers. Your existing cloud account remains available for sync.</p>
+            </div>
+          </div>
+          <a href="/business-local-server?returnTo=%2Fadmin-portal" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-700 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-800">
+            <FiHardDrive className="h-4 w-4" /> Open offline server settings
+          </a>
+        </div>
+      </section>
     </div>
   );
 

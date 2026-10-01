@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FiSun, FiMoon, FiUser, FiLogOut, FiShoppingBag } from 'react-icons/fi';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { FiSun, FiMoon, FiUser, FiLogOut, FiShoppingBag, FiServer } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
+import { supabaseConfig } from '../services/supabase';
+import { clearLocalStaffSession } from '../services/localBusinessStaffService';
 import { useTheme } from '../contexts/ThemeContext';
 import { usePortalAccess } from '../hooks/usePortalAccess';
 import { prefetchPortal } from '../utils/portalPages';
@@ -43,6 +45,7 @@ const PortalHeader = ({
   badgeCount = 0
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const { accessiblePortals, currentPortal, pageMeta } = usePortalAccess();
   const [email, setEmail] = useState('');
@@ -107,6 +110,11 @@ const PortalHeader = ({
   const handleSignOut = async () => {
     setShowMenu(false);
     if (onSignOut) { onSignOut(); return; }
+    if (supabaseConfig.localBusinessServer) {
+      clearLocalStaffSession();
+      window.location.assign('/local-staff-login');
+      return;
+    }
     try { await supabase.auth.signOut(); } catch (err) { console.warn('[PortalHeader] Sign out failed:', err); }
     try { localStorage.removeItem('supermarket_user'); } catch { /* storage unavailable */ }
     window.location.href = '/login';
@@ -191,6 +199,17 @@ const PortalHeader = ({
                   >
                     <FiUser size={16} />
                     <span className="text-sm font-medium">My Profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false);
+                      navigate(`/business-local-server?returnTo=${encodeURIComponent(location.pathname)}`);
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <FiServer size={16} />
+                    <span className="text-sm font-medium">Offline server settings</span>
                   </button>
                   {menuItems.map((item) => (
                     <button

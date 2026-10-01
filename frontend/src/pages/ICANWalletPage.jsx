@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
@@ -31,7 +31,7 @@ import { hasPinSet, verifyPin } from '@/services/pinService';
 import { parseIcanPayCode, payIcanRequest, payInvoiceWithIcan } from '@/services/icanPaymentRequestService';
 import { parseInvoiceTransactionId } from '@/services/transactionService';
 import SupplierAvailabilityPanel from '@/components/SupplierAvailabilityPanel';
-import { ArrowDown, ArrowUp, Banknote, CheckCircle2, Gem, Landmark, Receipt as ReceiptIcon, RotateCcw, ShoppingBasket, ShoppingCart, Smartphone, Sparkles, Leaf } from 'lucide-react';
+import { ArrowDown, ArrowUp, Banknote, CheckCircle2, Gem, Landmark, Receipt as ReceiptIcon, RotateCcw, Settings, ShoppingBasket, ShoppingCart, Smartphone, Sparkles, Leaf } from 'lucide-react';
 import {
   Sheet, StoreCard, ActionTiles, SpendMix, Receipt, ReceiptRow, FilterTabs, Collapsible, AddressQr, CopyButton,
   fmtLocal, Barcode, FIELD, LABEL, BTN_PRIMARY, BTN_OUTLINE, HistoryHeader, SearchBox, compactNumber, formatAmount,
@@ -423,6 +423,7 @@ export default function ICANWalletPage({
   receiveDescription = '',
   showSupplierAvailability = false
 }) {
+  const navigate = useNavigate();
   const [userId, setUserId] = useState(propUserId);
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState({ ican: 0, ugx: 0, address: null });
@@ -696,12 +697,17 @@ export default function ICANWalletPage({
 
         {/* Header - only show if not embedded */}
         {!embedded && (
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-[#e6c980] ring-1 ring-[#c4a052]/60"><ShoppingBasket size={19} /></span>
-            <div>
-              <h1 className="font-classic-display text-xl font-bold">IcanEra Wallet</h1>
-              <p className="text-[12px] text-emerald-100/60">Supermarket — powered by IcanEra</p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-[#e6c980] ring-1 ring-[#c4a052]/60"><ShoppingBasket size={19} /></span>
+              <div>
+                <h1 className="font-classic-display text-xl font-bold">IcanEra Wallet</h1>
+                <p className="text-[12px] text-emerald-100/60">Supermarket — powered by IcanEra</p>
+              </div>
             </div>
+            <button type="button" onClick={() => navigate('/business-local-server?returnTo=%2Fican-wallet')} className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#c4a052]/50 bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-50 hover:bg-white/10" aria-label="Open business offline server settings">
+              <Settings size={15} /> Settings
+            </button>
           </div>
         )}
 

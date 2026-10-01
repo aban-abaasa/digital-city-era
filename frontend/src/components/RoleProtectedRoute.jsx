@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { supabaseConfig } from '../services/supabase';
+import { getLocalStaffSession } from '../services/localBusinessStaffService';
 import { getCachedIdentity, saveCachedIdentity, clearCachedIdentity, isNetworkFailure } from '../services/posOfflineCache';
 
 // An explicit sign-out (or a session supabase-js itself gave up on) must also
@@ -80,6 +82,12 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
 
     const checkAccess = async () => {
       try {
+        if (supabaseConfig.localBusinessServer) {
+          const localUser = getLocalStaffSession()?.user;
+          finishWithDecision(Boolean(localUser), localUser?.role?.toLowerCase() || null);
+          return;
+        }
+
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         console.log('[ROLE-GUARD] path=', location.pathname, 'session user=', session?.user?.email || null, 'sessionError=', sessionError || null);
 
@@ -190,7 +198,9 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
 
       // Any signed-in user with no recognized role (new/unknown) lands on
       // the customer dashboard rather than the generic landing page.
-      const target = isAuthenticated ? (ROLE_HOME[resolvedRole] || ROLE_HOME.customer) : '/login';
+      const target = isAuthenticated
+        ? (ROLE_HOME[resolvedRole] || ROLE_HOME.customer)
+        : supabaseConfig.localBusinessServer ? '/local-staff-login' : '/login';
       const sameTarget = target === location.pathname;
       const loopTripped = sameTarget ? null : tooManyRecentRedirects();
       console.log('[ROLE-GUARD] target=', target, 'sameTarget=', sameTarget, 'loopTripped=', loopTripped);

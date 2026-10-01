@@ -5,7 +5,7 @@ import {
   FiUser, FiMail, FiPhone, FiMapPin, FiEdit2, FiSave, FiX,
   FiCamera, FiShield, FiAward, FiTrendingUp, FiSettings,
   FiClock, FiCheckCircle, FiBriefcase, FiPackage, FiShoppingCart,
-  FiUsers, FiCalendar, FiHome, FiGlobe, FiHeart, FiStar
+  FiUsers, FiCalendar, FiHome, FiGlobe, FiHeart, FiStar, FiServer
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
@@ -538,6 +538,14 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
             </div>
 
             <div className="flex items-center space-x-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => navigate('/business-local-server')}
+                className="flex items-center gap-1 rounded-lg border border-cyan-200 px-2 py-1.5 text-xs font-semibold text-cyan-800 hover:bg-cyan-50 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm"
+              >
+                <FiServer className="h-4 w-4" />
+                <span>Offline server</span>
+              </button>
               {!editing ? (
                 <button
                   onClick={() => setEditing(true)}
@@ -1364,6 +1372,21 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                       </label>
                     </div>
                   </div>
+
+                  <section className="rounded-xl border border-cyan-200 bg-cyan-50 p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <FiServer className="mt-1 h-5 w-5 shrink-0 text-cyan-800" />
+                        <div>
+                          <h3 className="font-semibold text-gray-900">Optional offline business server</h3>
+                          <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">Owners can set up a local server for their business, create pairing codes, and manage cloud sync.</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => navigate('/business-local-server?returnTo=%2Fprofile')} className="shrink-0 rounded-lg bg-cyan-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-800">
+                        Open server settings
+                      </button>
+                    </div>
+                  </section>
                 </div>
               )}
             </div>

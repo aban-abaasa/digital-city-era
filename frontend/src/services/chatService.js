@@ -1,7 +1,45 @@
-import { supabase } from './supabase';
+import { supabase, supabaseConfig } from './supabase';
+import { getLocalStaffSession } from './localBusinessStaffService';
 
 const GUEST_KEY = 'chat_guest_identity_v1';
 const CONV_PREFIX = 'chat_conversation_id_v1_';
+const TEAM_CONV_PREFIX = 'business-team:';
+const teamScopeByConversationId = new Map();
+
+const newMessageId = () => {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.random() * 16 | 0;
+    return (char === 'x' ? random : (random & 3 | 8)).toString(16);
+  });
+};
+
+const makeTeamConversation = ({ businessType, businessId, legacyConversationId = null }) => {
+  const id = `${TEAM_CONV_PREFIX}${businessType}:${businessId}`;
+  teamScopeByConversationId.set(id, { businessType, businessId, legacyConversationId });
+  return { id, kind: 'team', supermarket_id: businessId, last_message_at: new Date().toISOString() };
+};
+
+const mapBusinessTeamMessage = (row) => ({
+  id: row.id,
+  event_id: row.id,
+  conversation_id: row.conversation_id || null,
+  sender_role: row.sender_role,
+  sender_name: row.sender_name,
+  sender_avatar_url: null,
+  body: row.body,
+  attachment_url: null,
+  attachment_type: null,
+  attachment_name: null,
+  created_at: row.created_at,
+});
+
+const mapLegacyTeamMessage = (row) => ({
+  ...row,
+  sender_avatar_url: row.sender_avatar_url || null,
+});
+
+const isMissingTeamSyncRpc = (error) => ['PGRST202', '42883'].includes(error?.code);
 
 export const getGuestIdentity = () => {
   try {
@@ -54,6 +92,24 @@ export const fetchConversation = async (conversationId) => {
 };
 
 export const fetchMessages = async (conversationId) => {
+  const teamScope = teamScopeByConversationId.get(conversationId);
+  if (teamScope) {
+    const { businessType, businessId, legacyConversationId } = teamScope;
+    const [businessResult, legacyResult] = await Promise.all([
+      supabase.from('business_local_team_messages').select('*')
+        .eq('business_type', businessType).eq('business_id', businessId)
+        .order('created_at', { ascending: true }),
+      legacyConversationId
+        ? supabase.from('chat_messages').select('*').eq('conversation_id', legacyConversationId)
+          .order('created_at', { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (businessResult.error) throw businessResult.error;
+    if (legacyResult.error) throw legacyResult.error;
+    return [...(legacyResult.data || []).map(mapLegacyTeamMessage), ...(businessResult.data || []).map(mapBusinessTeamMessage)]
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+
   const { data } = await supabase
     .from('chat_messages')
     .select('*')
@@ -63,6 +119,52 @@ export const fetchMessages = async (conversationId) => {
 };
 
 export const sendMessage = async (conversationId, { senderRole, senderName, senderAvatarUrl, body, attachment }) => {
+  const teamScope = teamScopeByConversationId.get(conversationId);
+  if (teamScope) {
+    if (attachment) throw new Error('Image attachments are not available in the local team channel yet.');
+    const eventId = newMessageId();
+    const messageBody = String(body || '').trim();
+    if (!messageBody) throw new Error('Enter a message before sending.');
+
+    if (supabaseConfig.localBusinessServer) {
+      const row = {
+        id: eventId,
+        business_type: teamScope.businessType,
+        business_id: teamScope.businessId,
+        sender_role: senderRole || 'staff',
+        sender_name: senderName || 'Team member',
+        body: messageBody,
+        created_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabase.from('business_local_team_messages').insert(row).select().single();
+      if (error) throw error;
+      return mapBusinessTeamMessage(data);
+    }
+
+    const { data, error } = await supabase.rpc('send_business_local_team_message', {
+      p_business_type: teamScope.businessType,
+      p_business_id: teamScope.businessId,
+      p_event_id: eventId,
+      p_sender_role: senderRole || 'staff',
+      p_sender_name: senderName || 'Team member',
+      p_body: messageBody,
+    });
+    if (!error && data?.success && data.message) return mapBusinessTeamMessage(data.message);
+    if (error && isMissingTeamSyncRpc(error) && teamScope.legacyConversationId) {
+      // Older cloud deployments keep the previous chat path until the
+      // business-local team-message migration is applied.
+      return sendLegacyMessage(teamScope.legacyConversationId, {
+        senderRole, senderName, senderAvatarUrl, body, attachment,
+      });
+    }
+    if (error) throw error;
+    throw new Error(data?.error || 'Could not send the team message.');
+  }
+
+  return sendLegacyMessage(conversationId, { senderRole, senderName, senderAvatarUrl, body, attachment });
+};
+
+const sendLegacyMessage = async (conversationId, { senderRole, senderName, senderAvatarUrl, body, attachment }) => {
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -100,6 +202,37 @@ export const listConversations = async ({ kind = 'support' } = {}) => {
 };
 
 export const subscribeToMessages = (conversationId, onInsert) => {
+  const teamScope = teamScopeByConversationId.get(conversationId);
+  if (teamScope) {
+    const channels = [];
+    channels.push(supabase
+      .channel(`business_team_messages_${teamScope.businessType}_${teamScope.businessId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'business_local_team_messages',
+          filter: `business_id=eq.${teamScope.businessId}`,
+        },
+        (payload) => {
+          if (payload.new.business_type === teamScope.businessType) onInsert(mapBusinessTeamMessage(payload.new));
+        }
+      )
+      .subscribe());
+    if (teamScope.legacyConversationId) {
+      channels.push(supabase
+        .channel(`legacy_team_messages_${teamScope.legacyConversationId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${teamScope.legacyConversationId}` },
+          (payload) => onInsert(mapLegacyTeamMessage(payload.new))
+        )
+        .subscribe());
+    }
+    return () => channels.forEach((channel) => supabase.removeChannel(channel));
+  }
+
   const channel = supabase
     .channel(`chat_messages_${conversationId}`)
     .on(
@@ -152,6 +285,42 @@ export const isDeveloperSession = () => {
 };
 
 export const getOrCreateTeamConversation = async ({ supermarketId, supermarketName, portal }) => {
+  if (supabaseConfig.localBusinessServer && supabaseConfig.businessType && supabaseConfig.businessId) {
+    return makeTeamConversation({
+      businessType: supabaseConfig.businessType,
+      businessId: supabaseConfig.businessId,
+    });
+  }
+
+  let businessType = 'supermarket';
+  let businessId = supermarketId;
+  if (businessId) {
+    const { data: resolvedScope, error: resolveError } = await supabase.rpc(
+      'resolve_business_local_team_chat_scope',
+      { p_supermarket_id: supermarketId }
+    );
+    if (!resolveError && resolvedScope?.success) {
+      businessType = resolvedScope.businessType;
+      businessId = resolvedScope.businessId;
+    }
+
+    const { error: syncTableError } = await supabase
+      .from('business_local_team_messages')
+      .select('id')
+      .eq('business_type', businessType)
+      .eq('business_id', businessId)
+      .limit(1);
+    if (!syncTableError) {
+      const { data: legacy } = await supabase
+        .from('chat_conversations')
+        .select('id')
+        .eq('kind', 'team')
+        .eq('supermarket_id', supermarketId)
+        .maybeSingle();
+      return makeTeamConversation({ businessType, businessId, legacyConversationId: legacy?.id || null });
+    }
+  }
+
   const { data: existing } = await supabase
     .from('chat_conversations')
     .select('*')
@@ -189,6 +358,21 @@ export const getOrCreateTeamConversation = async ({ supermarketId, supermarketNa
 // Resolve who's chatting: real portal user (via auth_id -> public.users) or null for guest
 export const resolveChatIdentity = async () => {
   try {
+    if (supabaseConfig.localBusinessServer && supabaseConfig.businessType && supabaseConfig.businessId) {
+      const localStaff = getLocalStaffSession()?.user;
+      if (!localStaff) return null;
+      return {
+        userId: localStaff.id,
+        authId: localStaff.id,
+        name: localStaff.name || localStaff.full_name || localStaff.username,
+        email: '',
+        role: localStaff.role || 'staff',
+        supermarketId: supabaseConfig.businessId,
+        avatarUrl: null,
+        isLocalBusinessIdentity: true,
+      };
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
