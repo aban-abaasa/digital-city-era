@@ -6763,7 +6763,6 @@ const AdminPortal = () => {
         menuItems={[
           { label: pendingUsers.length > 0 ? `Notifications (${pendingUsers.length} pending)` : 'Notifications', icon: FiBell, onClick: () => setActiveSection('users') },
           ...(!isMobile ? [{ label: 'Store Logo', icon: FiUpload, onClick: () => logoFileInputRef.current?.click() }] : []),
-          { label: 'Settings', icon: FiSettings, onClick: () => setActiveSection('settings') },
           { label: 'Security', icon: FiLock, onClick: () => setActiveSection('security') }
         ]}
       />
@@ -6836,7 +6835,6 @@ const AdminPortal = () => {
             {activeSection === 'users' && renderUserManagement()}
             {activeSection === 'analytics' && renderBusinessAnalytics()}
             {activeSection === 'operations' && renderSystemOperations()}
-            {activeSection === 'settings' && renderSystemSettings()}
             
             {/* 📦 ORDER INVENTORY POS CONTROL */}
             {activeSection === 'inventory-pos' && (
