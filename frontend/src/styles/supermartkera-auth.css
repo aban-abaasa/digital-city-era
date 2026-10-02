@@ -1,0 +1,69 @@
+/* Supermartkera sign-in — classic edition (ivory paper / forest green / brass)
+   Matches the landing page (supermartkera-landing.css). Web + phone. */
+.sk-auth-page {
+  --sk-ink: #1f1a12;
+  --sk-green: #14532d;
+  --sk-brass: #c9a24a;
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+  max-width: 100vw;
+  overflow-x: clip;
+}
+.sk-auth-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.06;
+  background-image: radial-gradient(#3b2f1e 0.6px, transparent 0.6px);
+  background-size: 14px 14px;
+}
+.sk-auth-page > * { position: relative; z-index: 1; }
+.sk-auth-page :is(h1, h2, h3, h4),
+.sk-auth-masthead { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; letter-spacing: -0.01em; }
+.sk-auth-page :is(h1, h2, h3, h4, p, label, button) { overflow-wrap: anywhere; }
+
+/* printed-card edges and a hard ink shadow instead of soft blur */
+.sk-auth-card { border-radius: 2px; box-shadow: 6px 6px 0 0 rgba(31, 26, 18, 0.18); }
+.sk-auth-dark .sk-auth-card { box-shadow: 6px 6px 0 0 rgba(0, 0, 0, 0.35); }
+.sk-auth-page :is(input, button, .glass-effect) { border-radius: 2px !important; }
+.sk-auth-page .sk-seal { border-radius: 50% !important; }
+.sk-auth-page .glass-effect {
+  background: transparent;
+  border: 1px solid rgba(227, 196, 116, 0.35);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.sk-auth-page .glass-effect:hover { background: rgba(227, 196, 116, 0.1) !important; }
+.sk-auth-page .glass-effect > div:first-child { background: transparent !important; border: 1px solid rgba(227, 196, 116, 0.5); border-radius: 50% !important; }
+
+/* printed buttons */
+.sk-auth-page .sk-btn-classic {
+  box-shadow: 4px 4px 0 0 rgba(31, 26, 18, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.sk-auth-dark .sk-btn-classic { border-color: var(--sk-brass); box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.4); }
+.sk-auth-page .sk-btn-classic:hover { transform: translate(-1px, -1px); box-shadow: 6px 6px 0 0 rgba(31, 26, 18, 0.32); }
+.sk-auth-page .sk-btn-classic:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 rgba(31, 26, 18, 0.3); }
+
+/* links + focus in the page accent (green on paper, brass on dark) */
+.sk-auth-light .sk-auth-link { color: var(--sk-green); }
+.sk-auth-dark .sk-auth-link { color: #e3c474; }
+.sk-auth-link { text-decoration: underline; text-underline-offset: 3px; }
+.sk-auth-page :is(input, button, a):focus-visible { outline: 2px solid var(--sk-green); outline-offset: 2px; }
+.sk-auth-dark :is(input, button, a):focus-visible { outline-color: #e3c474; }
+.sk-auth-page input[type="checkbox"] { accent-color: var(--sk-green); }
+.sk-auth-dark input[type="checkbox"] { accent-color: #c9a24a; }
+.sk-auth-page [class*="uppercase"][class*="tracking-"] { font-variant: small-caps; text-transform: none; }
+
+.sk-auth-page a, .sk-auth-page button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+/* phone */
+@media (max-width: 640px) {
+  /* 16px stops iOS Safari zooming the page when a field is focused */
+  .sk-auth-page input { font-size: 16px !important; min-height: 3rem; }
+  .sk-auth-page [class*="uppercase"][class*="tracking-"] { letter-spacing: 0.12em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-auth-page * { animation: none !important; transition: none !important; }
+}

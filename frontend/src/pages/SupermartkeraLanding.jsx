@@ -101,50 +101,50 @@ const fmtBoardTime = (value) => {
 
 const themeStyles = {
   dark: {
-    shell: 'bg-[#061510] text-white',
-    header: 'bg-emerald-950/50 border-emerald-800/25',
-    panel: 'bg-emerald-950/55 border-emerald-800/20',
-    softPanel: 'bg-emerald-900/15 border-emerald-700/20',
-    muted: 'text-emerald-100/65',
-    body: 'text-emerald-50/75',
-    accent: 'text-white',
-    button: 'bg-emerald-400 text-emerald-950',
-    outline: 'border-emerald-700/25 bg-emerald-900/20 text-white hover:bg-emerald-800/25',
-    input: 'bg-emerald-950/55 border-emerald-700/25 text-white placeholder:text-emerald-700',
-    featureItem: 'border-emerald-800/25 bg-emerald-950/60',
-    blob1: 'bg-emerald-500/12',
-    blob2: 'bg-green-400/10',
-    blob3: 'bg-teal-400/8',
-    badge: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
-    iconBg: 'from-emerald-400/20 to-green-500/15 text-emerald-300',
-    price: 'text-emerald-300',
-    sectionLabel: 'text-emerald-400/75',
-    logo: 'from-emerald-400 via-green-500 to-teal-600 shadow-emerald-500/20',
-    check: 'text-emerald-400',
-    divider: 'border-emerald-800/25'
+    shell: 'bg-[#0b1a13] text-[#f3ead4]',
+    header: 'bg-[#0b1a13]/92 border-[#c9a24a]/40',
+    panel: 'bg-[#10241a] border-[#c9a24a]/30',
+    softPanel: 'bg-[#10241a]/70 border-[#c9a24a]/25',
+    muted: 'text-[#d9cfb4]/70',
+    body: 'text-[#efe5cb]/80',
+    accent: 'text-[#f8f0dc]',
+    button: 'bg-[#c9a24a] text-[#0b1a13] hover:bg-[#d8b45f]',
+    outline: 'border-[#c9a24a]/45 bg-transparent text-[#f3ead4] hover:bg-[#c9a24a]/15',
+    input: 'bg-[#10241a] border-[#c9a24a]/30 text-[#f8f0dc] placeholder:text-[#8f8566]',
+    featureItem: 'border-[#c9a24a]/25 bg-[#10241a]',
+    blob1: 'bg-transparent',
+    blob2: 'bg-transparent',
+    blob3: 'bg-transparent',
+    badge: 'border-[#c9a24a]/50 bg-transparent text-[#e3c474]',
+    iconBg: 'from-[#c9a24a]/25 to-[#c9a24a]/10 text-[#e3c474]',
+    price: 'text-[#e3c474]',
+    sectionLabel: 'text-[#d8b45f]',
+    logo: 'from-[#c9a24a] via-[#b58f36] to-[#8a6a1f] shadow-[#c9a24a]/20',
+    check: 'text-[#d8b45f]',
+    divider: 'border-[#c9a24a]/25'
   },
   light: {
-    shell: 'bg-[linear-gradient(180deg,#ffffff_0%,#f0fdf4_45%,#ecfdf5_100%)] text-slate-900',
-    header: 'bg-white/92 border-emerald-100 shadow-sm shadow-emerald-100/40',
-    panel: 'bg-white border-emerald-100 shadow-xl shadow-emerald-100/35',
-    softPanel: 'bg-white border-emerald-100/90 hover:border-emerald-200',
-    muted: 'text-slate-600',
-    body: 'text-slate-600',
-    accent: 'text-slate-900',
-    button: 'bg-emerald-600 text-white hover:bg-emerald-700',
-    outline: 'border-emerald-200 bg-white text-slate-900 hover:bg-emerald-50',
-    input: 'bg-white border-emerald-200 text-slate-900 placeholder:text-slate-400',
-    featureItem: 'border-emerald-100 bg-emerald-50/70',
-    blob1: 'bg-emerald-200/55',
-    blob2: 'bg-green-100/65',
-    blob3: 'bg-teal-100/45',
-    badge: 'border-emerald-300/40 bg-emerald-50 text-emerald-800',
-    iconBg: 'from-emerald-100 to-green-100 text-emerald-600',
-    price: 'text-emerald-600',
-    sectionLabel: 'text-emerald-600',
-    logo: 'from-emerald-500 via-green-600 to-teal-600 shadow-emerald-400/20',
-    check: 'text-emerald-500',
-    divider: 'border-emerald-100'
+    shell: 'bg-[#f6f1e4] text-[#1f1a12]',
+    header: 'bg-[#f6f1e4]/95 border-[#1f1a12]/40',
+    panel: 'bg-[#fffdf6] border-[#1f1a12]/70',
+    softPanel: 'bg-[#fffdf6] border-[#1f1a12]/30 hover:border-[#14532d]',
+    muted: 'text-[#6b5f49]',
+    body: 'text-[#4a4132]',
+    accent: 'text-[#1f1a12]',
+    button: 'bg-[#14532d] text-[#f6f1e4] hover:bg-[#166534]',
+    outline: 'border-[#1f1a12]/70 bg-transparent text-[#1f1a12] hover:bg-[#1f1a12] hover:text-[#f6f1e4]',
+    input: 'bg-[#fffdf6] border-[#1f1a12]/40 text-[#1f1a12] placeholder:text-[#9a8f77]',
+    featureItem: 'border-[#1f1a12]/20 bg-[#f6f1e4]',
+    blob1: 'bg-transparent',
+    blob2: 'bg-transparent',
+    blob3: 'bg-transparent',
+    badge: 'border-[#14532d]/60 bg-transparent text-[#14532d]',
+    iconBg: 'from-[#e9dfc3] to-[#e9dfc3] text-[#14532d]',
+    price: 'text-[#14532d]',
+    sectionLabel: 'text-[#8a6a1f]',
+    logo: 'from-[#14532d] via-[#166534] to-[#0f3d21] shadow-[#14532d]/20',
+    check: 'text-[#14532d]',
+    divider: 'border-[#1f1a12]/20'
   }
 };
 
@@ -415,17 +415,17 @@ const SupermartkeraLanding = () => {
         <div className={`sk-blob absolute bottom-0 left-1/4 h-72 w-72 rounded-full blur-3xl ${palette.blob3}`} />
       </div>
 
-      <header className={`sticky top-0 z-40 border-b backdrop-blur-xl ${palette.header}`}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 sm:py-4 lg:px-8">
+      <header className={`sticky top-0 z-40 border-b-[3px] border-double backdrop-blur-md ${palette.header}`}>
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-12 sm:w-12 ${palette.logo}`}>
+            <div className={`sk-seal flex h-10 w-10 shrink-0 items-center justify-center border-2 bg-gradient-to-br sm:h-12 sm:w-12 ${palette.logo}`}>
               <FiShoppingBag className="h-5 w-5 text-white sm:h-6 sm:w-6" />
             </div>
-            <div className="min-w-0">
-              <p className={`truncate text-[10px] font-semibold uppercase tracking-[0.18em] sm:text-xs sm:tracking-[0.2em] ${palette.sectionLabel}`}>
-                Supermarket OS
+            <div className="min-w-0 leading-none">
+              <h1 className="sk-masthead truncate text-2xl font-bold italic tracking-tight sm:text-3xl">Supermartkera</h1>
+              <p className={`mt-1 hidden truncate border-t pt-1 text-[10px] font-semibold uppercase tracking-[0.24em] sm:block ${palette.sectionLabel} ${palette.divider}`}>
+                Supermarket OS &middot; Est. in the Digital City
               </p>
-              <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">Supermartkera</h1>
             </div>
           </div>
 
@@ -433,42 +433,33 @@ const SupermartkeraLanding = () => {
             <button
               onClick={toggleTheme}
               aria-label="Toggle theme"
-              className={`inline-flex items-center justify-center rounded-full border p-2.5 transition ${palette.outline}`}
+              className={`inline-flex h-11 w-11 items-center justify-center border transition ${palette.outline}`}
             >
               {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
             </button>
             <button
               onClick={() => setMobileMenuOpen(true)}
               aria-label="Open menu"
-              className={`inline-flex items-center justify-center rounded-full border p-2.5 transition ${palette.outline}`}
+              className={`inline-flex h-11 w-11 items-center justify-center border transition ${palette.outline}`}
             >
               <FiMenu className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="hidden items-center gap-2 md:flex lg:gap-3">
+          <div className="hidden items-center gap-6 md:flex lg:gap-8">
+            <button onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })} className="sk-navlink font-serif text-base font-semibold">Services</button>
+            <button onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })} className="sk-navlink font-serif text-base font-semibold">Contact</button>
+            <button onClick={() => window.dispatchEvent(new Event('supermartkera-install-requested'))} className="sk-navlink font-serif text-base font-semibold">Install app</button>
             <button
               onClick={toggleTheme}
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition ${palette.outline}`}
+              className="sk-navlink inline-flex items-center gap-2 font-serif text-base font-semibold"
             >
               {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
               {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
-            <button
-              onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
-              className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition lg:px-5 ${palette.outline}`}
-            >
-              Contact
-            </button>
-            <button
-              onClick={() => window.dispatchEvent(new Event('supermartkera-install-requested'))}
-              className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition lg:px-5 ${palette.outline}`}
-            >
-              Install app
-            </button>
             <Link
               to="/login"
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition hover:scale-[1.02] lg:px-5 ${palette.button}`}
+              className={`sk-btn-classic inline-flex items-center gap-2 border-2 px-5 py-2.5 text-sm font-semibold tracking-wide transition ${palette.button}`}
             >
               Sign in
               <FiArrowRight className="h-4 w-4" />
@@ -484,7 +475,7 @@ const SupermartkeraLanding = () => {
         aria-hidden={!mobileMenuOpen}
       />
       <nav
-        className={`sk-mobile-nav fixed right-0 top-0 z-50 flex h-full w-[min(88vw,320px)] flex-col border-l p-5 md:hidden ${palette.panel} ${mobileMenuOpen ? 'sk-open' : ''}`}
+        className={`sk-mobile-nav fixed right-0 top-0 z-50 flex h-full w-[min(88vw,320px)] flex-col overflow-y-auto border-l p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] md:hidden ${palette.panel} ${mobileMenuOpen ? 'sk-open' : ''}`}
         aria-hidden={!mobileMenuOpen}
       >
         <div className="flex items-center justify-between">
@@ -496,26 +487,26 @@ const SupermartkeraLanding = () => {
         <div className="mt-8 flex flex-col gap-3">
           <button
             onClick={() => { document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' }); closeMobileMenu(); }}
-            className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
+            className={`min-h-[3rem] rounded-2xl border px-4 py-3.5 text-left text-base font-semibold ${palette.outline}`}
           >
             Services
           </button>
           <button
             onClick={() => { document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }); closeMobileMenu(); }}
-            className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
+            className={`min-h-[3rem] rounded-2xl border px-4 py-3.5 text-left text-base font-semibold ${palette.outline}`}
           >
             Contact us
           </button>
           <button
             onClick={() => { window.dispatchEvent(new Event('supermartkera-install-requested')); closeMobileMenu(); }}
-            className={`rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold ${palette.outline}`}
+            className={`min-h-[3rem] rounded-2xl border px-4 py-3.5 text-left text-base font-semibold ${palette.outline}`}
           >
             Install SupermartKera
           </button>
           <Link
             to="/login"
             onClick={closeMobileMenu}
-            className="sk-btn-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white"
+            className="sk-btn-primary inline-flex min-h-[3rem] items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-base font-semibold text-white"
           >
             Sign in <FiArrowRight className="h-4 w-4" />
           </Link>
@@ -523,11 +514,12 @@ const SupermartkeraLanding = () => {
       </nav>
 
       <main className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10 lg:px-8 lg:pt-16">
-        <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12">
-          <div className="sk-animate-fade-up space-y-6 sm:space-y-8">
-            <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold sm:px-4 sm:py-2 sm:text-sm ${palette.badge}`}>
-              <FiStar className="h-3.5 w-3.5 text-amber-400 sm:h-4 sm:w-4" />
-              Clean UX for customers, staff & managers
+        <section className="grid grid-cols-1 gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12">
+          <div className="sk-animate-fade-up min-w-0 space-y-6 sm:space-y-8">
+            <div className={`inline-flex items-center gap-3 border-y-2 border-double py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] sm:text-xs ${palette.badge}`}>
+              <FiStar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              Clean UX for customers, staff &amp; managers
+              <FiStar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
 
             <div className="space-y-4 sm:space-y-5">
@@ -544,21 +536,21 @@ const SupermartkeraLanding = () => {
             <div className="flex flex-col gap-3 xs:flex-row xs:flex-wrap sm:gap-4">
               <Link
                 to="/login"
-                className="sk-btn-primary inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-semibold text-white sm:gap-3 sm:px-6 sm:py-4 sm:text-base"
+                className="sk-btn-classic inline-flex min-h-[3rem] w-full items-center justify-center gap-2 border-2 px-5 py-3.5 text-sm font-semibold tracking-wide xs:w-auto sm:gap-3 sm:px-7 sm:py-4 sm:text-base"
               >
                 Open sign in
                 <FiArrowRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </Link>
               <button
                 onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })}
-                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-5 py-3.5 text-sm font-semibold backdrop-blur-md transition hover:scale-[1.01] sm:gap-3 sm:px-6 sm:py-4 sm:text-base ${palette.outline}`}
+                className={`sk-btn-classic inline-flex min-h-[3rem] w-full items-center justify-center gap-2 border-2 px-5 py-3.5 text-sm font-semibold tracking-wide transition xs:w-auto sm:gap-3 sm:px-6 sm:py-4 sm:text-base ${palette.outline}`}
               >
                 Explore services
                 <FiArrowRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
             </div>
 
-            <div className="sk-stat-scroll flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-4">
+            <div className="sk-stat-scroll grid grid-cols-2 gap-3 xl:grid-cols-4">
               {[
                 { value: 'POS', label: 'Checkout ready' },
                 { value: 'Scan', label: 'Barcode friendly' },
@@ -567,16 +559,16 @@ const SupermartkeraLanding = () => {
               ].map((item, i) => (
                 <div
                   key={item.label}
-                  className={`sk-card-lift min-w-[7.5rem] shrink-0 rounded-2xl border p-3.5 backdrop-blur-md sm:min-w-0 sm:p-4 sk-animate-fade-up sk-delay-${i + 1} ${palette.softPanel}`}
+                  className={`sk-card-lift min-w-0 rounded-2xl border p-3.5 backdrop-blur-md sm:p-4 sk-animate-fade-up sk-delay-${i + 1} ${palette.softPanel}`}
                 >
                   <p className="text-xl font-black sm:text-2xl">{item.value}</p>
-                  <p className={`mt-0.5 text-[10px] uppercase tracking-[0.2em] sm:mt-1 sm:text-xs sm:tracking-[0.25em] ${palette.muted}`}>{item.label}</p>
+                  <p className={`mt-0.5 text-[10px] uppercase tracking-[0.2em] sm:mt-1 sm:text-xs sm:tracking-[0.25em] [overflow-wrap:anywhere] ${palette.muted}`}>{item.label}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="sk-animate-fade-up sk-delay-2 relative">
+          <div className="sk-animate-fade-up sk-delay-2 relative min-w-0">
             <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-tr from-emerald-400/15 via-transparent to-green-400/15 blur-2xl sm:-inset-4" />
             <div className={`relative overflow-hidden rounded-[1.75rem] border sm:rounded-[2rem] ${palette.panel}`}>
               <img
@@ -643,7 +635,7 @@ const SupermartkeraLanding = () => {
                   onClick={() => handleGatedNavigate('shop', 'Sign in to add items to your cart.')}
                   className={`sk-animate-showcase sk-card-lift group flex flex-col overflow-hidden rounded-2xl border text-left sm:rounded-[1.5rem] ${palette.softPanel}`}
                 >
-                  <div className="flex h-20 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
+                  <div className="flex h-24 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                     ) : (
@@ -747,7 +739,7 @@ const SupermartkeraLanding = () => {
           </div>
         </section>
 
-        <section id="services" className="sk-scroll-reveal mt-14 sm:mt-20">
+        <section id="services" className="sk-scroll-reveal scroll-mt-24 mt-14 sm:mt-20">
           <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center lg:gap-12">
             <div>
               <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Services</p>
@@ -827,7 +819,7 @@ const SupermartkeraLanding = () => {
           </div>
         </section>
 
-        <section id="contact" className="sk-scroll-reveal mt-14 grid gap-4 sm:mt-20 sm:gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <section id="contact" className="sk-scroll-reveal scroll-mt-24 mt-14 grid gap-4 sm:mt-20 sm:gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className={`rounded-2xl border p-4 sm:rounded-[2rem] sm:p-6 ${palette.panel}`}>
             <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Contact us</p>
             <h3 className={`mt-2 text-2xl font-bold sm:mt-3 sm:text-3xl ${palette.accent}`}>

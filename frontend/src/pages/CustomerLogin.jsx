@@ -20,31 +20,46 @@ import { SiGoogle } from 'react-icons/si';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+import '../styles/supermartkera-auth.css';
 import CanweFields from '../components/security/CanweFields';
 import { checkCanweFields } from '../utils/canweGuard';
 
 const themeStyles = {
   dark: {
-    shell: 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800',
-    leftPanel: 'bg-gradient-to-br from-sky-700 via-violet-700 to-fuchsia-700',
-    rightCard: 'bg-white/85 border-white/20 text-slate-900',
-    muted: 'text-slate-600',
-    helper: 'text-slate-700',
-    input: 'border-gray-300 bg-white text-slate-900',
-    button: 'bg-gradient-to-r from-blue-600 to-purple-600 text-white',
-    themeButton: 'border-white/20 bg-white/10 text-white hover:bg-white/20',
-    themeBorder: 'border-white/10'
+    shell: 'bg-[#0b1a13] text-[#f3ead4]',
+    leftPanel: 'bg-[#10241a] border-r-[3px] border-double border-[#c9a24a]/40',
+    rightCard: 'bg-[#10241a] border-[#c9a24a]/40 text-[#f8f0dc]',
+    cardBg: 'bg-[#10241a]',
+    heading: 'text-[#f8f0dc]',
+    label: 'text-[#e3c474]',
+    muted: 'text-[#d9cfb4]/75',
+    helper: 'text-[#efe5cb]/80',
+    input: 'border-[#c9a24a]/40 bg-[#0b1a13] text-[#f8f0dc] placeholder:text-[#8f8566]',
+    button: 'bg-[#c9a24a] text-[#0b1a13] hover:bg-[#d8b45f]',
+    altButton: 'border-[#c9a24a]/60 bg-[#0b1a13] text-[#f3ead4] hover:bg-[#c9a24a]/15',
+    toggleWrap: 'border-[#c9a24a]/40',
+    toggleOn: 'bg-[#c9a24a] text-[#0b1a13]',
+    toggleOff: 'text-[#d9cfb4]/80 hover:bg-[#c9a24a]/15',
+    themeButton: 'border-[#c9a24a]/45 bg-transparent text-[#f3ead4] hover:bg-[#c9a24a]/15',
+    themeBorder: 'border-[#c9a24a]/25'
   },
   light: {
-    shell: 'bg-[linear-gradient(135deg,#f8fafc_0%,#eef2ff_55%,#fff7ed_100%)]',
-    leftPanel: 'bg-gradient-to-br from-slate-950 via-slate-800 to-cyan-900',
-    rightCard: 'bg-white/90 border-slate-200 text-slate-900',
-    muted: 'text-slate-600',
-    helper: 'text-slate-700',
-    input: 'border-slate-200 bg-slate-50 text-slate-900',
-    button: 'bg-gradient-to-r from-sky-600 to-violet-600 text-white',
-    themeButton: 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50',
-    themeBorder: 'border-slate-200'
+    shell: 'bg-[#f6f1e4] text-[#1f1a12]',
+    leftPanel: 'bg-[#14532d] border-r-[3px] border-double border-[#1f1a12]/50',
+    rightCard: 'bg-[#fffdf6] border-[#1f1a12]/60 text-[#1f1a12]',
+    cardBg: 'bg-[#fffdf6]',
+    heading: 'text-[#1f1a12]',
+    label: 'text-[#4a4132]',
+    muted: 'text-[#6b5f49]',
+    helper: 'text-[#4a4132]',
+    input: 'border-[#1f1a12]/40 bg-[#fffdf6] text-[#1f1a12] placeholder:text-[#9a8f77]',
+    button: 'bg-[#14532d] text-[#f6f1e4] hover:bg-[#166534]',
+    altButton: 'border-[#1f1a12]/60 bg-[#fffdf6] text-[#1f1a12] hover:bg-[#1f1a12] hover:text-[#f6f1e4]',
+    toggleWrap: 'border-[#1f1a12]/40',
+    toggleOn: 'bg-[#14532d] text-[#f6f1e4]',
+    toggleOff: 'text-[#4a4132] hover:bg-[#1f1a12]/10',
+    themeButton: 'border-[#1f1a12]/60 bg-transparent text-[#1f1a12] hover:bg-[#1f1a12] hover:text-[#f6f1e4]',
+    themeBorder: 'border-[#1f1a12]/25'
   }
 };
 
@@ -345,7 +360,7 @@ const CustomerLogin = () => {
   ];
 
   return (
-    <div className={`min-h-screen flex ${palette.shell}`}>
+    <div className={`sk-auth-page ${theme === 'dark' ? 'sk-auth-dark' : 'sk-auth-light'} min-h-screen flex ${palette.shell}`}>
       <style dangerouslySetInnerHTML={{
         __html: `
           @keyframes fadeInUp {
@@ -469,22 +484,15 @@ const CustomerLogin = () => {
       {/* Left Side - Features */}
       <div className={`hidden lg:flex lg:w-1/2 p-12 flex-col justify-center relative overflow-hidden ${palette.leftPanel}`}>
         {/* Background decoration */}
-        <div className="absolute inset-0 bg-black/20"></div>
-        <div className="absolute top-10 left-10 w-32 h-32 bg-white/10 rounded-full blur-xl animate-float"></div>
-        <div className="absolute bottom-10 right-10 w-40 h-40 bg-white/10 rounded-full blur-xl animate-float" style={{animationDelay: '1s'}}></div>
-        <div className="absolute top-1/2 left-1/4 w-24 h-24 bg-white/10 rounded-full blur-xl animate-float" style={{animationDelay: '2s'}}></div>
-        <div className="absolute top-1/4 right-1/4 w-20 h-20 bg-white/5 rounded-full blur-xl animate-pulse-custom"></div>
-        <div className="absolute bottom-1/4 left-1/3 w-16 h-16 bg-white/5 rounded-full blur-xl animate-bounce-custom"></div>
         
         <div className="relative z-10">
-          <div className="mb-8 animate-slideInFromLeft">
-            <h1 className="text-5xl font-bold text-white mb-4 transform hover:scale-105 transition-all duration-300">
+          <div className="mb-8">
+            <p className="mb-4 border-y-2 border-double border-current py-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-[#e3c474]">Vol. I &middot; Secure sign in</p>
+            <h1 className="mb-4 text-5xl font-bold text-[#f8f0dc]">
               Welcome to{' '}
-              <span className="bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent animate-pulse-custom">
-                Supermartkera
-              </span>
+              <span className="sk-auth-masthead italic text-[#e3c474]">Supermartkera</span>
             </h1>
-            <p className="text-xl text-blue-100 leading-relaxed animate-fadeInUp" style={{animationDelay: '0.3s'}}>
+            <p className="text-xl text-[#efe5cb]/85 leading-relaxed animate-fadeInUp" style={{animationDelay: '0.3s'}}>
               Your Supermartkera workspace awaits. Sign in to access the right tools,
               move faster, and keep your day beautifully organized.
             </p>
@@ -494,15 +502,15 @@ const CustomerLogin = () => {
             {features.map((feature, index) => (
               <div 
                 key={index} 
-                className="flex items-center space-x-4 p-4 glass-effect rounded-xl hover:bg-white/20 transition-all duration-300 transform hover:scale-105 hover:shadow-lg animate-fadeInUp"
+                className="flex items-center space-x-4 p-4 glass-effect rounded-xl hover:bg-white/20 transition-all duration-300 hover:shadow-lg animate-fadeInUp"
                 style={{animationDelay: `${0.5 + index * 0.2}s`}}
               >
-                <div className="p-3 bg-white/20 rounded-full transform hover:rotate-12 transition-all duration-300 animate-wiggle">
+                <div className="p-3 bg-white/20 rounded-full transform hover:rotate-12 transition-all duration-300">
                   <feature.icon className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white transform hover:scale-105 transition-all duration-300">{feature.title}</h3>
-                  <p className="text-blue-100 text-sm">{feature.description}</p>
+                  <h3 className="text-lg font-semibold text-white transition-all duration-300">{feature.title}</h3>
+                  <p className="text-[#efe5cb]/85 text-sm">{feature.description}</p>
                 </div>
               </div>
             ))}
@@ -511,17 +519,15 @@ const CustomerLogin = () => {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 animate-slideInFromRight">
+      <div className="flex w-full min-w-0 items-center justify-center px-4 py-8 sm:p-8 lg:w-1/2">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8 animate-fadeInUp">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-pulse-custom">
-              Supermartkera
-            </h1>
-            <p className={`mt-2 ${palette.muted}`}>Secure sign in</p>
+            <h1 className={`sk-auth-masthead text-4xl font-bold italic tracking-tight ${palette.heading}`}>Supermartkera</h1>
+            <p className={`mx-auto mt-2 w-fit border-t pt-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] ${palette.muted} ${palette.themeBorder}`}>Secure sign in</p>
           </div>
 
-          <div className={`backdrop-blur-sm rounded-2xl shadow-xl p-8 border transform hover:scale-105 transition-all duration-500 animate-fadeInUp ${palette.rightCard} ${palette.themeBorder}`}>
+          <div className={`sk-auth-card border-2 p-5 sm:p-8 animate-fadeInUp ${palette.rightCard} ${palette.themeBorder}`}>
             <div className="flex justify-end">
               <button
                 type="button"
@@ -534,10 +540,10 @@ const CustomerLogin = () => {
             </div>
 
             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce-custom">
-                <FiUser className="h-8 w-8 text-white animate-pulse" />
+              <div className="sk-seal mx-auto mb-4 flex h-16 w-16 items-center justify-center border-2 border-[#c9a24a] bg-[#14532d]">
+                <FiUser className="h-8 w-8 text-[#f6f1e4]" />
               </div>
-              <h2 className={`text-2xl font-bold transform hover:scale-105 transition-all duration-300 ${theme === 'dark' ? 'text-slate-900' : 'text-slate-900'}`}>Welcome Back!</h2>
+              <h2 className={`text-3xl font-bold italic ${palette.heading}`}>Welcome back</h2>
               <p className={`mt-2 animate-fadeInUp ${palette.muted}`} style={{animationDelay: '0.2s'}}>Sign in to continue to your workspace</p>
             </div>
 
@@ -545,9 +551,9 @@ const CustomerLogin = () => {
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className={`mb-6 flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 font-medium shadow-sm transition-all duration-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70 ${theme === 'dark' ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}
+              className={`mb-6 flex w-full items-center justify-center gap-3 sk-btn-classic min-h-[3rem] border-2 px-4 py-3 text-center font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${palette.altButton}`}
             >
-              <SiGoogle className="h-5 w-5 text-red-500" />
+              <SiGoogle className="h-5 w-5 shrink-0 text-red-500" />
               {isLoading ? 'Connecting to Google...' : 'Continue with Google'}
             </button>
 
@@ -555,7 +561,7 @@ const CustomerLogin = () => {
               type="button"
               onClick={() => { setShowWalletLogin((prev) => !prev); setWalletError(''); }}
               disabled={walletLoading}
-              className={`mb-6 flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 font-medium shadow-sm transition-all duration-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70 ${theme === 'dark' ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}
+              className={`mb-6 flex w-full items-center justify-center gap-3 sk-btn-classic min-h-[3rem] border-2 px-4 py-3 text-center font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${palette.altButton}`}
             >
               <span className="text-xl">💳</span>
               Sign in with Wallet
@@ -569,7 +575,7 @@ const CustomerLogin = () => {
                   onChange={(e) => { setWalletIdentifier(e.target.value); setWalletError(''); }}
                   placeholder="Wallet account number or phone"
                   autoComplete="off"
-                  className={`block w-full px-3 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 ${palette.input}`}
+                  className={`block w-full px-3 py-3 transition ${palette.input}`}
                 />
                 <input
                   type="password"
@@ -579,13 +585,13 @@ const CustomerLogin = () => {
                   placeholder="Wallet PIN"
                   maxLength={6}
                   autoComplete="off"
-                  className={`block w-full px-3 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 ${palette.input}`}
+                  className={`block w-full px-3 py-3 transition ${palette.input}`}
                 />
                 {walletError && <p className="text-sm text-red-600">{walletError}</p>}
                 <button
                   type="submit"
                   disabled={walletLoading}
-                  className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${palette.button}`}
+                  className={`sk-btn-classic min-h-[3rem] w-full border-2 border-[#1f1a12] px-4 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${palette.button}`}
                 >
                   {walletLoading ? 'Verifying...' : 'Sign In'}
                 </button>
@@ -596,35 +602,31 @@ const CustomerLogin = () => {
               <div className="absolute inset-0 flex items-center">
                 <div className={`w-full border-t ${palette.themeBorder}`} />
               </div>
-              <div className={`relative flex justify-center text-xs uppercase tracking-[0.35em] ${palette.muted}`}>
-                <span className={theme === 'dark' ? 'bg-white px-3' : 'bg-slate-50 px-3'}>or use email</span>
+              <div className={`relative flex justify-center text-xs uppercase tracking-[0.2em] ${palette.muted}`}>
+                <span className={`${palette.cardBg} px-3`}>or use email</span>
               </div>
             </div>
 
             {/* Login Method Toggle */}
-            <div className={`flex rounded-lg p-1 mb-6 animate-fadeInUp ${theme === 'dark' ? 'bg-slate-100' : 'bg-slate-100'}`} style={{animationDelay: '0.3s'}}>
+            <div className={`mb-6 flex border-2 p-1 animate-fadeInUp ${palette.toggleWrap}`} style={{animationDelay: '0.3s'}}>
               <button
                 type="button"
                 onClick={() => setLoginMethod('email')}
-                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-300 transform hover:scale-105 ${
-                  loginMethod === 'email'
-                    ? 'bg-white text-blue-600 shadow-sm animate-pulse-custom'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                className={`min-h-[2.75rem] flex-1 px-4 py-2 text-sm font-semibold transition ${
+                  loginMethod === 'email' ? palette.toggleOn : palette.toggleOff
                 }`}
               >
-                <FiMail className="h-4 w-4 inline mr-2 animate-wiggle" />
+                <FiMail className="h-4 w-4 inline mr-2" />
                 Email
               </button>
               <button
                 type="button"
                 onClick={() => setLoginMethod('phone')}
-                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-300 transform hover:scale-105 ${
-                  loginMethod === 'phone'
-                    ? 'bg-white text-blue-600 shadow-sm animate-pulse-custom'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                className={`min-h-[2.75rem] flex-1 px-4 py-2 text-sm font-semibold transition ${
+                  loginMethod === 'phone' ? palette.toggleOn : palette.toggleOff
                 }`}
               >
-                <FiPhone className="h-4 w-4 inline mr-2 animate-wiggle" />
+                <FiPhone className="h-4 w-4 inline mr-2" />
                 Phone
               </button>
             </div>
@@ -632,15 +634,15 @@ const CustomerLogin = () => {
             <form onSubmit={handleLogin} className="space-y-6">
               <CanweFields />
               <div className="animate-fadeInUp" style={{animationDelay: '0.4s'}}>
-                <label className="block text-sm font-medium text-gray-700 mb-2 transform hover:scale-105 transition-all duration-300">
+                <label className={`mb-2 block text-sm font-semibold ${palette.label}`}>
                   {loginMethod === 'email' ? 'Email Address' : 'Phone Number'}
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     {loginMethod === 'email' ? (
-                      <FiMail className="h-5 w-5 text-gray-400 animate-pulse" />
+                      <FiMail className="h-5 w-5 text-gray-400" />
                     ) : (
-                      <FiPhone className="h-5 w-5 text-gray-400 animate-pulse" />
+                      <FiPhone className="h-5 w-5 text-gray-400" />
                     )}
                   </div>
                   <input
@@ -649,19 +651,19 @@ const CustomerLogin = () => {
                     value={loginData[loginMethod]}
                     onChange={handleInputChange}
                     required
-                    className={`block w-full pl-10 pr-3 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 transform hover:scale-105 focus:scale-105 ${palette.input}`}
+                    className={`block w-full pl-10 pr-3 py-3 transition ${palette.input}`}
                     placeholder={loginMethod === 'email' ? 'Enter your email' : 'Enter your phone number'}
                   />
                 </div>
               </div>
 
               <div className="animate-fadeInUp" style={{animationDelay: '0.5s'}}>
-                <label className="block text-sm font-medium text-gray-700 mb-2 transform hover:scale-105 transition-all duration-300">
+                <label className={`mb-2 block text-sm font-semibold ${palette.label}`}>
                   Password
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FiLock className="h-5 w-5 text-gray-400 animate-pulse" />
+                    <FiLock className="h-5 w-5 text-gray-400" />
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -669,35 +671,35 @@ const CustomerLogin = () => {
                     value={loginData.password}
                     onChange={handleInputChange}
                     required
-                    className={`block w-full pl-10 pr-12 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 transform hover:scale-105 focus:scale-105 ${palette.input}`}
+                    className={`block w-full pl-10 pr-12 py-3 transition ${palette.input}`}
                     placeholder="Enter your password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center transform hover:scale-110 transition-all duration-300"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center transform transition-all duration-300"
                   >
                     {showPassword ? (
-                      <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600 animate-wiggle" />
+                      <FiEyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                     ) : (
-                      <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600 animate-wiggle" />
+                      <FiEye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                     )}
                   </button>
                 </div>
               </div>
 
               <div className="flex items-center justify-between animate-fadeInUp" style={{animationDelay: '0.6s'}}>
-                <label className="flex items-center transform hover:scale-105 transition-all duration-300">
+                <label className="flex items-center transition-all duration-300">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transform hover:scale-110 transition-all duration-300"
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transform transition-all duration-300"
                   />
                   <span className={`ml-2 text-sm ${palette.muted}`}>Remember me</span>
                 </label>
                 <button
                   type="button"
                   onClick={() => navigate('/forgot-password')}
-                  className="text-sm text-blue-600 hover:text-blue-500 font-medium transform hover:scale-105 transition-all duration-300 animate-wiggle"
+                  className="sk-auth-link text-sm font-semibold transition-all duration-300"
                 >
                   Forgot password?
                 </button>
@@ -706,7 +708,7 @@ const CustomerLogin = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className={`w-full py-3 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed animate-fadeInUp animate-shimmer ${palette.button}`}
+                className={`sk-btn-classic min-h-[3rem] w-full border-2 border-[#1f1a12] px-4 py-3 font-semibold tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50 animate-fadeInUp ${palette.button}`}
                 style={{animationDelay: '0.7s'}}
               >
                 {isLoading ? (
@@ -716,8 +718,7 @@ const CustomerLogin = () => {
                   </div>
                 ) : (
                   <span className="flex items-center justify-center">
-                    <span className="animate-bounce-custom">🚀</span>
-                    <span className="ml-2">Sign in to continue</span>
+                    <span>Sign in to continue</span>
                   </span>
                 )}
               </button>
@@ -726,7 +727,7 @@ const CustomerLogin = () => {
             <div className="mt-6 text-center animate-fadeInUp" style={{animationDelay: '0.8s'}}>
               <p className={`text-sm ${palette.muted}`}>
                 Don't have an account?{' '}
-                <button className="text-blue-600 hover:text-blue-500 font-medium transform hover:scale-105 transition-all duration-300 animate-wiggle">
+                <button className="sk-auth-link font-semibold transition-all duration-300">
                   Contact us to register
                 </button>
               </p>
@@ -736,15 +737,15 @@ const CustomerLogin = () => {
               <div className="flex items-center justify-center space-x-4">
               <button
                   onClick={() => navigate('/customer-dashboard')}
-                  className={`text-sm flex items-center transform hover:scale-105 transition-all duration-300 ${palette.muted}`}
+                  className={`text-sm flex items-center transition-all duration-300 ${palette.muted}`}
                 >
-                  <FiHeart className="h-4 w-4 mr-1 animate-pulse" />
+                  <FiHeart className="h-4 w-4 mr-1" />
                   Back to home
                 </button>
-                <span className={theme === 'dark' ? 'text-gray-300 animate-pulse' : 'text-gray-400 animate-pulse'}>|</span>
+                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}>|</span>
                 <button
                   onClick={() => navigate('/admin-login')}
-                  className={`text-sm transform hover:scale-105 transition-all duration-300 ${palette.muted}`}
+                  className={`text-sm transition-all duration-300 ${palette.muted}`}
                 >
                   Business setup
                 </button>

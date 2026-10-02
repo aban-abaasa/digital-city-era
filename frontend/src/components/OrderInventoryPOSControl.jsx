@@ -7,6 +7,7 @@
 // =====================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
+import BookingTypePicker from './booking/BookingTypePicker';
 import {
   FiSearch, FiEdit, FiSave, FiX, FiTrendingUp, FiTrendingDown,
   FiBox, FiAlertTriangle, FiCheckCircle, FiDownload, FiRefreshCw,
@@ -1802,17 +1803,12 @@ const OrderInventoryPOSControl = () => {
                     />
                     📅 Bookable
                   </label>
-                  <select
+                  <BookingTypePicker
+                    variant="chips"
                     value={svc.booking_type || 'slot'}
                     disabled={!isAdmin || !svc.is_bookable}
-                    onChange={(e) => updateServiceBookingType(svc.id, e.target.value)}
-                    className="text-xs border border-gray-300 rounded-lg px-2 py-1 disabled:bg-gray-100 disabled:text-gray-400"
-                    title={svc.is_bookable ? 'How customers book this' : 'Check "Bookable" first'}
-                  >
-                    <option value="slot">🕒 Time slots</option>
-                    <option value="ticket">🎫 Tickets</option>
-                    <option value="room">🛏️ Rooms</option>
-                  </select>
+                    onChange={(id) => updateServiceBookingType(svc.id, id)}
+                  />
                   {svc.is_bookable && (
                     <button
                       onClick={() => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FiCalendar,
   FiClock,
@@ -12,9 +12,19 @@ import {
   FiZap,
   FiInfo,
   FiCheckCircle,
+  FiSearch,
+  FiRefreshCw,
+  FiChevronDown,
+  FiUser,
+  FiUsers,
+  FiAlertCircle,
+  FiCheck,
+  FiX,
+  FiInbox,
 } from 'react-icons/fi';
 import {
   getStoreBookings,
+  subscribeToStoreBookings,
   updateBookingStatus,
   getBookableServices,
   getAvailabilityRules,
@@ -24,6 +34,7 @@ import {
 } from '../../services/bookingService';
 import BookingChatCallPanel from './BookingChatCallPanel';
 import BookingFormEditor from './BookingFormEditor';
+import { BookingTypeBadge, getBookingType } from './BookingTypePicker';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -34,163 +45,632 @@ const STATUS_STYLES = {
   cancelled: 'bg-gray-100 text-gray-500',
   no_show: 'bg-red-100 text-red-600',
 };
+const STATUS_LABELS = {
+  requested: 'Needs approval',
+  confirmed: 'Confirmed',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  no_show: 'No-show',
+};
+// Left accent bar on each card so status reads at a glance down the list.
+const STATUS_BAR = {
+  requested: 'bg-amber-400',
+  confirmed: 'bg-blue-500',
+  completed: 'bg-emerald-500',
+  cancelled: 'bg-gray-300',
+  no_show: 'bg-red-400',
+};
+const ACTIVE_STATUSES = ['requested', 'confirmed'];
 
-const BookingsTab = ({ supermarketId, staffIdentity }) => {
+const pad = (n) => String(n).padStart(2, '0');
+const toISODate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayISO = () => toISODate(new Date());
+
+// "Today" / "Tomorrow" / "Yesterday" / "Fri, 3 Oct" — what a person would say.
+const friendlyDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  const diff = Math.round((d - new Date(`${todayISO()}T00:00:00`)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+};
+const shortDate = (iso) =>
+  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '');
+const initials = (name) =>
+  String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join('') || '?';
+const phoneHref = (p) => `tel:${String(p || '').replace(/[^\d+]/g, '')}`;
+
+const FILTERS = [
+  { id: 'pending', label: 'Needs approval' },
+  { id: 'today', label: 'Today' },
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'past', label: 'Past' },
+  { id: 'all', label: 'All' },
+];
+
+const matchesFilter = (b, filter, today) => {
+  const date = b.booking_date;
+  switch (filter) {
+    case 'pending':
+      return b.status === 'requested';
+    case 'today':
+      return date === today && ACTIVE_STATUSES.includes(b.status);
+    case 'upcoming':
+      return date >= today && ACTIVE_STATUSES.includes(b.status);
+    case 'past':
+      return date < today || !ACTIVE_STATUSES.includes(b.status);
+    default:
+      return true;
+  }
+};
+
+// Tiny self-dismissing toast — replaces the blocking alert() the old panel used.
+const Toast = ({ toast, onClose }) => {
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(onClose, toast.type === 'error' ? 6000 : 3000);
+    return () => clearTimeout(t);
+  }, [toast, onClose]);
+  if (!toast) return null;
+  const isError = toast.type === 'error';
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`fixed bottom-4 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-xl animate-fade-in-up ${
+        isError ? 'bg-rose-600' : 'bg-gray-900'
+      }`}
+    >
+      {isError ? <FiAlertCircle className="h-4 w-4 flex-shrink-0" /> : <FiCheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-400" />}
+      <span>{toast.message}</span>
+      <button onClick={onClose} className="ml-1 opacity-70 hover:opacity-100" aria-label="Dismiss">
+        <FiX className="h-4 w-4" />
+      </button>
+    </div>
+  );
+};
+
+const SkeletonCards = () => (
+  <div className="space-y-2" aria-busy="true">
+    {[0, 1, 2].map((i) => (
+      <div key={i} className="flex gap-3 rounded-xl border border-gray-100 p-3">
+        <div className="h-10 w-10 animate-pulse rounded-full bg-gray-100" />
+        <div className="flex-1 space-y-2">
+          <div className="h-3 w-1/3 animate-pulse rounded bg-gray-100" />
+          <div className="h-3 w-1/2 animate-pulse rounded bg-gray-100" />
+          <div className="h-3 w-1/4 animate-pulse rounded bg-gray-100" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const BookingCard = ({ b, index, busy, isOpen, expanded, onToggleExpand, onThread, onCall, onStatus, staffIdentity, autoStart, onAutoStarted }) => {
+  // Destructive actions (cancel / no-show) ask once, inline — no popup.
+  const [confirming, setConfirming] = useState(null);
+  useEffect(() => {
+    if (!confirming) return undefined;
+    const t = setTimeout(() => setConfirming(null), 5000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+
+  const type = b.products?.booking_type;
+  const isActive = ACTIVE_STATUSES.includes(b.status);
+  const responses = b.form_responses && typeof b.form_responses === 'object' ? Object.entries(b.form_responses) : [];
+  const hasDetails = Boolean(b.notes) || responses.length > 0;
+  const unit = type === 'room' ? 'room' : 'ticket';
+
+  const runDestructive = (status) => {
+    if (confirming === status) {
+      setConfirming(null);
+      onStatus(b.id, status);
+    } else {
+      setConfirming(status);
+    }
+  };
+
+  return (
+    <div
+      style={{ animationDelay: `${Math.min(index, 12) * 25}ms` }}
+      className={`animate-fade-in-up relative overflow-hidden rounded-xl border bg-white transition-shadow hover:shadow-md ${
+        b.status === 'requested' ? 'border-amber-200' : 'border-gray-100'
+      } ${busy ? 'opacity-60 pointer-events-none' : ''}`}
+    >
+      <span className={`absolute inset-y-0 left-0 w-1 ${STATUS_BAR[b.status] || 'bg-gray-300'}`} />
+      <div className="p-3 pl-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-semibold text-white">
+            {initials(b.customer_name)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <p className="truncate text-sm font-semibold text-gray-900">{b.customer_name || 'Customer'}</p>
+              <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[b.status] || 'bg-gray-100 text-gray-500'}`}>
+                {STATUS_LABELS[b.status] || b.status?.replace('_', ' ')}
+              </span>
+            </div>
+            <p className="truncate text-xs font-medium text-blue-700">{b.products?.name}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <FiCalendar className="h-3 w-3" />
+                {type === 'room' ? (
+                  <>
+                    {shortDate(b.booking_date)} → {shortDate(b.checkout_date)}
+                  </>
+                ) : (
+                  friendlyDate(b.booking_date)
+                )}
+              </span>
+              {type !== 'room' && type !== 'ticket' && b.slot_start && (
+                <span className="flex items-center gap-1">
+                  <FiClock className="h-3 w-3" />
+                  {hhmm(b.slot_start)}
+                  {b.slot_end ? `–${hhmm(b.slot_end)}` : ''}
+                </span>
+              )}
+              {b.quantity > 1 && (
+                <span className="flex items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-gray-600">
+                  <FiUsers className="h-3 w-3" />×{b.quantity} {unit}s
+                </span>
+              )}
+              {b.customer_phone && (
+                <a href={phoneHref(b.customer_phone)} className="flex items-center gap-1 hover:text-blue-600 hover:underline">
+                  <FiPhone className="h-3 w-3" />
+                  {b.customer_phone}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Actions: one obvious primary button, the rest tucked in a tidy row */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {b.status === 'requested' && (
+            <button
+              onClick={() => onStatus(b.id, 'confirmed')}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+            >
+              <FiCheck className="h-3.5 w-3.5" /> Confirm
+            </button>
+          )}
+          {b.status === 'confirmed' && (
+            <button
+              onClick={() => onStatus(b.id, 'completed')}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95"
+            >
+              <FiCheckCircle className="h-3.5 w-3.5" /> Mark completed
+            </button>
+          )}
+          {b.status === 'requested' && (
+            <button
+              onClick={() => onStatus(b.id, 'completed')}
+              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+            >
+              Complete
+            </button>
+          )}
+          {isActive && (
+            <>
+              <button
+                onClick={() => runDestructive('no_show')}
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  confirming === 'no_show' ? 'border-red-500 bg-red-500 text-white' : 'border-gray-200 text-red-600 hover:bg-red-50'
+                }`}
+              >
+                {confirming === 'no_show' ? 'Tap again to confirm' : 'No-show'}
+              </button>
+              <button
+                onClick={() => runDestructive('cancelled')}
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  confirming === 'cancelled' ? 'border-gray-700 bg-gray-700 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {confirming === 'cancelled' ? 'Tap again to confirm' : b.status === 'requested' ? 'Decline' : 'Cancel'}
+              </button>
+            </>
+          )}
+
+          <div className="ml-auto flex items-center gap-1">
+            {b.chat_conversation_id && (
+              <div className="flex items-center gap-0.5 rounded-full border border-gray-200 bg-gray-50 p-0.5">
+                <button
+                  onClick={() => onThread(b.id)}
+                  aria-label="Message this customer"
+                  className={`rounded-full p-1.5 transition-all hover:scale-110 active:scale-90 ${
+                    isOpen ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-white hover:text-blue-600'
+                  }`}
+                  title="Message this customer"
+                >
+                  <FiMessageCircle className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => onCall(b.id, 'audio')}
+                  aria-label="Audio call this customer"
+                  className="rounded-full p-1.5 text-gray-500 transition-all hover:scale-110 hover:bg-white hover:text-emerald-600 active:scale-90"
+                  title="Audio call this customer"
+                >
+                  <FiPhone className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => onCall(b.id, 'video')}
+                  aria-label="Video call this customer"
+                  className="rounded-full p-1.5 text-gray-500 transition-all hover:scale-110 hover:bg-white hover:text-purple-600 active:scale-90"
+                  title="Video call this customer"
+                >
+                  <FiVideo className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            {hasDetails && (
+              <button
+                onClick={() => onToggleExpand(b.id)}
+                aria-expanded={expanded}
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100"
+              >
+                Details
+                <FiChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {expanded && hasDetails && (
+          <div className="mt-3 space-y-1 rounded-lg bg-gray-50 p-2.5 animate-fade-in-up">
+            {b.notes && <p className="text-xs italic text-gray-600">"{b.notes}"</p>}
+            {responses.map(([key, value]) => (
+              <p key={key} className="text-xs text-gray-600">
+                <span className="capitalize text-gray-400">{key.replace(/_/g, ' ')}:</span>{' '}
+                {typeof value === 'string' && /^https?:\/\//.test(value) ? (
+                  <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    View attachment
+                  </a>
+                ) : Array.isArray(value) ? (
+                  value.join(', ')
+                ) : (
+                  String(value)
+                )}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {isOpen && b.chat_conversation_id && (
+          <div className="mt-3">
+            <BookingChatCallPanel
+              bookingId={b.id}
+              conversationId={b.chat_conversation_id}
+              selfId={staffIdentity?.userId}
+              selfName={staffIdentity?.name}
+              senderRole="admin"
+              autoStart={autoStart?.bookingId === b.id ? autoStart.type : null}
+              onAutoStarted={onAutoStarted}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const BookingsTab = ({ supermarketId, staffIdentity, onPendingCount }) => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [openBookingId, setOpenBookingId] = useState(null);
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [busyIds, setBusyIds] = useState(() => new Set());
+  const [filter, setFilter] = useState(null); // null until first load picks a smart default
+  const [search, setSearch] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('all');
+  const [toast, setToast] = useState(null);
   // { bookingId, type: 'audio' | 'video' } — set by the Call/Video quick
   // buttons so the chat panel below rings the instant it mounts, instead of
   // making staff open the thread first and then hunt for the phone icon.
   const [autoStart, setAutoStart] = useState(null);
+  const firstLoad = useRef(true);
 
   const openThread = (id) => setOpenBookingId((prev) => (prev === id ? null : id));
   const quickCall = (id, type) => {
     setOpenBookingId(id);
     setAutoStart({ bookingId: id, type });
   };
+  const toggleExpand = (id) =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
-  const load = () => getStoreBookings(supermarketId).then(setBookings).finally(() => setLoading(false));
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!supermarketId) return;
+      if (!silent) setRefreshing(true);
+      try {
+        const data = await getStoreBookings(supermarketId);
+        setBookings(data);
+        setLoadError('');
+        if (firstLoad.current) {
+          firstLoad.current = false;
+          // Land where the work is: approvals first, otherwise what's coming up.
+          setFilter(data.some((b) => b.status === 'requested') ? 'pending' : 'upcoming');
+        }
+      } catch (err) {
+        if (!silent) setLoadError(err.message || 'Could not load bookings');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [supermarketId]
+  );
 
   useEffect(() => {
-    if (supermarketId) load();
-  }, [supermarketId]);
+    firstLoad.current = true;
+    setLoading(true);
+    load();
+  }, [load]);
+
+  // New requests land the instant a customer books (Supabase realtime). A slow
+  // poll stays as a safety net for a dropped websocket, so the list can never
+  // go stale for long.
+  useEffect(() => {
+    if (!supermarketId) return undefined;
+    let timer;
+    const refreshSoon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => load({ silent: true }), 400); // coalesce bursts
+    };
+    const unsubscribe = subscribeToStoreBookings(supermarketId, (payload) => {
+      if (payload.eventType === 'INSERT') {
+        setToast({ type: 'ok', message: `New booking request from ${payload.new?.customer_name || 'a customer'}` });
+      }
+      refreshSoon();
+    });
+    const poll = setInterval(() => {
+      if (!document.hidden) load({ silent: true });
+    }, 120000);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+      clearInterval(poll);
+    };
+  }, [supermarketId, load]);
+
+  const today = todayISO();
+  const pendingCount = useMemo(() => bookings.filter((b) => b.status === 'requested').length, [bookings]);
+  useEffect(() => {
+    onPendingCount?.(pendingCount);
+  }, [pendingCount, onPendingCount]);
+
+  const counts = useMemo(() => {
+    const c = {};
+    FILTERS.forEach((f) => {
+      c[f.id] = bookings.filter((b) => matchesFilter(b, f.id, today)).length;
+    });
+    return c;
+  }, [bookings, today]);
+
+  const services = useMemo(() => {
+    const map = new Map();
+    bookings.forEach((b) => b.products?.name && map.set(b.product_id || b.products.name, b.products.name));
+    return [...map.entries()];
+  }, [bookings]);
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = bookings.filter((b) => {
+      if (!matchesFilter(b, filter || 'all', today)) return false;
+      if (serviceFilter !== 'all' && (b.product_id || b.products?.name) !== serviceFilter) return false;
+      if (!q) return true;
+      return [b.customer_name, b.customer_phone, b.products?.name, b.notes].some((v) => String(v || '').toLowerCase().includes(q));
+    });
+    // Past reads newest-first; everything else soonest-first.
+    const dir = filter === 'past' ? -1 : 1;
+    return list.sort((a, b) => dir * (`${a.booking_date} ${a.slot_start || ''}`.localeCompare(`${b.booking_date} ${b.slot_start || ''}`)));
+  }, [bookings, filter, search, serviceFilter, today]);
+
+  const groups = useMemo(() => {
+    const map = new Map();
+    visible.forEach((b) => {
+      if (!map.has(b.booking_date)) map.set(b.booking_date, []);
+      map.get(b.booking_date).push(b);
+    });
+    return [...map.entries()];
+  }, [visible]);
 
   const handleStatus = async (id, status) => {
+    const previous = bookings;
+    setBusyIds((s) => new Set(s).add(id));
+    // Optimistic: the card updates instantly, and rolls back if the server refuses.
+    setBookings((list) => list.map((b) => (b.id === id ? { ...b, status } : b)));
     try {
       await updateBookingStatus(id, status);
-      load();
+      setToast({ type: 'ok', message: `Booking ${STATUS_LABELS[status].toLowerCase()}` });
+      load({ silent: true });
     } catch (err) {
-      alert(err.message || 'Could not update booking');
+      setBookings(previous);
+      setToast({ type: 'error', message: err.message || 'Could not update booking' });
+    } finally {
+      setBusyIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
-  if (loading) return <p className="text-sm text-gray-400 p-4">Loading bookings…</p>;
-  if (bookings.length === 0) return <p className="text-sm text-gray-400 p-4">No bookings yet.</p>;
+  if (loading) return <SkeletonCards />;
+
+  if (loadError && bookings.length === 0) {
+    return (
+      <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-center">
+        <p className="text-sm text-rose-700">{loadError}</p>
+        <button onClick={() => load()} className="mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (bookings.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center">
+        <FiInbox className="h-8 w-8 text-gray-300" />
+        <p className="text-sm font-medium text-gray-700">No bookings yet</p>
+        <p className="max-w-xs text-xs text-gray-400">
+          When a customer books one of your services it lands here for you to confirm. Make sure availability is set in the
+          Availability tab.
+        </p>
+      </div>
+    );
+  }
+
+  const emptyCopy = {
+    pending: ['All caught up', 'No bookings are waiting for your approval.'],
+    today: ['Nothing today', 'No active bookings are scheduled for today.'],
+    upcoming: ['Nothing coming up', 'No upcoming bookings right now.'],
+    past: ['No past bookings', 'Completed, cancelled and past bookings show here.'],
+    all: ['No bookings', ''],
+  }[filter || 'all'];
 
   return (
-    <div className="space-y-2">
-      {bookings.map((b, i) => (
-        <div
-          key={b.id}
-          style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}
-          className="animate-fade-in-up rounded-xl border border-gray-100 p-3 transition-shadow hover:shadow-sm"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-medium text-gray-800">{b.products?.name}</p>
-              <p className="text-xs text-gray-500">
-                {b.customer_name} {b.customer_phone ? `· ${b.customer_phone}` : ''}
-              </p>
-              <p className="text-xs text-gray-400 flex items-center gap-1 flex-wrap">
-                <FiCalendar className="h-3 w-3" />
-                {b.products?.booking_type === 'room' ? (
-                  <>{b.booking_date} → {b.checkout_date}</>
-                ) : (
-                  <>
-                    {b.booking_date}
-                    {b.products?.booking_type === 'ticket' ? null : (
-                      <>
-                        <FiClock className="h-3 w-3 ml-1" /> {b.slot_start}
-                      </>
-                    )}
-                  </>
-                )}
-                {b.quantity > 1 && (
-                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                    ×{b.quantity} {b.products?.booking_type === 'room' ? 'rooms' : 'tickets'}
-                  </span>
-                )}
-              </p>
-              {b.notes && <p className="text-xs text-gray-400 italic">"{b.notes}"</p>}
-              {b.form_responses && Object.keys(b.form_responses).length > 0 && (
-                <div className="mt-1 space-y-0.5">
-                  {Object.entries(b.form_responses).map(([key, value]) => (
-                    <p key={key} className="text-xs text-gray-500">
-                      <span className="text-gray-400">{key.replace(/_/g, ' ')}:</span>{' '}
-                      {typeof value === 'string' && /^https?:\/\//.test(value) ? (
-                        <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                          View attachment
-                        </a>
-                      ) : Array.isArray(value) ? (
-                        value.join(', ')
-                      ) : (
-                        String(value)
-                      )}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`animate-pop-in text-xs px-2 py-1 rounded-full font-medium ${STATUS_STYLES[b.status] || 'bg-gray-100 text-gray-500'}`}>
-                {b.status.replace('_', ' ')}
+    <div className="space-y-3">
+      {/* Filter chips with live counts — pending is highlighted so it can't be missed */}
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Filter bookings">
+        {FILTERS.map((f) => {
+          const active = filter === f.id;
+          const urgent = f.id === 'pending' && counts.pending > 0;
+          return (
+            <button
+              key={f.id}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setFilter(f.id)}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
+                active
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : urgent
+                  ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'
+              }`}
+            >
+              {f.label}
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-bold ${
+                  active ? 'bg-white/25 text-white' : urgent ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500'
+                }`}
+              >
+                {counts[f.id]}
               </span>
-              {b.chat_conversation_id && (
-                <div className="flex items-center gap-0.5 rounded-full border border-gray-200 bg-gray-50 p-0.5">
-                  <button
-                    onClick={() => openThread(b.id)}
-                    className={`rounded-full p-1.5 transition-all hover:scale-110 active:scale-90 ${
-                      openBookingId === b.id ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-white hover:text-blue-600'
-                    }`}
-                    title="Message this customer"
-                  >
-                    <FiMessageCircle className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => quickCall(b.id, 'audio')}
-                    className="rounded-full p-1.5 text-gray-500 transition-all hover:scale-110 hover:bg-white hover:text-emerald-600 active:scale-90"
-                    title="Audio call this customer"
-                  >
-                    <FiPhone className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => quickCall(b.id, 'video')}
-                    className="rounded-full p-1.5 text-gray-500 transition-all hover:scale-110 hover:bg-white hover:text-purple-600 active:scale-90"
-                    title="Video call this customer"
-                  >
-                    <FiVideo className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-              {b.status === 'requested' && (
-                <button onClick={() => handleStatus(b.id, 'confirmed')} className="text-xs text-blue-600 hover:underline">
-                  Confirm
-                </button>
-              )}
-              {['requested', 'confirmed'].includes(b.status) && (
-                <>
-                  <button onClick={() => handleStatus(b.id, 'completed')} className="text-xs text-emerald-600 hover:underline">
-                    Complete
-                  </button>
-                  <button onClick={() => handleStatus(b.id, 'no_show')} className="text-xs text-red-500 hover:underline">
-                    No-show
-                  </button>
-                  <button onClick={() => handleStatus(b.id, 'cancelled')} className="text-xs text-gray-500 hover:underline">
-                    Cancel
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          {openBookingId === b.id && b.chat_conversation_id && (
-            <div className="mt-3">
-              <BookingChatCallPanel
-                bookingId={b.id}
-                conversationId={b.chat_conversation_id}
-                selfId={staffIdentity?.userId}
-                selfName={staffIdentity?.name}
-                senderRole="admin"
-                autoStart={autoStart?.bookingId === b.id ? autoStart.type : null}
-                onAutoStarted={() => setAutoStart(null)}
-              />
-            </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[180px] flex-1">
+          <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, phone or service"
+            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          />
+        </div>
+        {services.length > 1 && (
+          <select
+            value={serviceFilter}
+            onChange={(e) => setServiceFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900"
+            aria-label="Filter by service"
+          >
+            <option value="all">All services</option>
+            {services.map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+        )}
+        <button
+          onClick={() => load()}
+          disabled={refreshing}
+          className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 transition-colors hover:text-blue-600 disabled:opacity-50"
+          title="Refresh"
+          aria-label="Refresh bookings"
+        >
+          <FiRefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center">
+          <FiUser className="h-6 w-6 text-gray-300" />
+          <p className="text-sm font-medium text-gray-700">{search || serviceFilter !== 'all' ? 'No matches' : emptyCopy[0]}</p>
+          <p className="text-xs text-gray-400">
+            {search || serviceFilter !== 'all' ? 'Try a different search or clear the filters.' : emptyCopy[1]}
+          </p>
+          {(search || serviceFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearch('');
+                setServiceFilter('all');
+              }}
+              className="mt-1 text-xs font-medium text-blue-600 hover:underline"
+            >
+              Clear filters
+            </button>
           )}
         </div>
-      ))}
+      ) : (
+        groups.map(([date, items]) => (
+          <section key={date} className="space-y-2">
+            <h3 className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-white/90 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 backdrop-blur">
+              <span className={date === today ? 'text-blue-600' : ''}>{friendlyDate(date)}</span>
+              <span className="font-normal normal-case text-gray-400">
+                {items.length} booking{items.length > 1 ? 's' : ''}
+              </span>
+            </h3>
+            {items.map((b, i) => (
+              <BookingCard
+                key={b.id}
+                b={b}
+                index={i}
+                busy={busyIds.has(b.id)}
+                isOpen={openBookingId === b.id}
+                expanded={expandedIds.has(b.id)}
+                onToggleExpand={toggleExpand}
+                onThread={openThread}
+                onCall={quickCall}
+                onStatus={handleStatus}
+                staffIdentity={staffIdentity}
+                autoStart={autoStart}
+                onAutoStarted={() => setAutoStart(null)}
+              />
+            ))}
+          </section>
+        ))
+      )}
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 };
+
 
 // Defaults to the "always open" shape: every day, 00:00-23:59 (morning to
 // morning), 30-minute bookings. An admin picking "Every day" + "Open hours"
@@ -436,13 +916,22 @@ const AvailabilityTab = ({ supermarketId, focusServiceId }) => {
         <option value="">Select a service…</option>
         {services.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.name} {s.booking_type === 'room' ? '(rooms)' : s.booking_type === 'ticket' ? '(tickets)' : ''}
+            {s.name} · {getBookingType(s.booking_type).label}
           </option>
         ))}
       </select>
 
       {selectedService && (
         <>
+          <div className={`flex items-center gap-3 rounded-xl bg-gradient-to-r ${getBookingType(bookingType).accent.grad} p-3 text-white animate-fade-in-up`}>
+            {React.createElement(getBookingType(bookingType).Icon, { className: 'h-6 w-6 flex-shrink-0' })}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{selectedService.name}</p>
+              <p className="text-xs opacity-90">
+                {getBookingType(bookingType).label} · {getBookingType(bookingType).tagline}
+              </p>
+            </div>
+          </div>
           <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2.5 animate-fade-in-up">
             <FiInfo className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
             <p className="text-xs text-blue-800">
@@ -643,8 +1132,15 @@ const AvailabilityTab = ({ supermarketId, focusServiceId }) => {
 // Services tab's "Configure booking" button — landing here goes straight to
 // the Availability tab with that service already selected, instead of
 // dropping the admin on "Upcoming bookings" with nothing pre-picked.
+const PANEL_TABS = [
+  { id: 'bookings', label: 'Bookings' },
+  { id: 'availability', label: 'Availability' },
+  { id: 'form', label: 'Booking form' },
+];
+
 const BookingsPanel = ({ supermarketId, staffIdentity, focusServiceId }) => {
   const [tab, setTab] = useState(focusServiceId ? 'availability' : 'bookings');
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     if (focusServiceId) setTab('availability');
@@ -654,22 +1150,30 @@ const BookingsPanel = ({ supermarketId, staffIdentity, focusServiceId }) => {
     <div className="container-glass rounded-2xl p-4 sm:p-6 shadow-lg">
       <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
         <FiCalendar /> Bookings
+        {pending > 0 && (
+          <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">{pending} to approve</span>
+        )}
       </h2>
-      <div className="flex gap-2 mb-4 border-b border-gray-100">
-        {['bookings', 'availability', 'form'].map((t) => (
+      <div className="flex gap-1 mb-4 border-b border-gray-100 overflow-x-auto" role="tablist">
+        {PANEL_TABS.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-all duration-200 ${
-              tab === t ? 'border-blue-600 text-blue-600 -translate-y-0.5' : 'border-transparent text-gray-500 hover:text-gray-700'
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex-shrink-0 px-3 py-2 text-sm font-medium border-b-2 transition-all duration-200 ${
+              tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'bookings' ? 'Upcoming bookings' : t === 'availability' ? 'Availability' : 'Booking form'}
+            {t.label}
+            {t.id === 'bookings' && pending > 0 && tab !== 'bookings' && (
+              <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-amber-500 align-middle" />
+            )}
           </button>
         ))}
       </div>
       <div key={tab} className="animate-fade-in-up">
-        {tab === 'bookings' && <BookingsTab supermarketId={supermarketId} staffIdentity={staffIdentity} />}
+        {tab === 'bookings' && <BookingsTab supermarketId={supermarketId} staffIdentity={staffIdentity} onPendingCount={setPending} />}
         {tab === 'availability' && <AvailabilityTab supermarketId={supermarketId} focusServiceId={focusServiceId} />}
         {tab === 'form' && <BookingFormEditor supermarketId={supermarketId} focusServiceId={focusServiceId} />}
       </div>

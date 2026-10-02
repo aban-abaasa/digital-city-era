@@ -88,6 +88,7 @@ export const createBooking = async ({
   quantity,
   checkoutDate,
   formResponses,
+  idempotencyKey,
 }) => {
   const { data, error } = await supabase.rpc('fn_create_service_booking', {
     p_product_id: productId,
@@ -100,10 +101,44 @@ export const createBooking = async ({
     p_quantity: quantity || 1,
     p_checkout_date: checkoutDate || null,
     p_form_responses: formResponses && Object.keys(formResponses).length ? formResponses : null,
+    // Same key from the same user = same booking: a double-tap or an
+    // automatic retry can never create a second one (see
+    // ADD_SERVICE_BOOKING_INTAKE_HARDENING.sql).
+    p_idempotency_key: idempotencyKey || null,
   });
   if (error) throw error;
-  if (!data?.success) throw new Error(data?.error || 'Could not create booking');
+  if (!data?.success) throw bookingError(data, 'Could not create booking');
   return data;
+};
+
+// Server refusals carry a machine-readable `code` next to the friendly
+// message, so the UI can react (e.g. refresh the slot grid) instead of just
+// printing text.
+const bookingError = (data, fallback) => {
+  const err = new Error(data?.error || fallback);
+  err.code = data?.code;
+  return err;
+};
+
+// A fresh random key per booking attempt (one per modal open).
+export const newIdempotencyKey = () =>
+  globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// Live feed of a store's bookings: calls onChange whenever a booking is
+// created or its status changes, so the admin screen updates the moment a
+// customer books — no polling. Returns an unsubscribe function.
+export const subscribeToStoreBookings = (supermarketId, onChange) => {
+  const channel = supabase
+    .channel(`store-bookings-${supermarketId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'service_bookings', filter: `supermarket_id=eq.${supermarketId}` },
+      (payload) => onChange(payload)
+    )
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
 };
 
 export const updateBookingStatus = async (bookingId, status) => {
@@ -112,7 +147,7 @@ export const updateBookingStatus = async (bookingId, status) => {
     p_new_status: status,
   });
   if (error) throw error;
-  if (!data?.success) throw new Error(data?.error || 'Could not update booking');
+  if (!data?.success) throw bookingError(data, 'Could not update booking');
   return data;
 };
 

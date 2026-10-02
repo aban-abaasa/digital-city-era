@@ -102,7 +102,7 @@ export default function PWAInstallPrompt() {
       <button
         type="button"
         onClick={install}
-        className="fixed bottom-4 right-4 z-[100] flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-emerald-700"
+        className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[100] flex min-h-[3rem] items-center gap-2 border-2 border-[#1f1a12] bg-[#14532d] px-4 py-3 font-serif text-sm font-semibold tracking-wide text-[#f6f1e4] shadow-[3px_3px_0_0_rgba(31,26,18,0.35)] transition hover:bg-[#166534]"
         aria-label="Install SupermartKera"
       >
         <img src={appIcon} alt="" className="h-[18px] w-[18px] rounded object-cover" />

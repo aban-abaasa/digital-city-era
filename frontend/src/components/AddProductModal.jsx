@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import BookingTypePicker from './booking/BookingTypePicker';
 import {
   FiX, FiSave, FiPackage, FiDollarSign, FiHash, FiTag,
   FiBox, FiTruck, FiMapPin, FiAlertCircle, FiCheck, FiUpload, FiZap, FiCamera, FiImage
@@ -895,17 +896,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                         </label>
                         {formData.is_bookable && (
                           <div className="mt-2">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Booking type</label>
-                            <select
-                              name="booking_type"
+                            <label className="block text-xs font-medium text-gray-500 mb-2">How do customers book this?</label>
+                            <BookingTypePicker
                               value={formData.booking_type}
-                              onChange={e => setFormData(prev => ({ ...prev, booking_type: e.target.value }))}
-                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="slot">🕒 Time slots — a customer picks a date & time (consultation, haircut…)</option>
-                              <option value="ticket">🎫 Tickets — a customer picks a date & quantity (event, class…)</option>
-                              <option value="room">🛏️ Rooms — a customer picks a date range & quantity (hotel room, hall…)</option>
-                            </select>
+                              onChange={(id) => setFormData(prev => ({ ...prev, booking_type: id }))}
+                            />
                           </div>
                         )}
                       </>
