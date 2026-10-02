@@ -1,10 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './index.css';
 import App from './App';
+
+// Informational pop-ups ("Loading...", "connection established") are noise on every page; silence them app-wide.
+// Success, warning and error toasts still show.
+toast.info = () => null;
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
