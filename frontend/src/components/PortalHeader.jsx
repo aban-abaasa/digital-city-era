@@ -7,6 +7,7 @@ import { clearLocalStaffSession } from '../services/localBusinessStaffService';
 import { useTheme } from '../contexts/ThemeContext';
 import { usePortalAccess } from '../hooks/usePortalAccess';
 import { prefetchPortal } from '../utils/portalPages';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 
 /**
  * The one header every Supermartkera portal shares — same layout as
@@ -27,6 +28,11 @@ import { prefetchPortal } from '../utils/portalPages';
  *                          adds a wallet tab at the end of the strip that
  *                          behaves like BodaGoEra's ₡ Wallet tab
  *   badgeCount             red count shown on the avatar (e.g. pending approvals)
+ *   showBusiness           (default true) shows the signed-in user's own
+ *                          business — its name in the sticky bar and a large
+ *                          banner (logo, name, type) under it — so every
+ *                          staff portal always says whose business this is.
+ *                          Nothing is shown when the account has no business.
  *   onCurrentPortalClick   called when the active portal's own tab is tapped
  *                          (e.g. to leave the wallet tab again)
  */
@@ -42,12 +48,15 @@ const PortalHeader = ({
   walletActive = false,
   onCurrentPortalClick,
   avatarUrl: avatarUrlProp = null,
-  badgeCount = 0
+  badgeCount = 0,
+  showBusiness = true
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const { accessiblePortals, currentPortal, pageMeta } = usePortalAccess();
+  const business = useSupermarketBranding();
+  const hasBusiness = showBusiness && !business.loading && Boolean(business.supermarketId);
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(avatarUrlProp);
   const [showMenu, setShowMenu] = useState(false);
@@ -131,6 +140,7 @@ const PortalHeader = ({
   }`;
 
   return (
+    <>
     <header className="bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white shadow-lg sticky top-0 z-50">
       <div className="container mx-auto px-2 sm:px-4">
         <div className="flex items-center justify-between h-12 sm:h-14 md:h-16">
@@ -141,7 +151,7 @@ const PortalHeader = ({
               <ActiveIcon className="h-4 w-4 sm:h-5 sm:w-5 text-[#f5dfa0]" />
             </span>
             <div className="min-w-0">
-              <h1 className="font-classic-display text-base sm:text-xl font-bold leading-none truncate">{brand}</h1>
+              <h1 className="font-classic-display text-base sm:text-xl font-bold leading-none truncate">{hasBusiness ? business.name : brand}</h1>
               <p className="mt-1 text-[9px] sm:text-[10px] font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] text-[#f3dc9b] hidden min-[400px]:block truncate">{subtitle}</p>
             </div>
           </div>
@@ -274,6 +284,35 @@ const PortalHeader = ({
       </div>
       <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
     </header>
+    {hasBusiness && (
+      <section
+        aria-label="Your business"
+        className="relative overflow-hidden bg-[#0f1b3d] text-white"
+        style={business.backgroundUrl ? { backgroundImage: `linear-gradient(90deg, rgba(15,27,61,0.94), rgba(15,27,61,0.72)), url(${business.backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+      >
+        <div className="container mx-auto flex items-center gap-3 sm:gap-5 px-3 sm:px-4 py-3 sm:py-5">
+          <span className="grid h-14 w-14 sm:h-20 sm:w-20 flex-shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/10 ring-2 ring-[#f5dfa0]/80 shadow-lg">
+            {business.logoUrl ? (
+              <img src={business.logoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="font-classic-display text-2xl sm:text-4xl font-bold text-[#f5dfa0]">
+                {(business.name || '?').charAt(0).toUpperCase()}
+              </span>
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.22em] text-[#f3dc9b]">
+              {business.typeEmoji} {business.typeLabel}
+            </p>
+            <h2 className="font-classic-display text-2xl sm:text-4xl lg:text-5xl font-bold leading-tight break-words">
+              {business.name}
+            </h2>
+          </div>
+        </div>
+        <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
+      </section>
+    )}
+    </>
   );
 };
 

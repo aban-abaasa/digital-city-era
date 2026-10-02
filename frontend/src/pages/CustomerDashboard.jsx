@@ -718,6 +718,7 @@ const CustomerDashboard = () => {
             (index.html sets a black-translucent status bar). */}
         <div className="safe-top bg-[#1e3a8a]">
           <PortalHeader
+            showBusiness={false}
             title={<><Greeting /> · {currentUser.firstName}</>}
             onSignOut={handleLogout}
           />
