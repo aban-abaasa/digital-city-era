@@ -224,7 +224,18 @@ export default function AdminAuth() {
       const { data: userData } = await supabase
         .from('users').select('role, supermarket_id').eq('auth_id', uid).maybeSingle();
       const metaRole = s.user.user_metadata?.role || s.user.app_metadata?.role;
-      const isAdmin = (userData?.role === 'admin' || metaRole === 'admin') && !!userData?.supermarket_id;
+      let isAdmin = (userData?.role === 'admin' || metaRole === 'admin') && !!userData?.supermarket_id;
+
+      // users.supermarket_id can outlive its store. Such an admin has nothing
+      // to go back to, so let them set a store up instead of bouncing them to
+      // a portal with no business account. A failed lookup keeps the redirect.
+      if (isAdmin) {
+        const { data: store, error: storeError } = await supabase
+          .from('supermarkets').select('id')
+          .or(`id.eq.${userData.supermarket_id},owner_user_id.eq.${uid}`)
+          .limit(1).maybeSingle();
+        if (!storeError && !store) isAdmin = false;
+      }
 
       if (!alive) return;
       if (isAdmin) {
