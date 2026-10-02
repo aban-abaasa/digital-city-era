@@ -1152,25 +1152,6 @@ const SupermartkeraLanding = () => {
           </div>
         </section>
 
-        {contributors.length > 0 && (
-          <section className="sk-scroll-reveal mt-8 sm:mt-10">
-            <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Community members</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {contributors.map((c) => (
-                <button
-                  key={c.authId || 'guests'}
-                  type="button"
-                  onClick={() => handleSelectContributor(c)}
-                  disabled={c.isGuestGroup}
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-default ${palette.outline}`}
-                >
-                  <FiUser className="h-3 w-3" /> {c.name}
-                  <span className={palette.muted}>· {c.count} {c.count === 1 ? 'message' : 'messages'}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
       </main>
 
       {selectedContributor && (
