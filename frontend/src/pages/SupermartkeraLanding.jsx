@@ -167,6 +167,8 @@ const SupermartkeraLanding = () => {
   const [myMessages, setMyMessages] = useState([]);
   const [submitState, setSubmitState] = useState('idle'); // idle | sending | sent | error
   const [expandedId, setExpandedId] = useState(null);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [boardVisibleCount, setBoardVisibleCount] = useState(6);
   const [replyDraft, setReplyDraft] = useState('');
   const [replyState, setReplyState] = useState('idle'); // idle | sending | error
   const [guestIdentity, setGuestIdentityState] = useState(() => getGuestIdentity());
@@ -981,8 +983,22 @@ const SupermartkeraLanding = () => {
             </p>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {threads.map((m) => {
+          <div className={`mt-6 rounded-2xl border sm:mt-8 sm:rounded-[1.75rem] ${palette.softPanel}`}>
+            <button
+              type="button"
+              onClick={() => setBoardOpen((o) => !o)}
+              aria-expanded={boardOpen}
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left sm:px-6"
+            >
+              <span className={`text-sm font-semibold ${palette.accent}`}>
+                Community chat · {threads.length} {threads.length === 1 ? 'message' : 'messages'}
+              </span>
+              <span className={`text-xs ${palette.muted}`}>{boardOpen ? 'Collapse' : 'Tap to open'}</span>
+            </button>
+            {boardOpen && (
+            <div className="p-3 sm:p-4">
+          <div className="max-h-[70vh] overflow-y-auto grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {threads.slice(0, boardVisibleCount).map((m) => {
               const isExpanded = expandedId === m.id;
               const canReply = !!(identity || guestIdentity?.name);
               return (
@@ -1118,6 +1134,20 @@ const SupermartkeraLanding = () => {
             })}
             {threads.length === 0 && (
               <p className={`text-sm ${palette.muted}`}>No public messages yet — be the first to ask something.</p>
+            )}
+          </div>
+            {threads.length > boardVisibleCount && (
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => setBoardVisibleCount((c) => c + 6)}
+                  className={`rounded-full border px-5 py-2 text-sm font-medium transition ${palette.muted}`}
+                >
+                  Load more
+                </button>
+              </div>
+            )}
+            </div>
             )}
           </div>
         </section>
