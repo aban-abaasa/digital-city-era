@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import '../styles/classic-auth.css';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
@@ -63,7 +64,7 @@ const ResetPassword = () => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${palette.shell}`}>
+    <div className="cl-auth cl-auth-bg min-h-screen flex items-center justify-center p-4">
       <div className={`w-full max-w-md rounded-2xl shadow-2xl border p-8 ${palette.card}`}>
         <h1 className="text-2xl font-bold mb-2">Reset Your Password</h1>
         <p className={`text-sm mb-6 ${palette.muted}`}>Choose a new password for your account</p>

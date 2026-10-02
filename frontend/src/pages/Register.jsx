@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import '../styles/classic-auth.css';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { SiGoogle } from 'react-icons/si';
 import { customerService } from '../services/customerService.jsx';
@@ -909,7 +910,7 @@ const Register = () => {
   );
 
   return (
-    <div className="register-container">
+    <div className="cl-auth cl-auth-bg register-container">
       <div className="register-card">
         <div className="register-header">
           <h1>Create Account</h1>

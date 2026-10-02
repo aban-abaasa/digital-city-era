@@ -13,6 +13,7 @@
 // ADD_PUBLIC_INVOICE_QR_ACCESS.sql and ADD_SETTLE_INVOICE_VIA_ICAN.sql.
 // ===================================================
 
+import '../styles/classic-auth.css';
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -246,7 +247,7 @@ const InvoicePublicPage = () => {
   const items = Array.isArray(invoice.items) ? invoice.items : [];
 
   return (
-    <div className="min-h-screen bg-gray-50 py-6 px-3 md:py-10">
+    <div className="cl-auth cl-paper min-h-screen py-6 px-3 md:py-10">
       <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
         <div className={`p-5 text-white ${isInvoice ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-green-600 to-emerald-600'}`}>
           <p className="text-xs uppercase tracking-wide opacity-90">{invoice.storeName}</p>

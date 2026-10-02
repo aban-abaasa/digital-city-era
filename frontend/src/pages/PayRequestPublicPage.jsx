@@ -8,6 +8,7 @@
 // re-scanning); if not, it offers to sign in first.
 // ===================================================
 
+import '../styles/classic-auth.css';
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -97,7 +98,7 @@ const PayRequestPublicPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 py-6 px-3 md:py-10">
+    <div className="cl-auth cl-auth-bg-night min-h-screen py-6 px-3 md:py-10">
       <div className="max-w-md mx-auto bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
         <div className="p-5 bg-gradient-to-r from-cyan-600 to-blue-700 text-white">
           <p className="text-xs uppercase tracking-wide opacity-90">Payment Request</p>

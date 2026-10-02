@@ -34,10 +34,11 @@ const PortalTabNavigator = ({
 
   return (
     <>
-      {/* Row 2 — pill tabs (sm and up) */}
-      <div className="hidden sm:block bg-white border-b border-blue-100">
+      {/* Row 2 — classic underlined tabs (sm and up): brass line draws under
+          the active tab and previews on hover, like the customer dashboard */}
+      <div className="hidden sm:block bg-white border-b border-[#c4a052]/30">
         <div className="max-w-7xl mx-auto px-2">
-          <nav className="flex overflow-x-auto scrollbar-hide gap-0.5 py-1 items-center">
+          <nav className="flex overflow-x-auto scrollbar-hide gap-0.5 items-center">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -46,13 +47,14 @@ const PortalTabNavigator = ({
                   key={tab.id}
                   type="button"
                   onClick={() => pick(tab.id)}
-                  className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`classic-tab relative flex items-center gap-1.5 px-3.5 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+                      ? 'font-semibold text-indigo-800'
+                      : 'font-medium text-slate-600 hover:text-indigo-700'
                   }`}
                 >
-                  {Icon && <Icon className="h-4 w-4" />}
+                  {Icon && <Icon className={`h-4 w-4 ${isActive ? 'text-[#a17c28]' : ''}`} />}
                   {tab.label}
                   {tab.badge > 0 && (
                     <span className="ml-0.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">{tab.badge}</span>

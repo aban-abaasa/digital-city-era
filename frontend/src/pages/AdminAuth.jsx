@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import '../styles/classic-auth.css';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -496,7 +497,7 @@ export default function AdminAuth() {
   // ── success screen ─────────────────────────────────────────────────────────
   if (view === 'success') {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#064e3b,#0f172a_60%,#020617)] flex items-center justify-center px-4 py-10">
+      <div className="cl-auth cl-auth-bg-night min-h-screen flex items-center justify-center px-4 py-10">
         <div className="max-w-md w-full space-y-6 text-center">
           <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-900/40">
             <span className="text-4xl">{typeInfo.emoji}</span>
@@ -551,7 +552,7 @@ export default function AdminAuth() {
   // ── sign-in view ───────────────────────────────────────────────────────────
   if (view === 'signin') {
     return (
-      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,#0f172a,#020617)] text-white flex items-center justify-center px-4 py-10">
+      <div className="cl-auth cl-auth-bg-night min-h-screen text-white flex items-center justify-center px-4 py-10">
         <div className="max-w-5xl w-full grid lg:grid-cols-2 gap-10 items-center">
           <LeftPanel />
 
@@ -617,7 +618,7 @@ export default function AdminAuth() {
 
   // ── create view (multi-step) ───────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,#0f172a,#020617)] text-white flex items-center justify-center px-4 py-10">
+    <div className="cl-auth cl-auth-bg-night min-h-screen text-white flex items-center justify-center px-4 py-10">
       <div className="max-w-5xl w-full grid lg:grid-cols-2 gap-10 items-start">
         <LeftPanel />
 

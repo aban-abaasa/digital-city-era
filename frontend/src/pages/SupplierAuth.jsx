@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import '../styles/classic-auth.css';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { notificationService } from '../services/notificationService';
@@ -338,7 +339,7 @@ const SupplierAuth = () => {
   // =============================================
   if (showProfileForm) {
     return (
-      <div className="auth-container">
+      <div className="cl-auth cl-auth-bg auth-container">
         <div className="auth-box">
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
             <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏭</div>
@@ -467,7 +468,7 @@ const SupplierAuth = () => {
   // =============================================
   if (checking) {
     return (
-      <div className="auth-container">
+      <div className="cl-auth cl-auth-bg auth-container">
         <div className="auth-box">
           <h1 className="auth-title">Loading...</h1>
           <p className="auth-subtitle">Please wait</p>
@@ -480,7 +481,7 @@ const SupplierAuth = () => {
   // RENDER: No session — sign-in options
   // =============================================
   return (
-    <div className="auth-container">
+    <div className="cl-auth cl-auth-bg auth-container">
       <div className="auth-box">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏭</div>

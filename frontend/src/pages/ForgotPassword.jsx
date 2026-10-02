@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import '../styles/classic-auth.css';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiMail, FiArrowLeft } from 'react-icons/fi';
@@ -49,7 +50,7 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${palette.shell}`}>
+    <div className="cl-auth cl-auth-bg min-h-screen flex items-center justify-center p-4">
       <div className={`w-full max-w-md rounded-2xl shadow-2xl border p-8 ${palette.card}`}>
         <Link to="/login" className={`inline-flex items-center gap-2 text-sm mb-6 hover:underline ${palette.muted}`}>
           <FiArrowLeft /> Back to Sign In

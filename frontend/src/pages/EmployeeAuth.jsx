@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import '../styles/classic-auth.css';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { notificationService } from '../services/notificationService';
@@ -849,7 +850,7 @@ const EmployeeAuth = () => {
     return (
       <>
         <style>{customStyles}</style>
-        <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-blue-600 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="cl-auth cl-auth-bg min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
           {/* Animated Background Elements */}
           <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-20 left-20 w-72 h-72 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
@@ -1270,7 +1271,7 @@ const EmployeeAuth = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-blue-600 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="cl-auth cl-auth-bg min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>

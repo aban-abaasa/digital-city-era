@@ -1,0 +1,92 @@
+/* Classic sign-in skin for the Employee, Supplier and Admin entry pages —
+   ink-indigo night sky with brass dust, ivory-paper cards with a brass
+   hairline, serif titles, gold focus. Matches the portals (classic-portals.css)
+   and the customer sign-in (supermartkera-auth.css). Colour / type / motion
+   only: no sizes or layout. */
+
+@keyframes cla-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cla-drift { from { background-position: 0 0, 0 0; } to { background-position: 0 0, 28px 28px; } }
+
+.cl-auth-bg {
+  background:
+    radial-gradient(900px 480px at 10% -10%, rgba(196, 160, 82, 0.22), transparent 70%),
+    radial-gradient(700px 420px at 100% 100%, rgba(109, 40, 217, 0.28), transparent 70%),
+    linear-gradient(145deg, #1e1b4b 0%, #26226b 55%, #1e3a8a 100%);
+}
+.cl-auth-bg-night {
+  background:
+    radial-gradient(800px 440px at 0 0, rgba(196, 160, 82, 0.16), transparent 70%),
+    radial-gradient(ellipse at top, #151a3d, #060814);
+}
+/* faint brass dots, like the printed paper of the customer sign-in */
+.cl-auth-bg::before,
+.cl-auth-bg-night::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: radial-gradient(#f5dfa0 0.7px, transparent 0.7px);
+  background-size: 14px 14px;
+}
+.cl-auth-bg > *, .cl-auth-bg-night > * { position: relative; z-index: 1; }
+
+.cl-auth :is(h1, h2, h3):not(.font-sans) {
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  letter-spacing: -0.005em;
+}
+.cl-auth .bg-white:is(.rounded-3xl, .rounded-2xl, .rounded-\[2rem\]),
+.cl-auth-card {
+  border: 1px solid rgba(196, 160, 82, 0.45);
+  box-shadow: 0 30px 60px -28px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(245, 223, 160, 0.06);
+  animation: cla-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.cl-auth .bg-clip-text { background-image: linear-gradient(90deg, #1e3a8a, #6d28d9) !important; }
+
+.cl-auth :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]) {
+  border-color: rgba(196, 160, 82, 0.55);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cl-auth :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):focus {
+  outline: none;
+  border-color: #c4a052;
+  box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.3);
+}
+.cl-auth input[type="checkbox"], .cl-auth input[type="radio"] { accent-color: #3730a3; }
+
+.cl-auth button { transition: transform 0.12s ease, box-shadow 0.2s ease, background-color 0.2s ease; }
+.cl-auth button:not(:disabled):active { transform: scale(0.97); }
+.cl-auth button:is([class*="from-indigo-"], [class*="from-blue-"], [class*="from-purple-"]):not(:disabled):hover,
+.cl-auth button.auth-button:not(:disabled):hover {
+  box-shadow: 0 12px 24px -12px rgba(30, 27, 75, 0.75), inset 0 0 0 1px rgba(245, 223, 160, 0.6);
+}
+.cl-auth :is(a, button, input, select, textarea):focus-visible { outline: 2px solid #c4a052; outline-offset: 2px; }
+
+/* Supplier sign-up (its own plain-CSS classes) */
+.cl-auth .auth-container { background: transparent; }
+.cl-auth .auth-box { border: 1px solid rgba(196, 160, 82, 0.45); border-radius: 20px; animation: cla-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.cl-auth .auth-title { font-family: "Playfair Display", Georgia, serif; color: #1e1b4b; }
+.cl-auth .auth-button { background: linear-gradient(135deg, #1e3a8a, #6d28d9); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-auth * { animation: none !important; transition: none !important; }
+}
+
+/* Ivory-paper page for public documents (invoice) */
+.cl-paper {
+  background:
+    radial-gradient(800px 360px at 10% -60px, rgba(196, 160, 82, 0.14), transparent 70%),
+    linear-gradient(180deg, #fdfcf8, #f4efe3);
+}
+.cl-paper .bg-white { border: 1px solid rgba(196, 160, 82, 0.35); }
+@media print {
+  .cl-paper { background: #fff; }
+  .cl-paper *, .cl-auth * { animation: none !important; }
+}
+
+/* Register (plain-CSS page) */
+.cl-auth .register-container { background: transparent; }
+.cl-auth .register-card { border: 1px solid rgba(196, 160, 82, 0.45); box-shadow: 0 30px 60px -28px rgba(0, 0, 0, 0.6); animation: cla-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.cl-auth .register-header { background: linear-gradient(135deg, #1e1b4b, #3730a3 70%, #6d28d9); border-bottom: 1px solid #c4a052; }
+.cl-auth .register-header h1 { font-family: "Playfair Display", Georgia, serif; }
+.cl-auth .register-btn { background: linear-gradient(135deg, #1e3a8a, #6d28d9); }

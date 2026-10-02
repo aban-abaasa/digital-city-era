@@ -1,0 +1,231 @@
+/* Classic skin for every Supermartkera portal (Admin, Manager, Cashier /
+   Employee, Supplier) and all of their pages.
+
+   Same language as the customer dashboard and the sign-in page: ivory paper,
+   ink-indigo, brass/gold hairlines, Playfair serif display type and calm,
+   one-shot motion. The portals are built from plain Tailwind utilities, so —
+   exactly like the dark-mode layer in supermartkera-portals.css — this layer
+   restyles the common primitives (page, headings, cards, tables, inputs,
+   buttons) from the shared `.sk-portal-themed` root instead of hand-editing
+   12,000+ lines of JSX. Light theme only: dark theme keeps its green-on-black
+   look. Nothing here changes layout (no sizes, margins or display values), so
+   it is safe to drop onto any page.
+
+   Motion rules: animations use `backwards` fill (never `both`) so no
+   lingering transform turns a card into a containing block for fixed
+   descendants such as modals and dropdowns. */
+
+:root {
+  --cl-ink: #1e1b4b;
+  --cl-ink-soft: #3730a3;
+  --cl-gold: #c4a052;
+  --cl-gold-deep: #8a6a1f;
+  --cl-gold-pale: #f5dfa0;
+  --cl-ivory: #faf8f3;
+  --cl-ivory-deep: #f4efe3;
+  --cl-hair: rgba(196, 160, 82, 0.3);
+  --cl-shadow: 0 1px 2px rgba(30, 27, 75, 0.05), 0 12px 28px -18px rgba(30, 27, 75, 0.28);
+  --cl-shadow-lift: 0 1px 2px rgba(30, 27, 75, 0.06), 0 22px 36px -20px rgba(30, 27, 75, 0.42);
+}
+
+@keyframes cl-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes cl-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes cl-sweep {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* ── Paper ──────────────────────────────────────────────────────────────
+   Replaces the emerald hero wash with warm ivory and a faint brass glow in the
+   top corner. A store's uploaded background image (inline backgroundImage)
+   still wins over this, as before. */
+html:not([data-theme="dark"]) .sk-portal-themed {
+  background:
+    radial-gradient(900px 420px at 8% -80px, rgba(196, 160, 82, 0.13), transparent 70%),
+    radial-gradient(700px 360px at 100% 0, rgba(55, 48, 163, 0.07), transparent 70%),
+    linear-gradient(180deg, #fdfcf8 0%, var(--cl-ivory) 55%, var(--cl-ivory-deep) 100%);
+  --sk-portal-branding-wash: rgba(250, 248, 243, 0.93), rgba(244, 239, 227, 0.93);
+}
+
+/* ── Type ───────────────────────────────────────────────────────────────
+   Page and section titles become serif; body copy, numbers in tables and form
+   labels stay in the UI font so data remains easy to scan. */
+.sk-portal-themed :is(h1, h2, h3) {
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  letter-spacing: -0.005em;
+}
+.sk-portal-themed h2 { font-weight: 700; }
+html:not([data-theme="dark"]) .sk-portal-themed :is(h1, h2):not([class*="text-white"]):not([class*="text-[#"]) {
+  color: var(--cl-ink);
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────
+   Any white rounded surface becomes an ivory-paper card with a brass hairline
+   and a soft indigo shadow. Hover lift is limited to grid tiles (stat cards,
+   product / order tiles), the things people actually tap. */
+html:not([data-theme="dark"]) .sk-portal-themed :is(.bg-white, .container-glass):is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl) {
+  border-color: var(--cl-hair);
+  box-shadow: var(--cl-shadow);
+}
+html:not([data-theme="dark"]) .sk-portal-themed :is(.rounded-xl, .rounded-2xl).border-gray-200,
+html:not([data-theme="dark"]) .sk-portal-themed :is(.rounded-xl, .rounded-2xl).border-gray-100,
+html:not([data-theme="dark"]) .sk-portal-themed :is(.rounded-xl, .rounded-2xl).border-slate-200 {
+  border-color: var(--cl-hair);
+}
+.sk-portal-themed .grid > :is(.bg-white, .container-glass):is(.rounded-lg, .rounded-xl, .rounded-2xl) {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+html:not([data-theme="dark"]) .sk-portal-themed .grid > :is(.bg-white, .container-glass):is(.rounded-lg, .rounded-xl, .rounded-2xl):hover {
+  transform: translateY(-3px);
+  border-color: rgba(196, 160, 82, 0.75);
+  box-shadow: var(--cl-shadow-lift);
+}
+
+/* Tinted stat / alert panels keep their own colour but share the rounder,
+   softer edge so a screen reads as one family. */
+.sk-portal-themed :is(.bg-blue-50, .bg-indigo-50, .bg-purple-50, .bg-green-50, .bg-emerald-50, .bg-yellow-50, .bg-amber-50, .bg-red-50, .bg-orange-50).rounded-lg {
+  border-radius: 14px;
+}
+
+/* ── Staggered entrance ─────────────────────────────────────────────────
+   Whatever mounts when you change tab — the page's top blocks and the tiles of
+   any grid — rises into place one after another. */
+.sk-portal-themed > .max-w-7xl > * {
+  animation: cl-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.sk-portal-themed .grid > * {
+  animation: cl-rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.sk-portal-themed .grid > *:nth-child(2) { animation-delay: 60ms; }
+.sk-portal-themed .grid > *:nth-child(3) { animation-delay: 120ms; }
+.sk-portal-themed .grid > *:nth-child(4) { animation-delay: 180ms; }
+.sk-portal-themed .grid > *:nth-child(5) { animation-delay: 230ms; }
+.sk-portal-themed .grid > *:nth-child(6) { animation-delay: 280ms; }
+.sk-portal-themed .grid > *:nth-child(n+7) { animation-delay: 320ms; }
+
+/* Brass rule that draws itself under a page's main title (h2 with a sibling
+   description, the usual "title + subtitle" block). Purely decorative. */
+.sk-portal-themed .animate-fadeInUp > .mb-6:first-child > h2:first-child::after,
+.sk-portal-themed .animate-fadeInUp > .mb-8:first-child > h2:first-child::after {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 2px;
+  margin-top: 10px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--cl-gold), var(--cl-gold-pale));
+  transform-origin: left;
+  animation: cl-sweep 0.7s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────
+   Ledger look: small-caps brass header on warm paper, hairline rows that
+   warm up on hover. */
+html:not([data-theme="dark"]) .sk-portal-themed table thead,
+html:not([data-theme="dark"]) .sk-portal-themed table thead tr,
+html:not([data-theme="dark"]) .sk-portal-themed table thead th {
+  background-color: #f6f0df;
+  color: var(--cl-gold-deep);
+}
+.sk-portal-themed table thead th {
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--cl-hair);
+}
+html:not([data-theme="dark"]) .sk-portal-themed table tbody tr {
+  transition: background-color 0.18s ease;
+}
+html:not([data-theme="dark"]) .sk-portal-themed table tbody tr:hover {
+  background-color: rgba(246, 240, 223, 0.65);
+}
+html:not([data-theme="dark"]) .sk-portal-themed table :is(.divide-y > *, tbody tr) {
+  border-color: rgba(196, 160, 82, 0.18);
+}
+
+/* ── Forms ──────────────────────────────────────────────────────────────
+   Brass hairline fields that warm to gold on hover and glow on focus. */
+html:not([data-theme="dark"]) .sk-portal-themed :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]) {
+  border-color: rgba(196, 160, 82, 0.5);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+html:not([data-theme="dark"]) .sk-portal-themed :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):hover:not(:disabled) {
+  border-color: var(--cl-gold);
+}
+html:not([data-theme="dark"]) .sk-portal-themed :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):focus {
+  outline: none;
+  border-color: var(--cl-gold);
+  box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.3);
+  background-color: #fffdf8;
+}
+.sk-portal-themed :is(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+  accent-color: var(--cl-ink-soft);
+}
+.sk-portal-themed label {
+  letter-spacing: 0.01em;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────
+   Blue / indigo / purple primaries take the header's ink-indigo gradient (the
+   portal accent). Green, red, amber and so on keep their meaning (confirm,
+   delete, warn). Every button gets the same press feedback. */
+.sk-portal-themed button,
+.sk-portal-themed [role="button"] {
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+.sk-portal-themed button:not(:disabled):active { transform: scale(0.97); }
+
+html:not([data-theme="dark"]) .sk-portal-themed button:is(.from-blue-600, .from-blue-500, .from-indigo-600, .from-indigo-500, .from-purple-600, .from-violet-600) {
+  --tw-gradient-from: #1e3a8a var(--tw-gradient-from-position);
+  --tw-gradient-to: #6d28d9 var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+html:not([data-theme="dark"]) .sk-portal-themed button:is(.bg-blue-600, .bg-blue-500, .bg-indigo-600, .bg-indigo-500, .bg-violet-600, .bg-purple-600) {
+  background-color: var(--cl-ink-soft);
+}
+html:not([data-theme="dark"]) .sk-portal-themed button:is(.hover\:bg-blue-700, .hover\:bg-indigo-700, .hover\:bg-purple-700):hover {
+  background-color: var(--cl-ink);
+}
+html:not([data-theme="dark"]) .sk-portal-themed button:is(.bg-blue-600, .bg-blue-500, .bg-indigo-600, .bg-indigo-500, .bg-violet-600, .bg-purple-600, [class*="from-blue-"], [class*="from-indigo-"], [class*="from-purple-"]):not(:disabled):hover {
+  box-shadow: 0 10px 22px -12px rgba(30, 27, 75, 0.7), inset 0 0 0 1px rgba(245, 223, 160, 0.55);
+}
+.sk-portal-themed :is(a, button, input, select, textarea, [role="button"]):focus-visible {
+  outline: 2px solid var(--cl-gold);
+  outline-offset: 2px;
+}
+
+/* ── Small furniture ────────────────────────────────────────────────────*/
+.sk-portal-themed :is(.rounded-full)[class*="bg-blue-100"],
+.sk-portal-themed :is(.rounded-full)[class*="bg-indigo-100"] {
+  letter-spacing: 0.02em;
+}
+.sk-portal-themed hr,
+.sk-portal-themed .border-t.border-gray-200:empty {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cl-gold) 25%, var(--cl-gold) 75%, transparent);
+}
+
+/* Modals and drop-downs fade/rise in instead of popping. */
+.sk-portal-themed .fixed.inset-0 {
+  animation: cl-fade 0.2s ease-out backwards;
+}
+.sk-portal-themed .fixed.inset-0 > :is(.bg-white, [class*="rounded"]) {
+  animation: cl-rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+/* ── Section tabs (PortalTabNavigator) in the dark theme ──────────────── */
+[data-theme="dark"] .classic-tab[aria-current="page"] { color: var(--cl-gold-pale); }
+[data-theme="dark"] .classic-tab::after { background: linear-gradient(90deg, #e6c980, #f5dfa0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-portal-themed *,
+  .sk-portal-themed *::after {
+    animation: none !important;
+  }
+  .sk-portal-themed .grid > :hover { transform: none !important; }
+}
