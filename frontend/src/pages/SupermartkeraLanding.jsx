@@ -637,7 +637,12 @@ const SupermartkeraLanding = () => {
                   onClick={() => handleGatedNavigate('shop', 'Sign in to add items to your cart.')}
                   className={`sk-animate-showcase sk-card-lift group flex flex-col overflow-hidden rounded-2xl border text-left sm:rounded-[1.5rem] ${palette.softPanel}`}
                 >
-                  <div className="flex h-24 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
+                  <div className="relative flex h-24 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
+                    {p.originalPriceUgx && (
+                      <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white shadow sm:left-2 sm:top-2 sm:px-2 sm:text-[10px]">
+                        −{Math.round((1 - p.priceUgx / p.originalPriceUgx) * 100)}%
+                      </span>
+                    )}
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                     ) : (
@@ -648,7 +653,14 @@ const SupermartkeraLanding = () => {
                     <p className={`truncate text-[10px] uppercase tracking-wide sm:text-xs ${palette.muted}`}>{p.storeName}</p>
                     <p className={`line-clamp-2 text-xs font-semibold leading-4 sm:text-sm sm:leading-5 ${palette.accent}`}>{p.name}</p>
                     <div className="mt-auto flex items-center justify-between gap-1 pt-1.5 sm:pt-2">
-                      <span className={`text-xs font-bold sm:text-sm ${palette.price}`}>UGX {p.priceUgx.toLocaleString()}</span>
+                      <span className={`text-xs font-bold sm:text-sm ${palette.price}`}>
+                        UGX {p.priceUgx.toLocaleString()}
+                        {p.originalPriceUgx && (
+                          <span className={`ml-1 block text-[10px] font-normal line-through sm:inline sm:text-xs ${palette.muted}`}>
+                            {p.originalPriceUgx.toLocaleString()}
+                          </span>
+                        )}
+                      </span>
                       <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:gap-1 sm:px-2 sm:py-1 sm:text-[10px] ${palette.outline}`}>
                         {identity ? <FiShoppingCart className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> : <FiLock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
                         {identity ? 'Shop' : 'Sign in'}

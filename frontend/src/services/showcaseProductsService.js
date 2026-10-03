@@ -5,12 +5,19 @@ import { supabase } from './supabase';
 // before they sign in. Same shared products/inventory/categories/supermarkets
 // tables mybodaguy's ProductPicker reads (see vendor/mybodaguy/services/productService.ts).
 export async function getShowcaseProducts(limit = 24) {
-  const { data: products, error } = await supabase
+  const baseColumns = 'id, supermarket_id, name, selling_price, images, sku, categories(name)';
+  const fetchProducts = (columns) => supabase
     .from('products')
-    .select('id, supermarket_id, name, selling_price, images, sku, categories(name)')
+    .select(columns)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
     .limit(limit);
+
+  // The reduced-price column only exists once ADD_PRODUCT_EXPIRY_CLEARANCE_PRICING.sql
+  // has been applied. This is the public landing page, so an undefined-column
+  // error (42703) falls back to the plain query rather than showing no products.
+  let { data: products, error } = await fetchProducts(`${baseColumns}, clearance_original_price`);
+  if (error?.code === '42703') ({ data: products, error } = await fetchProducts(baseColumns));
   if (error) throw error;
   if (!products || products.length === 0) return [];
 
@@ -42,6 +49,8 @@ export async function getShowcaseProducts(limit = 24) {
         supermarketId: p.supermarket_id,
         name: p.name,
         priceUgx: Number(p.selling_price) || 0,
+        // Set only while a store admin has a reduced price published.
+        originalPriceUgx: Number(p.clearance_original_price) > Number(p.selling_price) ? Number(p.clearance_original_price) : null,
         imageUrl: images[0] || null,
         category: p.categories?.name ?? null,
         storeName: nameBySupermarket.get(p.supermarket_id) ?? 'Supermartkera store',
