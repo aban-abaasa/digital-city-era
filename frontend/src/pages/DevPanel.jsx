@@ -9,6 +9,7 @@ import {
   FiMapPin, FiCalendar, FiPackage, FiBarChart2,
   FiActivity, FiAward, FiMessageCircle, FiSend,
   FiGlobe, FiLock, FiTrash2, FiCheckSquare,
+  FiChevronLeft, FiInbox,
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
@@ -39,15 +40,15 @@ const P = {
     shell:   'bg-[#060d17] text-white',
     header:  'bg-[#060d17]/90 border-white/10',
     card:    'bg-white/5 border-white/10',
-    soft:    'bg-white/[0.04] border-white/8',
+    soft:    'bg-white/[0.04] border-white/10',
     input:   'bg-white/5 border-white/10 text-white placeholder:text-slate-600',
     muted:   'text-slate-400',
     label:   'text-slate-200',
     tab:     'text-slate-400 hover:text-white hover:bg-white/5',
     tabOn:   'border-violet-500 text-violet-400',
     tabOff:  'border-transparent',
-    pill:    'bg-white/8 border-white/10 text-slate-300',
-    divider: 'border-white/8',
+    pill:    'bg-white/[0.08] border-white/10 text-slate-300',
+    divider: 'border-white/10',
     code:    'bg-slate-950 border-white/10 text-emerald-300',
     btn:     'bg-violet-600 hover:bg-violet-500 text-white',
     track:   'bg-white/10',
@@ -682,16 +683,83 @@ const fmtChatTime = (d) => {
   return date.toLocaleDateString();
 };
 
+const fmtClock = (d) => d ? new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const dayLabel = (d) => {
+  const date = new Date(d);
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(new Date()) - startOf(date)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+};
+
+const AVATAR_GRADS = [
+  'from-violet-500 to-fuchsia-600', 'from-sky-500 to-blue-600', 'from-emerald-500 to-teal-600',
+  'from-amber-500 to-orange-600', 'from-rose-500 to-pink-600', 'from-cyan-500 to-indigo-600',
+];
+const Avatar = ({ name = '', size = 40 }) => {
+  const initials = name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || '?';
+  const grad = AVATAR_GRADS[(name.charCodeAt(0) || 0) % AVATAR_GRADS.length];
+  return (
+    <span className={`flex flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-bold text-white shadow-md ${grad}`}
+      style={{ width: size, height: size, fontSize: size * 0.36 }}>
+      {initials}
+    </span>
+  );
+};
+
+const FilterChip = ({ active, onClick, children, p }) => (
+  <button onClick={onClick}
+    className={`flex-shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
+      active ? 'border-violet-500/50 bg-violet-500/15 text-violet-400' : p.pill
+    }`}>
+    {children}
+  </button>
+);
+
+const SearchField = ({ value, onChange, placeholder, p }) => (
+  <div className="relative">
+    <FiSearch className={`absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 ${p.muted}`} />
+    <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder}
+      className={`h-11 w-full rounded-xl border pl-10 pr-3 text-base outline-none transition focus:border-violet-400/60 sm:text-sm ${p.input}`} />
+  </div>
+);
+
+const EmptyBlock = ({ title, hint, p }) => (
+  <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+    <span className={`flex h-14 w-14 items-center justify-center rounded-2xl border ${p.soft}`}>
+      <FiInbox className={`h-6 w-6 ${p.muted}`} />
+    </span>
+    <p className="text-sm font-semibold">{title}</p>
+    {hint && <p className={`max-w-xs text-xs ${p.muted}`}>{hint}</p>}
+  </div>
+);
+
+const ListSkeleton = ({ rows = 3, p }) => (
+  <>
+    {Array.from({ length: rows }).map((_, i) => (
+      <div key={i} className={`flex animate-pulse items-center gap-3 border-b px-4 py-4 last:border-0 ${p.divider}`}>
+        <div className={`h-11 w-11 rounded-full ${p.track}`} />
+        <div className="flex-1 space-y-2"><div className={`h-3 w-2/5 rounded ${p.track}`} /><div className={`h-3 w-4/5 rounded ${p.track}`} /></div>
+      </div>
+    ))}
+  </>
+);
+
 const MessagesTab = ({ p }) => {
   const [conversations, setConversations] = useState([]);
+  const [loadingList,   setLoadingList]   = useState(true);
   const [selectedId,    setSelectedId]    = useState(null);
   const [messages,      setMessages]      = useState([]);
   const [reply,         setReply]         = useState('');
   const [sending,       setSending]       = useState(false);
+  const [query,         setQuery]         = useState('');
+  const [unreadOnly,    setUnreadOnly]    = useState(false);
   const scrollRef = useRef(null);
+  const inputRef  = useRef(null);
 
   const refresh = useCallback(async () => {
-    setConversations(await listConversations());
+    try { setConversations(await listConversations()); } finally { setLoadingList(false); }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -727,7 +795,29 @@ const MessagesTab = ({ p }) => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  // composer grows with its content (up to ~5 lines)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [reply, selectedId]);
+
+  // full-screen chat on phones: freeze the page behind it
+  useEffect(() => {
+    if (!selectedId || window.matchMedia('(min-width: 1024px)').matches) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [selectedId]);
+
   const selected = conversations.find(c => c.id === selectedId);
+  const unreadCount = conversations.filter(c => c.unread_by_dev).length;
+  const q = query.trim().toLowerCase();
+  const visible = conversations.filter(c =>
+    (!unreadOnly || c.unread_by_dev) &&
+    (!q || [c.guest_name, c.guest_email, c.portal, c.last_message_preview].some(v => String(v || '').toLowerCase().includes(q)))
+  );
 
   const handleReply = async () => {
     const body = reply.trim();
@@ -744,83 +834,129 @@ const MessagesTab = ({ p }) => {
     }
   };
 
+  // Enter sends on desktop; touch keyboards keep Enter as a newline.
+  const onComposerKeyDown = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+    e.preventDefault();
+    handleReply();
+  };
+
+  const timeline = [];
+  messages.forEach((m, i) => {
+    const prev = messages[i - 1];
+    if (!prev || dayLabel(prev.created_at) !== dayLabel(m.created_at)) {
+      timeline.push({ type: 'day', key: `day-${m.id}`, label: dayLabel(m.created_at) });
+    }
+    timeline.push({ type: 'msg', key: m.id, m, first: !prev || prev.sender_role !== m.sender_role || timeline[timeline.length - 1].type === 'day' });
+  });
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-      <div className={`rounded-2xl border overflow-hidden ${p.card}`}>
-        <div className={`px-4 py-3 border-b text-xs font-semibold uppercase tracking-wider ${p.muted} ${p.divider}`}>
-          Conversations ({conversations.length})
+    <div className="grid gap-4 lg:h-[calc(100dvh-12rem)] lg:min-h-[480px] lg:grid-cols-[340px_1fr]">
+
+      {/* conversation list */}
+      <div className={`${selectedId ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col overflow-hidden rounded-2xl border ${p.card}`}>
+        <div className={`space-y-2.5 border-b px-3 pb-3 pt-3.5 ${p.divider}`}>
+          <div className="flex items-center justify-between px-1">
+            <p className="text-sm font-black">Conversations</p>
+            <span className={`text-[11px] font-semibold ${p.muted}`}>{conversations.length}</span>
+          </div>
+          <SearchField p={p} value={query} onChange={setQuery} placeholder="Search name, email or message…" />
+          <div className="flex gap-1.5">
+            <FilterChip p={p} active={!unreadOnly} onClick={() => setUnreadOnly(false)}>All</FilterChip>
+            <FilterChip p={p} active={unreadOnly} onClick={() => setUnreadOnly(true)}>Unread{unreadCount ? ` (${unreadCount})` : ''}</FilterChip>
+          </div>
         </div>
-        <div className="max-h-[65vh] overflow-y-auto">
-          {conversations.map(c => (
-            <button key={c.id} onClick={() => setSelectedId(c.id)}
-              className={`w-full border-b last:border-0 px-4 py-3 text-left transition ${p.divider} ${
-                selectedId === c.id ? 'bg-violet-500/10' : 'hover:bg-white/5'
-              }`}>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium truncate">{c.guest_name || c.role || 'Guest'}</p>
-                {c.unread_by_dev && <span className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />}
-              </div>
-              <p className={`text-xs truncate ${p.muted}`}>{c.guest_email}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${PORTAL_BADGE[c.portal] || PORTAL_BADGE.landing}`}>
-                  {c.portal}
-                </span>
-                {c.origin_app && c.origin_app !== 'digital-city-era' && (
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${p.pill}`}>
-                    {c.origin_app}
-                  </span>
-                )}
-                <span className={`text-[10px] ${p.muted}`}>{fmtChatTime(c.last_message_at)}</span>
-              </div>
-              {c.last_message_preview && <p className={`mt-1 truncate text-xs ${p.muted}`}>{c.last_message_preview}</p>}
-            </button>
-          ))}
-          {conversations.length === 0 && (
-            <p className={`px-4 py-10 text-center text-sm ${p.muted}`}>No conversations yet.</p>
+        <div className="max-h-[calc(100dvh-21rem)] flex-1 overflow-y-auto overscroll-contain lg:max-h-none">
+          {loadingList && <ListSkeleton p={p} rows={4} />}
+          {visible.map(c => {
+            const active = selectedId === c.id;
+            const nm = c.guest_name || c.role || 'Guest';
+            return (
+              <button key={c.id} onClick={() => setSelectedId(c.id)}
+                className={`relative flex w-full items-center gap-3 border-b px-4 py-3 text-left transition last:border-0 active:opacity-80 ${p.divider} ${active ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                {active && <span className="absolute inset-y-0 left-0 w-0.5 bg-violet-500" />}
+                <Avatar name={nm} size={44} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className={`truncate text-sm ${c.unread_by_dev ? 'font-black' : 'font-semibold'}`}>{nm}</p>
+                    <span className={`flex-shrink-0 text-[10px] ${c.unread_by_dev ? 'font-semibold text-violet-400' : p.muted}`}>{fmtChatTime(c.last_message_at)}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <p className={`truncate text-xs ${p.muted}`}>{c.last_message_preview || c.guest_email || 'No messages yet'}</p>
+                    {c.unread_by_dev && <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-violet-500" style={{ boxShadow: '0 0 6px #8b5cf6' }} />}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className={`rounded-full border px-2 py-px text-[10px] font-medium capitalize ${PORTAL_BADGE[c.portal] || PORTAL_BADGE.landing}`}>{c.portal}</span>
+                    {c.origin_app && c.origin_app !== 'digital-city-era' && (
+                      <span className={`rounded-full border px-2 py-px text-[10px] font-medium capitalize ${p.pill}`}>{c.origin_app}</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+          {!loadingList && visible.length === 0 && (
+            <EmptyBlock p={p} title={conversations.length === 0 ? 'No conversations yet' : 'No matches'}
+              hint={conversations.length === 0 ? 'New chats from the portals will appear here in real time.' : 'Try a different search or switch back to All.'} />
           )}
         </div>
       </div>
 
-      <div className={`flex flex-col overflow-hidden rounded-2xl border ${p.card}`}>
+      {/* chat pane — full screen on phones */}
+      <div className={`${selectedId ? `fixed inset-0 z-40 flex lg:relative lg:inset-auto lg:z-auto ${p.shell}` : 'hidden lg:relative lg:flex'} min-h-0 flex-col overflow-hidden lg:rounded-2xl lg:border ${p.card}`}
+        style={selectedId ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}>
         {!selected ? (
-          <div className={`flex flex-1 items-center justify-center text-sm ${p.muted}`}>
-            <div className="text-center">
-              <FiMessageCircle className="mx-auto mb-2 h-8 w-8 opacity-40" />
-              Select a conversation to reply
-            </div>
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyBlock p={p} title="Select a conversation" hint="Pick a chat on the left to read and reply." />
           </div>
         ) : (
           <>
-            <div className={`border-b px-4 py-3 ${p.divider}`}>
-              <p className="text-sm font-semibold">{selected.guest_name || 'Guest'}</p>
-              <p className={`text-xs ${p.muted}`}>{selected.guest_email} · {selected.portal}</p>
+            <div className={`flex items-center gap-2 border-b px-3 py-2.5 backdrop-blur ${p.divider} ${p.header}`}>
+              <button onClick={() => setSelectedId(null)} aria-label="Back to conversations"
+                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full transition active:scale-90 lg:hidden ${p.muted}`}>
+                <FiChevronLeft className="h-5 w-5" />
+              </button>
+              <Avatar name={selected.guest_name || 'Guest'} size={38} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{selected.guest_name || 'Guest'}</p>
+                <p className={`truncate text-[11px] ${p.muted}`}>{selected.guest_email} · {selected.portal}</p>
+              </div>
             </div>
-            <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-3" style={{ maxHeight: '48vh' }}>
-              {messages.map(m => {
+
+            <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+              {messages.length === 0 && <p className={`py-10 text-center text-xs ${p.muted}`}>No messages yet.</p>}
+              {timeline.map(row => {
+                if (row.type === 'day') {
+                  return (
+                    <div key={row.key} className="my-3 flex justify-center">
+                      <span className={`rounded-full border px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide ${p.pill}`}>{row.label}</span>
+                    </div>
+                  );
+                }
+                const { m, first } = row;
                 const fromDev = m.sender_role === 'dev';
                 return (
-                  <div key={m.id} className={`flex ${fromDev ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                      fromDev ? 'bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white' : p.soft
+                  <div key={row.key} className={`flex ${fromDev ? 'justify-end' : 'justify-start'} ${first ? 'mt-3' : 'mt-0.5'}`}>
+                    <div className={`max-w-[85%] px-3 py-2 text-sm shadow-sm sm:max-w-[70%] ${
+                      fromDev ? 'rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white'
+                              : `rounded-2xl rounded-bl-md border ${p.card}`
                     }`}>
-                      {!fromDev && (
-                        <p className={`mb-0.5 text-[10px] font-semibold uppercase tracking-wide ${p.muted}`}>
-                          {m.sender_name || selected.role}
-                        </p>
-                      )}
+                      {!fromDev && first && <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-400">{m.sender_name || selected.role}</p>}
                       <p className="whitespace-pre-wrap break-words"><Linkify text={m.body} /></p>
+                      <p className={`mt-0.5 text-right text-[10px] leading-none ${fromDev ? 'text-white/70' : p.muted}`}>{fmtClock(m.created_at)}</p>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className={`flex items-center gap-2 border-t px-3 py-3 ${p.divider}`}>
-              <input value={reply} onChange={e => setReply(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleReply(); }}
-                placeholder="Reply as Supermartkera Team…"
-                className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-violet-400/60 ${p.input}`} />
-              <button onClick={handleReply} disabled={sending || !reply.trim()}
-                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition disabled:opacity-40 ${p.btn}`}>
+
+            <div className={`flex items-end gap-2 border-t px-3 pt-2.5 backdrop-blur ${p.divider} ${p.header}`} style={{ paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))' }}>
+              <textarea ref={inputRef} rows={1} value={reply} onChange={e => setReply(e.target.value)} onKeyDown={onComposerKeyDown}
+                placeholder="Reply as Supermartkera Team…" aria-label="Reply"
+                className={`max-h-[120px] min-h-[42px] flex-1 resize-none rounded-2xl border px-3.5 py-2.5 text-base leading-snug outline-none transition focus:border-violet-400/60 sm:text-sm ${p.input}`} />
+              <button onClick={handleReply} disabled={sending || !reply.trim()} aria-label="Send reply"
+                className={`flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-full transition active:scale-90 disabled:opacity-40 ${p.btn}`}>
                 <FiSend className="h-4 w-4" />
               </button>
             </div>
@@ -843,6 +979,8 @@ const PublicBoardTab = ({ p }) => {
   const [markError,  setMarkError]  = useState('');
   const [grantTargetId, setGrantTargetId] = useState(null);
   const [grantAmount,   setGrantAmount]   = useState('');
+  const [filter,        setFilter]        = useState('all'); // all | needs_reply | public | private
+  const [query,         setQuery]         = useState('');
   const [grantingId,    setGrantingId]    = useState(null);
   const [grantError,    setGrantError]    = useState('');
 
@@ -927,23 +1065,50 @@ const PublicBoardTab = ({ p }) => {
     }
   };
 
-  const topLevel = items.filter(m => !m.parent_id);
+  const allTop = items.filter(m => !m.parent_id);
+  const hasTeamReply = (m) => items.some(i => i.parent_id === m.id && i.sender_role === 'dev');
+  const needsReply = allTop.filter(m => m.is_public && !hasTeamReply(m)).length;
+  const q = query.trim().toLowerCase();
+  const topLevel = allTop.filter(m =>
+    (filter === 'all' ||
+      (filter === 'public' && m.is_public) ||
+      (filter === 'private' && !m.is_public) ||
+      (filter === 'needs_reply' && m.is_public && !hasTeamReply(m))) &&
+    (!q || [m.name, m.email, m.message, m.origin_app].some(v => String(v || '').toLowerCase().includes(q)))
+  );
+  const filters = [
+    { id: 'all', label: 'All' },
+    { id: 'needs_reply', label: `Needs reply${needsReply ? ` (${needsReply})` : ''}` },
+    { id: 'public', label: 'Public' },
+    { id: 'private', label: 'Private' },
+  ];
 
   return (
-    <div className={`rounded-2xl border overflow-hidden ${p.card}`}>
-      <div className={`flex items-center justify-between px-4 py-3 border-b text-xs font-semibold uppercase tracking-wider ${p.muted} ${p.divider}`}>
-        <span>Landing page messages ({topLevel.length})</span>
-        <button onClick={refresh} className={`rounded-lg p-1.5 transition ${p.tab}`}>
-          <FiRefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-lg font-black leading-tight">Public Board</p>
+          <p className={`text-xs ${p.muted}`}>Landing page messages · {allTop.length} total</p>
+        </div>
+        <button onClick={refresh} aria-label="Refresh messages"
+          className={`flex h-10 w-10 items-center justify-center rounded-xl border transition active:scale-95 ${p.pill}`}>
+          <FiRefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
-      <div className="max-h-[65vh] divide-y overflow-y-auto">
+      <SearchField p={p} value={query} onChange={setQuery} placeholder="Search name, email or message…" />
+      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 scrollbar-none sm:mx-0 sm:px-0">
+        {filters.map(f => <FilterChip key={f.id} p={p} active={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</FilterChip>)}
+      </div>
+    <div className={`rounded-2xl border overflow-hidden ${p.card}`}>
+      <div className="divide-y">
+        {loading && allTop.length === 0 && <ListSkeleton p={p} />}
         {topLevel.map(m => {
           const replies = items.filter(i => i.parent_id === m.id);
           const isExpanded = expandedId === m.id;
           return (
-            <div key={m.id} className={`px-4 py-3 ${p.divider}`}>
-              <div className="flex items-start justify-between gap-3">
+            <div key={m.id} className={`px-4 py-3.5 ${p.divider}`}>
+              <div className="flex items-start gap-3">
+                <Avatar name={m.name || 'Website visitor'} size={40} />
                 <button
                   onClick={() => { setExpandedId(isExpanded ? null : m.id); setReplyDraft(''); }}
                   className="min-w-0 flex-1 text-left"
@@ -979,8 +1144,8 @@ const PublicBoardTab = ({ p }) => {
                 <button
                   onClick={() => handleDelete(m.id)}
                   disabled={deletingId === m.id}
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-rose-400 transition hover:bg-rose-500/10 disabled:opacity-40"
-                  title="Delete message"
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-rose-400 transition hover:bg-rose-500/10 active:scale-90 disabled:opacity-40"
+                  title="Delete message" aria-label="Delete message"
                 >
                   <FiTrash2 className="h-4 w-4" />
                 </button>
@@ -1093,13 +1258,13 @@ const PublicBoardTab = ({ p }) => {
                         value={replyDraft}
                         onChange={e => setReplyDraft(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleReply(m.id); }}
-                        placeholder="Reply as Supermartkera Team…"
-                        className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-violet-400/60 ${p.input}`}
+                        placeholder="Reply as Supermartkera Team…" aria-label="Reply"
+                        className={`h-10 flex-1 rounded-xl border px-3 text-base outline-none focus:border-violet-400/60 sm:text-sm ${p.input}`}
                       />
                       <button
                         onClick={() => handleReply(m.id)}
-                        disabled={replying || !replyDraft.trim()}
-                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl transition disabled:opacity-40 ${p.btn}`}
+                        disabled={replying || !replyDraft.trim()} aria-label="Send reply"
+                        className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl transition active:scale-90 disabled:opacity-40 ${p.btn}`}
                       >
                         <FiSend className="h-4 w-4" />
                       </button>
@@ -1111,11 +1276,20 @@ const PublicBoardTab = ({ p }) => {
           );
         })}
         {!loading && topLevel.length === 0 && (
-          <p className={`px-4 py-10 text-center text-sm ${p.muted}`}>No landing page messages yet.</p>
+          <EmptyBlock p={p} title={allTop.length === 0 ? 'No messages yet' : 'No messages match'}
+            hint={allTop.length === 0 ? 'Questions from the landing page will show up here.' : 'Try another filter or clear the search.'} />
         )}
       </div>
     </div>
+    </div>
   );
+};
+
+// Icons for the mobile bottom tab bar
+const TAB_ICONS = {
+  overview: FiBarChart2, messages: FiMessageCircle, 'public-board': FiGlobe, supermarts: FiMapPin,
+  suppliers: FiPackage, customers: FiUsers, subscriptions: FiStar, rewards: FiAward,
+  system: FiActivity, operators: FiShield, 'era-api': FiZap,
 };
 
 // ─── Main dashboard ───────────────────────────────────────────────────
@@ -1412,9 +1586,9 @@ const DevDashboard = ({ onLogout, permissions }) => {
 
       {/* Header */}
       <header className={`sticky top-0 z-20 border-b backdrop-blur-xl ${p.header}`}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:px-5 md:pt-3.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600">
               <FiShield className="h-4 w-4 text-white" />
             </div>
             <div>
@@ -1424,19 +1598,19 @@ const DevDashboard = ({ onLogout, permissions }) => {
           </div>
           <div className="flex items-center gap-2">
             {lastRefresh && <span className={`hidden text-[11px] sm:block ${p.muted}`}>{lastRefresh.toLocaleTimeString()}</span>}
-            <button onClick={fetchAll} disabled={loading} className={`rounded-xl border p-2 transition disabled:opacity-40 ${p.pill}`}>
+            <button onClick={fetchAll} disabled={loading} aria-label="Refresh" className={`flex h-9 w-9 items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-40 ${p.pill}`}>
               <FiRefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button onClick={toggleTheme} className={`rounded-xl border p-2 transition ${p.pill}`}>
+            <button onClick={toggleTheme} aria-label="Toggle theme" className={`flex h-9 w-9 items-center justify-center rounded-xl border transition active:scale-95 ${p.pill}`}>
               {theme === 'dark' ? <FiSun className="h-4 w-4" /> : <FiMoon className="h-4 w-4" />}
             </button>
-            <button onClick={onLogout}
-              className="flex items-center gap-1.5 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-400/20 transition">
-              <FiLogOut className="h-3.5 w-3.5" /> Exit
+            <button onClick={onLogout} aria-label="Exit"
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-red-400/20 bg-red-400/10 px-2.5 text-xs font-medium text-red-400 transition hover:bg-red-400/20 active:scale-95 sm:px-3">
+              <FiLogOut className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> <span className="hidden sm:inline">Exit</span>
             </button>
           </div>
         </div>
-        <div className="mx-auto flex max-w-7xl overflow-x-auto px-5 pb-px scrollbar-none">
+        <div className="mx-auto hidden max-w-7xl overflow-x-auto px-5 pb-px scrollbar-none md:flex">
           {TABS.map(t => (
             <button key={t.id} onClick={() => { setTab(t.id); setSearch(''); }}
               className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-xs font-semibold transition ${
@@ -1446,7 +1620,7 @@ const DevDashboard = ({ onLogout, permissions }) => {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-6 space-y-5">
+      <main className="mx-auto max-w-7xl space-y-5 px-4 py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-5 md:py-6 md:pb-8">
 
         {/* Search */}
         {['supermarts','suppliers','customers'].includes(tab) && (
@@ -1856,6 +2030,24 @@ const DevDashboard = ({ onLogout, permissions }) => {
         )}
 
       </main>
+
+      {/* Mobile bottom tab bar — same pattern as the customer / cashier portals */}
+      <nav className={`fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-xl md:hidden ${p.header}`} style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex overflow-x-auto scrollbar-none">
+          {TABS.map(t => {
+            const Icon = TAB_ICONS[t.id] || FiActivity;
+            const active = tab === t.id;
+            return (
+              <button key={t.id} onClick={() => { setTab(t.id); setSearch(''); window.scrollTo({ top: 0 }); }} aria-current={active ? 'page' : undefined}
+                className={`relative flex min-w-[76px] flex-1 flex-col items-center gap-0.5 py-2 transition active:scale-95 ${active ? 'text-violet-400' : p.muted}`}>
+                {active && <span className="absolute inset-x-5 top-0 h-0.5 rounded-b-full bg-violet-500" />}
+                <span className={`flex h-7 w-12 items-center justify-center rounded-full transition ${active ? 'bg-violet-500/15' : ''}`}><Icon className="h-5 w-5" /></span>
+                <span className="whitespace-nowrap text-[10px] font-bold leading-none">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };
