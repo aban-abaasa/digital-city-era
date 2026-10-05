@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:era-api": "node --test tests/eraApi.test.js",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

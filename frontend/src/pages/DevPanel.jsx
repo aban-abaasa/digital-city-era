@@ -13,6 +13,7 @@ import {
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
 import { Linkify } from '../utils/linkify';
+import EraApiDevTab from '../components/EraApiDevTab';
 import {
   listConversations,
   fetchMessages,
@@ -1402,6 +1403,8 @@ const DevDashboard = ({ onLogout, permissions }) => {
 
   if (permissions.isMain) {
     TABS.push({ id: 'operators', label: 'Developers' });
+    // outside-developer API: approves access and can switch the whole API off, so main developers only
+    TABS.push({ id: 'era-api', label: 'API' });
   }
 
   return (
@@ -1458,6 +1461,7 @@ const DevDashboard = ({ onLogout, permissions }) => {
         {/* ── MESSAGES ── */}
         {tab === 'messages' && <MessagesTab p={p} />}
         {tab === 'public-board' && <PublicBoardTab p={p} />}
+        {tab === 'era-api' && permissions.isMain && <EraApiDevTab theme={theme} />}
 
         {/* ── OVERVIEW ── */}
         {tab === 'overview' && (
