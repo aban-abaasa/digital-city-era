@@ -25,6 +25,8 @@ import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
 import BookingsPanel from './booking/BookingsPanel';
+import ExpiryClearancePanel from './ExpiryClearancePanel';
+import { getExpiryStatus, formatExpiryDate, isOnClearance, clearanceDiscountPercent } from '../utils/productExpiry';
 import {
   SUPPORTED_IMPORT_EXTENSIONS,
   parseProductFile,
@@ -137,6 +139,8 @@ const OI_STYLES = `
 .oi-pill-ok { background: #e4f3ea; color: var(--oi-green); border: 1px solid #bfe0cd; }
 .oi-pill-low { background: #fdf0d9; color: var(--oi-amber); border: 1px solid #f1d59e; }
 .oi-pill-out { background: #f8e8ea; color: var(--oi-wine); border: 1px solid #e8c3c8; animation: oi-beacon 2.2s ease-out infinite; }
+.oi-pill-crit { background: #fbe9e1; color: #9a3412; border: 1px solid #f1c4ae; }
+.oi-pill-offer { background: var(--oi-gold-soft); color: #7a5c12; border: 1px solid #e3d2a0; }
 .oi-expanded { background: var(--oi-ivory); border-top: 1px solid var(--oi-gold); border-bottom: 1px solid var(--oi-line); animation: oi-pop .3s both; }
 .oi-card { background: #fff; border: 1px solid var(--oi-line); border-top: 2px solid var(--oi-gold); border-radius: 3px; transition: transform .2s, box-shadow .2s; }
 .oi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px -12px rgba(20, 33, 61, .6); }
@@ -164,6 +168,8 @@ const OI_STYLES = `
 [data-theme='dark'] .oi-pill-ok { background: rgba(34, 197, 94, .16); color: #86efac; border-color: rgba(34, 197, 94, .35); }
 [data-theme='dark'] .oi-pill-low { background: rgba(245, 158, 11, .16); color: #fcd34d; border-color: rgba(245, 158, 11, .35); }
 [data-theme='dark'] .oi-pill-out { background: rgba(239, 68, 68, .18); color: #fca5a5; border-color: rgba(248, 113, 113, .4); }
+[data-theme='dark'] .oi-pill-crit { background: rgba(249, 115, 22, .18); color: #fdba74; border-color: rgba(249, 115, 22, .4); }
+[data-theme='dark'] .oi-pill-offer { background: rgba(184, 145, 47, .24); color: #f1d98a; border-color: rgba(217, 185, 85, .45); }
 [data-theme='dark'] .oi-expanded { background: #0f2a20; }
 [data-theme='dark'] .oi-card { background: #0c231b; border-color: var(--oi-line); border-top-color: var(--oi-gold); }
 
@@ -228,6 +234,9 @@ const OrderInventoryPOSControl = () => {
   const [editValues, setEditValues] = useState({});
   const [sortField, setSortField] = useState('name');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [filterExpiry, setFilterExpiry] = useState('all'); // all | expired | week | month | offer
+  // False until the expiry/clearance columns are known to exist (see ADD_PRODUCT_EXPIRY_CLEARANCE_PRICING.sql)
+  const [expiryReady, setExpiryReady] = useState(true);
   const [categories, setCategories] = useState([]);
   const [businessType, setBusinessType] = useState('supermarket');
   const offersWholesale = ['wholesale', 'factory', 'hardware'].includes(businessType);
@@ -610,15 +619,25 @@ const OrderInventoryPOSControl = () => {
       }
 
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
-      let productsQuery = supabase
+      const baseColumns = 'id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, is_active, images';
+      const fetchProducts = (columns) => supabase
         .from('products')
-        .select('id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, is_active, images')
+        .select(columns)
         .eq('is_active', true)
+        .eq('supermarket_id', supermarketId)
         .order('name');
 
-      productsQuery = productsQuery.eq('supermarket_id', supermarketId);
-
-      const { data: productsData, error: productsError } = await productsQuery;
+      // Expiry date + reduced-price columns. A database that has not had
+      // ADD_PRODUCT_EXPIRY_CLEARANCE_PRICING.sql applied yet answers 42703
+      // (undefined column); the page must keep working without them.
+      let { data: productsData, error: productsError } = await fetchProducts(`${baseColumns}, expiry_date, clearance_original_price`);
+      if (productsError?.code === '42703') {
+        console.warn('⚠️ Expiry/clearance columns missing — run ADD_PRODUCT_EXPIRY_CLEARANCE_PRICING.sql');
+        setExpiryReady(false);
+        ({ data: productsData, error: productsError } = await fetchProducts(baseColumns));
+      } else if (!productsError) {
+        setExpiryReady(true);
+      }
 
       if (productsError) throw productsError;
 
@@ -672,6 +691,8 @@ const OrderInventoryPOSControl = () => {
           tax_rate: p.tax_rate,
           is_active: p.is_active,
           images: Array.isArray(p.images) ? p.images : [],
+          expiry_date: p.expiry_date || null,
+          clearance_original_price: p.clearance_original_price ?? null,
           current_stock: invMap[p.id]?.current_stock || 0
         }));
 
@@ -833,9 +854,30 @@ const OrderInventoryPOSControl = () => {
       });
     }
 
+    // Expiry filter
+    if (filterExpiry !== 'all') {
+      filtered = filtered.filter(p => {
+        if (filterExpiry === 'offer') return isOnClearance(p);
+        const { key } = getExpiryStatus(p.expiry_date);
+        if (filterExpiry === 'expired') return key === 'expired';
+        if (filterExpiry === 'week') return key === 'expired' || key === 'critical';
+        if (filterExpiry === 'month') return key === 'expired' || key === 'critical' || key === 'soon';
+        return true;
+      });
+    }
+
     // Sort
-    filtered.sort((a, b) => {
+    filtered = [...filtered].sort((a, b) => {
       switch (sortField) {
+        case 'expiry': {
+          // Soonest first; products without an expiry date go last.
+          const daysA = getExpiryStatus(a.expiry_date).days;
+          const daysB = getExpiryStatus(b.expiry_date).days;
+          if (daysA === null && daysB === null) return a.name.localeCompare(b.name);
+          if (daysA === null) return 1;
+          if (daysB === null) return -1;
+          return daysA - daysB;
+        }
         case 'name':
           return a.name.localeCompare(b.name);
         case 'margin':
@@ -854,7 +896,7 @@ const OrderInventoryPOSControl = () => {
     });
 
     setFilteredProducts(filtered);
-  }, [searchQuery, filterCategory, sortField, products]);
+  }, [searchQuery, filterCategory, filterExpiry, sortField, products]);
 
   const startEdit = (product) => {
     // Admin-only check
@@ -873,10 +915,28 @@ const OrderInventoryPOSControl = () => {
       purchasing_price_source: product.purchasing_price_source || 'admin',
       selling_price: product.selling_price,
       tax_rate: product.tax_rate || 18,
-      current_stock: product.current_stock ?? 0
+      current_stock: product.current_stock ?? 0,
+      expiry_date: product.expiry_date || ''
     });
     setEditImageFile(null);
     setEditImagePreview(product.images?.[0] || null);
+  };
+
+  // Re-reads one product's price, expiry and offer state. The database can
+  // change these on its own (a reduced price ends when the expiry date or the
+  // price is edited), so the page asks rather than guessing.
+  const refreshProductPricing = async (productId) => {
+    const { data, error } = await supabase
+      .from('products')
+      .select('selling_price, expiry_date, clearance_original_price')
+      .eq('id', productId)
+      .maybeSingle();
+    if (error || !data) {
+      loadData();
+      return;
+    }
+    const patch = { selling_price: data.selling_price, expiry_date: data.expiry_date || null, clearance_original_price: data.clearance_original_price ?? null };
+    setProducts(previous => previous.map(p => (p.id === productId ? { ...p, ...patch } : p)));
   };
 
   const cancelEdit = () => {
@@ -894,7 +954,8 @@ const OrderInventoryPOSControl = () => {
     }
 
     try {
-      const { current_stock, ...productUpdates } = editValues;
+      const { current_stock, expiry_date, ...productUpdates } = editValues;
+      if (expiryReady) productUpdates.expiry_date = expiry_date || null;
       const parsedStock = Number(current_stock);
       if (!Number.isInteger(parsedStock) || parsedStock < 0) {
         toast.error('Quantity must be a whole number of zero or more.');
@@ -955,6 +1016,7 @@ const OrderInventoryPOSControl = () => {
       setEditImagePreview(null);
       toast.success('✅ Product updated successfully');
       calculateStats(products.map(applyUpdate));
+      if (expiryReady) refreshProductPricing(productId);
     } catch (error) {
       console.error('❌ Error saving product:', error);
       toast.error('Failed to update product');
@@ -1270,6 +1332,14 @@ const OrderInventoryPOSControl = () => {
   const toolBtnOn = 'oi-btn-ghost';
   const toolBtnOff = 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed';
 
+  const expiryFigures = products.reduce((tally, p) => {
+    if (!p.expiry_date || !((p.current_stock || 0) > 0 || isOnClearance(p))) return tally;
+    const { key } = getExpiryStatus(p.expiry_date);
+    if (key === 'expired' || key === 'critical' || key === 'soon') tally.expiring += 1;
+    if (isOnClearance(p)) tally.offers += 1;
+    return tally;
+  }, { expiring: 0, offers: 0 });
+
   const visibleTabs = [
     offersProducts && { id: 'products', label: '📦 Products' },
     offersServices && { id: 'services', label: '🧾 Services' },
@@ -1325,6 +1395,12 @@ const OrderInventoryPOSControl = () => {
           <span className="oi-fig" style={{ '--dot': '#b8912f' }}>Avg margin <b><CountUp value={stats.avgMargin} decimals={1} />%</b></span>
           <span className="oi-fig" style={{ '--dot': stats.lowStock > 0 ? '#b45f06' : '#9ca3af' }}>Low stock <b style={stats.lowStock > 0 ? { color: '#b45f06' } : undefined}><CountUp value={stats.lowStock} /></b></span>
           <span className="oi-fig" style={{ '--dot': stats.inactive > 0 ? '#7a1f2b' : '#9ca3af' }}>Inactive <b style={stats.inactive > 0 ? { color: '#7a1f2b' } : undefined}><CountUp value={stats.inactive} /></b></span>
+          {expiryReady && (
+            <>
+              <span className="oi-fig" style={{ '--dot': expiryFigures.expiring > 0 ? '#9a3412' : '#9ca3af' }}>Expiring ≤30d <b style={expiryFigures.expiring > 0 ? { color: '#9a3412' } : undefined}><CountUp value={expiryFigures.expiring} /></b></span>
+              <span className="oi-fig" style={{ '--dot': expiryFigures.offers > 0 ? '#b8912f' : '#9ca3af' }}>On offer <b><CountUp value={expiryFigures.offers} /></b></span>
+            </>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -1490,12 +1566,28 @@ const OrderInventoryPOSControl = () => {
             )}
           </select>
 
+          {expiryReady && (
+            <select
+              value={filterExpiry}
+              onChange={(e) => setFilterExpiry(e.target.value)}
+              aria-label="Filter by expiry"
+              className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
+            >
+              <option value="all">Any expiry</option>
+              <option value="expired">Expired</option>
+              <option value="week">Expires within 7 days</option>
+              <option value="month">Expires within 30 days</option>
+              <option value="offer">On reduced price</option>
+            </select>
+          )}
+
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value)}
             className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
           >
             <option value="name">Sort by Name</option>
+            {expiryReady && <option value="expiry">Sort by Expiry</option>}
             <option value="margin">Sort by Margin</option>
             <option value="stock">Sort by Stock</option>
             <option value="price">Sort by Price</option>
@@ -1506,6 +1598,14 @@ const OrderInventoryPOSControl = () => {
           Showing <span className="font-semibold text-gray-800">{filteredProducts.length}</span> of <span className="font-semibold text-gray-800">{products.length}</span> products
         </p>
       </div>
+
+      <ExpiryClearancePanel
+        products={products}
+        isAdmin={isAdmin}
+        ready={expiryReady}
+        formatCurrency={formatCurrency}
+        onChanged={refreshProductPricing}
+      />
 
       {/* Products List — a div-based (not <table>) layout so rows genuinely
           restack into cards on small phones instead of squeezing table
@@ -1575,12 +1675,26 @@ const OrderInventoryPOSControl = () => {
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">POS Selling Price</label>
                       <input type="number" value={editValues.selling_price} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm" />
+                      {isOnClearance(product) && (
+                        <p className="mt-1 text-[10px] text-amber-700">Reduced from {formatCurrency(product.clearance_original_price)}. Changing it ends the offer.</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Quantity</label>
                       <input type="number" min="0" step="1" value={editValues.current_stock} onChange={(e) => setEditValues({ ...editValues, current_stock: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" />
                       <p className="mt-1 text-[10px] text-gray-500">Admin override; automatic updates continue.</p>
                     </div>
+                    {expiryReady && (
+                      <div>
+                        <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Expiry Date</label>
+                        <input type="date" value={editValues.expiry_date || ''} onChange={(e) => setEditValues({ ...editValues, expiry_date: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-red-300 rounded-lg focus:outline-none focus:border-red-500 text-sm" />
+                        {isOnClearance(product) ? (
+                          <p className="mt-1 text-[10px] text-amber-700">On a reduced price. A new expiry date means new stock and ends the offer.</p>
+                        ) : (
+                          <p className="mt-1 text-[10px] text-gray-500">Optional. Expired stock cannot be sold.</p>
+                        )}
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Accepted Supplier Price</label>
                       <input type="number" value={editValues.accepted_supplier_price} onChange={(e) => setEditValues({ ...editValues, accepted_supplier_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-cyan-300 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
@@ -1632,6 +1746,25 @@ const OrderInventoryPOSControl = () => {
                       <p className="text-xs font-semibold text-gray-600">POS SELLING</p>
                       <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
                     </div>
+                    {expiryReady && (
+                      <div className="oi-card p-2">
+                        <p className="text-xs font-semibold text-gray-600">EXPIRY</p>
+                        {product.expiry_date ? (
+                          <>
+                            <p className="text-sm md:text-base font-bold text-red-700">{formatExpiryDate(product.expiry_date)}</p>
+                            <p className="text-[11px] text-gray-500">{getExpiryStatus(product.expiry_date).label}</p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-gray-400">Not set</p>
+                        )}
+                      </div>
+                    )}
+                    {isOnClearance(product) && (
+                      <div className="oi-card p-2">
+                        <p className="text-xs font-semibold text-gray-600">WAS (−{clearanceDiscountPercent(product)}%)</p>
+                        <p className="text-sm md:text-base font-bold text-gray-500 line-through">{formatCurrency(product.clearance_original_price)}</p>
+                      </div>
+                    )}
                     <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">MARGIN</p>
                       <p className="text-sm md:text-base font-bold text-purple-600">{calculateMargin(product.cost_price, product.selling_price)}%</p>
@@ -1667,6 +1800,7 @@ const OrderInventoryPOSControl = () => {
             const minStock = invData ? (invData.minimum_stock || 10) : 10;
             const isLow = qty < minStock && qty > 0;
             const isOutOfStock = qty === 0;
+            const expiry = getExpiryStatus(product.expiry_date);
 
             return (
               <div
@@ -1709,6 +1843,25 @@ const OrderInventoryPOSControl = () => {
                   <div className="min-w-0 flex-1">
                     <p className="font-bold oi-name text-sm sm:text-base truncate">{product.name}</p>
                     <p className="text-xs text-gray-600 truncate">SKU: {product.sku || 'N/A'}</p>
+                    {expiryReady && (expiry.key !== 'none' || isOnClearance(product)) && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        {expiry.key !== 'none' && (
+                          <span
+                            title={`Expires ${formatExpiryDate(product.expiry_date)}`}
+                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                              { expired: 'oi-pill-out', critical: 'oi-pill-crit', soon: 'oi-pill-low', ok: 'oi-pill-ok' }[expiry.key]
+                            }`}
+                          >
+                            ⏳ {expiry.key === 'ok' ? formatExpiryDate(product.expiry_date) : expiry.label}
+                          </span>
+                        )}
+                        {isOnClearance(product) && (
+                          <span className="oi-pill-offer px-1.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap">
+                            🏷️ −{clearanceDiscountPercent(product)}% · {formatCurrency(product.selling_price)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <span className="text-gray-300 flex-shrink-0 sm:hidden">▶</span>
                 </div>

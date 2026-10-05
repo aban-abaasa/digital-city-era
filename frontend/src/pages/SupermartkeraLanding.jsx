@@ -167,6 +167,8 @@ const SupermartkeraLanding = () => {
   const [myMessages, setMyMessages] = useState([]);
   const [submitState, setSubmitState] = useState('idle'); // idle | sending | sent | error
   const [expandedId, setExpandedId] = useState(null);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [boardVisibleCount, setBoardVisibleCount] = useState(6);
   const [replyDraft, setReplyDraft] = useState('');
   const [replyState, setReplyState] = useState('idle'); // idle | sending | error
   const [guestIdentity, setGuestIdentityState] = useState(() => getGuestIdentity());
@@ -635,7 +637,12 @@ const SupermartkeraLanding = () => {
                   onClick={() => handleGatedNavigate('shop', 'Sign in to add items to your cart.')}
                   className={`sk-animate-showcase sk-card-lift group flex flex-col overflow-hidden rounded-2xl border text-left sm:rounded-[1.5rem] ${palette.softPanel}`}
                 >
-                  <div className="flex h-24 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
+                  <div className="relative flex h-24 w-full items-center justify-center bg-gradient-to-br from-emerald-400/10 to-green-500/10 sm:h-28">
+                    {p.originalPriceUgx && (
+                      <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white shadow sm:left-2 sm:top-2 sm:px-2 sm:text-[10px]">
+                        −{Math.round((1 - p.priceUgx / p.originalPriceUgx) * 100)}%
+                      </span>
+                    )}
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                     ) : (
@@ -646,7 +653,14 @@ const SupermartkeraLanding = () => {
                     <p className={`truncate text-[10px] uppercase tracking-wide sm:text-xs ${palette.muted}`}>{p.storeName}</p>
                     <p className={`line-clamp-2 text-xs font-semibold leading-4 sm:text-sm sm:leading-5 ${palette.accent}`}>{p.name}</p>
                     <div className="mt-auto flex items-center justify-between gap-1 pt-1.5 sm:pt-2">
-                      <span className={`text-xs font-bold sm:text-sm ${palette.price}`}>UGX {p.priceUgx.toLocaleString()}</span>
+                      <span className={`text-xs font-bold sm:text-sm ${palette.price}`}>
+                        UGX {p.priceUgx.toLocaleString()}
+                        {p.originalPriceUgx && (
+                          <span className={`ml-1 block text-[10px] font-normal line-through sm:inline sm:text-xs ${palette.muted}`}>
+                            {p.originalPriceUgx.toLocaleString()}
+                          </span>
+                        )}
+                      </span>
                       <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:gap-1 sm:px-2 sm:py-1 sm:text-[10px] ${palette.outline}`}>
                         {identity ? <FiShoppingCart className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> : <FiLock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
                         {identity ? 'Shop' : 'Sign in'}
@@ -981,8 +995,22 @@ const SupermartkeraLanding = () => {
             </p>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {threads.map((m) => {
+          <div className={`mt-6 rounded-2xl border sm:mt-8 sm:rounded-[1.75rem] ${palette.softPanel}`}>
+            <button
+              type="button"
+              onClick={() => setBoardOpen((o) => !o)}
+              aria-expanded={boardOpen}
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left sm:px-6"
+            >
+              <span className={`text-sm font-semibold ${palette.accent}`}>
+                Community chat · {threads.length} {threads.length === 1 ? 'message' : 'messages'}
+              </span>
+              <span className={`text-xs ${palette.muted}`}>{boardOpen ? 'Collapse' : 'Tap to open'}</span>
+            </button>
+            {boardOpen && (
+            <div className="p-3 sm:p-4">
+          <div className="max-h-[70vh] overflow-y-auto grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {threads.slice(0, boardVisibleCount).map((m) => {
               const isExpanded = expandedId === m.id;
               const canReply = !!(identity || guestIdentity?.name);
               return (
@@ -1120,27 +1148,22 @@ const SupermartkeraLanding = () => {
               <p className={`text-sm ${palette.muted}`}>No public messages yet — be the first to ask something.</p>
             )}
           </div>
+            {threads.length > boardVisibleCount && (
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => setBoardVisibleCount((c) => c + 6)}
+                  className={`rounded-full border px-5 py-2 text-sm font-medium transition ${palette.muted}`}
+                >
+                  Load more
+                </button>
+              </div>
+            )}
+            </div>
+            )}
+          </div>
         </section>
 
-        {contributors.length > 0 && (
-          <section className="sk-scroll-reveal mt-8 sm:mt-10">
-            <p className={`text-xs uppercase tracking-[0.3em] sm:text-sm sm:tracking-[0.35em] ${palette.sectionLabel}`}>Community members</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {contributors.map((c) => (
-                <button
-                  key={c.authId || 'guests'}
-                  type="button"
-                  onClick={() => handleSelectContributor(c)}
-                  disabled={c.isGuestGroup}
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-default ${palette.outline}`}
-                >
-                  <FiUser className="h-3 w-3" /> {c.name}
-                  <span className={palette.muted}>· {c.count} {c.count === 1 ? 'message' : 'messages'}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
       </main>
 
       {selectedContributor && (

@@ -1274,6 +1274,8 @@ const AdminPortal = () => {
 
   // Show notifications
   const showNotification = (message, type = 'info') => {
+    // Informational/success pop-ups (e.g. "Loading portal configuration...") are suppressed; only warnings and errors show
+    if (type === 'info' || type === 'success') return;
     const notification = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       message,
