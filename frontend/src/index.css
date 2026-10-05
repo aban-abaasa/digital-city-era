@@ -166,3 +166,7 @@ textarea::placeholder {
   .classic-rise, .classic-glint { animation: none; }
   .classic-lift, .classic-arrow, .classic-tab, .classic-tab::after { transition: none; }
 }
+
+/* Hide the scrollbar on horizontally scrolling chip rows and tab strips */
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
