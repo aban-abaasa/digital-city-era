@@ -7,7 +7,7 @@ const mockData = {
     {
       _id: '1',
       username: 'admin',
-      email: 'admin@faredeal.com',
+      email: 'admin@supermartkera.com',
       name: 'Admin User',
       role: 'admin'
     }
@@ -317,7 +317,7 @@ const mockData = {
     {
       _id: '1',
       name: 'Admin User',
-      email: 'admin@faredeal.com',
+      email: 'admin@supermartkera.com',
       phone: '+1-555-0001',
       role: 'admin',
       department: 'Management',

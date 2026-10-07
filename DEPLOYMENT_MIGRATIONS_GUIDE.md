@@ -39,7 +39,7 @@ All missing SQL migrations are ready to deploy to Supabase. Follow these steps:
 ### Option 2: Command Line Script
 Run this command to check and deploy:
 ```bash
-cd C:\Users\MACROS\Desktop\fare\Faredeal-main\backend
+cd C:\Users\MACROS\Desktop\fare\SupermartKera-main\backend
 node deploy-all-migrations.js
 ```
 

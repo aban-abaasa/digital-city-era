@@ -1,13 +1,13 @@
 # SendGrid Email Integration Guide
 
 ## Overview
-Your FAREDEAL application now has email capabilities using SendGrid. This enables automated notifications for admin signups, password resets, order confirmations, and more.
+Your SUPERMARTKERA application now has email capabilities using SendGrid. This enables automated notifications for admin signups, password resets, order confirmations, and more.
 
 ## Setup Complete ✅
 
 ### Configuration
 - **API Key**: Added to `.env` file
-- **From Email**: noreply@faredeal.ug
+- **From Email**: noreply@supermartkera.ug
 - **Service**: Ready to use
 
 ### Files Created
@@ -224,7 +224,7 @@ To use a verified sender address (recommended), update `.env`:
 
 ```env
 SENDGRID_FROM_EMAIL=contact@yourcompany.com
-SENDGRID_FROM_NAME=FAREDEAL Support
+SENDGRID_FROM_NAME=SUPERMARTKERA Support
 ```
 
 **Note:** The email address must be verified in SendGrid dashboard first.
@@ -255,7 +255,7 @@ FRONTEND_URL=http://localhost:5173
 
 Update `FRONTEND_URL` for production:
 ```env
-FRONTEND_URL=https://faredeal.ug
+FRONTEND_URL=https://supermartkera.ug
 ```
 
 ---

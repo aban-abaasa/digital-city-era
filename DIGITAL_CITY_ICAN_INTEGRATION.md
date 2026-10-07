@@ -3,7 +3,7 @@
 ## System Overview
 
 ### Two Interconnected Applications
-1. **Digital City Era** (formerly Faredeal)
+1. **Digital City Era** (formerly SupermartKera)
    - 20 million supermarkets across Uganda
    - Admin, Managers, Cashiers per supermarket
    - Suppliers (any supermarket, admin approval required)

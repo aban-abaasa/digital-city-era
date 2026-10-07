@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FAREDEAL POS System - SQL Deployment Script
+SUPERMARTKERA POS System - SQL Deployment Script
 Deploys minimal tables to Supabase PostgreSQL
 """
 
@@ -48,7 +48,7 @@ def deploy_sql(sql_file_path, env_file_path):
     """Deploy SQL file to Supabase"""
     
     print("=" * 60)
-    print("🚀 FAREDEAL Database Deployment")
+    print("🚀 SUPERMARTKERA Database Deployment")
     print("=" * 60)
     print("")
     

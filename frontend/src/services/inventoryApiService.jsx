@@ -1,4 +1,4 @@
-// Comprehensive Inventory API Service for FAREDEAL using Supabase
+// Comprehensive Inventory API Service for SUPERMARTKERA using Supabase
 import { toast } from 'react-toastify';
 import { apiService } from './apiService';
 import { getCurrentUser } from './supabaseClient';

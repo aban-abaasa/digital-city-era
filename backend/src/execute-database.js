@@ -14,7 +14,7 @@ dotenv.config();
  */
 
 async function executeDatabaseSetup() {
-    console.log('🚀 FAREDEAL - Automated Database Setup\n');
+    console.log('🚀 SUPERMARTKERA - Automated Database Setup\n');
     
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -56,7 +56,7 @@ async function executeDatabaseSetup() {
                 stmt.length > 0 && 
                 !stmt.startsWith('--') && 
                 !stmt.match(/^\/\*/) &&
-                stmt !== 'COMMENT ON SCHEMA public IS \'FAREDEAL POS System - Complete database schema matching the frontend application structure with Uganda-specific features, mobile money integration, and multi-portal support.\''
+                stmt !== 'COMMENT ON SCHEMA public IS \'SUPERMARTKERA POS System - Complete database schema matching the frontend application structure with Uganda-specific features, mobile money integration, and multi-portal support.\''
             );
         
         console.log(`📊 Found ${statements.length} SQL statements to execute\n`);

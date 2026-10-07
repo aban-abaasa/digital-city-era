@@ -1,5 +1,5 @@
 // =====================================================================
-// SUPPLIER ORDERS SERVICE - FAREDEAL UGANDA
+// SUPPLIER ORDERS SERVICE - SUPERMARTKERA UGANDA
 // =====================================================================
 // Manages supplier orders, purchase orders, and deliveries
 // Integrates with Supabase for real-time supplier management

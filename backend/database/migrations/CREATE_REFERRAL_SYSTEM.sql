@@ -1,7 +1,7 @@
 -- =========================================
 -- CUSTOMER REFERRAL SYSTEM
 -- Backs the "Refer Friends" feature in the customer portal with real,
--- persisted data instead of the hardcoded FAREDEAL2024 / 3-friends demo
+-- persisted data instead of the hardcoded SUPERMARTKERA2024 / 3-friends demo
 -- values that used to live in CustomerDashboard.jsx.
 --
 -- Run this in the Supabase SQL editor (or via a service-role migration

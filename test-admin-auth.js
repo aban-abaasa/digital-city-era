@@ -54,11 +54,11 @@ async function testAuthState() {
 // Test 3: Test login with existing credentials
 async function testLogin() {
   console.log('\nTest 3: Testing login with existing admin...');
-  console.log('  ℹ️  Using credentials: heradmin@faredeal.ug');
+  console.log('  ℹ️  Using credentials: heradmin@supermartkera.ug');
   
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: 'heradmin@faredeal.ug',
+      email: 'heradmin@supermartkera.ug',
       password: 'Administrator'
     });
     
@@ -160,7 +160,7 @@ async function runAllTests() {
   console.log('✅ Test Suite Complete!\n');
   console.log('📝 Next Steps:');
   console.log('1. Navigate to: http://localhost:5173/admin-login');
-  console.log('2. Try logging in with: heradmin@faredeal.ug / Administrator');
+  console.log('2. Try logging in with: heradmin@supermartkera.ug / Administrator');
   console.log('3. Or create a new account via Sign Up tab');
   console.log('4. Access admin portal and profile');
   console.log('5. Test logout functionality\n');
@@ -253,4 +253,4 @@ console.log('   adminAuthTests.getSession()');
 console.log('   adminAuthTests.getUser()');
 console.log('   adminAuthTests.reset()');
 console.log('\nExample:');
-console.log('   await adminAuthTests.testLogin("heradmin@faredeal.ug", "Administrator")');
+console.log('   await adminAuthTests.testLogin("heradmin@supermartkera.ug", "Administrator")');

@@ -55,7 +55,7 @@ backend/database/migrations/
 ### Location: `./` (Project Root)
 
 ```
-Faredeal-main/
+SupermartKera-main/
 │
 ├─ ✅ COMPLETE_RPC_FIXES_GUIDE.md
 │  └─ Purpose: Complete deployment guide with testing & troubleshooting
@@ -227,7 +227,7 @@ After deployment:
 ## 🔍 File Locations Reference
 
 ```
-c:\Users\MACROS\Desktop\fare\Faredeal-main\
+c:\Users\MACROS\Desktop\fare\SupermartKera-main\
 │
 ├── backend\database\migrations\
 │   ├── FIX_REGISTER_MANAGER_FUNCTION.sql

@@ -423,13 +423,13 @@ const CustomerPayment = () => {
           name: 'DIGITAL CITY ERA Supermarket',
           address: '123 Main Street, City, State 12345',
           phone: '(555) 123-4567',
-          email: 'support@faredeal.com',
-          website: 'www.faredeal.com'
+          email: 'support@supermartkera.com',
+          website: 'www.supermartkera.com'
         },
         receiptNumber: `RCP-${Date.now()}`,
         printTime: new Date(),
         refundPolicy: 'Items may be returned within 30 days with receipt',
-        thankYouMessage: 'Thank you for shopping with FAREDEAL!'
+        thankYouMessage: 'Thank you for shopping with SUPERMARTKERA!'
       };
       
       setReceiptData(receipt);
@@ -455,7 +455,7 @@ const CustomerPayment = () => {
 
       // Enhanced success feedback
       if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance('Payment successful! Thank you for shopping with FAREDEAL!');
+        const utterance = new SpeechSynthesisUtterance('Payment successful! Thank you for shopping with SUPERMARTKERA!');
         utterance.rate = 0.8;
         utterance.pitch = 1.2;
         speechSynthesis.speak(utterance);
@@ -603,7 +603,7 @@ const CustomerPayment = () => {
               </div>
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  FAREDEAL Payment
+                  SUPERMARTKERA Payment
                 </h1>
                 <div className="flex items-center space-x-4 mt-2">
                   <div className="flex items-center text-green-600">
@@ -938,7 +938,7 @@ const CustomerPayment = () => {
                   
                   <div className="flex items-center justify-center space-x-2 text-sm bg-green-50 p-4 rounded-xl">
                     <FiShield className="h-5 w-5 text-green-600" />
-                    <span className="text-green-700 font-medium">Secured by FAREDEAL Payment Gateway</span>
+                    <span className="text-green-700 font-medium">Secured by SUPERMARTKERA Payment Gateway</span>
                   </div>
 
                   {/* Security indicators */}
@@ -985,7 +985,7 @@ const CustomerPayment = () => {
                   <h2 className="text-4xl font-bold text-gray-900 mb-4">
                     🎉 Payment Successful! 🎉
                   </h2>
-                  <p className="text-gray-600 mb-8 text-lg">Thank you for shopping with FAREDEAL</p>
+                  <p className="text-gray-600 mb-8 text-lg">Thank you for shopping with SUPERMARTKERA</p>
                   
                   {paymentResult && (
                     <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 mb-8 border border-green-200">

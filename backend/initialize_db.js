@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Database initialization script for FAREDEAL platform.
+ * Database initialization script for SUPERMARTKERA platform.
  * This script reads and executes SQL files in the schemas directory in the correct order.
  * 
  * Usage:
@@ -49,7 +49,7 @@ const requestedSchemas = args.filter(arg => !arg.startsWith('--'));
 // Show help if requested
 if (showHelp) {
   console.log(`
-Database Initialization Script for FAREDEAL Platform
+Database Initialization Script for SUPERMARTKERA Platform
 
 Usage:
   node initialize_db.js [options] [schemas...]

@@ -62,7 +62,7 @@ const initialState = {
   settings: {
     currency: 'UGX',
     taxRate: 0.18,
-    receiptFooter: 'Thank you for shopping with FareDeal!',
+    receiptFooter: 'Thank you for shopping with SupermartKera!',
     loyaltyPointRate: 0.01, // 1% of purchase amount
     lowStockThreshold: 10
   }

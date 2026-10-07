@@ -9,7 +9,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-console.log('📧 Setting up Email Service for FAREDEAL...\n');
+console.log('📧 Setting up Email Service for SUPERMARTKERA...\n');
 
 // Check if .env exists
 const envPath = '.env';

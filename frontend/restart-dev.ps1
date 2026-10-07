@@ -3,7 +3,7 @@ Write-Host "🔧 Fixing Vite Cache Issue..." -ForegroundColor Cyan
 Write-Host ""
 
 # Navigate to frontend directory
-Set-Location -Path "c:\Users\Aban\Downloads\Faredeal-main\Faredeal-main\frontend"
+Set-Location -Path "c:\Users\Aban\Downloads\SupermartKera-main\SupermartKera-main\frontend"
 
 Write-Host "📁 Current directory: $PWD" -ForegroundColor Yellow
 Write-Host ""

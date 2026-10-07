@@ -200,7 +200,7 @@ await supabase.rpc('update_manager_profile_on_submission', {
   "message": "Profile submitted successfully",
   "user_id": "550e8400-e29b-41d4-a716-446655440000",
   "assigned_admin_id": "650e8400-e29b-41d4-a716-446655440000",
-  "assigned_admin_email": "admin@faredeal.ug",
+  "assigned_admin_email": "admin@supermartkera.ug",
   "admin_available": true,
   "profile_completed": true,
   "is_active": false,

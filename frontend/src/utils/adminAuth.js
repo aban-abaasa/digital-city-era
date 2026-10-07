@@ -7,7 +7,7 @@ import { supabase } from '../services/supabase';
 
 // Admin credentials
 const ADMIN_CREDENTIALS = {
-  email: 'heradmin@faredeal.ug',
+  email: 'heradmin@supermartkera.ug',
   password: 'Administrator',
   userId: '399d9128-0b41-4a65-9124-24d8f0c7b4bb'
 };

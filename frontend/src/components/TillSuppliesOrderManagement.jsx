@@ -324,7 +324,7 @@ const TillSuppliesOrderManagement = () => {
           <div className="text-5xl">🇺🇬</div>
           <div className="flex-1">
             <h3 className="text-2xl font-bold mb-2">🇺🇬 Supplier Order Verification & Management</h3>
-            <h4 className="text-lg font-semibold mb-3 text-orange-100">FAREDEAL Uganda - Complete Supplier & Purchase Order Management System</h4>
+            <h4 className="text-lg font-semibold mb-3 text-orange-100">SUPERMARTKERA Uganda - Complete Supplier & Purchase Order Management System</h4>
             <p className="text-orange-100 mb-4">
               Comprehensive supplier partnership management with verified partners and integrated till supplies ordering.
             </p>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * FAREDEAL Database Deployment Script
+ * SUPERMARTKERA Database Deployment Script
  * Deploys SQL to Supabase using REST API
  */
 
@@ -41,7 +41,7 @@ async function getPostgresUrl(supabaseUrl, serviceKey) {
 async function deploy() {
   try {
     console.log('═══════════════════════════════════════════════════════');
-    console.log('🚀 FAREDEAL Database Deployment');
+    console.log('🚀 SUPERMARTKERA Database Deployment');
     console.log('═══════════════════════════════════════════════════════\n');
     
     // Read configuration
@@ -102,7 +102,7 @@ async function deploy() {
     console.log('   → https://app.supabase.com\n');
     
     console.log('2️⃣  Select Your Project:');
-    console.log('   → Select FAREDEAL project\n');
+    console.log('   → Select SUPERMARTKERA project\n');
     
     console.log('3️⃣  Open SQL Editor:');
     console.log('   → Click "SQL Editor" in left sidebar\n');

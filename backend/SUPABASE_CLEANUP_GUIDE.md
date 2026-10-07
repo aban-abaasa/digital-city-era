@@ -5,7 +5,7 @@
 ### Option 1: Direct Terminal Cleanup (Easiest)
 
 ```bash
-cd c:\Users\MACROS\Desktop\fare\Faredeal-main\backend
+cd c:\Users\MACROS\Desktop\fare\SupermartKera-main\backend
 node SUPABASE_CLEANUP.js
 ```
 
@@ -47,7 +47,7 @@ SUPABASE_ANON_KEY=your-anon-key-here
 
 **Where to find these:**
 1. Go to: https://app.supabase.com
-2. Select your **Faredeal** project
+2. Select your **SupermartKera** project
 3. Go to: **Settings** → **API**
 4. Copy:
    - `Project URL` → SUPABASE_URL

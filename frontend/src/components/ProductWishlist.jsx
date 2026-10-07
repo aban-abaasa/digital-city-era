@@ -95,12 +95,12 @@ const ProductWishlist = ({ isOpen, onClose }) => {
   const handleShare = (item) => {
     if (navigator.share) {
       navigator.share({
-        title: `Check out ${item.name} on FareDeal`,
+        title: `Check out ${item.name} on SupermartKera`,
         text: `Amazing deal: ${item.name} for $${item.price}`,
         url: window.location.href
       });
     } else {
-      navigator.clipboard.writeText(`${item.name} - $${item.price} on FareDeal`);
+      navigator.clipboard.writeText(`${item.name} - $${item.price} on SupermartKera`);
       toast.success('Product link copied to clipboard!');
     }
   };

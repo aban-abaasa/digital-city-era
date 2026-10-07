@@ -25,7 +25,7 @@ const generateReportContent = (reportData) => {
   };
 
   // SMS Content
-  let smsContent = `🇺🇬 FAREDEAL ${reportType.toUpperCase()} REPORT\n`;
+  let smsContent = `🇺🇬 SUPERMARTKERA ${reportType.toUpperCase()} REPORT\n`;
   smsContent += `Generated: ${formattedDate}\n`;
   smsContent += `Period: ${dateRange}\n\n`;
   smsContent += `📊 SUMMARY:\n`;
@@ -48,7 +48,7 @@ const generateReportContent = (reportData) => {
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 20px auto; background: linear-gradient(to bottom right, #f0f9ff, #fff); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
       <div style="background: linear-gradient(to right, #6366f1, #8b5cf6, #ec4899); padding: 30px; color: white; text-align: center; border-bottom: 5px solid #fcd34d;">
         <h1 style="margin: 0; font-size: 2.5em; font-weight: bold; display: flex; align-items: center; justify-content: center;">
-          <span style="margin-right: 10px;">🇺🇬</span> FAREDEAL ${reportType.toUpperCase()} REPORT
+          <span style="margin-right: 10px;">🇺🇬</span> SUPERMARTKERA ${reportType.toUpperCase()} REPORT
         </h1>
         <p style="margin: 5px 0 0; font-size: 1.1em; opacity: 0.9;">${title}</p>
       </div>
@@ -136,8 +136,8 @@ const generateReportContent = (reportData) => {
         </div>
 
         <p style="text-align: center; font-size: 0.95em; color: #6b7280; margin-top: 30px; line-height: 1.6;">
-          This report was generated automatically by FAREDEAL Analytics.<br>
-          <span style="font-weight: bold;">Webale nyo!</span> For questions, contact: reports@faredeal.ug<br>
+          This report was generated automatically by SUPERMARTKERA Analytics.<br>
+          <span style="font-weight: bold;">Webale nyo!</span> For questions, contact: reports@supermartkera.ug<br>
           <strong>Generated on:</strong> ${formattedDate}
         </p>
       </div>
@@ -267,7 +267,7 @@ const generateReportPDF = (reportData) => {
   
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
-  doc.text(`🇺🇬 FAREDEAL ${reportType.toUpperCase()} REPORT`, pageWidth / 2, 20, { align: 'center' });
+  doc.text(`🇺🇬 SUPERMARTKERA ${reportType.toUpperCase()} REPORT`, pageWidth / 2, 20, { align: 'center' });
   doc.setFontSize(12);
   doc.text(title, pageWidth / 2, 30, { align: 'center' });
   doc.setFontSize(10);
@@ -401,8 +401,8 @@ const generateReportPDF = (reportData) => {
   
   doc.setFontSize(9);
   doc.setTextColor(107, 114, 128);
-  doc.text('FAREDEAL Analytics - Building Data-Driven Decisions', pageWidth / 2, footerY, { align: 'center' });
-  doc.text('Contact: reports@faredeal.ug | +256 700 123 456', pageWidth / 2, footerY + 7, { align: 'center' });
+  doc.text('SUPERMARTKERA Analytics - Building Data-Driven Decisions', pageWidth / 2, footerY, { align: 'center' });
+  doc.text('Contact: reports@supermartkera.ug | +256 700 123 456', pageWidth / 2, footerY + 7, { align: 'center' });
 
   return doc;
 };

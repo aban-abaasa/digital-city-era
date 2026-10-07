@@ -122,7 +122,7 @@ const LoyaltyRewards = ({ isOpen, onClose }) => {
     {
       id: 5,
       title: 'Gift Card $25',
-      description: '$25 FareDeal gift card',
+      description: '$25 SupermartKera gift card',
       cost: 2500,
       available: true,
       icon: '💳',
@@ -143,7 +143,7 @@ const LoyaltyRewards = ({ isOpen, onClose }) => {
     {
       id: 1,
       title: 'Daily Login',
-      description: 'Visit FareDeal today',
+      description: 'Visit SupermartKera today',
       points: 50,
       completed: true,
       icon: '📅'

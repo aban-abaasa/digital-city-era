@@ -36,7 +36,7 @@ const ManagerHeader = ({
         <div className="flex justify-between items-center py-4 sm:py-6">
           {/* Left Section - Brand & Location */}
           <div className="flex items-center space-x-3 sm:space-x-4">
-            {/* FAREDEAL Logo with Uganda Flag */}
+            {/* SUPERMARTKERA Logo with Uganda Flag */}
             <div className="relative h-12 w-12 sm:h-16 sm:w-16">
               <div className="absolute inset-0 bg-gradient-to-br from-yellow-400 via-black to-red-600 rounded-full animate-pulse shadow-xl"></div>
               <div className="relative h-full w-full bg-white rounded-full flex items-center justify-center shadow-lg border-4 border-yellow-400">
@@ -54,7 +54,7 @@ const ManagerHeader = ({
             <div className="flex-1 min-w-0">
               <div className="flex items-center space-x-2">
                 <h1 className="text-xl sm:text-3xl font-bold text-white drop-shadow-lg">
-                  {isMobile ? 'FAREDEAL' : 'FAREDEAL Manager Portal'}
+                  {isMobile ? 'SUPERMARTKERA' : 'SUPERMARTKERA Manager Portal'}
                 </h1>
                 <span className="text-2xl animate-wave">🇺🇬</span>
               </div>

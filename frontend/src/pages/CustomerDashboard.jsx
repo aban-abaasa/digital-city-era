@@ -1265,7 +1265,7 @@ const CustomerDashboard = () => {
               </h3>
               <p className="mb-4 text-sm text-slate-500">Chat live with our support team — real people, real answers.</p>
               <button
-                onClick={() => window.dispatchEvent(new Event('faredeal:open-support-chat'))}
+                onClick={() => window.dispatchEvent(new Event('supermartkera:open-support-chat'))}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e1b4b] py-3 font-semibold text-[#f3dc9b] shadow-sm ring-1 ring-[#c4a052]/50 transition-colors hover:bg-[#28246b]"
               >
                 <FiMessageCircle className="h-4 w-4" /> Chat with Support

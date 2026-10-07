@@ -1,5 +1,5 @@
 /**
- * FAREDEAL Inventory Service - Supabase Integration
+ * SUPERMARTKERA Inventory Service - Supabase Integration
  * 
  * Centralized inventory management service that connects all portals:
  * - Manager Portal: Full inventory control and analytics

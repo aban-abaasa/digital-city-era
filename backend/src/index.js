@@ -1,5 +1,5 @@
 /**
- * FAREDEAL Backend API Server
+ * SUPERMARTKERA Backend API Server
  * Main Express application for POS system backend
  * Version: 2.0.0
  * Last Updated: October 8, 2025
@@ -173,7 +173,7 @@ app.get('/api/auth/profile', async (req, res) => {
       success: true,
       user: {
         id: 'mock-admin-id',
-        email: 'admin@faredeal.co.ug',
+        email: 'admin@supermartkera.co.ug',
         username: 'admin',
         firstName: 'System',
         lastName: 'Administrator',
@@ -597,7 +597,7 @@ app.get('/api/portal/config', async (req, res) => {
 
     // Provide defaults if no settings exist
     const defaultConfig = {
-      companyName: process.env.BUSINESS_NAME || 'FAREDEAL',
+      companyName: process.env.BUSINESS_NAME || 'SUPERMARTKERA',
       adminPortal: 'Admin Portal',
       managerPortal: 'Manager Portal',
       cashierPortal: 'Cashier Portal',
@@ -669,7 +669,7 @@ app.put('/api/portal/config', async (req, res) => {
 app.post('/api/portal/config/reset', async (req, res) => {
   try {
     const defaultConfig = {
-      companyName: process.env.BUSINESS_NAME || 'FAREDEAL',
+      companyName: process.env.BUSINESS_NAME || 'SUPERMARTKERA',
       adminPortal: 'Admin Portal',
       managerPortal: 'Manager Portal',
       cashierPortal: 'Cashier Portal',
@@ -677,7 +677,7 @@ app.post('/api/portal/config/reset', async (req, res) => {
       customerPortal: 'Customer Portal',
       supplierPortal: 'Supplier Portal',
       deliveryPortal: 'Delivery Portal',
-      systemName: 'FAREDEAL',
+      systemName: 'SUPERMARTKERA',
       tagline: 'Your Trusted Marketplace',
       currency: process.env.BUSINESS_CURRENCY || 'UGX',
       taxRate: process.env.BUSINESS_TAX_RATE || 18
@@ -3019,11 +3019,11 @@ app.get('/api/health', async (req, res) => {
  */
 app.get('/api/info', (req, res) => {
   res.json({
-    name: 'FAREDEAL Backend API',
+    name: 'SUPERMARTKERA Backend API',
     version: API_VERSION,
-    description: 'Backend API for FAREDEAL POS System',
+    description: 'Backend API for SUPERMARTKERA POS System',
     environment: process.env.NODE_ENV || 'development',
-    businessName: process.env.BUSINESS_NAME || 'FAREDEAL',
+    businessName: process.env.BUSINESS_NAME || 'SUPERMARTKERA',
     country: process.env.BUSINESS_COUNTRY || 'Uganda',
     currency: process.env.BUSINESS_CURRENCY || 'UGX',
     features: [
@@ -3091,8 +3091,8 @@ app.get('/api/info', (req, res) => {
         info: 'GET /api/info'
       }
     },
-    documentation: 'https://github.com/aronnykevin-hub/Faredeal',
-    support: 'support@faredeal.co.ug'
+    documentation: 'https://github.com/aronnykevin-hub/SupermartKera',
+    support: 'support@supermartkera.co.ug'
   });
 });
 
@@ -3125,13 +3125,13 @@ app.use((error, req, res, next) => {
 // =============================================================================
 
 app.listen(PORT, () => {
-  console.log('\x1b[36m%s\x1b[0m', '🚀 FAREDEAL Backend API Server Started');
+  console.log('\x1b[36m%s\x1b[0m', '🚀 SUPERMARTKERA Backend API Server Started');
   console.log('=' .repeat(70));
   console.log(`\x1b[32m📡 Server:\x1b[0m         http://localhost:${PORT}`);
   console.log(`\x1b[32m🌍 Environment:\x1b[0m    ${process.env.NODE_ENV || 'development'}`);
   console.log(`\x1b[32m� Version:\x1b[0m        ${API_VERSION}`);
   console.log(`\x1b[32m�🗄️  Database:\x1b[0m       ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not configured'}`);
-  console.log(`\x1b[32m🏢 Business:\x1b[0m       ${process.env.BUSINESS_NAME || 'FAREDEAL'}`);
+  console.log(`\x1b[32m🏢 Business:\x1b[0m       ${process.env.BUSINESS_NAME || 'SUPERMARTKERA'}`);
   console.log(`\x1b[32m� Currency:\x1b[0m       ${process.env.BUSINESS_CURRENCY || 'UGX'}`);
   console.log(`\x1b[32m�📋 API Base:\x1b[0m       http://localhost:${PORT}/api`);
   console.log('=' .repeat(70));

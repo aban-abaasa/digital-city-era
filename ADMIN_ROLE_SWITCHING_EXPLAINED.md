@@ -109,7 +109,7 @@ When an **admin** uses PortalSwitcher to visit the **Manager Portal**:
 
 ## Example Scenario
 
-**Admin of "FareDeal Kampala"** (supermarket_id: `123-abc`)
+**Admin of "SupermartKera Kampala"** (supermarket_id: `123-abc`)
 
 1. Logs into Admin Portal
 2. Uses PortalSwitcher → clicks "Manager Portal"
@@ -120,14 +120,14 @@ When an **admin** uses PortalSwitcher to visit the **Manager Portal**:
    SELECT p.*, i.current_stock
    FROM products p
    INNER JOIN inventory i ON i.product_id = p.id
-   WHERE p.supermarket_id = '123-abc'  -- FareDeal Kampala only!
-     AND i.supermarket_id = '123-abc'  -- FareDeal Kampala inventory only!
+   WHERE p.supermarket_id = '123-abc'  -- SupermartKera Kampala only!
+     AND i.supermarket_id = '123-abc'  -- SupermartKera Kampala inventory only!
    ```
-6. **Result:** Only sees products from FareDeal Kampala ✅
+6. **Result:** Only sees products from SupermartKera Kampala ✅
 
 **What they CANNOT see:**
-- ❌ Products from "FareDeal Entebbe" (different supermarket_id)
-- ❌ Inventory from "FareDeal Jinja" (different supermarket_id)
+- ❌ Products from "SupermartKera Entebbe" (different supermarket_id)
+- ❌ Inventory from "SupermartKera Jinja" (different supermarket_id)
 - ❌ Any other store's data
 
 ## Testing

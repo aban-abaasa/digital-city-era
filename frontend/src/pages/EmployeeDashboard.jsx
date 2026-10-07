@@ -242,7 +242,7 @@ const EmployeeDashboard = () => {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
               <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                FareDeal Employee Portal
+                SupermartKera Employee Portal
               </div>
               <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>

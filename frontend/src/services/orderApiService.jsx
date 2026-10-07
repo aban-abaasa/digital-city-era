@@ -1,4 +1,4 @@
-// Order API Service for FAREDEAL using Supabase
+// Order API Service for SUPERMARTKERA using Supabase
 import { toast } from 'react-toastify';
 import { apiService } from './apiService';
 import { getCurrentUser } from './supabaseClient';
@@ -243,7 +243,7 @@ class OrderApiService {
 
   // Generate SMS message content
   generateOrderSMS(orderData) {
-    return `FAREDEAL Order Confirmation
+    return `SUPERMARTKERA Order Confirmation
 Order #: ${orderData.orderNumber}
 Total: UGX ${orderData.total?.toLocaleString()}
 Status: ${orderData.status}
@@ -313,7 +313,7 @@ Thank you for your business!`;
 
     return `Dear ${orderData.customer?.name || 'Customer'},
 
-Thank you for your order with FAREDEAL!
+Thank you for your order with SUPERMARTKERA!
 
 Order Details:
 Order Number: ${orderData.orderNumber}
@@ -339,10 +339,10 @@ Shipping Address:
 ${JSON.stringify(orderData.shippingAddress, null, 2)}
 ` : ''}
 
-Thank you for choosing FAREDEAL!
+Thank you for choosing SUPERMARTKERA!
 
 Best regards,
-FAREDEAL Team`;
+SUPERMARTKERA Team`;
   }
 
   // Get all orders with filtering and pagination

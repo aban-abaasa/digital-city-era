@@ -1,4 +1,4 @@
-# FAREDEAL Quick Setup Guide
+# SUPERMARTKERA Quick Setup Guide
 
 ## 🚀 Fast Database Setup
 
@@ -30,7 +30,7 @@ npm run dev
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@faredeal.co.ug | admin123 |
+| Admin | admin@supermartkera.co.ug | admin123 |
 
 ## 🗄️ Database Tables Created
 

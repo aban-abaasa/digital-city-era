@@ -415,7 +415,7 @@ const Suppliers = () => {
         toast.success('🎉 Supplier updated successfully! Partnership strengthened!');
       } else {
         await axios.post('/api/suppliers', supplierData);
-        toast.success('🇺🇬 New supplier partnership created! Welcome to FareDeal family!');
+        toast.success('🇺🇬 New supplier partnership created! Welcome to SupermartKera family!');
       }
       fetchSuppliers();
       resetForm();
@@ -1610,7 +1610,7 @@ const Suppliers = () => {
             <div className="bg-gray-50 px-6 py-4 border-t">
               <div className="flex justify-between items-center">
                 <div className="text-sm text-gray-600">
-                  💡 Partnership with FareDeal Uganda
+                  💡 Partnership with SupermartKera Uganda
                 </div>
                 <div className="flex space-x-3">
                   <button

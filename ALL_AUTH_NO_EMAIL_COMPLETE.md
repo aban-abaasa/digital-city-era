@@ -55,7 +55,7 @@ All authentication pages have been updated to use **username-only** auth. Email 
 ### Signup Flow
 ```javascript
 // User enters: username, password, other info
-// System generates: faredeal.{role}+{username}{timestamp}@gmail.com
+// System generates: supermartkera.{role}+{username}{timestamp}@gmail.com
 // Email is NEVER shown to user
 // Database trigger creates user record
 // User appears in admin pending approvals

@@ -12,7 +12,7 @@ const CustomerNavigation = () => {
               <span className="text-2xl">🛍️</span>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">FAREDEAL</h1>
+              <h1 className="text-2xl font-bold text-gray-900">SUPERMARTKERA</h1>
               <p className="text-sm text-gray-500">Customer Portal</p>
             </div>
           </div>

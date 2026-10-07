@@ -38,7 +38,7 @@ INSERT INTO users (
   updated_at
 ) VALUES (
   '06b0197e-728d-429a-b109-b21bfb20e8c7',
-  'admin@faredeal.ug',
+  'admin@supermartkera.ug',
   'Administrator',
   '+256 701 000 000',
   'admin',
@@ -61,7 +61,7 @@ INSERT INTO users (
   updated_at
 ) VALUES (
   uuid_generate_v4(),
-  'supplier@faredeal.ug',
+  'supplier@supermartkera.ug',
   'Test Supplier',
   '+256 702 000 000',
   'supplier',
@@ -157,7 +157,7 @@ INSERT INTO suppliers (
   NOW(),
   NOW()
 FROM users
-WHERE email = 'supplier@faredeal.ug'
+WHERE email = 'supplier@supermartkera.ug'
 AND NOT EXISTS (SELECT 1 FROM suppliers WHERE user_id = users.id)
 LIMIT 1;
 

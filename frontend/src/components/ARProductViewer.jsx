@@ -74,7 +74,7 @@ const ARProductViewer = ({ product, isOpen, onClose }) => {
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
-        title: `Check out ${product.name} on FareDeal`,
+        title: `Check out ${product.name} on SupermartKera`,
         text: `Amazing product with AR view!`,
         url: window.location.href
       });

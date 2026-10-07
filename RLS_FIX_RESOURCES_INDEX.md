@@ -165,7 +165,7 @@ If following a full workflow fix:
 ## 📊 File Map
 
 ```
-Faredeal-main/
+SupermartKera-main/
 ├── QUICK_RLS_FIX.md ⭐ (START HERE)
 ├── RLS_POLICY_ERROR_SOLUTION.md 📋 (Overview)
 ├── RLS_POLICY_FIX_GUIDE.md 📖 (Details)

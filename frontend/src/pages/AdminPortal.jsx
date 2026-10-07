@@ -1214,9 +1214,9 @@ const AdminPortal = () => {
     customerPortal: 'Customer Portal',
     supplierPortal: 'Supplier Portal',
     deliveryPortal: 'Delivery Portal',
-    systemName: 'FAREDEAL',
-    companyName: 'FareDeal Uganda',
-    appTitle: 'FareDeal Management System',
+    systemName: 'SUPERMARTKERA',
+    companyName: 'SupermartKera Uganda',
+    appTitle: 'SupermartKera Management System',
     tagline: 'Your Trusted Marketplace',
     version: '2.0.0'
   });
@@ -1665,7 +1665,7 @@ const AdminPortal = () => {
       
       // Auto-generate missing fields for quick setup
       const quickAdminData = {
-        email: adminForm.email || `admin${Date.now()}@faredeal.com`,
+        email: adminForm.email || `admin${Date.now()}@supermartkera.com`,
         password: adminForm.password || 'FareAdmin2025!',
         full_name: adminForm.full_name || 'Quick Admin',
         phone: adminForm.phone || '+1234567890',
@@ -2188,7 +2188,7 @@ const AdminPortal = () => {
     
     // Sample portal configuration
     const samplePortalConfig = {
-      companyName: 'FareDeal Electronics',
+      companyName: 'SupermartKera Electronics',
       adminPortal: 'Admin Command Center',
       managerPortal: 'Management Hub',
       cashierPortal: 'Point of Sale',
@@ -2217,7 +2217,7 @@ const AdminPortal = () => {
       localStorage.setItem('portal_configuration', JSON.stringify(samplePortalConfig));
       localStorage.setItem('portal_config_history', JSON.stringify([
         { action: 'update_theme', timestamp: new Date(Date.now() - 86400000).toISOString(), changes: { primaryColor: '#4F46E5' } },
-        { action: 'update_branding', timestamp: new Date(Date.now() - 172800000).toISOString(), changes: { companyName: 'FareDeal Electronics' } }
+        { action: 'update_branding', timestamp: new Date(Date.now() - 172800000).toISOString(), changes: { companyName: 'SupermartKera Electronics' } }
       ]));
     }
     
@@ -2663,7 +2663,7 @@ const AdminPortal = () => {
                 label: 'Email',
                 type: 'email',
                 value: adminForm.email,
-                placeholder: 'admin@faredeal.com',
+                placeholder: 'admin@supermartkera.com',
                 icon: '📧',
                 onChange: (e) => setAdminForm({...adminForm, email: e.target.value})
               },
@@ -3854,7 +3854,7 @@ const AdminPortal = () => {
               <div className="flex">
                 <input
                   type="text"
-                  value={systemData.settings?.systemName || 'FAREDEAL'}
+                  value={systemData.settings?.systemName || 'SUPERMARTKERA'}
                   readOnly
                   className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
                 />
@@ -4046,7 +4046,7 @@ const AdminPortal = () => {
               <div className="flex">
                 <input
                   type="text"
-                  value={systemData.settings?.webhookUrl || 'https://api.faredeal.ug/webhooks'}
+                  value={systemData.settings?.webhookUrl || 'https://api.supermartkera.ug/webhooks'}
                   readOnly
                   className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
                 />
@@ -5660,9 +5660,9 @@ const AdminPortal = () => {
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
-                { key: 'systemName', label: 'System Name', placeholder: 'FAREDEAL', icon: '🚀' },
-                { key: 'companyName', label: 'Company Name', placeholder: 'FareDeal Uganda', icon: '🏢' },
-                { key: 'appTitle', label: 'App Title', placeholder: 'FareDeal Management System', icon: '📱' }
+                { key: 'systemName', label: 'System Name', placeholder: 'SUPERMARTKERA', icon: '🚀' },
+                { key: 'companyName', label: 'Company Name', placeholder: 'SupermartKera Uganda', icon: '🏢' },
+                { key: 'appTitle', label: 'App Title', placeholder: 'SupermartKera Management System', icon: '📱' }
               ].map((field, index) => (
                 <div key={field.key} className="group animate-fadeInUp" style={{ animationDelay: `${index * 100}ms` }}>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">

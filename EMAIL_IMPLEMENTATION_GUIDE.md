@@ -422,12 +422,12 @@ console.log('Result:', result);
 ```env
 # SendGrid Configuration
 SENDGRID_API_KEY=your_sendgrid_api_key_here
-SENDGRID_FROM_EMAIL=noreply@faredeal.ug        # Must be verified
-SENDGRID_FROM_NAME=FAREDEAL Uganda
+SENDGRID_FROM_EMAIL=noreply@supermartkera.ug        # Must be verified
+SENDGRID_FROM_NAME=SUPERMARTKERA Uganda
 
 # Frontend URLs for email links
 FRONTEND_URL=http://localhost:5173              # Dev
-# FRONTEND_URL=https://faredeal.ug              # Production
+# FRONTEND_URL=https://supermartkera.ug              # Production
 
 # Optional: Email settings
 EMAIL_RETRY_ATTEMPTS=3                          # Retry failed sends

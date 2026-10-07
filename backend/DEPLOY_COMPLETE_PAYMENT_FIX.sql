@@ -1,5 +1,5 @@
 -- =====================================================================
--- 🇺🇬 FAREDEAL UGANDA - COMPLETE PAYMENT SYSTEM FIX
+-- 🇺🇬 SUPERMARTKERA UGANDA - COMPLETE PAYMENT SYSTEM FIX
 -- =====================================================================
 -- Execute these SQL scripts in order to fix all payment coordination issues
 

@@ -1,4 +1,4 @@
-# FAREDEAL Backend Server - Update Summary
+# SUPERMARTKERA Backend Server - Update Summary
 **Date:** October 8, 2025
 **Version:** 2.0.0
 **Status:** ✅ UPDATED & RUNNING
@@ -63,7 +63,7 @@ Created `start-server.js` with comprehensive checks:
 - **Environment:** development
 - **Version:** 2.0.0
 - **Database:** ✅ Connected to Supabase
-- **Business:** FAREDEAL
+- **Business:** SUPERMARTKERA
 - **Currency:** UGX
 - **Tax Rate:** 18%
 - **Process ID:** 3764
@@ -161,7 +161,7 @@ Invoke-RestMethod -Uri "http://localhost:3001/api/products" -Method GET
 #### Login
 ```powershell
 $body = @{
-    email = "admin@faredeal.co.ug"
+    email = "admin@supermartkera.co.ug"
     password = "admin123"
 } | ConvertTo-Json
 
@@ -190,11 +190,11 @@ PORT=3001
 NODE_ENV=development
 
 # JWT Configuration
-JWT_SECRET=faredeal_super_secret_key_2024
+JWT_SECRET=supermartkera_super_secret_key_2024
 JWT_EXPIRES_IN=7d
 
 # Business Configuration
-BUSINESS_NAME=FAREDEAL
+BUSINESS_NAME=SUPERMARTKERA
 BUSINESS_CURRENCY=UGX
 BUSINESS_TAX_RATE=18
 BUSINESS_COUNTRY=Uganda
@@ -260,5 +260,5 @@ For issues or questions:
 
 ---
 
-**FAREDEAL Backend Server v2.0.0** - Ready for Development & Testing
+**SUPERMARTKERA Backend Server v2.0.0** - Ready for Development & Testing
 Last Updated: October 8, 2025

@@ -126,7 +126,7 @@ const CustomerLanding = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  FAREDEAL
+                  SUPERMARTKERA
                 </h1>
                 <p className="text-sm text-gray-500">Your premium shopping destination</p>
               </div>
@@ -173,7 +173,7 @@ const CustomerLanding = () => {
             <h1 className="text-6xl md:text-7xl font-bold text-gray-900 mb-6 leading-tight">
               Welcome to{' '}
               <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent animate-gradientShift">
-                FAREDEAL
+                SUPERMARTKERA
               </span>
             </h1>
             
@@ -354,7 +354,7 @@ const CustomerLanding = () => {
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 mb-16">
           <div className="text-center mb-8">
             <h2 className="text-4xl font-bold text-gray-900 mb-4">What Our Customers Say</h2>
-            <p className="text-gray-600 text-lg">Join thousands of satisfied customers who trust FAREDEAL</p>
+            <p className="text-gray-600 text-lg">Join thousands of satisfied customers who trust SUPERMARTKERA</p>
           </div>
           
           <div className="relative">
@@ -407,7 +407,7 @@ const CustomerLanding = () => {
               🎯 Exclusive Member Features
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Unlock premium experiences designed exclusively for FareDeal customers
+              Unlock premium experiences designed exclusively for SupermartKera customers
             </p>
           </div>
 
@@ -542,7 +542,7 @@ const CustomerLanding = () => {
           <div className="relative z-10">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">Ready to Get Started?</h2>
             <p className="text-blue-100 mb-8 text-xl max-w-3xl mx-auto leading-relaxed">
-              Choose your preferred way to shop with FAREDEAL and enjoy premium products with excellent service.
+              Choose your preferred way to shop with SUPERMARTKERA and enjoy premium products with excellent service.
             </p>
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               <Link

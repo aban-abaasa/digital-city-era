@@ -212,9 +212,9 @@ const PaymentMethods = ({ isOpen, onClose, orderTotal, customerInfo, loyaltyPoin
             pin: mobilePin,
             amount: finalTotal,
             fee: transactionFee,
-            merchantCode: 'FAREDEAL001',
+            merchantCode: 'SUPERMARTKERA001',
             reference: `FD${Date.now()}`,
-            narration: 'FAREDEAL Supermarket Purchase'
+            narration: 'SUPERMARTKERA Supermarket Purchase'
           }, orderInfo);
           break;
           
@@ -227,9 +227,9 @@ const PaymentMethods = ({ isOpen, onClose, orderTotal, customerInfo, loyaltyPoin
             pin: mobilePin,
             amount: finalTotal,
             fee: transactionFee,
-            merchantCode: 'FAREDEAL002',
+            merchantCode: 'SUPERMARTKERA002',
             reference: `FD${Date.now()}`,
-            narration: 'FAREDEAL Supermarket Purchase'
+            narration: 'SUPERMARTKERA Supermarket Purchase'
           }, orderInfo);
           break;
           
@@ -242,9 +242,9 @@ const PaymentMethods = ({ isOpen, onClose, orderTotal, customerInfo, loyaltyPoin
             pin: mobilePin,
             amount: finalTotal,
             fee: transactionFee,
-            merchantCode: 'FAREDEAL003',
+            merchantCode: 'SUPERMARTKERA003',
             reference: `FD${Date.now()}`,
-            narration: 'FAREDEAL Supermarket Purchase'
+            narration: 'SUPERMARTKERA Supermarket Purchase'
           }, orderInfo);
           break;
           
@@ -733,7 +733,7 @@ const PaymentMethods = ({ isOpen, onClose, orderTotal, customerInfo, loyaltyPoin
                     </div>
                     <div className="flex justify-between">
                       <span className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>To:</span>
-                      <span>FAREDEAL SUPERMARKET</span>
+                      <span>SUPERMARTKERA SUPERMARKET</span>
                     </div>
                     <div className="flex justify-between">
                       <span className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Time:</span>
@@ -813,7 +813,7 @@ const PaymentMethods = ({ isOpen, onClose, orderTotal, customerInfo, loyaltyPoin
                 <span>PCI DSS Compliant • 256-bit SSL Encryption</span>
               </div>
               <div className={`flex items-center space-x-4 text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                <span>Powered by FAREDEAL Payments</span>
+                <span>Powered by SUPERMARTKERA Payments</span>
               </div>
             </div>
           </div>

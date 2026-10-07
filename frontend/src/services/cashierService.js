@@ -1,12 +1,12 @@
 /**
- * FAREDEAL Cashier Portal Service
+ * SUPERMARTKERA Cashier Portal Service
  * Frontend service layer for cashier operations
  * Version: 1.0.0
  * Created: October 8, 2025
  */
 
 const API_BASE_URL = import.meta.env.PROD
-    ? (import.meta.env.VITE_API_URL || 'https://api.faredeal.vercel.app/api')
+    ? (import.meta.env.VITE_API_URL || '/api')
     : (import.meta.env.VITE_API_URL || 'http://localhost:3001/api');
 
 class CashierService {
