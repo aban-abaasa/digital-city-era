@@ -2,6 +2,9 @@
 import { toast } from 'react-toastify';
 import { apiService } from './apiService';
 import { getCurrentUser } from './supabaseClient';
+import { supabase } from './supabase';
+import inventorySupabaseService from './inventorySupabaseService';
+import { barcodeVariants } from '../utils/barcodeHelper';
 
 class InventoryApiService {
   constructor() {
@@ -698,8 +701,11 @@ class InventoryApiService {
   // Simulate barcode scan (find product by barcode)
   async scanBarcode(barcode) {
     try {
-      const { data: products } = await apiService.getAll(this.tableName, {
-        select: `
+      // Scoped to the admin's own store, and tolerant of UPC-A / EAN-13 forms of the same code
+      const supermarketId = await inventorySupabaseService.getCurrentSupermarketId();
+      let query = supabase
+        .from(this.tableName)
+        .select(`
           id,
           name,
           sku,
@@ -709,12 +715,14 @@ class InventoryApiService {
           inventory (
             current_stock
           )
-        `,
-        filter: { 
-          barcode: barcode,
-          is_active: true 
-        }
-      });
+        `)
+        .in('barcode', barcodeVariants(barcode))
+        .eq('is_active', true)
+        .limit(1);
+      if (supermarketId) query = query.eq('supermarket_id', supermarketId);
+
+      const { data: products, error } = await query;
+      if (error) throw error;
 
       if (products && products.length > 0) {
         const product = products[0];
