@@ -12,6 +12,7 @@ import React, { useMemo, useState } from 'react';
 import { FiClock, FiTag, FiAlertTriangle, FiChevronDown, FiChevronRight, FiLock, FiXCircle } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import { nextBatch, expiredUnits } from '../utils/productBatches';
 import {
   getExpiryStatus,
   formatExpiryDate,
@@ -33,7 +34,7 @@ const pillClass = (key) => ({
 
 const stockOf = (product) => Number(product.current_stock) || 0;
 
-const ExpiryClearancePanel = ({ products, isAdmin, ready, formatCurrency, onChanged }) => {
+const ExpiryClearancePanel = ({ products, isAdmin, ready, formatCurrency, onChanged, batchesByProduct = {}, onOpenBatches }) => {
   const [windowDays, setWindowDays] = useState(30);
   const [drafts, setDrafts] = useState({}); // productId -> { mode: 'percent' | 'price', value: string }
   const [busyId, setBusyId] = useState(null);
@@ -222,6 +223,25 @@ const ExpiryClearancePanel = ({ products, isAdmin, ready, formatCurrency, onChan
                             <p className="text-xs text-gray-600 truncate">
                               SKU: {product.sku || 'N/A'} · Stock {stockOf(product)}
                             </p>
+                            {(() => {
+                              const productBatches = batchesByProduct[product.id] || [];
+                              if (productBatches.length === 0 && !onOpenBatches) return null;
+                              const next = nextBatch(productBatches);
+                              const stale = expiredUnits(productBatches);
+                              return (
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  {next
+                                    ? <>Batch <b>{next.batch_number}</b> · {Number(next.remaining)} unit{Number(next.remaining) === 1 ? '' : 's'} expire {formatExpiryDate(next.expiry_date)}</>
+                                    : productBatches.length ? 'No sellable batch' : 'No batches tracked'}
+                                  {stale > 0 && <span className="text-[#7a1f2b] font-semibold"> · {stale} expired unit{stale === 1 ? '' : 's'} to pull</span>}
+                                  {onOpenBatches && (
+                                    <button type="button" onClick={() => onOpenBatches(product)} className="ml-1.5 underline font-semibold text-gray-700 hover:text-gray-900">
+                                      Batches
+                                    </button>
+                                  )}
+                                </p>
+                              );
+                            })()}
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               <span className={`${pillClass(status.key)} px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap`}>
                                 {status.label}

@@ -27,6 +27,8 @@ import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
 import BookingsPanel from './booking/BookingsPanel';
 import ExpiryClearancePanel from './ExpiryClearancePanel';
+import ProductBatchManager from './ProductBatchManager';
+import { groupBatchesByProduct } from '../utils/productBatches';
 import { getExpiryStatus, formatExpiryDate, isOnClearance, clearanceDiscountPercent } from '../utils/productExpiry';
 import {
   SUPPORTED_IMPORT_EXTENSIONS,
@@ -238,6 +240,10 @@ const OrderInventoryPOSControl = () => {
   const [filterExpiry, setFilterExpiry] = useState('all'); // all | expired | week | month | offer
   // False until the expiry/clearance columns are known to exist (see ADD_PRODUCT_EXPIRY_CLEARANCE_PRICING.sql)
   const [expiryReady, setExpiryReady] = useState(true);
+  // Per-product batches with their own expiry dates (ADD_PRODUCT_BATCH_EXPIRY_TRACKING.sql).
+  // Empty until that migration is run; the page works the same without it.
+  const [batchRows, setBatchRows] = useState([]);
+  const [batchProductId, setBatchProductId] = useState(null);
   const [categories, setCategories] = useState([]);
   const [businessType, setBusinessType] = useState('supermarket');
   const offersWholesale = ['wholesale', 'factory', 'hardware'].includes(businessType);
@@ -600,6 +606,12 @@ const OrderInventoryPOSControl = () => {
     }
   };
 
+  const loadBatches = async (storeId = supermarketId) => {
+    if (!storeId) return;
+    const { data, error } = await supabase.rpc('product_batch_overview', { p_supermarket_id: storeId });
+    setBatchRows(error ? [] : (data || []));
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -622,6 +634,13 @@ const OrderInventoryPOSControl = () => {
           setOffersProducts(offersRow.offers_products !== false);
           setOffersServices(offersRow.offers_services === true);
         }
+      }
+
+      // A batch can pass its date overnight; let the database move each
+      // product onto its next batch before the list is read. Best effort — the
+      // database only acts for this store's admin and ignores anyone else.
+      if (supermarketId) {
+        await supabase.rpc('sync_store_batch_expiry', { p_supermarket_id: supermarketId });
       }
 
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
@@ -701,6 +720,8 @@ const OrderInventoryPOSControl = () => {
           clearance_original_price: p.clearance_original_price ?? null,
           current_stock: invMap[p.id]?.current_stock || 0
         }));
+
+      await loadBatches(supermarketId);
 
       setInventoryMap(invMap);
       setProducts(productsWithInventory);
@@ -943,6 +964,23 @@ const OrderInventoryPOSControl = () => {
     }
     const patch = { selling_price: data.selling_price, expiry_date: data.expiry_date || null, clearance_original_price: data.clearance_original_price ?? null };
     setProducts(previous => previous.map(p => (p.id === productId ? { ...p, ...patch } : p)));
+    loadBatches();
+  };
+
+  // A batch change can move the product's expiry (and end its offer), and
+  // adding stock changes the shelf count, so re-read both.
+  const refreshAfterBatchChange = async (productId) => {
+    await refreshProductPricing(productId);
+    const { data } = await supabase
+      .from('inventory')
+      .select('current_stock')
+      .eq('product_id', productId)
+      .eq('supermarket_id', supermarketId)
+      .maybeSingle();
+    if (data) {
+      setProducts(previous => previous.map(p => (p.id === productId ? { ...p, current_stock: data.current_stock } : p)));
+      setInventoryMap(previous => ({ ...previous, [productId]: { ...(previous[productId] || { product_id: productId }), quantity: data.current_stock, current_stock: data.current_stock } }));
+    }
   };
 
   const cancelEdit = () => {
@@ -1611,7 +1649,22 @@ const OrderInventoryPOSControl = () => {
         ready={expiryReady}
         formatCurrency={formatCurrency}
         onChanged={refreshProductPricing}
+        batchesByProduct={groupBatchesByProduct(batchRows)}
+        onOpenBatches={(product) => setBatchProductId(product.id)}
       />
+
+      {batchProductId && (() => {
+        const batchProduct = products.find(p => p.id === batchProductId);
+        return batchProduct ? (
+          <ProductBatchManager
+            product={batchProduct}
+            batches={groupBatchesByProduct(batchRows)[batchProductId] || []}
+            isAdmin={isAdmin}
+            onClose={() => setBatchProductId(null)}
+            onChanged={refreshAfterBatchChange}
+          />
+        ) : null;
+      })()}
 
       {/* Products List — a div-based (not <table>) layout so rows genuinely
           restack into cards on small phones instead of squeezing table
@@ -1887,6 +1940,11 @@ const OrderInventoryPOSControl = () => {
                     <FiEdit className="h-3 w-3 inline mr-1" />
                     Edit
                   </button>
+                  {expiryReady && (
+                    <button onClick={() => setBatchProductId(product.id)} title="Batches & expiry dates" className="flex-none px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold oi-btn oi-btn-ghost border">
+                      📦
+                    </button>
+                  )}
                   <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
                     {product.is_active ? '✅' : '❌'}
                   </button>
