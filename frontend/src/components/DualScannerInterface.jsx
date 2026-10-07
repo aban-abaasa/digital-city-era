@@ -5,6 +5,7 @@ import jsQR from 'jsqr';
 import Quagga from '@ericblade/quagga2';
 import { supabase } from '../services/supabase';
 import geminiAIService from '../services/geminiAIService';
+import { findProductByBarcode } from '../utils/barcodeHelper';
 
 const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0 }) => {
   const [scanMode, setScanMode] = useState('camera'); // 'smart', 'camera', 'gun' - CAMERA ACTIVE BY DEFAULT
@@ -812,27 +813,10 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     event.preventDefault();
   };
 
-  const findProductInInventory = (barcode) => {
-    // First try Supabase products (real database)
-    if (supabaseProducts && supabaseProducts.length > 0) {
-      const found = supabaseProducts.find(product => 
-        product.barcode?.toString().trim() === barcode.trim() ||
-        product.id?.toString().trim() === barcode.trim() ||
-        product.sku?.toString().trim() === barcode.trim()
-      );
-      if (found) return found;
-    }
-    
-    // Fallback to props inventory products
-    if (inventoryProducts && inventoryProducts.length > 0) {
-      return inventoryProducts.find(product => 
-        product.barcode?.toString().trim() === barcode.trim() ||
-        product.id?.toString().trim() === barcode.trim()
-      );
-    }
-    
-    return null;
-  };
+  // The caller's catalog (scoped to the current store) wins; the unscoped Supabase
+  // list is only a fallback for screens that don't pass one.
+  const findProductInInventory = (barcode) =>
+    findProductByBarcode(inventoryProducts, barcode) || findProductByBarcode(supabaseProducts, barcode);
 
   const addToTransaction = (barcode) => {
     const product = findProductInInventory(barcode);
@@ -860,9 +844,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             id: product.id,
             barcode: product.barcode,
             name: product.name || `Product ${product.id}`,
-            price: product.price || 0,
+            price: product.selling_price || product.price || 0,
             quantity: 1,
-            subtotal: product.price || 0
+            subtotal: product.selling_price || product.price || 0
           }
         ];
       }

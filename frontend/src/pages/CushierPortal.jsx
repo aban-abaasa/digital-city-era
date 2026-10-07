@@ -43,6 +43,7 @@ import PortalHeader from '../components/PortalHeader';
 import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
+import { findProductByBarcode } from '../utils/barcodeHelper';
 import '../styles/supermartkera-portals.css';
 
 const CashierPortal = () => {
@@ -127,10 +128,6 @@ const CashierPortal = () => {
   const [productsLoading, setProductsLoading] = useState(false); // Start as false, set to true only when actively loading
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Sample products as fallback (if Supabase fails)
-  // Sample products removed - using real products from Supabase
-  const [sampleProducts] = useState([]);
-
   // Payment methods - IcanEra Wallet primary with full transaction control
   const paymentMethods = [
     {
@@ -1595,33 +1592,18 @@ const CashierPortal = () => {
     await loadProductsFromSupabase();
   };
 
+  // Adds the scanned product to the cart. Returns true when the barcode matched a
+  // product in this store's catalog, so the caller can keep the scanner open on a miss.
   const handleBarcodeScanned = (barcode) => {
-    // Find product by barcode
-    const product = sampleProducts.find(p => 
-      p.barcode === barcode || 
-      p.id === barcode ||
-      p.name.toLowerCase().includes(barcode.toLowerCase())
-    );
-    
-    if (product) {
-      addItemToTransaction(product);
-      setShowBarcodeScanner(false);
-      // Add success notification or toast here
-      console.log(`✅ Product ${product.name} scanned and added!`);
-    } else {
-      // Create demo product for unrecognized barcode
-      const demoProduct = {
-        id: `SCAN_${Date.now()}`,
-        name: `Scanned Item ${barcode.slice(-4)}`,
-        price: Math.floor(Math.random() * 10000) + 2000, // Random price 2k-12k UGX
-        barcode: barcode,
-        category: 'Scanned Items',
-        stock: 50
-      };
-      addItemToTransaction(demoProduct);
-      setShowBarcodeScanner(false);
-      console.log(`📦 New item ${demoProduct.name} created and added!`);
+    const product = findProductByBarcode(products, barcode);
+
+    if (!product) {
+      toast.error(`❌ Barcode ${barcode} is not in this store's products`);
+      return false;
     }
+
+    addItemToTransaction(product);
+    return true;
   };
 
   const removeItemFromTransaction = (cartLineId) => {
@@ -3507,9 +3489,9 @@ const CashierPortal = () => {
       {/* Dual Scanner Interface - Camera + Hand Gun Scanner */}
       {showDualScanner && (
         <DualScannerInterface
+          inventoryProducts={products}
           onBarcodeScanned={(barcode) => {
-            handleBarcodeScanned(barcode);
-            setShowDualScanner(false);
+            if (handleBarcodeScanned(barcode)) setShowDualScanner(false);
           }}
           onClose={() => setShowDualScanner(false)}
         />
@@ -3518,9 +3500,9 @@ const CashierPortal = () => {
       {/* Barcode Scanner - Using Dual Scanner Mode */}
       {showBarcodeScanner && (
         <DualScannerInterface
+          inventoryProducts={products}
           onBarcodeScanned={(barcode) => {
-            handleBarcodeScanned(barcode);
-            setShowBarcodeScanner(false);
+            if (handleBarcodeScanned(barcode)) setShowBarcodeScanner(false);
           }}
           onClose={() => setShowBarcodeScanner(false)}
         />
