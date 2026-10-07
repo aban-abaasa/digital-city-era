@@ -25,6 +25,7 @@ import ClassicNotificationList from '../components/ClassicNotificationList';
 import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
+import SupplierPaymentsPanel from '../components/SupplierPaymentsPanel';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
 import { SupplierCatalogTab } from '../components/SupplierMarketplace';
 import SupplierNetwork from '../components/SupplierNetwork';
@@ -69,7 +70,6 @@ const SupplierPortal = () => {
   const [vehicleChoiceOrderId, setVehicleChoiceOrderId] = useState(null);
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
-  const [expandedPaymentId, setExpandedPaymentId] = useState(null);
   const [supplierProfile, setSupplierProfile] = useState({
     name: '',
     contactPerson: '',
@@ -787,7 +787,7 @@ const SupplierPortal = () => {
 
       const { data: orders, error: ordersError } = await supabase
         .from('purchase_orders')
-        .select('id, po_number, status, total_amount, items, ordered_at, expected_delivery_date, notes')
+        .select('id, po_number, status, total_amount, items, ordered_at, expected_delivery_date, notes, payment_status, amount_paid_ugx, balance_due_ugx')
         .in('supplier_id', matchIds)
         .order('ordered_at', { ascending: false })
         .limit(20);
@@ -825,9 +825,13 @@ const SupplierPortal = () => {
               : 'cancelled',
         rating: 5,
         products: order.items?.map(item => item.product_name || item.name || 'Item').join(', ') || 'N/A',
-        payment_status: 'unpaid',
-        amount_paid: 0,
-        balance_due: parseFloat(order.total_amount) || 0
+        payment_status: order.payment_status || 'unpaid',
+        amount_paid: parseFloat(order.amount_paid_ugx) || 0,
+        amount_paid_ugx: parseFloat(order.amount_paid_ugx) || 0,
+        balance_due: order.balance_due_ugx != null
+          ? (parseFloat(order.balance_due_ugx) || 0)
+          : Math.max(0, (parseFloat(order.total_amount) || 0) - (parseFloat(order.amount_paid_ugx) || 0)),
+        total_amount: parseFloat(order.total_amount) || 0
       }));
 
       console.log('✅ Order history loaded:', formatted.length, 'orders');
@@ -1003,9 +1007,13 @@ const SupplierPortal = () => {
           priority: order.priority || 'normal',
           deliveryAddress: order.delivery_address,
           notes: order.notes,
-          payment_status: 'unpaid',
-          amount_paid: 0,
-          balance_due: parseFloat(order.total_amount) || 0,
+          // Real payment roll-up from purchase_orders (kept current by confirmPayment)
+          payment_status: order.payment_status || 'unpaid',
+          amount_paid: parseFloat(order.amount_paid_ugx) || 0,
+          amount_paid_ugx: parseFloat(order.amount_paid_ugx) || 0,
+          balance_due: order.balance_due_ugx != null
+            ? (parseFloat(order.balance_due_ugx) || 0)
+            : Math.max(0, (parseFloat(order.total_amount) || 0) - (parseFloat(order.amount_paid_ugx) || 0)),
           total_amount: parseFloat(order.total_amount) || 0,
           fullOrder: order
         };
@@ -2625,214 +2633,13 @@ const SupplierPortal = () => {
     />
   );
 
-  const renderPayments = () => {
-    // Calculate payment stats from ALL orders (pending + history)
-    const allOrders = [...pendingOrders, ...orderHistory];
-    
-    // Separate paid and unpaid orders
-    const paidOrders = allOrders.filter(o => o.payment_status === 'paid').length;
-    const partialOrders = allOrders.filter(o => o.payment_status === 'partially_paid').length;
-    const unpaidOrders = allOrders.filter(o => !o.payment_status || o.payment_status === 'unpaid').length;
-    
-    // Calculate financial totals
-    const totalPaid = allOrders.reduce((sum, order) => {
-      if (order.payment_status === 'paid') {
-        return sum + (parseFloat(order.amount) || parseFloat(order.total_amount) || 0);
-      } else if (order.payment_status === 'partially_paid') {
-        return sum + (parseFloat(order.amount_paid) || parseFloat(order.amount_paid_ugx) || 0);
-      }
-      return sum;
-    }, 0);
-    
-    const totalDue = allOrders.reduce((sum, order) => {
-      if (order.payment_status === 'unpaid' || !order.payment_status) {
-        return sum + (parseFloat(order.amount) || parseFloat(order.total_amount) || 0);
-      } else if (order.payment_status === 'partially_paid') {
-        return sum + (parseFloat(order.balance_due) || parseFloat(order.balance_due_ugx) || 0);
-      }
-      return sum;
-    }, 0);
-    
-    const totalOrders = allOrders.length;
-    const completedOrders = paidOrders;
-
-    return (
-      <div className="space-y-6 animate-fadeInUp">
-        {/* Payment Statistics Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {/* Total Received */}
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 shadow-md border-2 border-green-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-green-600 uppercase tracking-wide">Total Received</p>
-                <p className="text-3xl font-extrabold text-green-700">{formatCurrency(totalPaid)}</p>
-                <p className="text-xs text-green-600 mt-1 font-semibold">{completedOrders} completed orders</p>
-              </div>
-              <div className="text-4xl">💰</div>
-            </div>
-          </div>
-          
-          {/* Outstanding */}
-          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-6 shadow-md border-2 border-red-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-red-600 uppercase tracking-wide">Outstanding</p>
-                <p className="text-3xl font-extrabold text-red-700">{formatCurrency(totalDue)}</p>
-                <p className="text-xs text-red-600 mt-1 font-semibold">{partialOrders + unpaidOrders} pending</p>
-              </div>
-              <div className="text-4xl">⏳</div>
-            </div>
-          </div>
-          
-          {/* Partial Payments */}
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 shadow-md border-2 border-yellow-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-yellow-600 uppercase tracking-wide">Partial Payments</p>
-                <p className="text-3xl font-extrabold text-yellow-700">{partialOrders}</p>
-                <p className="text-xs text-yellow-600 mt-1 font-semibold">In progress</p>
-              </div>
-              <div className="text-4xl">⚡</div>
-            </div>
-          </div>
-          
-          {/* Payment Rate */}
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 shadow-md border-2 border-blue-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-blue-600 uppercase tracking-wide">Payment Rate</p>
-                <p className="text-3xl font-extrabold text-blue-700">
-                  {totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0}%
-                </p>
-                <p className="text-xs text-blue-600 mt-1 font-semibold">Completion rate</p>
-              </div>
-              <div className="text-4xl">📊</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Orders with Payment Details */}
-        <div className="bg-white rounded-xl p-6 shadow-lg">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <FiDollarSign className="text-green-600" />
-              Payment Details by Order
-            </h3>
-            <button
-              onClick={loadSupplierData}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-300 flex items-center space-x-2"
-            >
-              <FiRefreshCw className="h-4 w-4" />
-              <span>Refresh</span>
-            </button>
-          </div>
-
-          <div className="space-y-6">
-            {pendingOrders.length === 0 ? (
-              <div className="text-center py-12 bg-gray-50 rounded-lg">
-                <div className="text-6xl mb-4">💸</div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">No Orders Yet</h3>
-                <p className="text-gray-600">Payment information will appear here when you receive orders</p>
-              </div>
-            ) : (
-              pendingOrders
-                .filter(order => paymentFilter === 'all' || 
-                  (paymentFilter === 'paid' && order.payment_status === 'paid') ||
-                  (paymentFilter === 'partial' && order.payment_status === 'partially_paid') ||
-                  (paymentFilter === 'unpaid' && (!order.payment_status || order.payment_status === 'unpaid'))
-                )
-                .map((order) => (
-                  <div key={order.id} className="border-2 border-blue-200 rounded-xl overflow-hidden bg-gradient-to-r from-blue-50 to-white shadow-md hover:shadow-lg transition-all">
-                    {/* Order Header with Status - Mobile Optimized & Clickable */}
-                    <div 
-                      className="p-4 md:p-6 border-b-2 border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors"
-                      onClick={() => setExpandedPaymentId(expandedPaymentId === order.id ? null : order.id)}
-                    >
-                      <div className="space-y-3 md:space-y-0 md:flex md:items-start md:justify-between md:gap-4">
-                        {/* Left Section: Order ID and Info */}
-                        <div className="flex-1">
-                          <div className="flex items-start gap-2 mb-2 flex-wrap">
-                            <h4 className="font-bold text-base md:text-xl text-gray-900">{order.id}</h4>
-                            <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full border-2 ${
-                              order.status === 'confirmed' ? 'bg-green-100 text-green-800 border-green-300' :
-                              order.status === 'processing' ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                              'bg-gray-100 text-gray-800 border-gray-300'
-                            }`}>
-                              {order.status?.toUpperCase() || 'PENDING'}
-                            </span>
-                            <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full border-2 ${
-                              order.payment_status === 'paid' ? 'bg-green-100 text-green-800 border-green-300' :
-                              order.payment_status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                              'bg-red-100 text-red-800 border-red-300'
-                            }`}>
-                              {order.payment_status === 'paid' && '✅ PAID'}
-                              {order.payment_status === 'partially_paid' && '⚠️ PARTIAL'}
-                              {(!order.payment_status || order.payment_status === 'unpaid') && '❌ UNPAID'}
-                            </span>
-                          </div>
-                          <p className="text-xs md:text-sm text-gray-600">Ordered: {order.date}</p>
-                        </div>
-
-                        {/* Right Section: Amount + Expand Icon */}
-                        <div className="flex items-baseline justify-between md:items-start md:flex-col gap-3 pt-2 md:pt-0 border-t md:border-t-0">
-                          <div className="md:text-right">
-                            <p className="text-xs text-gray-500 font-semibold">Total Amount</p>
-                            <p className="font-bold text-3xl md:text-2xl text-blue-600">{formatCurrency(order.amount)}</p>
-                          </div>
-                          {/* Expand/Collapse Icon */}
-                          <div className={`transform transition-transform flex-shrink-0 ${expandedPaymentId === order.id ? 'rotate-180' : ''}`}>
-                            <FiChevronDown className="h-5 w-5 text-gray-500" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Expanded Payment Details */}
-                    {expandedPaymentId === order.id && (
-                      <div className="p-4 md:p-6 space-y-4 animate-fadeInUp bg-white">
-                        {/* Payment Tracker Component - Larger on Mobile */}
-                        {(order.status === 'confirmed' || order.payment_status) && (
-                          <div className="bg-blue-50 rounded-lg p-4 md:p-6 border-2 border-blue-200">
-                            <OrderPaymentTracker
-                              order={order}
-                              showAddPayment={false}
-                              userRole="supplier"
-                            />
-                          </div>
-                        )}
-
-                        {/* Order Items Summary - Larger Bullet Form for Mobile */}
-                        <div className="bg-gray-50 rounded-lg p-4 md:p-6 border-2 border-gray-200">
-                          <p className="text-base md:text-lg font-bold text-gray-800 mb-3">📦 Products</p>
-                          <div className="space-y-2">
-                            <p className="text-sm md:text-base text-gray-700 leading-relaxed">
-                              • {order.products}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))
-            )}
-          </div>
-
-          {pendingOrders.filter(order => 
-            paymentFilter === 'all' || 
-            (paymentFilter === 'paid' && order.payment_status === 'paid') ||
-            (paymentFilter === 'partial' && order.payment_status === 'partially_paid') ||
-            (paymentFilter === 'unpaid' && (!order.payment_status || order.payment_status === 'unpaid'))
-          ).length === 0 && pendingOrders.length > 0 && (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">🔍</div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No {paymentFilter} Orders</h3>
-              <p className="text-gray-600">Try a different filter</p>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
+  const renderPayments = () => (
+    <SupplierPaymentsPanel
+      orders={[...pendingOrders, ...orderHistory]}
+      loading={loading}
+      onRefresh={loadSupplierData}
+    />
+  );
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: FiBarChart },
