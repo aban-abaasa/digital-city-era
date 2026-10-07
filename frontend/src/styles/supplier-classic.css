@@ -186,6 +186,28 @@ textarea.spc-input { min-height: 72px; resize: vertical; }
 .spc-kv .wide { grid-column: 1 / -1; }
 .spc-sub-h { font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold-deep); }
 
+
+/* ---------- Delivery tracking ---------- */
+.spc-track { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.spc-track li { position: relative; display: flex; align-items: center; gap: 12px; min-height: 36px; padding-left: 2px; font-size: 13px; color: var(--muted); }
+.spc-track li::before { content: ""; position: absolute; left: 9px; top: -18px; bottom: 18px; width: 2px; background: var(--mute-line); }
+.spc-track li:first-child::before { display: none; }
+.spc-track li i { position: relative; z-index: 1; flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--paper); border: 2px solid var(--mute-line); }
+.spc-track li.done { color: var(--ink); }
+.spc-track li.done i { background: var(--ok-fg); border-color: var(--ok-fg); }
+.spc-track li.done::before, .spc-track li.now::before { background: var(--ok-fg); }
+.spc-track li.now { color: var(--ink); font-weight: 700; }
+.spc-track li.now i { border-color: var(--gold); background: var(--gold); box-shadow: 0 0 0 4px var(--line); }
+
+.spc-rider { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line); }
+.spc-rider img, .spc-rider-ph { flex: none; width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold); }
+.spc-rider-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--info-bg); color: var(--info-fg); font-family: var(--serif); font-weight: 700; font-size: 1.1rem; }
+.spc-legs { display: flex; flex-direction: column; gap: 6px; }
+.spc-leg { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--paper); border: 1px solid var(--line-soft); font-size: 13px; color: var(--ink); }
+.spc-leg b { color: var(--gold-deep); }
+.spc-leg span:nth-child(2) { overflow-wrap: anywhere; }
+a.spc-btn { text-decoration: none; }
+
 @media (min-width: 640px) {
   .spc { gap: 18px; }
   .spc-hero { padding: 24px 24px; }

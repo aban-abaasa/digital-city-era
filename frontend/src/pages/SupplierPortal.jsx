@@ -26,6 +26,7 @@ import PaymentService from '../services/paymentService';
 import AddProductModal from '../components/AddProductModal';
 import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmations';
 import SupplierPaymentsPanel from '../components/SupplierPaymentsPanel';
+import SupplierDeliveries from '../components/SupplierDeliveries';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
 import { SupplierCatalogTab } from '../components/SupplierMarketplace';
 import SupplierNetwork from '../components/SupplierNetwork';
@@ -2645,6 +2646,7 @@ const SupplierPortal = () => {
     { id: 'overview', label: 'Overview', icon: FiBarChart },
     { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
     { id: 'orders', label: 'Orders', icon: FiPackage },
+    { id: 'deliveries', label: 'Deliveries', icon: FiTruck },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
@@ -2737,6 +2739,13 @@ const SupplierPortal = () => {
             {activeTab === 'orders' && renderOrders()}
             {activeTab === 'products' && renderProducts()}
             {activeTab === 'payments' && renderPayments()}
+            {activeTab === 'deliveries' && (
+              <SupplierDeliveries
+                supplierProfile={supplierProfile}
+                onGoProfile={() => setActiveTab('profile')}
+                onOpenOrders={() => setActiveTab('orders')}
+              />
+            )}
             {activeTab === 'confirmations' && <SupplierPaymentConfirmations />}
             {activeTab === 'performance' && renderPerformance()}
             {activeTab === 'notifications' && renderNotifications()}
