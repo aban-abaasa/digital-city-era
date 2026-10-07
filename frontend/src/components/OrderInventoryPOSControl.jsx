@@ -20,6 +20,7 @@ import {
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import { barcodeVariants } from '../utils/barcodeHelper';
 import { compressImageFile } from '../utils/imageCompression';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
@@ -414,12 +415,22 @@ const OrderInventoryPOSControl = () => {
       console.log('⚡ Fast barcode processing:', barcode);
       const trimmedBarcode = barcode.trim();
       
-      // Check if product with this barcode already exists
-      const { data: existingProduct, error: searchError } = await supabase
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (!supermarketId) {
+        setProducts([]);
+        setFilteredProducts([]);
+        toast.error('No supermarket is assigned to this admin account.');
+        return;
+      }
+
+      // Check if this store already has a product with this barcode (any UPC-A / EAN-13 form)
+      const { data: existingRows, error: searchError } = await supabase
         .from('products')
         .select('id, name, barcode, sku, selling_price')
-        .eq('barcode', trimmedBarcode)
-        .maybeSingle();
+        .in('barcode', barcodeVariants(trimmedBarcode))
+        .eq('supermarket_id', supermarketId)
+        .limit(1);
+      const existingProduct = existingRows?.[0] || null;
 
       if (searchError && searchError.code !== 'PGRST116') {
         console.error('❌ Error searching for product:', searchError);
@@ -441,20 +452,12 @@ const OrderInventoryPOSControl = () => {
       
       const generatedName = `Product - ${trimmedBarcode}`;
       const generatedSKU = `SKU-${trimmedBarcode.substring(0, 8)}`;
-      const supermarketId = await inventoryService.getCurrentSupermarketId();
       const { data: storeProfile } = await supabase
         .from('supermarkets')
         .select('business_type')
         .eq('id', supermarketId)
         .maybeSingle();
       setBusinessType(storeProfile?.business_type || 'supermarket');
-
-      if (!supermarketId) {
-        setProducts([]);
-        setFilteredProducts([]);
-        toast.error('No supermarket is assigned to this admin account.');
-        return;
-      }
 
       const { data: newProduct, error: createError } = await supabase
         .from('products')

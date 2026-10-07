@@ -27,3 +27,13 @@ export const findProductByBarcode = (products, scanned) => {
 
   return products.find((p) => barcodesMatch(p.barcode, code) || barcodesMatch(p.sku, code)) || null;
 };
+
+// Every stored form a scanned code could take (as scanned, UPC-A, EAN-13, GTIN-14),
+// for `.in('barcode', ...)` database lookups.
+export const barcodeVariants = (value) => {
+  const code = String(value ?? '').trim();
+  if (!/^\d{8,14}$/.test(code)) return code ? [code] : [];
+  const digits = code.replace(/^0+/, '');
+  const forms = [8, 12, 13, 14].filter((len) => len >= digits.length).map((len) => digits.padStart(len, '0'));
+  return [...new Set([code, ...forms])];
+};

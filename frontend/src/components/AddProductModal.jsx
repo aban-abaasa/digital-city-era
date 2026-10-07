@@ -20,6 +20,7 @@ import { toast } from 'react-toastify';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import { supabase } from '../services/supabase';
+import { barcodeVariants } from '../utils/barcodeHelper';
 import { compressImageFile } from '../utils/imageCompression';
 import {
   SUPPLIER_CATALOG_CATEGORIES, SUPPLIER_CATALOG_UNITS, saveSupplierCatalogItem
@@ -316,11 +317,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     
     try {
       // Check if product with this barcode already exists
-      const { data: existingProduct, error: searchError } = await supabase
+      // Own store only, and any UPC-A / EAN-13 form of the code counts as the same product
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      let existingQuery = supabase
         .from('products')
         .select('id, name, barcode, sku, cost_price, selling_price, tax_rate, category_id')
-        .eq('barcode', barcode)
-        .maybeSingle();
+        .in('barcode', barcodeVariants(barcode))
+        .limit(1);
+      if (supermarketId) existingQuery = existingQuery.eq('supermarket_id', supermarketId);
+      const { data: existingRows, error: searchError } = await existingQuery;
+      const existingProduct = existingRows?.[0] || null;
 
       if (searchError && searchError.code !== 'PGRST116') {
         console.error('Error searching for product:', searchError);
