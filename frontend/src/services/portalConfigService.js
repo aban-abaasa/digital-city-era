@@ -4,7 +4,7 @@ class PortalConfigService {
     // ⚡ Smart API URL detection for production/development
     if (import.meta.env.PROD) {
       // Production: Use your actual backend URL
-      this.baseURL = import.meta.env.VITE_API_URL || 'https://api.faredeal.vercel.app/api';
+      this.baseURL = import.meta.env.VITE_API_URL || '/api';
     } else {
       // Development: Use localhost
       this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
@@ -284,9 +284,9 @@ class PortalConfigService {
       customerPortal: 'Customer Portal',
       supplierPortal: 'Supplier Portal',
       deliveryPortal: 'Delivery Portal',
-      systemName: 'FAREDEAL',
-      companyName: 'FareDeal Uganda',
-      appTitle: 'FareDeal Management System',
+      systemName: 'SUPERMARTKERA',
+      companyName: 'SupermartKera Uganda',
+      appTitle: 'SupermartKera Management System',
       tagline: 'Your Trusted Marketplace',
       version: '2.0.0',
       lastUpdated: new Date().toISOString(),

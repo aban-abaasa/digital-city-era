@@ -94,6 +94,18 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
       // Self-heal: some accounts predate the auto-create trigger and never
       // got a unified_profiles row. Create one now instead of spinning forever.
       if (!profileData) {
+        // users.supermarket_id can point at a supermarket that no longer exists;
+        // inserting it would violate unified_profiles' foreign key (23503 / 409).
+        let supermarketId = userRecord.supermarket_id || null;
+        if (supermarketId) {
+          const { data: store } = await supabase
+            .from('supermarkets')
+            .select('id')
+            .eq('id', supermarketId)
+            .maybeSingle();
+          if (!store) supermarketId = null;
+        }
+
         const { data: createdProfile, error: createError } = await supabase
           .from('unified_profiles')
           .upsert({
@@ -102,7 +114,7 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
             email: userRecord.email,
             phone: userRecord.phone,
             role: userRecord.role || 'customer',
-            supermarket_id: userRecord.supermarket_id
+            supermarket_id: supermarketId
           }, { onConflict: 'user_id' })
           .select('*')
           .single();

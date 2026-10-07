@@ -2,7 +2,7 @@
 
 ## Status: ✅ Ready (Verification Required)
 
-Your FAREDEAL application now has complete email service integration with SendGrid!
+Your SUPERMARTKERA application now has complete email service integration with SendGrid!
 
 ---
 
@@ -11,8 +11,8 @@ Your FAREDEAL application now has complete email service integration with SendGr
 ### 1. **Environment Configuration** ✅
 - File: `backend/.env`
 - SendGrid API key: **Configured**
-- From email: `noreply@faredeal.ug`
-- From name: `FAREDEAL Uganda`
+- From email: `noreply@supermartkera.ug`
+- From name: `SUPERMARTKERA Uganda`
 
 ### 2. **Email Service Module** ✅
 - File: `backend/src/services/emailService.js`
@@ -45,7 +45,7 @@ Your FAREDEAL application now has complete email service integration with SendGr
 ## Remaining Step: Email Verification ⚠️
 
 ### The Issue
-The sender email `noreply@faredeal.ug` is **not verified** in SendGrid.
+The sender email `noreply@supermartkera.ug` is **not verified** in SendGrid.
 SendGrid requires verification before sending emails.
 
 ### The Solution
@@ -55,10 +55,10 @@ SendGrid requires verification before sending emails.
 2. Click: **Settings** → **Sender Authentication**
 3. Click: **Create New Sender**
 4. Enter:
-   - Email: `noreply@faredeal.ug`
-   - Name: `FAREDEAL Uganda`
+   - Email: `noreply@supermartkera.ug`
+   - Name: `SUPERMARTKERA Uganda`
 5. Click: **Create**
-6. Verify the email sent to `noreply@faredeal.ug`
+6. Verify the email sent to `noreply@supermartkera.ug`
 7. Done! ✅
 
 ### Or Use Your Own Email for Testing
@@ -190,7 +190,7 @@ await sendPasswordResetEmail('user@example.com', 'User Name', 'reset-token-123')
 
 2. **Update Frontend URL**
    ```env
-   FRONTEND_URL=https://faredeal.ug
+   FRONTEND_URL=https://supermartkera.ug
    ```
 
 3. **Monitor SendGrid Activity**

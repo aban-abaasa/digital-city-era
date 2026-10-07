@@ -2,7 +2,7 @@
 
 ## 📊 APPLICATION OVERVIEW
 
-**Faredeal** is a comprehensive **Point of Sale (POS) System** built for Uganda, designed to manage retail operations with multi-role access and payment integration.
+**SupermartKera** is a comprehensive **Point of Sale (POS) System** built for Uganda, designed to manage retail operations with multi-role access and payment integration.
 
 ---
 
@@ -238,9 +238,9 @@ SUPABASE_ANON_KEY=[JWT Token for public access]
 SUPABASE_SERVICE_KEY=[JWT Token for admin/server access]
 PORT=3001
 NODE_ENV=development
-JWT_SECRET=faredeal_super_secret_key_2024_make_this_very_long_and_random
+JWT_SECRET=supermartkera_super_secret_key_2024_make_this_very_long_and_random
 JWT_EXPIRES_IN=7d
-BUSINESS_NAME=FAREDEAL
+BUSINESS_NAME=SUPERMARTKERA
 BUSINESS_CURRENCY=UGX
 BUSINESS_TAX_RATE=18
 BUSINESS_COUNTRY=Uganda
@@ -388,7 +388,7 @@ Each Portal → Auth (Google OAuth)
    INSERT INTO public.users (
      email, full_name, role, is_active, phone, department, created_at
    ) VALUES (
-     'admin@faredeal.com', 'Admin User', 'admin', true, 
+     'admin@supermartkera.com', 'Admin User', 'admin', true, 
      '0700000000', 'Administration', NOW()
    );
    ```

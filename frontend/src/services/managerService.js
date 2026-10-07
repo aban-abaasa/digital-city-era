@@ -16,7 +16,7 @@
 class ManagerService {
     constructor() {
         if (import.meta.env.PROD) {
-            this.baseURL = import.meta.env.VITE_API_URL || 'https://api.faredeal.vercel.app/api';
+            this.baseURL = import.meta.env.VITE_API_URL || '/api';
         } else {
             this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
         }

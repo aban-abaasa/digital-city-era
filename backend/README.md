@@ -1,7 +1,7 @@
-# FAREDEAL Backend System
+# SUPERMARTKERA Backend System
 
 ## Overview
-This is the backend system for FAREDEAL Point of Sale (POS) and Business Management System. It provides database management, API services, and business logic for the complete retail solution.
+This is the backend system for SUPERMARTKERA Point of Sale (POS) and Business Management System. It provides database management, API services, and business logic for the complete retail solution.
 
 ## Features
 
@@ -149,7 +149,7 @@ JWT_SECRET=your_jwt_secret_key
 JWT_EXPIRES_IN=7d
 
 # Business
-BUSINESS_NAME=FAREDEAL
+BUSINESS_NAME=SUPERMARTKERA
 BUSINESS_CURRENCY=UGX
 BUSINESS_TAX_RATE=18
 ```
@@ -160,9 +160,9 @@ After running the schema, these users are available:
 
 | Role | Email | Password | Description |
 |------|-------|----------|-------------|
-| Admin | admin@faredeal.co.ug | admin123 | System administrator |
-| Manager | manager@faredeal.co.ug | manager123 | Store manager |
-| Cashier | cashier@faredeal.co.ug | cashier123 | Point of sale operator |
+| Admin | admin@supermartkera.co.ug | admin123 | System administrator |
+| Manager | manager@supermartkera.co.ug | manager123 | Store manager |
+| Cashier | cashier@supermartkera.co.ug | cashier123 | Point of sale operator |
 
 ## API Endpoints (Planned)
 
@@ -302,4 +302,4 @@ MIT License - see LICENSE file for details
 
 ---
 
-**FAREDEAL Backend System** - Powering modern retail operations in Uganda and beyond.
+**SUPERMARTKERA Backend System** - Powering modern retail operations in Uganda and beyond.

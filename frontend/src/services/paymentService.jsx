@@ -289,7 +289,7 @@ export const paymentService = {
         cardLastFour: cardNumber ? cardNumber.slice(-4) : '****',
         cardBrand: paymentService.detectCardBrand(cardNumber || ''),
         acquirer: 'DFCU Bank',
-        merchantId: 'FAREDEAL_UG_001'
+        merchantId: 'SUPERMARTKERA_UG_001'
       }
     };
   },

@@ -102,7 +102,7 @@ class PortalConfigTest {
             
             // Create test updates
             const testUpdates = {
-                systemName: 'FAREDEAL TEST SYSTEM',
+                systemName: 'SUPERMARTKERA TEST SYSTEM',
                 adminPortal: 'Test Admin Control Center',
                 employeePortal: 'Test Employee Workspace',
                 version: (originalConfig.version || 0) + 1

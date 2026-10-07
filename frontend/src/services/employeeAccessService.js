@@ -97,14 +97,14 @@ class EmployeeAccessService {
     // Get mock employee list for demonstration
     getEmployeeList() {
         return [
-            { id: 'emp001', name: 'John Doe', email: 'john.doe@faredeal.com', department: 'Sales', status: 'active', lastLogin: '2024-10-07T10:30:00Z' },
-            { id: 'emp002', name: 'Jane Smith', email: 'jane.smith@faredeal.com', department: 'Inventory', status: 'active', lastLogin: '2024-10-07T09:15:00Z' },
-            { id: 'emp003', name: 'Mike Johnson', email: 'mike.johnson@faredeal.com', department: 'Customer Service', status: 'disabled', lastLogin: '2024-10-06T16:45:00Z' },
-            { id: 'emp004', name: 'Sarah Wilson', email: 'sarah.wilson@faredeal.com', department: 'Sales', status: 'active', lastLogin: '2024-10-07T08:20:00Z' },
-            { id: 'emp005', name: 'David Brown', email: 'david.brown@faredeal.com', department: 'Warehouse', status: 'pending', lastLogin: null },
-            { id: 'emp006', name: 'Lisa Garcia', email: 'lisa.garcia@faredeal.com', department: 'Inventory', status: 'active', lastLogin: '2024-10-07T11:10:00Z' },
-            { id: 'emp007', name: 'Robert Lee', email: 'robert.lee@faredeal.com', department: 'Security', status: 'active', lastLogin: '2024-10-07T07:30:00Z' },
-            { id: 'emp008', name: 'Emily Davis', email: 'emily.davis@faredeal.com', department: 'HR', status: 'disabled', lastLogin: '2024-10-05T14:20:00Z' }
+            { id: 'emp001', name: 'John Doe', email: 'john.doe@supermartkera.com', department: 'Sales', status: 'active', lastLogin: '2024-10-07T10:30:00Z' },
+            { id: 'emp002', name: 'Jane Smith', email: 'jane.smith@supermartkera.com', department: 'Inventory', status: 'active', lastLogin: '2024-10-07T09:15:00Z' },
+            { id: 'emp003', name: 'Mike Johnson', email: 'mike.johnson@supermartkera.com', department: 'Customer Service', status: 'disabled', lastLogin: '2024-10-06T16:45:00Z' },
+            { id: 'emp004', name: 'Sarah Wilson', email: 'sarah.wilson@supermartkera.com', department: 'Sales', status: 'active', lastLogin: '2024-10-07T08:20:00Z' },
+            { id: 'emp005', name: 'David Brown', email: 'david.brown@supermartkera.com', department: 'Warehouse', status: 'pending', lastLogin: null },
+            { id: 'emp006', name: 'Lisa Garcia', email: 'lisa.garcia@supermartkera.com', department: 'Inventory', status: 'active', lastLogin: '2024-10-07T11:10:00Z' },
+            { id: 'emp007', name: 'Robert Lee', email: 'robert.lee@supermartkera.com', department: 'Security', status: 'active', lastLogin: '2024-10-07T07:30:00Z' },
+            { id: 'emp008', name: 'Emily Davis', email: 'emily.davis@supermartkera.com', department: 'HR', status: 'disabled', lastLogin: '2024-10-05T14:20:00Z' }
         ];
     }
 

@@ -5,7 +5,7 @@
 Your SendGrid API key and configuration are properly set up. However, email sending failed with **"Forbidden"** error.
 
 ### Root Cause
-The sender email address `noreply@faredeal.ug` is **not verified** in your SendGrid account.
+The sender email address `noreply@supermartkera.ug` is **not verified** in your SendGrid account.
 
 SendGrid requires you to verify all sender email addresses before using them to send emails.
 
@@ -16,7 +16,7 @@ SendGrid requires you to verify all sender email addresses before using them to 
 ### Step 1: Go to SendGrid Dashboard
 1. Visit https://app.sendgrid.com
 2. Login with your account
-3. Look for your project: **faredeal**
+3. Look for your project: **supermartkera**
 
 ### Step 2: Verify Sender Address
 1. In the left sidebar, click **Settings**
@@ -26,14 +26,14 @@ SendGrid requires you to verify all sender email addresses before using them to 
 
 ### Step 3: Add Your Sender
 1. Fill in the form:
-   - **From Email Address**: `noreply@faredeal.ug`
-   - **From Name**: `FAREDEAL Uganda` (optional)
+   - **From Email Address**: `noreply@supermartkera.ug`
+   - **From Name**: `SUPERMARTKERA Uganda` (optional)
    - **Reply To Email**: (leave blank or enter a support email)
 2. Click **Create**
 
 ### Step 4: Verify the Email
-1. SendGrid will send a verification email to `noreply@faredeal.ug`
-2. Check the email inbox/spam folder for noreply@faredeal.ug
+1. SendGrid will send a verification email to `noreply@supermartkera.ug`
+2. Check the email inbox/spam folder for noreply@supermartkera.ug
 3. Click the verification link in the email
 4. Wait 1-2 minutes for verification to complete
 
@@ -49,12 +49,12 @@ node test-email.js
 
 ## Alternative: Use a Personal Email for Testing
 
-If you don't have access to `noreply@faredeal.ug`, you can temporarily use your own email for testing:
+If you don't have access to `noreply@supermartkera.ug`, you can temporarily use your own email for testing:
 
 ### Option 1: Update .env
 ```env
 SENDGRID_FROM_EMAIL=your-email@gmail.com
-SENDGRID_FROM_NAME=FAREDEAL Test
+SENDGRID_FROM_NAME=SUPERMARTKERA Test
 ```
 
 Then verify `your-email@gmail.com` in SendGrid and test.
@@ -80,17 +80,17 @@ import emailService from './src/services/emailService.js';
 
 ## Step-by-Step Verification Process
 
-### For `noreply@faredeal.ug`:
+### For `noreply@supermartkera.ug`:
 
 **Prerequisites:**
 - You must have control of the email address or its mail server
-- For domain emails like `noreply@faredeal.ug`, you need access to:
+- For domain emails like `noreply@supermartkera.ug`, you need access to:
   - The domain's email server
   - Or ask the domain administrator
   - Or use DNS records if self-hosted
 
 **If you own the domain:**
-1. Create the email account `noreply@faredeal.ug` in your email server
+1. Create the email account `noreply@supermartkera.ug` in your email server
 2. Follow SendGrid verification steps above
 3. Check the mailbox for verification email
 
@@ -166,7 +166,7 @@ FRONTEND_URL=http://localhost:5173                 ← Update for production
 
 ## Next Steps
 
-1. ✅ Verify `noreply@faredeal.ug` (or replace with verified email)
+1. ✅ Verify `noreply@supermartkera.ug` (or replace with verified email)
 2. ✅ Run: `node test-email.js`
 3. ✅ Check inbox for test email
 4. ✅ Integrate email functions into your app

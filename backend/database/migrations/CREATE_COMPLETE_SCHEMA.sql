@@ -1,5 +1,5 @@
 -- =========================================
--- COMPLETE DATABASE SCHEMA FOR FAREDEAL
+-- COMPLETE DATABASE SCHEMA FOR SUPERMARTKERA
 -- Includes users table creation (if needed)
 -- =========================================
 
@@ -432,7 +432,7 @@ WITH CHECK (
 -- =========================================
 DO $$
 BEGIN
-  RAISE NOTICE '✅ COMPLETE FAREDEAL DATABASE SCHEMA CREATED!';
+  RAISE NOTICE '✅ COMPLETE SUPERMARTKERA DATABASE SCHEMA CREATED!';
   RAISE NOTICE '✅ Users table created';
   RAISE NOTICE '✅ Categories table created';
   RAISE NOTICE '✅ Suppliers & Supplier Profiles tables created';

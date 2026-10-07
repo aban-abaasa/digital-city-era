@@ -133,7 +133,7 @@ We fixed the timeout issue:
 ### 📞 Support Contact Info
 
 If you've tried everything above:
-- Email: support@faredeal.ug
+- Email: support@supermartkera.ug
 - Include: Email, error message, network type, time
 
 ---

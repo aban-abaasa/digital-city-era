@@ -1,4 +1,4 @@
--- FAREDEAL Sample Data Seeds
+-- SUPERMARTKERA Sample Data Seeds
 -- This file contains sample data to populate the database for testing and development
 
 -- =============================================================================
@@ -149,15 +149,15 @@ FROM products p;
 -- Additional Staff Users
 INSERT INTO users (email, username, password_hash, first_name, last_name, phone, role, status, email_verified, permissions)
 VALUES 
-('manager2@faredeal.co.ug', 'manager2', '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG', 
+('manager2@supermartkera.co.ug', 'manager2', '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG', 
  'Robert', 'Kiprotich', '+256-701-111-222', 'manager', 'active', true,
  '{"manage_employees": true, "manage_inventory": true, "view_reports": true, "pos_access": true}'),
 
-('cashier2@faredeal.co.ug', 'cashier2', '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG',
+('cashier2@supermartkera.co.ug', 'cashier2', '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG',
  'Susan', 'Nalwanga', '+256-702-222-333', 'cashier', 'active', true,
  '{"pos_access": true, "process_sales": true}'),
 
-('inventory@faredeal.co.ug', 'inventory', '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG',
+('inventory@supermartkera.co.ug', 'inventory', '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG',
  'Michael', 'Ochieng', '+256-703-333-444', 'inventory_manager', 'active', true,
  '{"manage_inventory": true, "view_products": true, "manage_suppliers": true}');
 
@@ -268,7 +268,7 @@ BEGIN
     RAISE NOTICE 'Sample data insertion completed successfully!';
     RAISE NOTICE 'Created sample categories, suppliers, products, users, and related records.';
     RAISE NOTICE 'Default login credentials:';
-    RAISE NOTICE '  Admin: admin@faredeal.co.ug / admin123';
-    RAISE NOTICE '  Manager: manager@faredeal.co.ug / manager123';
-    RAISE NOTICE '  Cashier: cashier@faredeal.co.ug / cashier123';
+    RAISE NOTICE '  Admin: admin@supermartkera.co.ug / admin123';
+    RAISE NOTICE '  Manager: manager@supermartkera.co.ug / manager123';
+    RAISE NOTICE '  Cashier: cashier@supermartkera.co.ug / cashier123';
 END $$;

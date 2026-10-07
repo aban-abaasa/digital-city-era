@@ -1,7 +1,7 @@
 {
-  "name": "faredeal-backend",
+  "name": "supermartkera-backend",
   "version": "1.0.0",
-  "description": "FAREDEAL POS System Backend - Database and API services",
+  "description": "SUPERMARTKERA POS System Backend - Database and API services",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -25,7 +25,7 @@
     "business-management",
     "supabase"
   ],
-  "author": "FAREDEAL Team",
+  "author": "SUPERMARTKERA Team",
   "license": "MIT",
   "dependencies": {
     "@sendgrid/mail": "^8.1.0",

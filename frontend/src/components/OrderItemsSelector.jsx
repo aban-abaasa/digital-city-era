@@ -3,7 +3,7 @@
 // =====================================================================
 // Smart product selection with admin-controlled pricing
 // Features: Auto-complete, unit selection (boxes/units), price validation
-// Real-time inventory & cost tracking - FAREDEAL Uganda 🇺🇬
+// Real-time inventory & cost tracking - SUPERMARTKERA Uganda 🇺🇬
 // =====================================================================
 
 import React, { useState, useEffect, useRef } from 'react';

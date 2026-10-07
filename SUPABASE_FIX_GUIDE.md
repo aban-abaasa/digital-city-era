@@ -55,7 +55,7 @@ Run this SQL in Supabase SQL Editor:
 1. Go to your Admin Auth page
 2. Fill in the form:
    - Full Name: Test Admin
-   - Email: testadmin@faredeal.ug
+   - Email: testadmin@supermartkera.ug
    - Password: SecurePassword123!
 3. Click "Create Admin Account"
 4. Check the browser console for logs:
@@ -130,7 +130,7 @@ Run these in order:
 ## Running Migrations in Supabase Dashboard
 
 1. Go to https://app.supabase.com
-2. Select your project: "faredeal"
+2. Select your project: "supermartkera"
 3. Click "SQL Editor" in left sidebar
 4. Click "New Query"
 5. Copy-paste the SQL content

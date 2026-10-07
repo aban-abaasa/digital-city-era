@@ -358,7 +358,7 @@ Where:
 │ 💳 Method: Cash                                        │
 │ 📅 Date: December 6, 2025                              │
 │ 👤 Paid by: John Manager                               │
-│ 📧 Contact: john@faredeal.ug                           │
+│ 📧 Contact: john@supermartkera.ug                           │
 │ 📝 Notes: Payment made at order creation               │
 │ ⏰ Days Pending: 0 days                                │
 │                                                          │
@@ -465,5 +465,5 @@ All methods create tracked transactions that suppliers must confirm!
 ---
 
 **Created**: December 6, 2025  
-**System**: Faredeal Uganda Purchase Order Management  
+**System**: SupermartKera Uganda Purchase Order Management  
 **Feature**: Creative Payment Recording Anywhere, Anytime

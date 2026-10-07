@@ -965,7 +965,7 @@ const CustomerDelivery = () => {
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  FAREDEAL Delivery
+                  SUPERMARTKERA Delivery
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-500">Shop online • Fast delivery • Secure payment</p>
               </div>

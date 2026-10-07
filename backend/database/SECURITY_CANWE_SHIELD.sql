@@ -1,5 +1,5 @@
 -- ===========================================================================
--- FAREDEAL SECURITY CANWE SHIELD
+-- SUPERMARTKERA SECURITY CANWE SHIELD
 --
 -- Durable, cross-request storage for the deception-based bot/attacker
 -- detection layer (see backend/src/middleware/canweShield.js and
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS security_threat_events (
   route         TEXT,
   http_method   TEXT,
   payload       JSONB,
-  app_name      TEXT NOT NULL DEFAULT 'faredeal'
+  app_name      TEXT NOT NULL DEFAULT 'supermartkera'
 );
 
 CREATE INDEX IF NOT EXISTS idx_sec_threat_ip       ON security_threat_events(ip_address);
@@ -49,7 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_sec_threat_app       ON security_threat_events(ap
 
 CREATE TABLE IF NOT EXISTS security_flagged_ips (
   ip_address    TEXT NOT NULL,
-  app_name      TEXT NOT NULL DEFAULT 'faredeal',
+  app_name      TEXT NOT NULL DEFAULT 'supermartkera',
   first_seen    TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen     TIMESTAMPTZ NOT NULL DEFAULT now(),
   hit_count     INT NOT NULL DEFAULT 1,
@@ -81,7 +81,7 @@ CREATE OR REPLACE FUNCTION log_security_threat(
   p_route        TEXT DEFAULT NULL,
   p_http_method  TEXT DEFAULT NULL,
   p_payload      JSONB DEFAULT NULL,
-  p_app_name     TEXT DEFAULT 'faredeal',
+  p_app_name     TEXT DEFAULT 'supermartkera',
   p_severity     TEXT DEFAULT 'medium'
 ) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
@@ -123,7 +123,7 @@ GRANT EXECUTE ON FUNCTION log_security_threat TO service_role;
 
 CREATE OR REPLACE FUNCTION check_ip_flagged(
   p_ip       TEXT,
-  p_app_name TEXT DEFAULT 'faredeal'
+  p_app_name TEXT DEFAULT 'supermartkera'
 ) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   v_row security_flagged_ips;
@@ -143,4 +143,4 @@ $$;
 REVOKE ALL ON FUNCTION check_ip_flagged FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION check_ip_flagged TO service_role;
 
-SELECT 'FAREDEAL Security Canwe Shield — complete' AS status, now() AS run_at;
+SELECT 'SUPERMARTKERA Security Canwe Shield — complete' AS status, now() AS run_at;

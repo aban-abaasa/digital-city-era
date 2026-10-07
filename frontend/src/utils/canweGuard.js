@@ -4,7 +4,7 @@ const TRAP_FIELDS = ['admin_pass', 'root_token', 'backup_key', 'website'];
 // Same VITE_API_URL / prod-fallback convention as the existing services
 // (see src/services/backendApiService.js) — baseURL already includes /api.
 const BASE_URL = import.meta.env.VITE_API_URL
-  || (import.meta.env.PROD ? 'https://api.faredeal.vercel.app/api' : 'http://localhost:3001/api');
+  || (import.meta.env.PROD ? '/api' : 'http://localhost:3001/api');
 
 /**
  * Call this first inside any onSubmit that also renders <CanweFields />,

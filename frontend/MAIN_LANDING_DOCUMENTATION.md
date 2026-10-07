@@ -153,7 +153,7 @@ src/App.jsx - Updated routing configuration
 
 ### **Development Server**
 ```bash
-cd FAREDEAL/faredeal
+cd SUPERMARTKERA/supermartkera
 npm run dev
 ```
 
@@ -192,9 +192,9 @@ npm run dev
 
 ## 🎉 **Conclusion**
 
-The FAREDEAL Main Landing Site successfully provides a comprehensive, creative, and user-friendly entry point for all user types. With its modern design, interactive features, and seamless navigation, it effectively showcases the platform's capabilities while providing easy access to role-specific portals.
+The SUPERMARTKERA Main Landing Site successfully provides a comprehensive, creative, and user-friendly entry point for all user types. With its modern design, interactive features, and seamless navigation, it effectively showcases the platform's capabilities while providing easy access to role-specific portals.
 
-The implementation is production-ready, fully responsive, and optimized for performance, making it an excellent foundation for the FAREDEAL ecosystem.
+The implementation is production-ready, fully responsive, and optimized for performance, making it an excellent foundation for the SUPERMARTKERA ecosystem.
 
 ---
 

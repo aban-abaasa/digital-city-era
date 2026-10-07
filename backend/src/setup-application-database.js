@@ -10,12 +10,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
 
 /**
- * Application-Matched Database Setup Script for FAREDEAL
+ * Application-Matched Database Setup Script for SUPERMARTKERA
  * This script sets up the complete database schema that matches your frontend application
  */
 
 async function setupDatabase() {
-    console.log('🚀 FAREDEAL POS - Application-Matched Database Setup\n');
+    console.log('🚀 SUPERMARTKERA POS - Application-Matched Database Setup\n');
     
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Fixed environment variable name
@@ -189,7 +189,7 @@ async function seedDatabase() {
         console.log('\n✨ SAMPLE DATA INCLUDES:');
         
         const sampleData = [
-            '👤 Admin: admin@faredeal.ug',
+            '👤 Admin: admin@supermartkera.ug',
             '👨‍💼 Managers: Mukasa James, Sarah Johnson',
             '👩‍💼 Cashiers: Nakato Sarah, Okello Patrick',
             '🛍️ Customers: Namukasa Grace, Mubiru John',

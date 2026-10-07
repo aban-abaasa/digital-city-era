@@ -6,12 +6,12 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Clean Database Setup Script for FAREDEAL
+ * Clean Database Setup Script for SUPERMARTKERA
  * This script sets up the database schema and initial data
  */
 
 async function setupDatabase() {
-    console.log('🚀 FAREDEAL Database Setup Starting...\n');
+    console.log('🚀 SUPERMARTKERA Database Setup Starting...\n');
     
     // Load environment variables
     const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -57,7 +57,7 @@ async function setupDatabase() {
         console.log('   • Indexes for optimal performance');
         console.log('   • Triggers for automatic updates');
         console.log('   • Initial system settings');
-        console.log('   • Default admin user (admin@faredeal.co.ug / admin123)\n');
+        console.log('   • Default admin user (admin@supermartkera.co.ug / admin123)\n');
         
         // Show database structure summary
         console.log('🗄️ Database Structure:');

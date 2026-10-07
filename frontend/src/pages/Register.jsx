@@ -401,7 +401,7 @@ const Register = () => {
         });
 
         if (result.success) {
-          toast.success('Manager account created successfully! Welcome to FAREDEAL.');
+          toast.success('Manager account created successfully! Welcome to SUPERMARTKERA.');
           navigate('/manager-portal');
         }
 
@@ -418,7 +418,7 @@ const Register = () => {
         });
 
         if (result.success) {
-          toast.success('Admin account created successfully! Welcome to FAREDEAL Administration.');
+          toast.success('Admin account created successfully! Welcome to SUPERMARTKERA Administration.');
           
           // Wait a moment for the auth state to update before navigating
           setTimeout(() => {
@@ -914,7 +914,7 @@ const Register = () => {
       <div className="register-card">
         <div className="register-header">
           <h1>Create Account</h1>
-          <p>Join FAREDEAL and start your journey with us</p>
+          <p>Join SUPERMARTKERA and start your journey with us</p>
         </div>
 
         <div className="google-signin-section">

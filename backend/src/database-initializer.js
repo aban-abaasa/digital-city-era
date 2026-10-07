@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 
-// Database initialization utility for FAREDEAL POS System
+// Database initialization utility for SUPERMARTKERA POS System
 class DatabaseInitializer {
   constructor(supabaseUrl, supabaseServiceKey) {
     this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -14,7 +14,7 @@ class DatabaseInitializer {
    * Initialize the complete database schema
    */
   async initializeDatabase() {
-    console.log('🚀 Starting FAREDEAL Database Initialization...\n');
+    console.log('🚀 Starting SUPERMARTKERA Database Initialization...\n');
     
     try {
       // Read the schema file
@@ -286,7 +286,7 @@ class DatabaseInitializer {
   async createSampleUsers() {
     const users = [
       {
-        email: 'manager@faredeal.co.ug',
+        email: 'manager@supermartkera.co.ug',
         username: 'manager',
         password_hash: '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG', // manager123
         first_name: 'Sarah',
@@ -303,7 +303,7 @@ class DatabaseInitializer {
         }
       },
       {
-        email: 'cashier@faredeal.co.ug',
+        email: 'cashier@supermartkera.co.ug',
         username: 'cashier',
         password_hash: '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG', // cashier123
         first_name: 'James',

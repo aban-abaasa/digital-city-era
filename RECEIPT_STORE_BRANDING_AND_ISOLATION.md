@@ -4,7 +4,7 @@
 Fixed receipts to display the actual supermarket name/branding and ensured transactions are properly stored with supermarket_id for multi-tenant isolation.
 
 ## Problem
-1. ❌ Receipts showed hardcoded "FAREDEAL Uganda" instead of actual store name
+1. ❌ Receipts showed hardcoded "SUPERMARTKERA Uganda" instead of actual store name
 2. ❌ Transactions were not being saved with `supermarket_id`
 3. ❌ No way to filter transactions by supermarket
 
@@ -25,7 +25,7 @@ const Receipt = ({
   const receiptRef = useRef();
 
   // Use branding or fallback to defaults
-  const storeName = supermarketBranding?.name || 'FAREDEAL';
+  const storeName = supermarketBranding?.name || 'SUPERMARTKERA';
   const storeLocation = receiptData?.receipt?.location || 'Kampala Main Branch';
   const storeEmoji = supermarketBranding?.typeEmoji || '🏪';
   const storeType = supermarketBranding?.typeLabel || 'Supermarket';
@@ -34,7 +34,7 @@ const Receipt = ({
 **Updated Receipt Header:**
 ```javascript
 // ❌ BEFORE - Hardcoded
-<div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">🏪 FAREDEAL</div>
+<div className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">🏪 SUPERMARTKERA</div>
 <div className="text-base md:text-xl font-semibold text-gray-700">Uganda Supermarket 🇺🇬</div>
 
 // ✅ AFTER - Dynamic
@@ -45,7 +45,7 @@ const Receipt = ({
 **Updated Receipt Footer:**
 ```javascript
 // ❌ BEFORE
-<p className="text-gray-600 text-xs md:text-sm mt-2">Visit us again at FAREDEAL Uganda</p>
+<p className="text-gray-600 text-xs md:text-sm mt-2">Visit us again at SUPERMARTKERA Uganda</p>
 
 // ✅ AFTER
 <p className="text-gray-600 text-xs md:text-sm mt-2">Visit us again at {storeName}</p>
@@ -54,8 +54,8 @@ const Receipt = ({
 **Updated Contact Information:**
 ```javascript
 // ❌ BEFORE
-<p>www.faredeal.ug</p>
-<p>support@faredeal.ug</p>
+<p>www.supermartkera.ug</p>
+<p>support@supermartkera.ug</p>
 
 // ✅ AFTER
 <p>{receiptData?.receipt?.website || 'www.' + storeName.toLowerCase().replace(/\s+/g, '') + '.ug'}</p>
@@ -63,7 +63,7 @@ const Receipt = ({
 ```
 
 **Updated Email/SMS/WhatsApp Functions:**
-All sharing functions now use `storeName` variable instead of hardcoded "FAREDEAL Uganda":
+All sharing functions now use `storeName` variable instead of hardcoded "SUPERMARTKERA Uganda":
 - Email subject: `Receipt ${receiptNumber} - ${storeName}`
 - SMS: `${storeName} 🇺🇬\nReceipt: ...`
 - WhatsApp: `*${storeName.toUpperCase()} - RECEIPT*`
@@ -229,11 +229,11 @@ USING (
 
 ### Data Isolation:
 ```
-SupermarketA (ID: abc123, Name: "FareDeal Kampala")
+SupermarketA (ID: abc123, Name: "SupermartKera Kampala")
 ├── Transaction 1: supermarket_id = abc123
-│   └── Receipt shows: "🏪 FareDeal Kampala"
+│   └── Receipt shows: "🏪 SupermartKera Kampala"
 ├── Transaction 2: supermarket_id = abc123
-│   └── Receipt shows: "🏪 FareDeal Kampala"
+│   └── Receipt shows: "🏪 SupermartKera Kampala"
 
 SupermarketB (ID: xyz789, Name: "Quality Mart Entebbe")
 ├── Transaction 1: supermarket_id = xyz789
@@ -251,7 +251,7 @@ SupermarketB (ID: xyz789, Name: "Quality Mart Entebbe")
 ### Before (Hardcoded):
 ```
 ═══════════════════════════════
-🏪 FAREDEAL
+🏪 SUPERMARTKERA
 Uganda Supermarket 🇺🇬
 ═══════════════════════════════
 Kampala Main Branch
@@ -260,15 +260,15 @@ Tel: +256-700-123456
 
 Receipt No: RCP-20260727-0001
 ...
-Visit us again at FAREDEAL Uganda
-www.faredeal.ug
-support@faredeal.ug
+Visit us again at SUPERMARTKERA Uganda
+www.supermartkera.ug
+support@supermartkera.ug
 ```
 
-### After (Dynamic - FareDeal Kampala):
+### After (Dynamic - SupermartKera Kampala):
 ```
 ═══════════════════════════════
-🏪 FareDeal Kampala
+🏪 SupermartKera Kampala
 Supermarket 🇺🇬
 ═══════════════════════════════
 Kampala Main Branch
@@ -277,9 +277,9 @@ Tel: +256-700-123456
 
 Receipt No: RCP-20260727-0001
 ...
-Visit us again at FareDeal Kampala
-www.faredealkampala.ug
-support@faredealkampala.ug
+Visit us again at SupermartKera Kampala
+www.supermartkerakampala.ug
+support@supermartkerakampala.ug
 ```
 
 ### After (Dynamic - Quality Mart Entebbe):
@@ -305,7 +305,7 @@ support@qualitymartentebbe.ug
 1. ✅ Log in as cashier for SupermarketA
 2. ✅ Complete a sale
 3. ✅ View receipt
-4. ✅ Verify store name is SupermarketA (not "FAREDEAL")
+4. ✅ Verify store name is SupermarketA (not "SUPERMARTKERA")
 5. ✅ Verify store emoji matches business type
 
 ### Test 2: Transaction Saved with supermarket_id
@@ -348,7 +348,7 @@ support@qualitymartentebbe.ug
 ## Benefits
 
 ### Before Fix:
-- ❌ All receipts said "FAREDEAL Uganda"
+- ❌ All receipts said "SUPERMARTKERA Uganda"
 - ❌ Transactions had no supermarket isolation
 - ❌ No way to filter transactions by store
 - ❌ Confusing for multi-tenant setup
@@ -363,7 +363,7 @@ support@qualitymartentebbe.ug
 
 ## Debugging
 
-### If receipt still shows "FAREDEAL":
+### If receipt still shows "SUPERMARTKERA":
 1. Check `branding` object in browser console
 2. Verify supermarket exists in `supermarkets` table
 3. Verify cashier has `supermarket_id` set

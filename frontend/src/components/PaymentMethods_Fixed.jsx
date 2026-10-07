@@ -773,7 +773,7 @@ const PaymentMethods = ({ isOpen, onClose, orderTotal, customerInfo, loyaltyPoin
                 <span>PCI DSS Compliant • 256-bit SSL Encryption</span>
               </div>
               <div className={`flex items-center space-x-4 text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                <span>Powered by FAREDEAL Payments</span>
+                <span>Powered by SUPERMARTKERA Payments</span>
               </div>
             </div>
           </div>

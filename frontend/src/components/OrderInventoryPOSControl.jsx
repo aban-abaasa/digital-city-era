@@ -3,7 +3,7 @@
 // =====================================================================
 // Manage product pricing, stock levels, and order settings for POS
 // Admin controls buying/selling prices, minimum stock, reorder points
-// Real-time inventory sync with database - FAREDEAL Uganda 🇺🇬
+// Real-time inventory sync with database - SUPERMARTKERA Uganda 🇺🇬
 // =====================================================================
 
 import React, { useState, useEffect, useRef } from 'react';

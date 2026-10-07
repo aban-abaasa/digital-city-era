@@ -32,7 +32,7 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   }
 });
 
-const ADMIN_EMAIL = 'heradmin@faredeal.ug';
+const ADMIN_EMAIL = 'heradmin@supermartkera.ug';
 const ADMIN_PASSWORD = 'Administrator';
 
 async function verifyAndUpdateAdmin() {

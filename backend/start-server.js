@@ -1,5 +1,5 @@
 /**
- * FAREDEAL Backend Server Launcher
+ * SUPERMARTKERA Backend Server Launcher
  * Enhanced startup script with pre-flight checks
  */
 
@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 // Load environment variables
 dotenv.config();
 
-console.log('\x1b[36m%s\x1b[0m', '🚀 FAREDEAL Backend Server Launcher');
+console.log('\x1b[36m%s\x1b[0m', '🚀 SUPERMARTKERA Backend Server Launcher');
 console.log('=' .repeat(70));
 console.log('Starting pre-flight checks...\n');
 
@@ -70,7 +70,7 @@ console.log('\n⚙️  Checking configuration...');
 const config = {
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
-  businessName: process.env.BUSINESS_NAME || 'FAREDEAL',
+  businessName: process.env.BUSINESS_NAME || 'SUPERMARTKERA',
   currency: process.env.BUSINESS_CURRENCY || 'UGX',
   taxRate: process.env.BUSINESS_TAX_RATE || 18
 };

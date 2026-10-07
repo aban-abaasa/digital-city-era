@@ -13,7 +13,7 @@ const VirtualAssistant = () => {
     {
       id: 1,
       type: 'assistant',
-      content: "Hi! I'm your personal FareDeal shopping assistant. How can I help you today?",
+      content: "Hi! I'm your personal SupermartKera shopping assistant. How can I help you today?",
       timestamp: new Date(),
       suggestions: [
         "Find the best deals",
@@ -194,7 +194,7 @@ const VirtualAssistant = () => {
                 <FiMessageCircle className="h-6 w-6" />
               </div>
               <div>
-                <div className="font-bold">FareDeal Assistant</div>
+                <div className="font-bold">SupermartKera Assistant</div>
                 <div className="text-xs text-blue-100">AI-Powered Shopping Helper</div>
               </div>
             </div>

@@ -79,7 +79,7 @@ Admin Portal:
 
 ### Step 1: Push Changes
 ```bash
-cd c:\Users\MACROS\Desktop\LOVE\Faredeal-main
+cd c:\Users\MACROS\Desktop\LOVE\SupermartKera-main
 git add -A
 git commit -m "Fix: Share transactions across all portals (cashier, manager, admin)"
 git push origin main

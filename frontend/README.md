@@ -72,7 +72,7 @@ The application currently uses a mock API service (`src/services/mockApi.js`) th
 ## Project Structure
 
 ```
-faredeal/
+supermartkera/
 ├── src/
 │   ├── components/          # Reusable React components
 │   │   ├── Layout.jsx       # Main layout wrapper

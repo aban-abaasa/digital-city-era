@@ -224,7 +224,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-4xl font-bold text-gray-900 flex items-center">
-              🏪 FareDeal Dashboard
+              🏪 SupermartKera Dashboard
               <span className="ml-3 text-2xl">{getWeatherEmoji()}</span>
             </h1>
             <p className="text-lg text-gray-600 mt-2">

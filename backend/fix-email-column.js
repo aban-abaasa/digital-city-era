@@ -40,7 +40,7 @@ async function fixEmailColumn() {
       for (const user of usersWithoutEmail) {
         const { error: updateError } = await supabase
           .from('users')
-          .update({ email: `user_${user.id.substring(0, 8)}@faredeal.local` })
+          .update({ email: `user_${user.id.substring(0, 8)}@supermartkera.local` })
           .eq('id', user.id);
         
         if (updateError) {

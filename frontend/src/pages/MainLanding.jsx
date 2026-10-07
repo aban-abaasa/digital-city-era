@@ -265,7 +265,7 @@ const MainLanding = () => {
     {
       name: 'Dr. Alex Chen',
       role: 'System Administrator',
-      content: 'The Admin Portal provides unprecedented control and insight into our entire FAREDEAL ecosystem. User management and system analytics are exceptional.',
+      content: 'The Admin Portal provides unprecedented control and insight into our entire SUPERMARTKERA ecosystem. User management and system analytics are exceptional.',
       rating: 5,
       avatar: '⚙️',
       portal: 'Admin'
@@ -281,7 +281,7 @@ const MainLanding = () => {
     {
       name: 'Emily Rodriguez',
       role: 'Supplier Relations',
-      content: 'Managing our partnership with FAREDEAL is effortless through the Supplier Portal. The order tracking and analytics are top-notch.',
+      content: 'Managing our partnership with SUPERMARTKERA is effortless through the Supplier Portal. The order tracking and analytics are top-notch.',
       rating: 5,
       avatar: '🏢',
       portal: 'Supplier'
@@ -467,7 +467,7 @@ const MainLanding = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  FAREDEAL
+                  SUPERMARTKERA
                 </h1>
                 <p className="text-sm text-gray-500">Unified Business Platform</p>
               </div>
@@ -579,7 +579,7 @@ const MainLanding = () => {
             <h1 className="text-6xl md:text-7xl font-bold text-gray-900 mb-6 leading-tight">
               Welcome to{' '}
               <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent animate-gradientShift">
-                FAREDEAL
+                SUPERMARTKERA
               </span>
             </h1>
             
@@ -763,7 +763,7 @@ const MainLanding = () => {
         <div id="features" className="mb-20">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-bold text-gray-900 mb-4">
-              Why Choose FAREDEAL?
+              Why Choose SUPERMARTKERA?
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Built with cutting-edge technology and designed for modern business needs
@@ -793,7 +793,7 @@ const MainLanding = () => {
               What Our Users Say
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Hear from managers, cashiers, suppliers, and customers who trust FAREDEAL
+              Hear from managers, cashiers, suppliers, and customers who trust SUPERMARTKERA
             </p>
           </div>
           
@@ -874,7 +874,7 @@ const MainLanding = () => {
           <div className="relative z-10">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">Ready to Get Started?</h2>
             <p className="text-blue-100 mb-8 text-xl max-w-3xl mx-auto leading-relaxed">
-              Choose your portal above to access your personalized dashboard and start experiencing the power of FAREDEAL.
+              Choose your portal above to access your personalized dashboard and start experiencing the power of SUPERMARTKERA.
             </p>
             <div className="flex flex-wrap justify-center gap-4">
               {userTypes

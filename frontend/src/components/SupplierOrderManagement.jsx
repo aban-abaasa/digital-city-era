@@ -1,5 +1,5 @@
 // =====================================================================
-// SUPPLIER ORDER MANAGEMENT COMPONENT - FAREDEAL UGANDA 🇺🇬
+// SUPPLIER ORDER MANAGEMENT COMPONENT - SUPERMARTKERA UGANDA 🇺🇬
 // =====================================================================
 // Comprehensive supplier order verification and management for managers
 // Features: Create PO, Approve/Reject, Send to Supplier, Track Deliveries
@@ -2216,7 +2216,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
     unitPrice: 0
   });
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('FAREDEAL Main Store, Kampala');
+  const [deliveryAddress, setDeliveryAddress] = useState('SUPERMARTKERA Main Store, Kampala');
   const [deliveryInstructions, setDeliveryInstructions] = useState('');
   const [priority, setPriority] = useState('normal');
   const [notes, setNotes] = useState('');
@@ -2500,7 +2500,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">🇺🇬 Create New Purchase Order</h2>
-              <p className="text-green-100 mt-1">FAREDEAL Uganda - Supplier Order System</p>
+              <p className="text-green-100 mt-1">SUPERMARTKERA Uganda - Supplier Order System</p>
             </div>
             <button
               onClick={onClose}
@@ -2910,7 +2910,7 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
             <div>
               <h2 className="text-2xl font-bold flex items-center">
                 <FiDollarSign className="mr-3 h-8 w-8" />
-                💰 Record Payment - FAREDEAL Uganda
+                💰 Record Payment - SUPERMARTKERA Uganda
               </h2>
               <p className="text-green-100 mt-1">Order: {order.po_number}</p>
             </div>

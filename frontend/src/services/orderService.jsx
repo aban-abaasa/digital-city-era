@@ -224,7 +224,7 @@ export const orderService = {
     try {
       // In a real implementation, this would integrate with SMS service like Twilio
       // For now, we'll simulate SMS sending
-      const message = `Your order ${orderData.order_number} has been placed successfully. Total: UGX ${orderData.total_amount}. Thank you for shopping with FAREDEAL!`;
+      const message = `Your order ${orderData.order_number} has been placed successfully. Total: UGX ${orderData.total_amount}. Thank you for shopping with SUPERMARTKERA!`;
       
       // Simulate SMS sending delay
       await new Promise(resolve => setTimeout(resolve, 1000));

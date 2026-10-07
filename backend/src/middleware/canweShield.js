@@ -1,5 +1,5 @@
 /**
- * FAREDEAL Canwe Shield — deception-based bot/attacker detection.
+ * SUPERMARTKERA Canwe Shield — deception-based bot/attacker detection.
  *
  * Named deliberately generic (not a recognizable security term) so nothing
  * in this file's name, import paths, or log tags gives away what it does
@@ -58,7 +58,7 @@ async function isIpFlagged(supabase, ip) {
   const cached = ipCache.get(ip);
   if (cached && cached.expiresAt > Date.now()) return cached;
 
-  const { data, error } = await supabase.rpc('check_ip_flagged', { p_ip: ip, p_app_name: 'faredeal' });
+  const { data, error } = await supabase.rpc('check_ip_flagged', { p_ip: ip, p_app_name: 'supermartkera' });
   const result = error || !data ? { flagged: false } : data;
   ipCache.set(ip, { ...result, expiresAt: Date.now() + CACHE_TTL_MS });
   return result;
@@ -73,7 +73,7 @@ export async function logThreat(supabase, { ip, userAgent, triggerType, route, m
     p_route: route || null,
     p_http_method: method || null,
     p_payload: redactPayload(payload),
-    p_app_name: 'faredeal',
+    p_app_name: 'supermartkera',
     p_severity: severity,
   });
   if (error) {

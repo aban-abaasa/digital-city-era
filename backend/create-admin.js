@@ -1,5 +1,5 @@
 // =====================================================================
-// CREATE ADMIN ACCOUNT FOR FAREDEAL
+// CREATE ADMIN ACCOUNT FOR SUPERMARTKERA
 // =====================================================================
 // This script creates a new admin account in Supabase
 // Run: node create-admin.js
@@ -34,7 +34,7 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 
 // Admin credentials
 const ADMIN_DATA = {
-  email: 'heradmin@faredeal.ug',
+  email: 'heradmin@supermartkera.ug',
   password: 'Administrator',
   full_name: 'Administrator',
   role: 'admin',

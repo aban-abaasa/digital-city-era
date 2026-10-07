@@ -80,7 +80,7 @@ const sendWhatsAppMessage = async (phoneNumber, message, mediaUrl = null) => {
         document: {
           link: mediaUrl,
           caption: message,
-          filename: `FAREDEAL_Report_${Date.now()}.pdf`
+          filename: `SUPERMARTKERA_Report_${Date.now()}.pdf`
         }
       } : {
         text: { body: message }
@@ -115,7 +115,7 @@ const sendEmailReport = async (recipients, subject, htmlContent, attachments = [
   try {
     // EmailJS or custom email service configuration
     const EMAIL_SERVICE_URL = 'https://api.emailjs.com/api/v1.0/email/send';
-    const SERVICE_ID = import.meta.env?.VITE_EMAILJS_SERVICE_ID || 'service_faredeal';
+    const SERVICE_ID = import.meta.env?.VITE_EMAILJS_SERVICE_ID || 'service_supermartkera';
     const TEMPLATE_ID = import.meta.env?.VITE_EMAILJS_TEMPLATE_ID || 'template_business_report';
     const PUBLIC_KEY = import.meta.env?.VITE_EMAILJS_PUBLIC_KEY || 'YOUR_PUBLIC_KEY';
 
@@ -127,9 +127,9 @@ const sendEmailReport = async (recipients, subject, htmlContent, attachments = [
         to_email: recipients.join(','),
         subject: subject,
         html_content: htmlContent,
-        from_name: 'FAREDEAL Uganda Business Intelligence',
-        from_email: 'reports@faredeal.ug',
-        reply_to: 'manager@faredeal.ug'
+        from_name: 'SUPERMARTKERA Uganda Business Intelligence',
+        from_email: 'reports@supermartkera.ug',
+        reply_to: 'manager@supermartkera.ug'
       }
     };
 
@@ -163,7 +163,7 @@ const shareViaNativeAPI = async (data) => {
   if (navigator.share) {
     try {
       await navigator.share({
-        title: `FAREDEAL ${data.reportName}`,
+        title: `SUPERMARTKERA ${data.reportName}`,
         text: data.content,
         url: data.url || window.location.href
       });
@@ -293,7 +293,7 @@ const ManagerPortal = () => {
     status: 'Online',
     languages: ['English'],
     phoneNumber: '+256 700 000 000',
-    email: 'manager@faredeal.ug',
+    email: 'manager@supermartkera.ug',
     permissions: {
       analytics: true,
       teamManagement: true,
@@ -1472,7 +1472,7 @@ const ManagerPortal = () => {
       if (confirmed) {
         toast.success('📹 Joining emergency conference...');
         // In a real app, this would open the video conference interface
-        window.open('https://meet.faredeal.ug/emergency', '_blank');
+        window.open('https://meet.supermartkera.ug/emergency', '_blank');
       }
     }, 1500);
   }, []);
@@ -1993,7 +1993,7 @@ const ManagerPortal = () => {
           document: {
             link: mediaUrl,
             caption: message,
-            filename: `FAREDEAL_Report_${Date.now()}.pdf`
+            filename: `SUPERMARTKERA_Report_${Date.now()}.pdf`
           }
         } : {
           text: { body: message }
@@ -2041,9 +2041,9 @@ const ManagerPortal = () => {
           to_email: recipients.join(','),
           subject: subject,
           html_content: htmlContent,
-          from_name: 'FAREDEAL Uganda Business Intelligence',
-          from_email: 'reports@faredeal.ug',
-          reply_to: 'manager@faredeal.ug'
+          from_name: 'SUPERMARTKERA Uganda Business Intelligence',
+          from_email: 'reports@supermartkera.ug',
+          reply_to: 'manager@supermartkera.ug'
         }
       };
 
@@ -2077,7 +2077,7 @@ const ManagerPortal = () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `FAREDEAL ${data.reportName}`,
+          title: `SUPERMARTKERA ${data.reportName}`,
           text: data.content,
           url: data.url || window.location.href
         });
@@ -2155,7 +2155,7 @@ const ManagerPortal = () => {
         case 'json':
           fileContent = JSON.stringify(reportData, null, 2);
           mimeType = 'application/json';
-          fileName = `FAREDEAL_Report_${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+          fileName = `SUPERMARTKERA_Report_${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
           break;
         case 'csv':
           const csvData = [
@@ -2172,10 +2172,10 @@ const ManagerPortal = () => {
           ];
           fileContent = csvData.map(row => row.join(',')).join('\n');
           mimeType = 'text/csv';
-          fileName = `FAREDEAL_Report_${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+          fileName = `SUPERMARTKERA_Report_${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
           break;
         default:
-          fileContent = `FAREDEAL UGANDA BUSINESS REPORT
+          fileContent = `SUPERMARTKERA UGANDA BUSINESS REPORT
 ${'='.repeat(50)}
 Report: ${report.name}
 Generated: ${new Date().toLocaleString('en-UG')}
@@ -2195,10 +2195,10 @@ Top Products:
 ${realTimeData.sales.topProducts.slice(0, 3).map((product, index) => 
   `${index + 1}. ${product.name}: UGX ${(product.sales / 1000000).toFixed(1)}M`).join('\n')}
 
-Generated by FAREDEAL Uganda Manager Portal
-Contact: support@faredeal.ug | +256-700-123456`;
+Generated by SUPERMARTKERA Uganda Manager Portal
+Contact: support@supermartkera.ug | +256-700-123456`;
           mimeType = 'text/plain';
-          fileName = `FAREDEAL_Report_${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+          fileName = `SUPERMARTKERA_Report_${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
       }
 
       const blob = new Blob([fileContent], { type: mimeType });
@@ -2220,15 +2220,15 @@ Contact: support@faredeal.ug | +256-700-123456`;
         metadata: {
           generatedBy: user?.name || 'System Manager',
           region: 'Uganda',
-          businessUnit: 'FAREDEAL'
+          businessUnit: 'SUPERMARTKERA'
         }
       };
       
       // Store report data locally (simulate cloud storage)
-      localStorage.setItem(`faredeal_report_${reportId}`, JSON.stringify(shareableData));
+      localStorage.setItem(`supermartkera_report_${reportId}`, JSON.stringify(shareableData));
       
       // Create shareable URL
-      const shareableUrl = `https://portal.faredeal.ug/shared-reports/${reportId}`;
+      const shareableUrl = `https://portal.supermartkera.ug/shared-reports/${reportId}`;
       
       return { url: shareableUrl, id: reportId, data: shareableData };
     };
@@ -2265,7 +2265,7 @@ Contact: support@faredeal.ug | +256-700-123456`;
     const generatePDFContent = (report, data) => {
       // Create a simplified PDF-like text content
       return `
-FAREDEAL UGANDA - ${report.name.toUpperCase()}
+SUPERMARTKERA UGANDA - ${report.name.toUpperCase()}
 Generated: ${data.generatedAt}
 ================================================
 
@@ -2289,14 +2289,14 @@ ${data.topProducts.map(product =>
 ).join('\n')}
 ` : ''}
 
-Report generated by FAREDEAL Manager Portal
-Contact: support@faredeal.ug | +256-700-123456
+Report generated by SUPERMARTKERA Manager Portal
+Contact: support@supermartkera.ug | +256-700-123456
       `;
     };
 
     const generateExcelContent = (report, data) => {
       // Create CSV format that can be opened in Excel
-      let content = `FAREDEAL UGANDA,${report.name}\n`;
+      let content = `SUPERMARTKERA UGANDA,${report.name}\n`;
       content += `Generated,${data.generatedAt}\n\n`;
       content += `SUMMARY\n`;
       content += `Metric,Value\n`;
@@ -2426,8 +2426,8 @@ Contact: support@faredeal.ug | +256-700-123456
                 document.body.removeChild(downloadLink);
                 
                 // Enhanced email content
-                const emailSubject = encodeURIComponent(`📊 FAREDEAL Uganda Business Report: ${report.name} - ${new Date().toLocaleDateString('en-UG')}`);
-                const professionalEmailBody = encodeURIComponent(`Dear FAREDEAL Uganda Team,
+                const emailSubject = encodeURIComponent(`📊 SUPERMARTKERA Uganda Business Report: ${report.name} - ${new Date().toLocaleDateString('en-UG')}`);
+                const professionalEmailBody = encodeURIComponent(`Dear SUPERMARTKERA Uganda Team,
 
 I hope this email finds you well. Please find the comprehensive ${report.name} for our Uganda operations attached to this email.
 
@@ -2484,10 +2484,10 @@ Contains: Detailed analytics data for further analysis
 
 🔗 ADDITIONAL RESOURCES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 Live Dashboard: https://portal.faredeal.ug/manager
-📱 Mobile Portal: Download FAREDEAL Manager App
-📈 Analytics Suite: https://analytics.faredeal.ug
-📋 Previous Reports: https://portal.faredeal.ug/reports/archive
+📊 Live Dashboard: https://portal.supermartkera.ug/manager
+📱 Mobile Portal: Download SUPERMARTKERA Manager App
+📈 Analytics Suite: https://analytics.supermartkera.ug
+📋 Previous Reports: https://portal.supermartkera.ug/reports/archive
 
 🎯 RECOMMENDED ACTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2499,25 +2499,25 @@ Contains: Detailed analytics data for further analysis
 
 📞 CONTACT INFORMATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FAREDEAL Uganda Headquarters
+SUPERMARTKERA Uganda Headquarters
 📍 Address: Kampala Business District, Uganda
 ☎️ Phone: +256-700-123456
-📧 Email: support@faredeal.ug
-🌐 Website: www.faredeal.ug
+📧 Email: support@supermartkera.ug
+🌐 Website: www.supermartkera.ug
 
 For technical support regarding this report:
-📧 Technical Team: tech@faredeal.ug
+📧 Technical Team: tech@supermartkera.ug
 📞 IT Helpdesk: +256-700-654321
 
 This report contains confidential business information. Please ensure secure handling and authorized distribution only.
 
 Best regards,
 ${user?.name || 'System Manager'}
-FAREDEAL Uganda Business Intelligence Team
+SUPERMARTKERA Uganda Business Intelligence Team
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-© ${new Date().getFullYear()} FAREDEAL Uganda. All rights reserved.
-This is an automated report generated by FAREDEAL Manager Portal.
+© ${new Date().getFullYear()} SUPERMARTKERA Uganda. All rights reserved.
+This is an automated report generated by SUPERMARTKERA Manager Portal.
 Report ID: ${Date.now()}-UG-${Math.random().toString(36).substr(2, 9).toUpperCase()}
                 `);
                 
@@ -2527,22 +2527,22 @@ Report ID: ${Date.now()}-UG-${Math.random().toString(36).substr(2, 9).toUpperCas
                 let emailRecipients = '';
                 switch(recipients) {
                   case '1':
-                    emailRecipients = 'ceo@faredeal.ug,cfo@faredeal.ug,operations@faredeal.ug';
+                    emailRecipients = 'ceo@supermartkera.ug,cfo@supermartkera.ug,operations@supermartkera.ug';
                     break;
                   case '2':
-                    emailRecipients = 'kampala.manager@faredeal.ug,entebbe.manager@faredeal.ug,jinja.manager@faredeal.ug';
+                    emailRecipients = 'kampala.manager@supermartkera.ug,entebbe.manager@supermartkera.ug,jinja.manager@supermartkera.ug';
                     break;
                   case '3':
-                    emailRecipients = 'finance@faredeal.ug,accounting@faredeal.ug,nakiyonga.catherine@faredeal.ug';
+                    emailRecipients = 'finance@supermartkera.ug,accounting@supermartkera.ug,nakiyonga.catherine@supermartkera.ug';
                     break;
                   case '4':
-                    emailRecipients = prompt('Enter email addresses (comma separated):') || 'manager@faredeal.ug';
+                    emailRecipients = prompt('Enter email addresses (comma separated):') || 'manager@supermartkera.ug';
                     break;
                   case '5':
-                    emailRecipients = 'team@faredeal.ug,all@faredeal.ug';
+                    emailRecipients = 'team@supermartkera.ug,all@supermartkera.ug';
                     break;
                   default:
-                    emailRecipients = 'nakiyonga.catherine@faredeal.ug,manager@faredeal.ug';
+                    emailRecipients = 'nakiyonga.catherine@supermartkera.ug,manager@supermartkera.ug';
                 }
                 
                 const professionalMailtoLink = `mailto:${emailRecipients}?subject=${emailSubject}&body=${professionalEmailBody}`;
@@ -2585,13 +2585,13 @@ ${realTimeData.inventory.lowStockItems > 0 ? '⚠️ ' + realTimeData.inventory.
 3. Enhance customer experience initiatives
 
 Report Generated: ${new Date().toLocaleString('en-UG')}
-Dashboard: portal.faredeal.ug
+Dashboard: portal.supermartkera.ug
 
 Best regards,
-FAREDEAL Uganda Leadership Team`);
+SUPERMARTKERA Uganda Leadership Team`);
                 
                 const execSubject = encodeURIComponent(`📈 Executive Brief: Uganda Operations Performance Summary`);
-                const execMailto = `mailto:ceo@faredeal.ug,cfo@faredeal.ug,board@faredeal.ug?subject=${execSubject}&body=${executiveSummary}`;
+                const execMailto = `mailto:ceo@supermartkera.ug,cfo@supermartkera.ug,board@supermartkera.ug?subject=${execSubject}&body=${executiveSummary}`;
                 window.open(execMailto, '_blank');
                 toast.success(`� Executive summary email prepared for leadership team!`);
                 break;
@@ -2599,7 +2599,7 @@ FAREDEAL Uganda Leadership Team`);
               case 2: // Team Notification
                 const teamNotification = encodeURIComponent(`🔔 TEAM UPDATE: ${report.name}
 
-Hi FAREDEAL Uganda Team! 👋
+Hi SUPERMARTKERA Uganda Team! 👋
 
 Here's our latest performance snapshot:
 
@@ -2628,15 +2628,15 @@ Keep up the excellent work! Focus on:
 - Regional growth opportunities
 - Product innovation
 
-Questions? Reach out to your regional manager or email team@faredeal.ug
+Questions? Reach out to your regional manager or email team@supermartkera.ug
 
 Cheers to our continued success! 🎉
-FAREDEAL Uganda Management
+SUPERMARTKERA Uganda Management
 
-📱 Check portal.faredeal.ug for detailed metrics`);
+📱 Check portal.supermartkera.ug for detailed metrics`);
                 
                 const teamSubject = encodeURIComponent(`🔔 Team Update: ${report.name} Performance Snapshot`);
-                const teamMailto = `mailto:team@faredeal.ug,staff@faredeal.ug?subject=${teamSubject}&body=${teamNotification}`;
+                const teamMailto = `mailto:team@supermartkera.ug,staff@supermartkera.ug?subject=${teamSubject}&body=${teamNotification}`;
                 window.open(teamMailto, '_blank');
                 toast.success(`📢 Team notification email prepared!`);
                 break;
@@ -2644,12 +2644,12 @@ FAREDEAL Uganda Management
               case 3: // Automated Report API
                 // Simulate automated email service
                 const emailApiData = {
-                  service: 'FAREDEAL Email Service',
+                  service: 'SUPERMARTKERA Email Service',
                   template: 'business_report_v2',
                   recipients: [
-                    { email: 'nakiyonga.catherine@faredeal.ug', name: 'Catherine Nakiyonga' },
-                    { email: 'manager@faredeal.ug', name: 'Operations Manager' },
-                    { email: 'team@faredeal.ug', name: 'FAREDEAL Team' }
+                    { email: 'nakiyonga.catherine@supermartkera.ug', name: 'Catherine Nakiyonga' },
+                    { email: 'manager@supermartkera.ug', name: 'Operations Manager' },
+                    { email: 'team@supermartkera.ug', name: 'SUPERMARTKERA Team' }
                   ],
                   data: {
                     reportName: report.name,
@@ -2662,7 +2662,7 @@ FAREDEAL Uganda Management
                   },
                   attachments: [
                     {
-                      filename: `FAREDEAL_Report_${Date.now()}.pdf`,
+                      filename: `SUPERMARTKERA_Report_${Date.now()}.pdf`,
                       content: 'base64_encoded_content_here'
                     }
                   ]
@@ -2680,11 +2680,11 @@ FAREDEAL Uganda Management
                   // Also open backup mailto
                   const apiBackupBody = encodeURIComponent(`🤖 AUTOMATED BUSINESS REPORT
 
-This email was generated automatically by FAREDEAL Business Intelligence System.
+This email was generated automatically by SUPERMARTKERA Business Intelligence System.
 
 Report: ${report.name}
 Generated: ${new Date().toLocaleString('en-UG')}
-System: FAREDEAL Email API v2.0
+System: SUPERMARTKERA Email API v2.0
 
 📊 AUTOMATED METRICS SUMMARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2701,15 +2701,15 @@ Response Time: ${Math.random() * 100 + 50}ms
 Status: Success (200)
 Message ID: ${Date.now()}-AUTO
 
-For technical support: tech@faredeal.ug
-Dashboard: portal.faredeal.ug
+For technical support: tech@supermartkera.ug
+Dashboard: portal.supermartkera.ug
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FAREDEAL Automated Business Intelligence
-© ${new Date().getFullYear()} FAREDEAL Uganda - All rights reserved`);
+SUPERMARTKERA Automated Business Intelligence
+© ${new Date().getFullYear()} SUPERMARTKERA Uganda - All rights reserved`);
                   
                   const apiSubject = encodeURIComponent(`🤖 Automated Report: ${report.name} - System Generated`);
-                  window.open(`mailto:tech@faredeal.ug?subject=${apiSubject}&body=${apiBackupBody}`, '_blank');
+                  window.open(`mailto:tech@supermartkera.ug?subject=${apiSubject}&body=${apiBackupBody}`, '_blank');
                 }, 2000);
                 break;
             }
@@ -2723,15 +2723,15 @@ FAREDEAL Automated Business Intelligence
           const smsOptions = [
             {
               name: 'Summary SMS',
-              content: `📊 FAREDEAL Report Alert!\n\n${report.name} ready.\n💰 Revenue: ${generatedReportData?.summary?.totalRevenue || 'UGX ' + (realTimeData.financial.totalRevenue / 1000000).toFixed(1) + 'M'}\n📈 Growth: ${generatedReportData?.summary?.growthRate || realTimeData.sales.growthRate + '%'}\n\n🔗 Full report: portal.faredeal.ug\n📞 +256-700-123456`
+              content: `📊 SUPERMARTKERA Report Alert!\n\n${report.name} ready.\n💰 Revenue: ${generatedReportData?.summary?.totalRevenue || 'UGX ' + (realTimeData.financial.totalRevenue / 1000000).toFixed(1) + 'M'}\n📈 Growth: ${generatedReportData?.summary?.growthRate || realTimeData.sales.growthRate + '%'}\n\n🔗 Full report: portal.supermartkera.ug\n📞 +256-700-123456`
             },
             {
               name: 'Urgent Alert',
-              content: `🚨 URGENT: ${report.name}\n\n⚠️ Requires immediate attention\n💰 Revenue impact: ${generatedReportData?.summary?.totalRevenue || 'UGX ' + (realTimeData.financial.totalRevenue / 1000000).toFixed(1) + 'M'}\n\n📱 Call now: +256-700-123456\n🔗 portal.faredeal.ug`
+              content: `🚨 URGENT: ${report.name}\n\n⚠️ Requires immediate attention\n💰 Revenue impact: ${generatedReportData?.summary?.totalRevenue || 'UGX ' + (realTimeData.financial.totalRevenue / 1000000).toFixed(1) + 'M'}\n\n📱 Call now: +256-700-123456\n🔗 portal.supermartkera.ug`
             },
             {
               name: 'Team Update',
-              content: `📢 Team Update - ${report.name}\n\n✅ Performance: ${realTimeData.sales.customerMetrics.customerSatisfaction}/5.0\n📊 Today's sales: UGX ${(realTimeData.sales.todaySales / 1000000).toFixed(1)}M\n🇺🇬 Best region: Kampala\n\n👥 FAREDEAL Uganda Team`
+              content: `📢 Team Update - ${report.name}\n\n✅ Performance: ${realTimeData.sales.customerMetrics.customerSatisfaction}/5.0\n📊 Today's sales: UGX ${(realTimeData.sales.todaySales / 1000000).toFixed(1)}M\n🇺🇬 Best region: Kampala\n\n👥 SUPERMARTKERA Uganda Team`
             }
           ];
           
@@ -2821,7 +2821,7 @@ FAREDEAL Automated Business Intelligence
             }
             
             // Create professional message
-            const whatsappMessage = `📊 *FAREDEAL UGANDA BUSINESS REPORT*
+            const whatsappMessage = `📊 *SUPERMARTKERA UGANDA BUSINESS REPORT*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🎯 *${report.name}*
@@ -2850,15 +2850,15 @@ ${realTimeData.sales.topProducts.slice(0, 3).map((product, index) =>
 ).join('\n\n')}
 
 🔗 *DASHBOARD ACCESS*
-portal.faredeal.ug/manager
+portal.supermartkera.ug/manager
 
 📞 *CONTACT*
-FAREDEAL Uganda HQ
+SUPERMARTKERA Uganda HQ
 📍 Kampala Business District
 ☎️ +256-700-123456
-📧 support@faredeal.ug
+📧 support@supermartkera.ug
 
-_Powered by FAREDEAL Business Intelligence_ 🚀`;
+_Powered by SUPERMARTKERA Business Intelligence_ 🚀`;
 
             switch (optionIndex) {
               case 0: // WhatsApp Business API
@@ -2961,7 +2961,7 @@ _Powered by FAREDEAL Business Intelligence_ 🚀`;
             switch (smsOptionIndex) {
               case 0: // Share Report Link
                 const shareableLink = generateShareableLink();
-                const linkMessage = encodeURIComponent(`📊 *FAREDEAL UGANDA BUSINESS REPORT*
+                const linkMessage = encodeURIComponent(`📊 *SUPERMARTKERA UGANDA BUSINESS REPORT*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🎯 *${report.name}*
@@ -2986,8 +2986,8 @@ ${shareableLink.url}
 ✅ Regional breakdown
 ✅ Product analytics
 
-_Generated by FAREDEAL Business Intelligence_
-🌐 portal.faredeal.ug`);
+_Generated by SUPERMARTKERA Business Intelligence_
+🌐 portal.supermartkera.ug`);
 
                 const recipients = prompt(`📱 Send to:\n\n1. Team Lead (+256-700-123456)\n2. Regional Managers Group\n3. Executive Team\n4. Custom Number\n5. Share Link Only\n\nChoose 1-5:`);
                 
@@ -3041,7 +3041,7 @@ _Generated by FAREDEAL Business Intelligence_
                 document.body.removeChild(downloadLink);
                 
                 // WhatsApp message with file instruction
-                const fileMessage = encodeURIComponent(`📊 *FAREDEAL UGANDA REPORT*
+                const fileMessage = encodeURIComponent(`📊 *SUPERMARTKERA UGANDA REPORT*
 
 � *File:* ${reportFile.fileName}
 📊 *Report:* ${report.name}
@@ -3055,7 +3055,7 @@ _Generated by FAREDEAL Business Intelligence_
 📎 *File downloaded to your device*
 Please attach the file to this WhatsApp message
 
-🇺🇬 FAREDEAL Uganda Business Intelligence`);
+🇺🇬 SUPERMARTKERA Uganda Business Intelligence`);
 
                 setTimeout(() => {
                   const sendFile = confirm(`📁 File "${reportFile.fileName}" downloaded!\n\n� Open WhatsApp to attach and send file?\n🔹 Click OK to open WhatsApp\n🔹 Click Cancel to send message only`);
@@ -3072,7 +3072,7 @@ Please attach the file to this WhatsApp message
                 
               case 2: // Quick Message
                 const quickTemplates = {
-                  summary: `📊 *FAREDEAL ${report.name}*
+                  summary: `📊 *SUPERMARTKERA ${report.name}*
 
 💰 Revenue: *UGX ${(realTimeData.financial.totalRevenue / 1000000).toFixed(1)}M*
 📈 Growth: *${realTimeData.sales.growthRate}%*
@@ -3081,7 +3081,7 @@ Please attach the file to this WhatsApp message
 
 �🇬 *Top Region:* Kampala (UGX ${(realTimeData.sales.regionalPerformance.kampala?.sales / 1000000).toFixed(1)}M)
 
-📱 Full report: portal.faredeal.ug`,
+📱 Full report: portal.supermartkera.ug`,
                   
                   alert: `🚨 *URGENT BUSINESS UPDATE*
 
@@ -3096,11 +3096,11 @@ Please attach the file to this WhatsApp message
 Review performance metrics immediately
 
 📞 Contact: +256-700-123456
-🔗 portal.faredeal.ug`,
+🔗 portal.supermartkera.ug`,
                   
                   celebration: `🎉 *EXCELLENT PERFORMANCE!*
 
-🇺🇬 *FAREDEAL UGANDA* hitting targets!
+🇺🇬 *SUPERMARTKERA UGANDA* hitting targets!
 
 🏆 *${report.name} Highlights:*
 � Revenue: *UGX ${(realTimeData.financial.totalRevenue / 1000000).toFixed(1)}M*
@@ -3112,7 +3112,7 @@ Review performance metrics immediately
 • Entebbe: UGX ${(realTimeData.sales.regionalPerformance.entebbe?.sales / 1000000).toFixed(1)}M
 
 Keep up the amazing work! 🚀
-*FAREDEAL Team*`
+*SUPERMARTKERA Team*`
                 };
                 
                 const templateChoice = prompt(`💬 Choose message style:\n\n1. Business Summary\n2. Urgent Alert\n3. Celebration/Success\n\nEnter 1-3:`);
@@ -3157,7 +3157,7 @@ Keep up the amazing work! 🚀
                 // Simulate Business API call
                 console.log('WhatsApp Business API Message:', businessMessage);
                 
-                const businessURL = `https://wa.me/?text=${encodeURIComponent(`🏢 *FAREDEAL BUSINESS REPORT*
+                const businessURL = `https://wa.me/?text=${encodeURIComponent(`🏢 *SUPERMARTKERA BUSINESS REPORT*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 *${report.name}*
@@ -3175,10 +3175,10 @@ Keep up the amazing work! 🚀
 🏞️ Jinja: UGX ${(realTimeData.sales.regionalPerformance.jinja?.sales / 1000000).toFixed(1)}M
 
 📱 *DASHBOARD ACCESS*
-🔗 portal.faredeal.ug/manager
-📧 manager@faredeal.ug
+🔗 portal.supermartkera.ug/manager
+📧 manager@supermartkera.ug
 
-*Powered by FAREDEAL Business Intelligence*
+*Powered by SUPERMARTKERA Business Intelligence*
 _Automated Business Report System_`)}`;
                 
                 window.open(businessURL, '_blank');
@@ -3200,7 +3200,7 @@ _Automated Business Report System_`)}`;
               <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>${report.name} - FAREDEAL Uganda Business Report</title>
+                <title>${report.name} - SUPERMARTKERA Uganda Business Report</title>
                 <style>
                   * { margin: 0; padding: 0; box-sizing: border-box; }
                   
@@ -3341,10 +3341,10 @@ _Automated Business Report System_`)}`;
               <body>
                 <div class="page">
                   <div class="header">
-                    <div class="logo">🇺🇬 FAREDEAL UGANDA</div>
+                    <div class="logo">🇺🇬 SUPERMARTKERA UGANDA</div>
                     <div class="company-info">
                       Kampala Business District, Uganda<br>
-                      📞 +256-700-123456 | 📧 support@faredeal.ug | 🌐 www.faredeal.ug
+                      📞 +256-700-123456 | 📧 support@supermartkera.ug | 🌐 www.supermartkera.ug
                     </div>
                     <div class="report-title">${report.name}</div>
                     <div class="report-meta">
@@ -3438,10 +3438,10 @@ _Automated Business Report System_`)}`;
                   </div>
                   
                   <div class="footer">
-                    <p><strong>FAREDEAL Uganda Business Intelligence Report</strong></p>
+                    <p><strong>SUPERMARTKERA Uganda Business Intelligence Report</strong></p>
                     <p>This report contains confidential business information. Distribution restricted to authorized personnel only.</p>
-                    <p>For questions about this report, contact: manager@faredeal.ug | +256-700-123456</p>
-                    <p>© ${new Date().getFullYear()} FAREDEAL Uganda. All rights reserved.</p>
+                    <p>For questions about this report, contact: manager@supermartkera.ug | +256-700-123456</p>
+                    <p>© ${new Date().getFullYear()} SUPERMARTKERA Uganda. All rights reserved.</p>
                   </div>
                 </div>
                 
@@ -4268,7 +4268,7 @@ _Automated Business Report System_`)}`;
   const [businessSettings, setBusinessSettings] = useState(() => {
     const saved = localStorage.getItem('managerPortalBusiness');
     return saved ? JSON.parse(saved) : {
-      businessName: 'FareDeal Uganda',
+      businessName: 'SupermartKera Uganda',
       businessType: 'retail',
       currency: 'UGX',
       taxRate: '18',
@@ -4396,7 +4396,7 @@ _Automated Business Report System_`)}`;
           status: profileData?.status || 'Online',
           languages: languages,
           phoneNumber: profileData?.phone || managerData.phone || '+256 700 000 000',
-          email: managerData.email || parsedUser.email || 'manager@faredeal.com',
+          email: managerData.email || parsedUser.email || 'manager@supermartkera.com',
           supermarket_id: managerData.supermarket_id,
           is_active: managerData.is_active,
           permissions: {
@@ -7119,10 +7119,10 @@ _Automated Business Report System_`)}`;
             icon: '🏪', 
             type: 'form',
             fields: [
-              { name: 'storeName', label: 'Store Name', type: 'text', value: 'FAREDEAL - Kampala Central', required: true },
+              { name: 'storeName', label: 'Store Name', type: 'text', value: 'SUPERMARTKERA - Kampala Central', required: true },
               { name: 'storeAddress', label: 'Store Address', type: 'textarea', value: 'Plot 123, Kampala Road, Central Division, Kampala, Uganda' },
               { name: 'storePhone', label: 'Store Phone', type: 'tel', value: '+256 414 123456', required: true },
-              { name: 'storeEmail', label: 'Store Email', type: 'email', value: 'kampala@faredeal.ug' },
+              { name: 'storeEmail', label: 'Store Email', type: 'email', value: 'kampala@supermartkera.ug' },
               { name: 'businessLicense', label: 'Business License Number', type: 'text', value: 'UG-BL-2024-12345' },
               { name: 'operatingHours', label: 'Operating Hours', type: 'text', value: 'Mon-Sat: 8:00 AM - 8:00 PM, Sun: 10:00 AM - 6:00 PM' }
             ]
@@ -7195,7 +7195,7 @@ _Automated Business Report System_`)}`;
           Notification.requestPermission().then(permission => {
             if (permission === 'granted') {
               toast.success('� Notifications enabled successfully!');
-              new Notification('FAREDEAL Manager Portal', {
+              new Notification('SUPERMARTKERA Manager Portal', {
                 body: 'Notifications are now active for your account',
                 icon: '🔔'
               });
@@ -7968,7 +7968,7 @@ _Automated Business Report System_`)}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `faredeal-${categoryKey}-settings.json`;
+      a.download = `supermartkera-${categoryKey}-settings.json`;
       a.click();
       
       window.toast.success(`📥 ${categoryKey} settings exported!`);
@@ -8083,7 +8083,7 @@ _Automated Business Report System_`)}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `faredeal-settings-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `supermartkera-settings-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       window.toast.success('📥 Settings exported successfully! File downloaded.');
     };
@@ -8136,7 +8136,7 @@ _Automated Business Report System_`)}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `faredeal-backup-${backup.backup_id}.json`;
+      a.download = `supermartkera-backup-${backup.backup_id}.json`;
       a.click();
       window.toast.success('� Complete backup created successfully!');
     };
@@ -9842,7 +9842,7 @@ _Automated Business Report System_`)}`;
           {
             id: 'business_overview',
             name: 'Business Overview Report',
-            description: 'Complete overview of FAREDEAL Uganda operations with live metrics',
+            description: 'Complete overview of SUPERMARTKERA Uganda operations with live metrics',
             icon: '🏢',
             metrics: ['Revenue', 'Customers', 'Orders', 'Growth'],
             frequency: 'Real-time',
@@ -10682,7 +10682,7 @@ _Automated Business Report System_`)}`;
       const printContent = `
         <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
           <h1 style="text-align: center; color: #2563eb;">📋 Supplier Order Verification</h1>
-          <h2 style="text-align: center;">FAREDEAL Uganda</h2>
+          <h2 style="text-align: center;">SUPERMARTKERA Uganda</h2>
           <hr style="margin: 20px 0;">
           
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
@@ -10734,7 +10734,7 @@ _Automated Business Report System_`)}`;
           
           <div style="margin-top: 40px; text-align: center;">
             <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-            <p style="font-size: 12px; color: #666;">FAREDEAL Uganda - Manager Portal</p>
+            <p style="font-size: 12px; color: #666;">SUPERMARTKERA Uganda - Manager Portal</p>
           </div>
         </div>
       `;
@@ -10743,7 +10743,7 @@ _Automated Business Report System_`)}`;
       printWindow.document.write(`
         <html>
           <head>
-            <title>Order ${order.orderNumber} - FAREDEAL</title>
+            <title>Order ${order.orderNumber} - SUPERMARTKERA</title>
             <style>
               body { margin: 0; padding: 20px; }
               @media print {
@@ -10787,7 +10787,7 @@ CONTACT DETAILS:
 Notes: ${order.notes}
 
 Best regards,
-FAREDEAL Uganda Management Team
+SUPERMARTKERA Uganda Management Team
       `;
 
       const mailtoLink = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
@@ -11688,7 +11688,7 @@ FAREDEAL Uganda Management Team
                     </div>
                     <div>
                       <h2 className="text-2xl font-bold">Portal Control Center</h2>
-                      <p className="text-cyan-100">Monitor and control all FAREDEAL portals in real-time</p>
+                      <p className="text-cyan-100">Monitor and control all SUPERMARTKERA portals in real-time</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">

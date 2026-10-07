@@ -1,6 +1,6 @@
 /**
  * Email Service - SendGrid Integration
- * Handles all email notifications for FAREDEAL
+ * Handles all email notifications for SUPERMARTKERA
  */
 
 import sgMail from '@sendgrid/mail';
@@ -8,8 +8,8 @@ import sgMail from '@sendgrid/mail';
 class EmailService {
   constructor() {
     this.apiKey = process.env.SENDGRID_API_KEY;
-    this.fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@faredeal.ug';
-    this.fromName = process.env.SENDGRID_FROM_NAME || 'FAREDEAL Uganda';
+    this.fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@supermartkera.ug';
+    this.fromName = process.env.SENDGRID_FROM_NAME || 'SUPERMARTKERA Uganda';
     
     if (!this.apiKey) {
       console.warn('⚠️  SendGrid API key not configured. Email service disabled.');
@@ -72,11 +72,11 @@ class EmailService {
         <body>
           <div class="container">
             <div class="header">
-              <h1>Welcome to FAREDEAL Admin Portal</h1>
+              <h1>Welcome to SUPERMARTKERA Admin Portal</h1>
             </div>
             <div class="content">
               <p>Hello <strong>${fullName}</strong>,</p>
-              <p>Your admin account has been successfully created on FAREDEAL Uganda's management system.</p>
+              <p>Your admin account has been successfully created on SUPERMARTKERA Uganda's management system.</p>
               
               <h3>Account Details:</h3>
               <ul>
@@ -106,10 +106,10 @@ class EmailService {
               <p>If you didn't request this account or have any questions, please contact support.</p>
               
               <p>Best regards,<br>
-              <strong>FAREDEAL Uganda Team</strong></p>
+              <strong>SUPERMARTKERA Uganda Team</strong></p>
             </div>
             <div class="footer">
-              <p>&copy; 2025 FAREDEAL Uganda. All rights reserved.</p>
+              <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
               <p>This is an automated message. Please do not reply to this email.</p>
             </div>
           </div>
@@ -119,7 +119,7 @@ class EmailService {
 
     return this.sendEmail(
       email,
-      'Admin Account Created - FAREDEAL Uganda',
+      'Admin Account Created - SUPERMARTKERA Uganda',
       htmlContent
     );
   }
@@ -149,7 +149,7 @@ class EmailService {
             </div>
             <div class="content">
               <p>Hello <strong>${fullName}</strong>,</p>
-              <p>We received a request to reset your FAREDEAL account password.</p>
+              <p>We received a request to reset your SUPERMARTKERA account password.</p>
 
               <div class="warning">
                 <strong>⚠️ Important:</strong> This link will expire in 24 hours for security purposes.
@@ -166,10 +166,10 @@ class EmailService {
               </div>
 
               <p>Best regards,<br>
-              <strong>FAREDEAL Uganda Security Team</strong></p>
+              <strong>SUPERMARTKERA Uganda Security Team</strong></p>
             </div>
             <div class="footer">
-              <p>&copy; 2025 FAREDEAL Uganda. All rights reserved.</p>
+              <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
               <p>This is an automated security message.</p>
             </div>
           </div>
@@ -179,7 +179,7 @@ class EmailService {
 
     return this.sendEmail(
       email,
-      'Password Reset Request - FAREDEAL Uganda',
+      'Password Reset Request - SUPERMARTKERA Uganda',
       htmlContent
     );
   }
@@ -259,10 +259,10 @@ class EmailService {
               <p>If you have any questions, please contact our support team.</p>
               
               <p>Best regards,<br>
-              <strong>FAREDEAL Uganda Team</strong></p>
+              <strong>SUPERMARTKERA Uganda Team</strong></p>
             </div>
             <div class="footer">
-              <p>&copy; 2025 FAREDEAL Uganda. All rights reserved.</p>
+              <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -271,7 +271,7 @@ class EmailService {
 
     return this.sendEmail(
       email,
-      `Order Confirmation #${orderNumber} - FAREDEAL Uganda`,
+      `Order Confirmation #${orderNumber} - SUPERMARTKERA Uganda`,
       htmlContent
     );
   }
@@ -323,10 +323,10 @@ class EmailService {
               <p>If you have any questions about your shipment, please contact our support team with your order number.</p>
               
               <p>Best regards,<br>
-              <strong>FAREDEAL Uganda Logistics Team</strong></p>
+              <strong>SUPERMARTKERA Uganda Logistics Team</strong></p>
             </div>
             <div class="footer">
-              <p>&copy; 2025 FAREDEAL Uganda. All rights reserved.</p>
+              <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -335,7 +335,7 @@ class EmailService {
 
     return this.sendEmail(
       email,
-      `Your Order #${orderNumber} Has Shipped - FAREDEAL Uganda`,
+      `Your Order #${orderNumber} Has Shipped - SUPERMARTKERA Uganda`,
       htmlContent
     );
   }
@@ -364,7 +364,7 @@ class EmailService {
             </div>
             <div class="content">
               <p>Hello <strong>${fullName}</strong>,</p>
-              <p>Congratulations! Your profile has been approved and you can now access the FAREDEAL system.</p>
+              <p>Congratulations! Your profile has been approved and you can now access the SUPERMARTKERA system.</p>
 
               <h3>Your Account Details:</h3>
               <ul>
@@ -386,10 +386,10 @@ class EmailService {
               <p style="margin-top: 20px;">If you have any questions or need assistance, please contact our support team.</p>
               
               <p>Best regards,<br>
-              <strong>FAREDEAL Uganda Admin Team</strong></p>
+              <strong>SUPERMARTKERA Uganda Admin Team</strong></p>
             </div>
             <div class="footer">
-              <p>&copy; 2025 FAREDEAL Uganda. All rights reserved.</p>
+              <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -398,7 +398,7 @@ class EmailService {
 
     return this.sendEmail(
       email,
-      'Your Profile Has Been Approved - FAREDEAL Uganda',
+      'Your Profile Has Been Approved - SUPERMARTKERA Uganda',
       htmlContent
     );
   }

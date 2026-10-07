@@ -132,7 +132,7 @@ const ManagerPortal = () => {
     location: 'Kampala, Uganda',
     languages: ['English', 'Luganda', 'Swahili'],
     phoneNumber: '+256 700 123 456',
-    email: 'catherine.nakiyonga@faredeal.ug',
+    email: 'catherine.nakiyonga@supermartkera.ug',
     permissions: {
       analytics: true,
       teamManagement: true,
@@ -2097,7 +2097,7 @@ const ManagerPortal = () => {
       const printContent = `
         <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
           <h1 style="text-align: center; color: #2563eb;">📋 Supplier Order Verification</h1>
-          <h2 style="text-align: center;">FAREDEAL Uganda</h2>
+          <h2 style="text-align: center;">SUPERMARTKERA Uganda</h2>
           <hr style="margin: 20px 0;">
           
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
@@ -2149,7 +2149,7 @@ const ManagerPortal = () => {
           
           <div style="margin-top: 40px; text-align: center;">
             <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-            <p style="font-size: 12px; color: #666;">FAREDEAL Uganda - Manager Portal</p>
+            <p style="font-size: 12px; color: #666;">SUPERMARTKERA Uganda - Manager Portal</p>
           </div>
         </div>
       `;
@@ -2158,7 +2158,7 @@ const ManagerPortal = () => {
       printWindow.document.write(`
         <html>
           <head>
-            <title>Order ${order.orderNumber} - FAREDEAL</title>
+            <title>Order ${order.orderNumber} - SUPERMARTKERA</title>
             <style>
               body { margin: 0; padding: 20px; }
               @media print {
@@ -2202,7 +2202,7 @@ CONTACT DETAILS:
 Notes: ${order.notes}
 
 Best regards,
-FAREDEAL Uganda Management Team
+SUPERMARTKERA Uganda Management Team
       `;
 
       const mailtoLink = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
@@ -2342,7 +2342,7 @@ FAREDEAL Uganda Management Team
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold mb-2">🇺🇬 Supplier Order Verification</h2>
-              <p className="text-green-100">FAREDEAL Uganda - Manager Portal</p>
+              <p className="text-green-100">SUPERMARTKERA Uganda - Manager Portal</p>
             </div>
             <div className="text-right">
               <div className="text-3xl font-bold">{orderStats.pending}</div>

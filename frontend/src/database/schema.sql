@@ -1,4 +1,4 @@
--- FAREDEAL POS System Database Schema
+-- SUPERMARTKERA POS System Database Schema
 -- Comprehensive database setup for Point of Sale and Business Management System
 
 -- =============================================================================
@@ -583,8 +583,8 @@ GROUP BY s.id, cu.first_name, cu.last_name, ca.first_name, ca.last_name;
 INSERT INTO system_settings (key, value, description, category) VALUES
 ('currency', '{"code": "UGX", "symbol": "USh", "name": "Ugandan Shilling"}', 'Default currency settings', 'general'),
 ('tax_rate', '{"default": 18, "vat": 18, "service": 6}', 'Tax rates configuration', 'financial'),
-('business_info', '{"name": "FAREDEAL", "address": "Kampala, Uganda", "phone": "+256-xxx-xxxx", "email": "info@faredeal.co.ug"}', 'Business information', 'general'),
-('pos_settings', '{"receipt_footer": "Thank you for shopping with FAREDEAL!", "auto_print": true}', 'POS system configuration', 'pos'),
+('business_info', '{"name": "SUPERMARTKERA", "address": "Kampala, Uganda", "phone": "+256-xxx-xxxx", "email": "info@supermartkera.co.ug"}', 'Business information', 'general'),
+('pos_settings', '{"receipt_footer": "Thank you for shopping with SUPERMARTKERA!", "auto_print": true}', 'POS system configuration', 'pos'),
 ('inventory_settings', '{"auto_reorder": false, "low_stock_alert": true}', 'Inventory management settings', 'inventory');
 
 -- Create default admin user (password: admin123)
@@ -600,7 +600,7 @@ INSERT INTO users (
     permissions,
     email_verified
 ) VALUES (
-    'admin@faredeal.co.ug',
+    'admin@supermartkera.co.ug',
     'admin',
     '$2b$10$rH8P8JXDx7QnQ9yFLGzYNO5vF7YK3K9Pv5xQyN8zR2mV6tU4sW3eG', -- admin123
     'System',
@@ -662,7 +662,7 @@ CREATE POLICY employee_access ON employees
 -- Log the schema creation
 DO $$
 BEGIN
-    RAISE NOTICE 'FAREDEAL POS Database Schema created successfully!';
+    RAISE NOTICE 'SUPERMARTKERA POS Database Schema created successfully!';
     RAISE NOTICE 'Tables created: %, Indexes: %, Functions: %, Triggers: %', 
         (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'),
         (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public'),

@@ -10,7 +10,7 @@ Your code is 100% fixed. The database table needs to be created.
 
 ### Step 1: Open Supabase
 1. Go to: https://app.supabase.com
-2. Select your project (Faredeal)
+2. Select your project (SupermartKera)
 3. Click **SQL Editor** (left sidebar)
 
 ### Step 2: Create New Query

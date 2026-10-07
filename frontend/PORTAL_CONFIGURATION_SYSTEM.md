@@ -4,7 +4,7 @@
 
 ### 📋 Overview
 
-The Portal Name Management System is a comprehensive, real-time configuration management solution that allows administrators to dynamically customize portal names, system branding, and interface elements across the entire FareDeal application. The system features real data integration, persistent storage, and live updates.
+The Portal Name Management System is a comprehensive, real-time configuration management solution that allows administrators to dynamically customize portal names, system branding, and interface elements across the entire SupermartKera application. The system features real data integration, persistent storage, and live updates.
 
 ---
 
@@ -110,8 +110,8 @@ Advanced admin interface with:
 // Available configuration fields:
 {
   systemName: "DIGITAL CITY ERA",
-  companyName: "FareDeal Uganda", 
-  appTitle: "FareDeal Management System",
+  companyName: "SupermartKera Uganda", 
+  appTitle: "SupermartKera Management System",
   adminPortal: "Admin Control Center",
   employeePortal: "Employee Dashboard",
   managerPortal: "Manager Portal",
@@ -192,9 +192,9 @@ POST   /api/portal-config/import   // Import configuration
 ### **System Branding**
 | Field | Description | Example |
 |-------|-------------|---------|
-| `systemName` | Main system identifier | "FAREDEAL" |
-| `companyName` | Company branding | "FareDeal Uganda" |
-| `appTitle` | Application title | "FareDeal Management System" |
+| `systemName` | Main system identifier | "SUPERMARTKERA" |
+| `companyName` | Company branding | "SupermartKera Uganda" |
+| `appTitle` | Application title | "SupermartKera Management System" |
 
 ### **Portal Names**
 | Portal | Default Name | Customizable |
@@ -337,7 +337,7 @@ console.log('Configuration history:', configHistory);
 ### **Environment Setup**
 ```bash
 # Production environment variables
-REACT_APP_API_BASE_URL=https://api.faredeal.com
+REACT_APP_API_BASE_URL=https://api.supermartkera.com
 REACT_APP_ENVIRONMENT=production
 REACT_APP_ENABLE_DEBUG=false
 ```

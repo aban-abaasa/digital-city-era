@@ -1,4 +1,4 @@
-# FAREDEAL Backend - Quick Reference Guide
+# SUPERMARTKERA Backend - Quick Reference Guide
 
 ## 🚀 Quick Start Commands
 
@@ -24,19 +24,19 @@ http://localhost:3001/api
 ## 🔑 Test Credentials
 
 ### Admin Account
-- **Email:** admin@faredeal.co.ug
+- **Email:** admin@supermartkera.co.ug
 - **Password:** admin123
 - **Role:** Administrator
 - **Permissions:** Full system access
 
 ### Manager Account
-- **Email:** manager@faredeal.co.ug
+- **Email:** manager@supermartkera.co.ug
 - **Password:** manager123
 - **Role:** Manager
 - **Permissions:** Store management
 
 ### Cashier Account
-- **Email:** cashier@faredeal.co.ug
+- **Email:** cashier@supermartkera.co.ug
 - **Password:** cashier123
 - **Role:** Cashier
 - **Permissions:** POS operations
@@ -56,7 +56,7 @@ Invoke-WebRequest -Uri "http://localhost:3001/api/info"
 ### 3. Login
 ```powershell
 $loginBody = @{
-    email = "admin@faredeal.co.ug"
+    email = "admin@supermartkera.co.ug"
     password = "admin123"
 } | ConvertTo-Json
 
@@ -98,7 +98,7 @@ Invoke-RestMethod -Uri "http://localhost:3001/api/portal/config" -Method GET
 # Update configuration
 $configBody = @{
     config = @{
-        companyName = "FAREDEAL Uganda"
+        companyName = "SUPERMARTKERA Uganda"
         adminPortal = "Admin Control Center"
         currency = "UGX"
     }

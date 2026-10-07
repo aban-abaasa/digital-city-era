@@ -148,8 +148,8 @@ const ChatWidget = () => {
       setChannel('support');
       setOpen(true);
     };
-    window.addEventListener('faredeal:open-support-chat', openSupportChat);
-    return () => window.removeEventListener('faredeal:open-support-chat', openSupportChat);
+    window.addEventListener('supermartkera:open-support-chat', openSupportChat);
+    return () => window.removeEventListener('supermartkera:open-support-chat', openSupportChat);
   }, []);
 
   const portal = portalForPath(location.pathname);
