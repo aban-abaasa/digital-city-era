@@ -53,6 +53,7 @@ import AnimatedCounter from '../components/AnimatedCounter';
 import { Greeting } from '../components/customerDashboard/LiveClock';
 import PortalHeader from '../components/PortalHeader';
 import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
+import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import DesktopOverview from '../components/customerDashboard/DesktopOverview';
 import { orderService } from '../services/orderService';
@@ -778,6 +779,18 @@ const CustomerDashboard = () => {
         name={currentUser.full_name || currentUser.firstName}
         email={currentUser.email}
         initial={(currentUser.firstName || 'C').charAt(0).toUpperCase()}
+      />
+
+      {/* Phone bottom tabs — the four vital destinations; the rest live in Menu. */}
+      <MobileBottomTabs
+        tabs={[
+          { ...ALL_TABS.find(t => t.id === 'overview'), label: 'Home' },
+          ALL_TABS.find(t => t.id === 'shop'),
+          { ...ALL_TABS.find(t => t.id === 'book-ride'), label: 'Ride' },
+          { id: 'ican-wallet', label: 'Wallet', icon: FiCreditCard },
+        ]}
+        activeTab={activeTab}
+        onSelect={switchTab}
       />
 
       {/* Role Banner — admin / manager / cashier / supplier. One slim ink bar with a

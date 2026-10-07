@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiGrid } from 'react-icons/fi';
 import MobileMenuSheet from './customerDashboard/MobileMenuSheet';
+import MobileBottomTabs from './MobileBottomTabs';
 
 /**
  * The customer dashboard's section navigator, shared by every portal so they
@@ -11,6 +12,10 @@ import MobileMenuSheet from './customerDashboard/MobileMenuSheet';
  *
  * tabs: [{ id, label, icon, badge? }]. Pass showWallet + onWallet only when the
  * wallet isn't already one of the tabs.
+ *
+ * bottomTabs: the 4 vital tabs for the phone's transparent bottom bar, as
+ * [{ id, label? }] — icon/badge come from the matching entry in `tabs`, and
+ * `label` is an optional short name for the bar. Defaults to the first 4 tabs.
  */
 const PortalTabNavigator = ({
   tabs,
@@ -20,7 +25,8 @@ const PortalTabNavigator = ({
   email,
   initial,
   showWallet = false,
-  onWallet
+  onWallet,
+  bottomTabs
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const humanize = (id) => String(id || '').replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
@@ -31,6 +37,13 @@ const PortalTabNavigator = ({
     onSelect(id);
     setMenuOpen(false);
   };
+
+  const barTabs = (bottomTabs || tabs.slice(0, 4).map((t) => ({ id: t.id })))
+    .map(({ id, label }) => {
+      const tab = tabs.find((t) => t.id === id);
+      return tab ? { ...tab, label: label || tab.label } : null;
+    })
+    .filter(Boolean);
 
   return (
     <>
@@ -99,6 +112,8 @@ const PortalTabNavigator = ({
         email={email}
         initial={initial}
       />
+
+      <MobileBottomTabs tabs={barTabs} activeTab={activeTab} onSelect={pick} />
     </>
   );
 };

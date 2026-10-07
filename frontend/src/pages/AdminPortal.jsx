@@ -6781,10 +6781,16 @@ const AdminPortal = () => {
         name={currentAdmin.full_name || 'Administrator'}
         email={currentAdmin.email}
         initial={(currentAdmin.full_name || 'A').charAt(0).toUpperCase()}
+        bottomTabs={[
+          { id: 'dashboard', label: 'Dashboard' },
+          { id: 'orders', label: 'Orders' },
+          { id: 'users', label: 'Users' },
+          { id: 'ican-wallet', label: 'Wallet' }
+        ]}
       />
 
       {/* Main Content Area */}
-      <div className="p-3 md:p-4 lg:p-8" style={{ overflowX: 'clip' }}>
+      <div className="p-3 pb-28 md:p-4 md:pb-4 lg:p-8" style={{ overflowX: 'clip' }}>
         {/* Hidden file input for the header menu's "Store Logo" item */}
         <input
           ref={logoFileInputRef}

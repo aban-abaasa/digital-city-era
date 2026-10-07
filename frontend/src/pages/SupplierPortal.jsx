@@ -2894,10 +2894,16 @@ const SupplierPortal = () => {
         name={supplierProfile.name || supplierProfile.contactPerson}
         email={supplierProfile.email}
         initial={(supplierProfile.contactPerson || supplierProfile.name || 'S').charAt(0).toUpperCase()}
+        bottomTabs={[
+          { id: 'overview', label: 'Overview' },
+          { id: 'orders', label: 'Orders' },
+          { id: 'payments', label: 'Payments' },
+          { id: 'ican-wallet', label: 'Wallet' }
+        ]}
       />
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-24 sm:py-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8">
         {(loading && ['overview','orders','products','payments'].includes(activeTab)) ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">

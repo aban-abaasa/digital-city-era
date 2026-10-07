@@ -51,6 +51,12 @@ const ManagerNavigation = ({ activeTab, setActiveTab, name, email }) => {
       name={name}
       email={email}
       initial={(name || 'M').charAt(0).toUpperCase()}
+      bottomTabs={[
+        { id: 'overview', label: 'Dashboard' },
+        { id: 'orders', label: 'Orders' },
+        { id: 'business-operations', label: 'Payroll' },
+        { id: 'ican-wallet', label: 'Wallet' }
+      ]}
     />
   );
 };
