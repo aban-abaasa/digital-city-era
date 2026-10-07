@@ -796,7 +796,7 @@ const CustomerDashboard = () => {
       {/* Role Banner — admin / manager / cashier / supplier. One slim ink bar with a
           gold hairline (an inset rounded pill on phones) instead of a tall
           gradient card; the long label only appears where there's room. */}
-      {staffRole && (() => {
+      {staffRole && activeTab !== 'shop' && (() => {
         const config = {
           admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin' },
           manager: { path: '/manager-portal', icon: '👔', label: 'Manager' },
@@ -825,7 +825,9 @@ const CustomerDashboard = () => {
         );
       })()}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8">
+      {/* Shop runs edge-to-edge (no max-width container, gutters or sidebar) so the
+          product grid gets the whole screen; every other tab keeps the container. */}
+      <div className={activeTab === 'shop' ? 'w-full px-2 sm:px-4 pt-2 pb-28 sm:pb-8' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8'}>
         {/* Phone Overview — loyalty card, live counts, service shortcuts and
             next steps as one scroll (used to be three tabs hiding each other,
             and used to render above EVERY tab, not just Overview). */}
@@ -877,9 +879,9 @@ const CustomerDashboard = () => {
         )}
 
         {/* Tab Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className={activeTab === 'shop' ? '' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
           {/* Main Content */}
-          <div className="lg:col-span-2">
+          <div className={activeTab === 'shop' ? '' : 'lg:col-span-2'}>
             {activeTab === 'overview' && (
               <div className="space-y-4">
                 {/* Small sub-tabs instead of two stacked cards — tabs always
@@ -1035,11 +1037,7 @@ const CustomerDashboard = () => {
             )}
 
             {/* Shop — self-checkout POS */}
-            {activeTab === 'shop' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <CustomerSelfCheckout user={user} />
-              </div>
-            )}
+            {activeTab === 'shop' && <CustomerSelfCheckout user={user} />}
 
             {/* Book — appointment-style service bookings, reusing the
                 existing chat/call system for follow-up with the store */}
@@ -1231,8 +1229,8 @@ const CustomerDashboard = () => {
             )}
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
+          {/* Sidebar — hidden on Shop so the storefront can take the full page */}
+          <div className={activeTab === 'shop' ? 'hidden' : 'space-y-6'}>
             {/* Quick Actions — hidden on the phone Overview (the hero already offers
                 them), shown on every other tab and on web. */}
             <div className={`classic-card p-4 ${activeTab === 'overview' ? 'hidden sm:block' : ''}`}>
