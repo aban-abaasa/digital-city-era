@@ -1,0 +1,247 @@
+/* Classic skin for the unified profile page / popup (UnifiedProfilePage).
+
+   Builds on the shared portal layers (classic-portals.css for light,
+   supermartkera-portals.css for dark): the page root carries `.sk-portal-themed`
+   so cards, inputs, buttons and neutral text already follow the theme. This file
+   only adds what those layers can't know about — the header, avatar ring,
+   progress bar, sidebar tabs, the Light/Dark switch and the appearance cards.
+
+   Light  = Classic Ivory (ink-indigo + brass on warm paper)
+   Dark   = Evening Green (deep green + gold), matching the rest of the app. */
+
+.up-root {
+  --up-ink: #1e1b4b;
+  --up-ink-soft: #3730a3;
+  --up-gold: #c4a052;
+  --up-gold-deep: #8a6a1f;
+  --up-gold-pale: #f5dfa0;
+  --up-paper: #fffdf8;
+  --up-tab-hover: rgba(196, 160, 82, 0.12);
+  --up-tab-active-bg: #f6f0df;
+  --up-tab-active-fg: var(--up-ink);
+  --up-danger-bg: #fdecec;
+  --up-danger-fg: #b42318;
+  --up-muted: #6b7280;
+}
+[data-theme="dark"] .up-root {
+  --up-ink: #ecfdf5;
+  --up-ink-soft: #34d399;
+  --up-gold: #d9b45c;
+  --up-gold-deep: #e7c978;
+  --up-gold-pale: #f5dfa0;
+  --up-paper: #0c231b;
+  --up-tab-hover: rgba(217, 180, 92, 0.1);
+  --up-tab-active-bg: rgba(217, 180, 92, 0.14);
+  --up-tab-active-fg: #f5dfa0;
+  --up-danger-bg: rgba(248, 113, 113, 0.14);
+  --up-danger-fg: #fca5a5;
+  --up-muted: rgba(209, 250, 229, 0.6);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+.up-header {
+  border-bottom: 1px solid rgba(196, 160, 82, 0.35);
+  background-image: linear-gradient(180deg, var(--up-paper), transparent);
+}
+.up-header h1 {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+@media (min-width: 640px) {
+  .up-header h1 { font-size: 1.75rem; }
+}
+.up-header h1::after {
+  content: '';
+  display: block;
+  width: 44px;
+  height: 2px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--up-gold), var(--up-gold-pale));
+  transform-origin: left;
+  animation: cl-sweep 0.7s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.up-header p { text-transform: capitalize; letter-spacing: 0.04em; }
+
+/* Ghost button (Offline server) */
+.up-ghost {
+  color: var(--up-gold-deep);
+  border-color: rgba(196, 160, 82, 0.55);
+  background: transparent;
+}
+.up-ghost:hover { background: var(--up-tab-hover); border-color: var(--up-gold); }
+
+/* ── Light / Dark switch ──────────────────────────────────────────────── */
+.up-mode {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 160, 82, 0.55);
+  background: var(--up-paper);
+}
+.up-mode__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--up-muted);
+  background: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.up-mode__btn:hover { color: var(--up-gold-deep); }
+.up-mode__btn.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--up-ink-soft), #1e1b4b);
+  box-shadow: inset 0 0 0 1px rgba(245, 223, 160, 0.55);
+}
+[data-theme="dark"] .up-mode__btn.is-active {
+  color: #0a1f18;
+  background: linear-gradient(135deg, #f5dfa0, #d9b45c);
+  box-shadow: none;
+}
+
+/* ── Cards, avatar, progress ──────────────────────────────────────────── */
+html:not([data-theme="dark"]) .up-card { background: var(--up-paper); }
+
+.up-avatar {
+  background: linear-gradient(135deg, #3730a3, #1e1b4b);
+  box-shadow: 0 0 0 3px var(--up-paper), 0 0 0 5px var(--up-gold), 0 14px 24px -14px rgba(30, 27, 75, 0.7);
+}
+[data-theme="dark"] .up-avatar {
+  background: linear-gradient(135deg, #145a3f, #0a1f18);
+}
+
+.up-progress-fill {
+  background: linear-gradient(90deg, var(--up-gold-deep), var(--up-gold), var(--up-gold-pale));
+}
+
+.up-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--up-gold-deep);
+}
+
+/* ── Sidebar tabs ─────────────────────────────────────────────────────── */
+.up-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  color: var(--up-muted);
+  background: transparent;
+  text-align: left;
+}
+.up-tab:hover { background: var(--up-tab-hover); color: var(--up-gold-deep); }
+.up-tab.is-active {
+  color: var(--up-tab-active-fg);
+  background: var(--up-tab-active-bg);
+  font-weight: 600;
+}
+.up-tab.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--up-gold), var(--up-gold-deep));
+}
+.up-tab--danger { color: var(--up-danger-fg); }
+.up-tab--danger:hover { background: var(--up-danger-bg); color: var(--up-danger-fg); }
+.up-tab--danger.is-active { background: var(--up-danger-bg); color: var(--up-danger-fg); }
+.up-tab--danger.is-active::before { background: var(--up-danger-fg); }
+
+/* On phones the sidebar is a horizontal strip — tabs shrink to content. */
+@media (max-width: 1023px) {
+  nav:has(> .up-tab) { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+  nav:has(> .up-tab) > .up-tab { width: auto; flex: 0 0 auto; white-space: nowrap; }
+  .up-tab.is-active::before { display: none; }
+  .up-tab.is-active { box-shadow: inset 0 -2px 0 var(--up-gold); }
+}
+
+/* ── Appearance cards (Preferences tab) ───────────────────────────────── */
+.up-theme-card {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  padding: 12px;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid rgba(196, 160, 82, 0.4);
+  background: var(--up-paper);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.up-theme-card:hover { transform: translateY(-2px); border-color: var(--up-gold); }
+.up-theme-card.is-active {
+  border-color: var(--up-gold);
+  box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.3);
+}
+.up-theme-card__swatch {
+  flex: 0 0 64px;
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 10px;
+}
+.up-theme-card__swatch i { display: block; border-radius: 3px; }
+.up-theme-card--light .up-theme-card__swatch { background: #faf8f3; border: 1px solid #e8dfc6; }
+.up-theme-card--light .up-theme-card__swatch i:nth-child(1) { background: #1e1b4b; }
+.up-theme-card--light .up-theme-card__swatch i:nth-child(2) { background: #c4a052; }
+.up-theme-card--light .up-theme-card__swatch i:nth-child(3) { background: #e8dfc6; }
+.up-theme-card--dark .up-theme-card__swatch { background: #061510; border: 1px solid #16352a; }
+.up-theme-card--dark .up-theme-card__swatch i:nth-child(1) { background: #34d399; }
+.up-theme-card--dark .up-theme-card__swatch i:nth-child(2) { background: #d9b45c; }
+.up-theme-card--dark .up-theme-card__swatch i:nth-child(3) { background: #16352a; }
+.up-theme-card__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.up-theme-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 700;
+  color: var(--up-ink);
+}
+.up-theme-card__blurb { font-size: 0.8rem; line-height: 1.35; color: var(--up-muted); }
+.up-theme-card__tick { position: absolute; top: 10px; right: 10px; color: var(--up-gold-deep); }
+
+@media (prefers-reduced-motion: reduce) {
+  .up-header h1::after, .up-theme-card, .up-mode__btn { animation: none; transition: none; }
+}
+
+/* ── Dark (Evening Green) finishing ───────────────────────────────────────
+   The shared portal layer keeps its page fill theme-neutral (stores can
+   upload a background image). The profile has no such image, so it paints its
+   own full-page fill, and repaints the few blue accents / inputs it uses. */
+[data-theme="dark"] .up-root {
+  background: radial-gradient(900px 420px at 8% -80px, rgba(217, 180, 92, 0.1), transparent 70%),
+              linear-gradient(180deg, #061510 0%, #0a1f18 100%);
+}
+[data-theme="dark"] .up-root :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]) {
+  background-color: #0a1f18 !important;
+  color: #ecfdf5 !important;
+  border-color: rgba(217, 180, 92, 0.4) !important;
+}
+[data-theme="dark"] .up-root :is(input, select, textarea)::placeholder { color: rgba(209, 250, 229, 0.4) !important; }
+[data-theme="dark"] .up-root :is(input, select, textarea):focus {
+  border-color: var(--up-gold) !important;
+  box-shadow: 0 0 0 3px rgba(217, 180, 92, 0.3) !important;
+}
+[data-theme="dark"] .up-root .text-blue-600,
+[data-theme="dark"] .up-root .text-purple-600 { color: var(--up-gold-pale) !important; }
+html:not([data-theme="dark"]) .up-root .text-blue-600 { color: var(--up-ink-soft); }
+[data-theme="dark"] .up-root button.bg-blue-600 {
+  background: linear-gradient(135deg, #f5dfa0, #d9b45c) !important;
+  color: #0a1f18 !important;
+}

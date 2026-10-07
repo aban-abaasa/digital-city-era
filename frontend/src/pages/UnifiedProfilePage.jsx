@@ -5,9 +5,12 @@ import {
   FiUser, FiMail, FiPhone, FiMapPin, FiEdit2, FiSave, FiX,
   FiCamera, FiShield, FiAward, FiTrendingUp, FiSettings,
   FiClock, FiCheckCircle, FiBriefcase, FiPackage, FiShoppingCart,
-  FiUsers, FiCalendar, FiHome, FiGlobe, FiHeart, FiStar, FiServer
+  FiUsers, FiCalendar, FiHome, FiGlobe, FiHeart, FiStar, FiServer, FiSun, FiMoon
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/supermartkera-portals.css';
+import '../styles/profile-classic.css';
 import { supabase } from '../services/supabase';
 import { BUSINESS_TYPES } from './AdminAuth';
 
@@ -17,6 +20,7 @@ import { BUSINESS_TYPES } from './AdminAuth';
 // undefined and closing falls back to a real navigation to the user's portal.
 const UnifiedProfilePage = ({ onClose } = {}) => {
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -529,9 +533,9 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   const isCustomer = role === 'customer';
 
   return (
-    <div className={`bg-gradient-to-br from-blue-50 via-white to-purple-50 ${onClose ? 'rounded-2xl' : 'min-h-screen'}`}>
+    <div className="sk-portal-themed up-root min-h-screen">
       {/* Header with Back Button - Mobile Optimized */}
-      <div className={`bg-white shadow-sm border-b sticky top-0 z-10 ${onClose ? 'rounded-t-2xl' : ''}`}>
+      <div className="up-header bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
@@ -550,10 +554,25 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
             </div>
 
             <div className="flex items-center space-x-2 flex-shrink-0">
+              <div className="up-mode" role="group" aria-label="Colour mode">
+                {[['light', FiSun, 'Light'], ['dark', FiMoon, 'Dark']].map(([mode, Icon, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setTheme(mode)}
+                    aria-pressed={theme === mode}
+                    title={`${label} mode`}
+                    className={`up-mode__btn ${theme === mode ? 'is-active' : ''}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="hidden md:inline">{label}</span>
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => navigate('/business-local-server')}
-                className="flex items-center gap-1 rounded-lg border border-cyan-200 px-2 py-1.5 text-xs font-semibold text-cyan-800 hover:bg-cyan-50 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm"
+                className="up-ghost flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-semibold sm:gap-2 sm:px-3 sm:py-2 sm:text-sm"
               >
                 <FiServer className="h-4 w-4" />
                 <span>Offline server</span>
@@ -594,11 +613,11 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
           {/* Sidebar - Mobile Horizontal Scroll on Small Devices */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 lg:sticky lg:top-24">
+            <div className="up-card bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 lg:sticky lg:top-24">
               {/* Avatar - Responsive Size */}
               <div className="text-center mb-4 sm:mb-6">
                 <div className="relative inline-block">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-4xl sm:text-5xl overflow-hidden">
+                  <div className="up-avatar w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center text-4xl sm:text-5xl overflow-hidden">
                     {profile.avatar_url ? (
                       <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                     ) : (
@@ -641,7 +660,7 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
-                    className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-500"
+                    className="up-progress-fill h-2 rounded-full transition-all duration-500"
                     style={{ width: `${profileCompletion}%` }}
                   ></div>
                 </div>
@@ -656,11 +675,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
               <nav className="space-y-1 sm:space-y-2 overflow-x-auto lg:overflow-x-visible">
                 <button
                   onClick={() => setActiveTab('basic')}
-                  className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
-                    activeTab === 'basic'
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-600 hover:bg-gray-50'
-                  }`}
+                  aria-current={activeTab === 'basic' ? 'page' : undefined}
+                  className={`up-tab ${activeTab === 'basic' ? 'is-active' : ''}`}
                 >
                   <FiUser className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                   <span className="font-medium whitespace-nowrap">Basic Info</span>
@@ -669,11 +685,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                 {(isManager || isCashier) && (
                   <button
                     onClick={() => setActiveTab('work')}
-                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
-                      activeTab === 'work'
-                        ? 'bg-blue-50 text-blue-600'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    }`}
+                    aria-current={activeTab === 'work' ? 'page' : undefined}
+                  className={`up-tab ${activeTab === 'work' ? 'is-active' : ''}`}
                   >
                     <FiBriefcase className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                     <span className="font-medium whitespace-nowrap">Work Details</span>
@@ -683,11 +696,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                 {isCustomer && (
                   <button
                     onClick={() => setActiveTab('shopping')}
-                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
-                      activeTab === 'shopping'
-                        ? 'bg-blue-50 text-blue-600'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    }`}
+                    aria-current={activeTab === 'shopping' ? 'page' : undefined}
+                  className={`up-tab ${activeTab === 'shopping' ? 'is-active' : ''}`}
                   >
                     <FiShoppingCart className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                     <span className="font-medium whitespace-nowrap">Shopping</span>
@@ -697,11 +707,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                 {isAdmin && (
                   <button
                     onClick={() => setActiveTab('admin')}
-                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
-                      activeTab === 'admin'
-                        ? 'bg-red-50 text-red-600'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    }`}
+                    aria-current={activeTab === 'admin' ? 'page' : undefined}
+                  className={`up-tab up-tab--danger ${activeTab === 'admin' ? 'is-active' : ''}`}
                   >
                     <FiShield className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                     <span className="font-medium whitespace-nowrap">Admin Settings</span>
@@ -710,11 +717,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
 
                 <button
                   onClick={() => setActiveTab('preferences')}
-                  className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition text-sm sm:text-base ${
-                    activeTab === 'preferences'
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-600 hover:bg-gray-50'
-                  }`}
+                  aria-current={activeTab === 'preferences' ? 'page' : undefined}
+                  className={`up-tab ${activeTab === 'preferences' ? 'is-active' : ''}`}
                 >
                   <FiSettings className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                   <span className="font-medium whitespace-nowrap">Preferences</span>
@@ -1349,6 +1353,33 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
               {activeTab === 'preferences' && (
                 <div className="space-y-6">
                   <h2 className="text-2xl font-bold text-gray-900 mb-6">Preferences</h2>
+
+                  <div>
+                    <h3 className="up-eyebrow mb-3">Appearance</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        ['light', 'Classic Ivory', 'Warm paper, ink-indigo and brass. Easy on the eyes by day.', FiSun],
+                        ['dark', 'Evening Green', 'Deep green and gold. Calm in low light and on OLED screens.', FiMoon]
+                      ].map(([mode, title, blurb, Icon]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTheme(mode)}
+                          aria-pressed={theme === mode}
+                          className={`up-theme-card up-theme-card--${mode} ${theme === mode ? 'is-active' : ''}`}
+                        >
+                          <span className="up-theme-card__swatch" aria-hidden="true">
+                            <i /><i /><i />
+                          </span>
+                          <span className="up-theme-card__body">
+                            <span className="up-theme-card__title"><Icon className="h-4 w-4" /> {title}</span>
+                            <span className="up-theme-card__blurb">{blurb}</span>
+                          </span>
+                          {theme === mode && <FiCheckCircle className="up-theme-card__tick h-5 w-5" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
