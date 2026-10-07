@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
 import { portalConfigService } from '../services/portalConfigService';
 import { supabase } from '../services/supabase';
@@ -19,6 +19,9 @@ import BookingsPanel from '../components/booking/BookingsPanel';
 import SupermarketaWalletApprovalBell from '../components/SupermarketaWalletApprovalBell';
 import ICANWalletPage from './ICANWalletPage';
 import AdminDashboardHome from '../components/adminDashboard/AdminDashboardHome';
+import AdminOrderManagement from '../components/adminOrders/AdminOrderManagement';
+import AdminUserCard from '../components/adminUsers/AdminUserCard';
+import AdminStoreSettings from '../components/adminSettings/AdminStoreSettings';
 import {
   FiUsers, FiUser, FiShield, FiSettings, FiBarChart, FiActivity,
   FiGlobe, FiServer, FiDatabase, FiLock, FiAlertTriangle,
@@ -38,6 +41,7 @@ import {
 import '../styles/supermartkera-portals.css';
 
 const AdminPortal = () => {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [systemData, setSystemData] = useState({
@@ -104,6 +108,7 @@ const AdminPortal = () => {
   const [allUsers, setAllUsers] = useState([]);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'applications' | 'staff' | 'riders'
+  const [showRoleFilters, setShowRoleFilters] = useState(false); // role chips on the Users tab start collapsed
 
   // Applications (supplier / mybodaguy)
   const [applications, setApplications] = useState([]);
@@ -149,6 +154,7 @@ const AdminPortal = () => {
     avatar_url: null,
     supermarket_id: null,
     pichin_business_profile_id: null,
+    store_missing: false,
     business_type: null
   });
   
@@ -349,6 +355,9 @@ const AdminPortal = () => {
           avatar_url: userData?.avatar_url,
           supermarket_id: userData?.supermarket_id || ownedSm?.id,
           pichin_business_profile_id: pichinBusinessProfileId,
+          // users.supermarket_id can point at a store that no longer exists;
+          // only a real supermarkets row counts as having a store.
+          store_missing: !ownedSm,
           business_type: ownedSm?.business_type || null
         });
 
@@ -757,7 +766,20 @@ const AdminPortal = () => {
 
   const requirePichinBusinessAdmin = () => {
     if (currentAdmin.pichin_business_profile_id) return true;
-    window.alert('Create or complete your Pichin business account first. It is the administrator profile used to manage Supermarketa employees, roles, and payroll.');
+
+    // The Pichin business account hangs off the store, so an account whose
+    // store is gone can only fix this by setting a store up again.
+    if (currentAdmin.store_missing) {
+      if (window.confirm('Your account is not linked to a store yet, so there is no business account to manage employees, roles and payroll with.\n\nSet up your store now?')) {
+        navigate('/admin-auth');
+      }
+      return false;
+    }
+
+    if (window.confirm('Your store is not linked to a Pichin business account yet. It is the administrator profile used to manage employees, roles and payroll.\n\nOpen "Use Your Business Profile" to link one now?')) {
+      setActiveSection('business-profile');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     return false;
   };
 
@@ -951,15 +973,6 @@ const AdminPortal = () => {
       const todayRevenue = todayOrders?.reduce((sum, order) => 
         sum + (parseFloat(order.amount || order.total_amount || 0)), 0) || 0;
 
-      setOrderStats({
-        total: totalCount || 0,
-        today: todayCount || 0,
-        pending: pendingCount || 0,
-        completed: completedCount || 0,
-        revenue: todayRevenue,
-        loading: false
-      });
-
       // SYNC: Also update realTimeData with order stats
       setRealTimeData(prev => ({
         ...prev,
@@ -977,97 +990,8 @@ const AdminPortal = () => {
       console.log('🔄 SYNC: Updated realTimeData with todaysOrders:', todayCount, 'revenue:', Math.round(todayRevenue));
     } catch (error) {
       console.error('Error loading order statistics:', error);
-      setOrderStats(prev => ({ ...prev, loading: false }));
     }
   }, []);
-
-  // Load detailed orders from Supabase (real data from manager portal)
-  const loadDetailedOrders = useCallback(async () => {
-    try {
-      setLoadingDetailedOrders(true);
-      console.log('📥 Loading detailed orders from database...');
-      
-      // Load recent sales transactions
-      let transactions = [];
-      try {
-        let transactionQuery = supabase
-          .from('transactions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(50);
-        if (currentAdmin?.supermarket_id) {
-          transactionQuery = transactionQuery.eq('supermarket_id', currentAdmin.supermarket_id);
-        }
-        const result = await transactionQuery;
-        // Admin sales are product records only. Wallet ledger rows, payment
-        // requests, refunds, and empty/manual placeholders do not belong in
-        // the store's product-purchase report.
-        transactions = (result.data || []).filter((t) => {
-          const products = Array.isArray(t.items) ? t.items : [];
-          return products.length > 0 || Number(t.items_count) > 0;
-        });
-        if (result.error) {
-          console.error('❌ Error loading transactions:', result.error);
-        } else {
-          console.log(`✅ Loaded ${transactions?.length || 0} transactions:`, transactions);
-        }
-      } catch (e) {
-        console.error('❌ Table does not exist:', e);
-        transactions = [];
-      }
-
-      // Load purchase orders
-      let purchaseOrderQuery = supabase
-        .from('purchase_orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (currentAdmin?.supermarket_id) {
-        purchaseOrderQuery = purchaseOrderQuery.eq('supermarket_id', currentAdmin.supermarket_id);
-      }
-      const { data: purchaseOrders, error: poError } = await purchaseOrderQuery;
-
-      if (poError) {
-        console.error('❌ Error loading purchase orders:', poError);
-      } else {
-        console.log(`✅ Loaded ${purchaseOrders?.length || 0} purchase orders:`, purchaseOrders);
-      }
-
-      // Combine and format orders
-      const allOrders = [
-        ...(transactions || []).map(t => ({
-          id: t.id,
-          type: 'sale',
-          status: t.status || 'completed',
-          amount: t.amount || t.total_amount || 0,
-          created_at: t.created_at,
-          items: Array.isArray(t.items) ? t.items.length : (t.items_count || 0),
-          products: (Array.isArray(t.items) ? t.items : [])
-            .map(item => `${item.name || item.product_name || 'Product'} ×${item.quantity || 1}`)
-            .join(', '),
-          customer: t.customer_name || 'Customer',
-          paymentMethod: t.payment_provider || t.payment_method || 'Recorded sale',
-          merchantName: t.merchant_name || 'SupermartKera'
-        })),
-        ...(purchaseOrders || []).map(po => ({
-          id: po.id,
-          type: 'purchase',
-          status: po.status || 'pending',
-          amount: po.total_amount || 0,
-          created_at: po.created_at,
-          items: po.line_items?.length || 0,
-          supplier: po.supplier_name || 'Supplier'
-        }))
-      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 50);
-
-      setDetailedOrders(allOrders);
-      console.log(`✅ Total formatted orders: ${allOrders.length}`, allOrders);
-    } catch (error) {
-      console.error('❌ Error loading detailed orders:', error);
-    } finally {
-      setLoadingDetailedOrders(false);
-    }
-  }, [currentAdmin?.supermarket_id]);
 
   // Load users when accessing user management or approvals
   useEffect(() => {
@@ -1086,33 +1010,9 @@ const AdminPortal = () => {
       }
     } else if (activeSection === 'approvals') {
       loadAllUsers();
-    } else if (activeSection === 'orders') {
-      // Load orders data
-      const loadOrders = async () => {
-        try {
-          await Promise.all([
-            loadOrderStats(),
-            loadDetailedOrders()
-          ]).catch(err => {
-            console.warn('⚠️ Orders loading encountered an error, showing empty state:', err.message);
-          });
-        } catch (error) {
-          console.warn('Error loading orders:', error.message);
-        }
-      };
-      
-      loadOrders();
-      
-      // Auto-refresh orders every 5 seconds only if orders section is still active
-      const refreshInterval = setInterval(() => {
-        if (document.hidden) return; // Don't refresh if tab is not visible
-        console.log('🔄 Auto-refreshing order stats...');
-        loadOrders();
-      }, 5000);
-      
-      return () => clearInterval(refreshInterval);
     }
-  }, [activeSection, viewMode, loadPendingUsers, loadAllUsers, loadApplications, loadCurrentStaff, loadAllUsersForStaff, loadRiders, loadOrderStats, loadDetailedOrders]);
+    // Orders load and refresh themselves inside <AdminOrderManagement />
+  }, [activeSection, viewMode, loadPendingUsers, loadAllUsers, loadApplications, loadCurrentStaff, loadAllUsersForStaff, loadRiders]);
 
   // Real-time subscription for new user registrations
   useEffect(() => {
@@ -2765,14 +2665,23 @@ const AdminPortal = () => {
   );
 
   const renderDashboard = () => (
-    <AdminDashboardHome
-      adminName={currentAdmin.full_name}
-      storeName={branding.name}
-      supermarketId={currentAdmin.supermarket_id}
-      businessProfileId={currentAdmin.pichin_business_profile_id}
-      pendingApprovals={pendingUsers.length}
-      onOpen={openSection}
-    />
+    <div className="flex flex-col gap-6">
+      <AdminDashboardHome
+        adminName={currentAdmin.full_name}
+        storeName={branding.name}
+        supermarketId={currentAdmin.supermarket_id}
+        businessProfileId={currentAdmin.pichin_business_profile_id}
+        pendingApprovals={pendingUsers.length}
+        onOpen={openSection}
+      />
+      {/* Orders used to be their own tab; they now live here, under the dashboard figures. */}
+      <div id="dashboard-orders" className="scroll-mt-24">
+        <AdminOrderManagement
+          supermarketId={currentAdmin.supermarket_id}
+          storeName={branding.name}
+        />
+      </div>
+    </div>
   );
 
   const renderPendingApprovals = () => {
@@ -3021,101 +2930,114 @@ const AdminPortal = () => {
 
     return (
       <div className="space-y-6">
-        {/* Creative Header with Live Stats - Mobile Optimized */}
-        <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-lg md:rounded-2xl shadow-lg md:shadow-2xl p-4 md:p-8 relative overflow-hidden">
-          {/* Animated background elements */}
-          <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
-            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-          </div>
-
-          <div className="relative z-10">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-6 mb-4 md:mb-6">
-              <div className="flex-1 min-w-0">
-                <h2 className="text-base md:text-2xl lg:text-3xl font-bold text-white mb-1 md:mb-2 flex items-center gap-2 truncate">
-                  <FiUsers className="flex-shrink-0" />
-                  <span className="truncate">{viewMode === 'staff' ? 'Assign Roles' : viewMode === 'applications' ? 'Applications' : viewMode === 'riders' ? 'Riders' : 'All Users'}</span>
-                  {/* Real-time indicator */}
-                  <span className="flex-shrink-0 flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 md:px-3 py-1 rounded-full text-xs md:text-sm whitespace-nowrap">
-                    <span className="relative flex h-2 w-2 md:h-3 md:w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 md:h-3 md:w-3 bg-green-500"></span>
-                    </span>
-                    <span className="hidden sm:inline">Live</span>
-                  </span>
-                </h2>
-                <p className="text-purple-100 text-xs md:text-sm lg:text-base truncate md:truncate">
-                  {viewMode === 'staff' ? 'Assign manager / cashier / supplier roles'
-                    : viewMode === 'applications' ? 'Review supplier & driver applications • Auto-updates'
-                    : viewMode === 'riders' ? 'My Boda Guy riders partnered with your store'
-                    : 'All registered users • Assign roles directly'}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 md:gap-3 flex-shrink-0">
-                {/* View Mode Toggle */}
-                <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl p-1 flex gap-0.5 md:gap-1">
-                  <button onClick={() => setViewMode('all')}
-                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'all' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                    <FiUsers className="h-3 w-3 md:h-4 md:w-4" />
-                    <span className="hidden sm:inline">Users</span>
-                    <span className="bg-blue-400 text-blue-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{allUsers.length}</span>
-                  </button>
-                  <button onClick={() => requirePichinBusinessAdmin() && setViewMode('staff')}
-                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'staff' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                    <FiUserPlus className="h-3 w-3 md:h-4 md:w-4" />
-                    <span className="hidden sm:inline">Assign Role</span>
-                  </button>
-                  <button onClick={() => setViewMode('applications')}
-                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'applications' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                    <FiBriefcase className="h-3 w-3 md:h-4 md:w-4" />
-                    <span className="hidden sm:inline">Applications</span>
-                    {applications.length > 0 && <span className="bg-orange-400 text-orange-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{applications.length}</span>}
-                  </button>
-                  <button onClick={() => setViewMode('riders')}
-                    className={`px-2 md:px-4 py-1 md:py-2 rounded-lg text-xs md:text-sm font-semibold transition-all flex items-center gap-1 ${viewMode === 'riders' ? 'bg-white text-purple-600 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                    <span className="text-xs md:text-sm">🛵</span>
-                    <span className="hidden sm:inline">Riders</span>
-                    {riders.length > 0 && <span className="bg-green-400 text-green-900 px-1.5 py-0.5 rounded-full text-xs font-bold">{riders.length}</span>}
-                  </button>
-                </div>
-
-                <button
-                  onClick={loadAllUsers}
-                  disabled={currentLoading}
-                  className="px-2 md:px-6 py-1.5 md:py-3 bg-white text-purple-600 rounded-lg md:rounded-xl hover:bg-gray-50 transition-all duration-300 font-semibold flex items-center gap-1 md:gap-2 shadow-lg hover:shadow-xl transform hover:scale-105 text-xs md:text-sm flex-shrink-0"
-                >
-                  <FiRefreshCw className={`h-4 w-4 md:h-5 md:w-5 flex-shrink-0 ${currentLoading ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">Refresh</span>
-                </button>
-              </div>
+        {/* Classic header: title, compact tabs and a collapsible role filter */}
+        <div className="bg-white rounded-xl border border-gray-200 border-t-[3px] border-t-[#c4a052] shadow-sm p-3 md:p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base md:text-xl font-bold text-gray-900 flex items-center gap-2">
+                <FiUsers className="text-indigo-700 flex-shrink-0" />
+                <span className="truncate">{viewMode === 'staff' ? 'Assign Roles' : viewMode === 'applications' ? 'Applications' : viewMode === 'riders' ? 'Riders' : 'All Users'}</span>
+                <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                  Live
+                </span>
+              </h2>
+              <p className="text-xs md:text-sm text-gray-600 mt-0.5">
+                {viewMode === 'staff' ? 'Assign manager / cashier / supplier roles'
+                  : viewMode === 'applications' ? 'Review supplier & driver applications • Auto-updates'
+                  : viewMode === 'riders' ? 'My Boda Guy riders partnered with your store'
+                  : 'All registered users • Assign roles directly'}
+              </p>
             </div>
 
-            {/* Stats Cards - Mobile Optimized */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4">
-              {['all', 'admin', 'manager', 'cashier', 'supplier'].map(role => {
-                const count = role === 'all' 
-                  ? currentUserList.length 
-                  : currentUserList.filter(u => u.role?.toLowerCase() === role.toLowerCase()).length;
-                const icon = getRoleIcon(role);
-                
-                return (
-                      <button
-                    key={role}
-                    onClick={() => setFilterRole(role)}
-                    className={`p-2 md:p-4 rounded-lg md:rounded-xl transition-all duration-300 transform ${
-                      filterRole === role
-                        ? 'bg-white text-gray-900 shadow-2xl scale-105'
-                        : 'bg-white/10 backdrop-blur-sm text-white hover:bg-white/20 hover:scale-102'
+              <button
+                type="button"
+                onClick={loadAllUsers}
+                disabled={currentLoading}
+                aria-label="Refresh users"
+                title="Refresh"
+                className="flex-shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white text-indigo-900 hover:bg-gray-50 disabled:opacity-60 transition-colors"
+              >
+                <FiRefreshCw className={`h-4 w-4 ${currentLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            <div className="flex">
+              <div role="tablist" aria-label="User management views" className="flex w-full md:w-auto p-0.5 gap-0.5 bg-gray-50 border border-gray-200 rounded-lg">
+                {[
+                  { id: 'all', icon: <FiUsers className="h-3.5 w-3.5" />, full: 'Users', short: 'Users', badge: allUsers.length, badgeTone: 'bg-indigo-100 text-indigo-900', onClick: () => setViewMode('all') },
+                  { id: 'staff', icon: <FiUserPlus className="h-3.5 w-3.5" />, full: 'Assign Role', short: 'Roles', onClick: () => requirePichinBusinessAdmin() && setViewMode('staff') },
+                  { id: 'applications', icon: <FiBriefcase className="h-3.5 w-3.5" />, full: 'Applications', short: 'Apps', badge: applications.length, badgeTone: 'bg-orange-100 text-orange-900', onClick: () => setViewMode('applications') },
+                  { id: 'riders', icon: <span className="text-xs leading-none">🛵</span>, full: 'Riders', short: 'Riders', badge: riders.length, badgeTone: 'bg-green-100 text-green-900', onClick: () => setViewMode('riders') }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={viewMode === tab.id}
+                    onClick={tab.onClick}
+                    className={`flex-1 md:flex-none min-w-0 inline-flex items-center justify-center gap-1 h-8 px-1.5 md:px-3 rounded-md text-xs font-semibold whitespace-nowrap transition-colors ${
+                      viewMode === tab.id ? 'bg-indigo-900 text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'
                     }`}
                   >
-                    <div className="text-2xl md:text-3xl mb-1 md:mb-2">{icon}</div>
-                    <p className="text-xs md:text-sm font-medium capitalize mb-0.5 md:mb-1 truncate">{role}</p>
-                    <p className="text-lg md:text-2xl font-bold">{count}</p>
+                    {tab.icon}
+                    <span className="hidden sm:inline">{tab.full}</span>
+                    <span className="sm:hidden">{tab.short}</span>
+                    {tab.badge > 0 && (
+                      <span className={`px-1.5 rounded-full text-[10px] font-bold leading-4 ${viewMode === tab.id ? 'bg-white/20 text-white' : tab.badgeTone}`}>{tab.badge}</span>
+                    )}
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
           </div>
+
+          {/* Roles — collapsible, only meaningful for the All Users list */}
+          {viewMode === 'all' && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowRoleFilters((open) => !open)}
+                aria-expanded={showRoleFilters}
+                className="w-full flex items-center justify-between gap-2 text-left"
+              >
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#8a6d1f]">Filter by role</span>
+                <span className="flex items-center gap-2 text-xs text-gray-600">
+                  {filterRole !== 'all' && (
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-900 font-semibold capitalize">{filterRole}</span>
+                  )}
+                  <FiChevronDown className={`h-4 w-4 transition-transform ${showRoleFilters ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+
+              {showRoleFilters && (
+                <div className="mt-2 flex gap-2 overflow-x-auto md:flex-wrap pb-1">
+                  {['all', 'admin', 'manager', 'cashier', 'supplier'].map((role) => {
+                    const count = role === 'all'
+                      ? currentUserList.length
+                      : currentUserList.filter((u) => u.role?.toLowerCase() === role).length;
+                    const active = filterRole === role;
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setFilterRole(role)}
+                        className={`flex-shrink-0 inline-flex items-center gap-1.5 h-8 pl-2.5 pr-2 rounded-full border text-xs font-semibold capitalize transition-colors ${
+                          active ? 'bg-indigo-900 border-indigo-900 text-white' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span className="text-sm leading-none">{getRoleIcon(role)}</span>
+                        {role}
+                        <span className={`min-w-[20px] px-1.5 rounded-full text-[11px] font-bold leading-5 text-center ${active ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-900'}`}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Search and Filters - Mobile Optimized */}
@@ -3478,603 +3400,34 @@ const AdminPortal = () => {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-            {filteredUsers.map((user) => {
-              const roleColor = getRoleColor(user.role);
-              const roleIcon = getRoleIcon(user.role);
-              const roleGradient = getRoleGradient(user.role);
-              const metadata = user.metadata || {};
-              
-              return (
-                <div 
-                  key={user.id} 
-                  className="bg-white rounded-lg md:rounded-2xl shadow-md md:shadow-lg hover:shadow-lg md:hover:shadow-2xl transition-all duration-300 overflow-hidden border-2 border-yellow-200 hover:border-yellow-300 transform hover:scale-102"
-                >
-                  {/* Card Header with Gradient - Mobile Optimized */}
-                  <div className={`bg-gradient-to-r ${roleGradient} p-3 md:p-6`}>
-                    <div className="flex items-start justify-between gap-2 md:gap-4">
-                      <div className="flex items-center gap-2 md:gap-4 min-w-0">
-                        {/* Avatar */}
-                        <div className="w-12 md:w-16 h-12 md:h-16 bg-white rounded-lg md:rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0">
-                          <span className="text-2xl md:text-4xl">{roleIcon}</span>
-                        </div>
-                        
-                        {/* User Info */}
-                        <div className="text-white min-w-0 flex-1">
-                          <h3 className="text-sm md:text-xl font-bold mb-0.5 md:mb-1 truncate">{user.full_name}</h3>
-                          <p className="text-xs md:text-sm opacity-90 mb-1 md:mb-2 truncate">{user.email}</p>
-                          <div className="flex items-center flex-wrap gap-1">
-                            {viewMode === 'pending' ? (
-                              <span className="inline-flex items-center px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-bold bg-yellow-400 text-yellow-900 animate-pulse">
-                                ⏳ Pending
-                              </span>
-                            ) : (
-                              <>
-                                {/* Email Verification Badge */}
-                                {user.email_verified ? (
-                                  <span className="inline-flex items-center px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-bold bg-green-400 text-green-900">
-                                    ✅ Email
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-bold bg-orange-400 text-orange-900">
-                                    📧 Pending
-                                  </span>
-                                )}
-                                {/* Account Status Badge */}
-                                {user.is_active ? (
-                                  <span className="inline-flex items-center px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-bold bg-blue-400 text-blue-900">
-                                    🟢 Active
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-bold bg-gray-400 text-gray-900">
-                                    ⚪ Inactive
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Role Badge */}
-                      <span className="px-2 md:px-4 py-1 md:py-2 bg-white/20 backdrop-blur-sm rounded-lg md:rounded-xl text-white font-bold uppercase text-xs tracking-wider shadow-lg flex-shrink-0">
-                        {user.role}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Card Body - Mobile Optimized */}
-                  <div className="p-3 md:p-6">
-                    {/* User Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4 mb-3 md:mb-4 text-sm md:text-base">
-                      {user.phone && (
-                        <div className="flex items-center gap-2">
-                          <FiPhone className={`h-3 md:h-4 w-3 md:w-4 text-${roleColor}-500 flex-shrink-0`} />
-                          <span className="text-xs md:text-sm text-gray-700 truncate">{user.phone}</span>
-                        </div>
-                      )}
-                      
-                      {user.employee_id && (
-                        <div className="flex items-center gap-2">
-                          <FiUser className={`h-3 md:h-4 w-3 md:w-4 text-${roleColor}-500 flex-shrink-0`} />
-                          <span className="text-xs md:text-sm text-gray-700 font-mono bg-gray-100 px-2 py-1 rounded truncate">
-                            {user.employee_id}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {user.department && (
-                        <div className="flex items-center gap-2">
-                          <FiBriefcase className={`h-3 md:h-4 w-3 md:w-4 text-${roleColor}-500 flex-shrink-0`} />
-                          <span className="text-xs md:text-sm text-gray-700 truncate">{user.department}</span>
-                        </div>
-                      )}
-                      
-                      <div className="flex items-center gap-2">
-                        <FiCalendar className={`h-3 md:h-4 w-3 md:w-4 text-${roleColor}-500 flex-shrink-0`} />
-                        <span className="text-xs md:text-sm text-gray-700 truncate">
-                          {new Date(user.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: '2-digit'
-                          })}
-                        </span>
-                      </div>
-
-                      {/* Last Login - Only for All Users view */}
-                      {viewMode === 'all' && user.last_sign_in_at && (
-                        <div className="flex items-center gap-2 col-span-1 md:col-span-2">
-                          <FiActivity className={`h-3 md:h-4 w-3 md:w-4 text-${roleColor}-500 flex-shrink-0`} />
-                          <span className="text-xs md:text-sm text-gray-700 truncate">
-                            Last: {new Date(user.last_sign_in_at).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute:'2-digit'
-                            })}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Role-Specific Details */}
-                    {user.role === 'supplier' && (metadata.company_name || metadata.companyName) && (
-                      <div className="mb-4 p-4 bg-gradient-to-r from-orange-50 to-red-50 rounded-xl border border-orange-200">
-                        <div className="flex items-start space-x-3">
-                          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="text-xl">🏢</span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-gray-900 mb-1">
-                              {metadata.company_name || metadata.companyName}
-                            </p>
-                            {(metadata.business_category || metadata.businessCategory) && (
-                              <p className="text-xs text-gray-600 mb-1">
-                                📦 {metadata.business_category || metadata.businessCategory}
-                              </p>
-                            )}
-                            {metadata.address && (
-                              <p className="text-xs text-gray-600">
-                                📍 {metadata.address}
-                              </p>
-                            )}
-                            {(metadata.business_license || metadata.businessLicense) && (
-                              <p className="text-xs text-gray-600 mt-1">
-                                📄 License: {metadata.business_license || metadata.businessLicense}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {user.role === 'cashier' && metadata.preferred_shift && (
-                      <div className="mb-4 p-4 bg-gradient-to-r from-green-50 to-teal-50 rounded-xl border border-green-200">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                            <span className="text-xl">⏰</span>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600 mb-1">Preferred Shift</p>
-                            <p className="text-sm font-bold text-gray-900 capitalize">
-                              {metadata.preferred_shift}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {user.role === 'manager' && user.department && (
-                      <div className="mb-4 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <span className="text-xl">🎯</span>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600 mb-1">Department</p>
-                            <p className="text-sm font-bold text-gray-900">
-                              {user.department} Management
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action Buttons — role assignment + status */}
-                    <div className="pt-3 border-t border-gray-100 space-y-2">
-                      {/* Role assignment row */}
-                      {user.role !== 'admin' && (
-                        <div className="flex gap-1.5 flex-wrap">
-                          {[
-                            { role: 'manager',  label: '👔 Manager',  cls: 'bg-purple-600 hover:bg-purple-700' },
-                            { role: 'cashier',  label: '💰 Cashier',  cls: 'bg-yellow-500 hover:bg-yellow-600' },
-                            { role: 'supplier', label: '🏭 Supplier', cls: 'bg-blue-600 hover:bg-blue-700' },
-                            { role: 'customer', label: '👤 Customer', cls: 'bg-gray-500 hover:bg-gray-600' },
-                          ].map(({ role, label, cls }) => (
-                            <button key={role}
-                              onClick={() => assignStaffRole({ id: user.id || user.auth_id, full_name: user.full_name, email: user.email }, role)}
-                              disabled={user.role === role}
-                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold text-white transition-colors ${
-                                user.role === role ? 'opacity-40 cursor-default bg-gray-400' : cls
-                              }`}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex gap-2">
-                          {/* View Details Button */}
-                          <button
-                            onClick={() => { setSelectedUser(user); setShowUserDetailsModal(true); }}
-                            className="flex-1 px-3 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all font-bold flex items-center justify-center gap-2 text-sm shadow"
-                          >
-                            <FiEye className="h-4 w-4" />
-                            <span>Details</span>
-                          </button>
-
-                          {/* Remove role (blockchain-verified revoke) */}
-                          {user.role !== 'admin' && user.role !== 'customer' && (
-                            <button
-                              onClick={() => removeStaffRole(user.id)}
-                              className="px-3 py-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl transition-all font-bold flex items-center justify-center gap-1 text-sm shadow"
-                              title="Remove role → customer"
-                            >
-                              <FiTrash2 className="h-4 w-4" />
-                              <span>Revoke</span>
-                            </button>
-                          )}
-
-                          {/* Toggle Active Status */}
-                          {user.role !== 'admin' && (
-                            <button
-                              onClick={async () => {
-                                await supabase.from('users').update({ is_active: !user.is_active }).eq('id', user.id);
-                                loadAllUsers();
-                                notificationService.show(`User ${user.is_active ? 'deactivated' : 'activated'}`, 'success');
-                              }}
-                              className={`flex-1 px-3 py-2 bg-gradient-to-r ${
-                                user.is_active
-                                  ? 'from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700'
-                                  : 'from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'
-                              } text-white rounded-xl transition-all font-bold flex items-center justify-center gap-2 text-sm shadow`}
-                            >
-                              <FiPower className="h-4 w-4" />
-                              <span>{user.is_active ? 'Deactivate' : 'Activate'}</span>
-                            </button>
-                          )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 items-start">
+            {filteredUsers.map((user) => (
+              <AdminUserCard
+                key={user.id}
+                user={user}
+                onAssignRole={(role) => assignStaffRole({ id: user.id || user.auth_id, full_name: user.full_name, email: user.email }, role)}
+                onRevoke={() => removeStaffRole(user.id)}
+                onDetails={() => { setSelectedUser(user); setShowUserDetailsModal(true); }}
+                onToggleActive={async () => {
+                  await supabase.from('users').update({ is_active: !user.is_active }).eq('id', user.id);
+                  loadAllUsers();
+                  notificationService.show(`User ${user.is_active ? 'deactivated' : 'activated'}`, 'success');
+                }}
+              />
+            ))}
           </div>
         )}
 
-        {/* Summary Footer */}
-        {filteredUsers.length > 0 && (
-          <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                  <FiUsers className="h-6 w-6 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Showing</p>
-                  <p className="text-xl font-bold text-gray-900">
-                    {filteredUsers.length} {filterRole !== 'all' ? filterRole : 'user'}{filteredUsers.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                {['admin', 'manager', 'cashier', 'supplier', 'customer'].map(role => {
-                  const count = allUsers.filter(u => u.role?.toLowerCase() === role).length;
-                  if (count === 0) return null;
-                  return (
-                    <div key={role} className="text-center">
-                      <p className="text-2xl">{getRoleIcon(role)}</p>
-                      <p className="text-xs text-gray-600 capitalize">{role}</p>
-                      <p className="text-sm font-bold text-gray-900">{count}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        {/* Count line — role totals live in the collapsible role filter above */}
+        {viewMode === 'all' && filteredUsers.length > 0 && (
+          <p className="text-center text-xs md:text-sm text-gray-600">
+            Showing <b className="text-gray-900">{filteredUsers.length}</b> {filterRole !== 'all' ? filterRole : 'user'}{filteredUsers.length !== 1 ? 's' : ''}
+            {filteredUsers.length !== allUsers.length && <> of {allUsers.length}</>}
+          </p>
         )}
       </div>
     );
   };
-
-  const renderSystemSettings = () => (
-    <div className="space-y-8">
-      {/* System Settings Header */}
-      <div className="container-glass rounded-xl p-6 shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">System Configuration</h2>
-            <p className="text-gray-600">Configure system-wide settings, portal names, and preferences</p>
-          </div>
-          <div className="flex space-x-3">
-            <button
-              onClick={openPortalConfiguration}
-              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
-            >
-              <span className="text-lg">🏢</span>
-              <span>Portal Names</span>
-            </button>
-            <button
-              onClick={loadSystemData}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-300 flex items-center space-x-2"
-            >
-              <FiRefreshCw className="h-5 w-5" />
-              <span>Refresh Settings</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Portal Configuration Quick Access */}
-      <div className="bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-600 rounded-2xl p-8 text-white shadow-2xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-3xl font-bold mb-3 flex items-center">
-              <span className="mr-4 text-4xl">🏢</span>
-              Portal Name Management
-            </h3>
-            <p className="text-indigo-100 text-lg mb-4">Customize portal names and system branding across the entire application</p>
-            <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-indigo-200">Real-time Updates</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-purple-300">6 Portals</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-pink-300">Instant Broadcasting</span>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <button
-              onClick={openPortalConfiguration}
-              className="bg-white/20 hover:bg-white/30 text-white py-4 px-8 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 flex items-center space-x-3"
-            >
-              <span className="text-2xl">⚙️</span>
-              <span>Configure Now</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Current Portal Names Display */}
-        <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-4">
-          {Object.entries(portalConfig).slice(0, 6).map(([key, value], index) => (
-            <div key={key} className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:bg-white/20 transition-all duration-300">
-              <div className="text-sm text-indigo-200 uppercase tracking-wide font-medium mb-1">
-                {key.replace(/([A-Z])/g, ' $1').trim()}
-              </div>
-              <div className="text-white font-bold text-lg">{value}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* General Settings */}
-        <div className="container-glass rounded-xl p-6 shadow-lg">
-          <div className="flex items-center space-x-2 mb-6">
-            <FiSettings className="h-6 w-6 text-blue-600" />
-            <h3 className="text-xl font-bold text-gray-900">General Settings</h3>
-          </div>
-          
-          <div className="space-y-6">
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">System Name</label>
-              <div className="flex">
-                <input
-                  type="text"
-                  value={systemData.settings?.systemName || 'SUPERMARTKERA'}
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                />
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Environment</label>
-              <div className="flex items-center space-x-2">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                  Production
-                </span>
-                <button className="p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <label className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-gray-700">Maintenance Mode</span>
-                <div className={`px-2 py-1 rounded text-xs font-medium ${
-                  systemData.settings?.maintenanceMode
-                    ? 'bg-yellow-100 text-yellow-800'
-                    : 'bg-green-100 text-green-800'
-                }`}>
-                  {systemData.settings?.maintenanceMode ? 'Enabled' : 'Disabled'}
-                </div>
-              </label>
-              <div className="mt-2 flex items-center">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={systemData.settings?.maintenanceMode || false}
-                    readOnly
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-5 w-5"
-                  />
-                  <span className="ml-2 text-sm text-gray-600">
-                    Enable maintenance mode
-                  </span>
-                </label>
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Security Settings */}
-        <div className="container-glass rounded-xl p-6 shadow-lg">
-          <div className="flex items-center space-x-2 mb-6">
-            <FiShield className="h-6 w-6 text-blue-600" />
-            <h3 className="text-xl font-bold text-gray-900">Security Settings</h3>
-          </div>
-          
-          <div className="space-y-6">
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Session Timeout</label>
-              <div className="flex">
-                <input
-                  type="number"
-                  value={systemData.settings?.sessionTimeout || 30}
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                  min="1"
-                  max="240"
-                />
-                <span className="ml-2 flex items-center text-gray-500">minutes</span>
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Max Login Attempts</label>
-              <div className="flex">
-                <input
-                  type="number"
-                  value={systemData.settings?.maxLoginAttempts || 3}
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                  min="1"
-                  max="10"
-                />
-                <span className="ml-2 flex items-center text-gray-500">attempts</span>
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Two-Factor Authentication</label>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={systemData.settings?.twoFactorEnabled || false}
-                    readOnly
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-5 w-5"
-                  />
-                  <span className="ml-2 text-sm text-gray-600">
-                    Require 2FA for admin accounts
-                  </span>
-                </label>
-                <button className="p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Performance Settings */}
-        <div className="container-glass rounded-xl p-6 shadow-lg">
-          <div className="flex items-center space-x-2 mb-6">
-            <FiZap className="h-6 w-6 text-blue-600" />
-            <h3 className="text-xl font-bold text-gray-900">Performance Settings</h3>
-          </div>
-          
-          <div className="space-y-6">
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cache Duration</label>
-              <div className="flex">
-                <input
-                  type="number"
-                  value={systemData.settings?.cacheDuration || 60}
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                />
-                <span className="ml-2 flex items-center text-gray-500">minutes</span>
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Request Rate Limit</label>
-              <div className="flex">
-                <input
-                  type="number"
-                  value={systemData.settings?.rateLimit || 100}
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                />
-                <span className="ml-2 flex items-center text-gray-500">requests/minute</span>
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Integration Settings */}
-        <div className="container-glass rounded-xl p-6 shadow-lg">
-          <div className="flex items-center space-x-2 mb-6">
-            <FiGlobe className="h-6 w-6 text-blue-600" />
-            <h3 className="text-xl font-bold text-gray-900">Integration Settings</h3>
-          </div>
-          
-          <div className="space-y-6">
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">API Key</label>
-              <div className="flex">
-                <input
-                  type="password"
-                  value="••••••••••••••••"
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                />
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEye className="h-5 w-5" />
-                </button>
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiRotateCw className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
-              <div className="flex">
-                <input
-                  type="text"
-                  value={systemData.settings?.webhookUrl || 'https://api.supermartkera.ug/webhooks'}
-                  readOnly
-                  className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
-                />
-                <button className="ml-2 p-2 text-gray-400 hover:text-gray-600">
-                  <FiEdit className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <section className="container-glass rounded-xl border border-cyan-200 p-6 shadow-lg">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-4">
-            <span className="rounded-xl bg-cyan-50 p-3 text-cyan-800"><FiServer className="h-6 w-6" /></span>
-            <div>
-              <h3 className="text-xl font-bold text-gray-900">Optional offline business server</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">Set up a business-owned LAN server, create a one-time pairing code, and manage registered local servers. Your existing cloud account remains available for sync.</p>
-            </div>
-          </div>
-          <a href="/business-local-server?returnTo=%2Fadmin-portal" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-700 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-800">
-            <FiHardDrive className="h-4 w-4" /> Open offline server settings
-          </a>
-        </div>
-      </section>
-    </div>
-  );
 
   const renderInventoryControl = () => (
     <div className="space-y-6">
@@ -4465,355 +3818,6 @@ const AdminPortal = () => {
       </div>
     </div>
   );
-
-  // Add state for order stats and collapsible sections
-  const [orderStats, setOrderStats] = useState({
-    total: 0,
-    today: 0,
-    pending: 0,
-    completed: 0,
-    revenue: 0,
-    loading: true
-  });
-  const [detailedOrders, setDetailedOrders] = useState([]);
-  const [loadingDetailedOrders, setLoadingDetailedOrders] = useState(false);
-  const [expandedCard, setExpandedCard] = useState(null);
-
-  const renderOrderManagement = () => {
-    const orderCards = [
-      { 
-        id: 'total',
-        title: 'Total Orders', 
-        value: orderStats.total,
-        icon: '📋', 
-        color: 'orange',
-        description: 'All orders in the system',
-        details: 'Complete order history across all portals and time periods'
-      },
-      { 
-        id: 'today',
-        title: 'Today Orders', 
-        value: orderStats.today,
-        icon: '📦', 
-        color: 'blue',
-        description: 'Orders placed today',
-        details: `Active orders from ${new Date().toLocaleDateString()}`
-      },
-      { 
-        id: 'pending',
-        title: 'Pending Orders', 
-        value: orderStats.pending,
-        icon: '⏳', 
-        color: 'yellow',
-        description: 'Awaiting approval or processing',
-        details: 'Purchase orders pending approval or supplier confirmation'
-      },
-      { 
-        id: 'completed',
-        title: 'Completed Orders', 
-        value: orderStats.completed,
-        icon: '✅', 
-        color: 'green',
-        description: 'Successfully completed',
-        details: 'All successfully processed and delivered orders'
-      },
-      { 
-        id: 'revenue',
-        title: 'Revenue Today', 
-        value: `UGX ${orderStats.revenue.toLocaleString()}`,
-        icon: '💰', 
-        color: 'purple',
-        description: 'Today\'s earnings',
-        details: 'Total revenue generated from today\'s transactions'
-      }
-    ];
-
-    return (
-      <div className="space-y-6">
-        {/* Order Management Header - Collapsible - Mobile Optimized */}
-        <div className="bg-gradient-to-r from-orange-500 via-red-600 to-pink-700 rounded-lg md:rounded-xl p-4 md:p-6 text-white shadow-lg md:shadow-xl cursor-pointer hover:shadow-xl md:hover:shadow-2xl transition-all duration-300"
-             onClick={() => setExpandedCard(expandedCard === 'header' ? null : 'header')}>
-          <div className="flex items-center justify-between gap-3 md:gap-4">
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg md:text-2xl font-bold mb-1 md:mb-2 flex items-center gap-2">
-                <span className="text-2xl md:text-3xl flex-shrink-0">📋</span>
-                <span className="truncate">Order Management</span>
-                <FiChevronDown className={`ml-2 transition-transform duration-300 flex-shrink-0 ${expandedCard === 'header' ? 'rotate-180' : ''}`} />
-              </h2>
-              <p className="text-orange-100 text-xs md:text-sm">Full administrative control over all order operations</p>
-            </div>
-            <div className="text-right ml-2 md:ml-4 flex-shrink-0">
-              <div className="text-2xl md:text-4xl font-bold">{orderStats.loading ? '...' : orderStats.total.toLocaleString()}</div>
-              <div className="text-orange-200 text-xs md:text-sm">Total Orders</div>
-            </div>
-          </div>
-          
-          {expandedCard === 'header' && (
-            <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-white/20 animate-fadeIn">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 text-xs md:text-sm">
-                <div className="bg-white/10 rounded-lg p-2 md:p-3">
-                  <div className="text-orange-200 text-xs md:text-sm">System Status</div>
-                  <div className="font-bold mt-1">🟢 Active</div>
-                </div>
-                <div className="bg-white/10 rounded-lg p-2 md:p-3">
-                  <div className="text-orange-200 text-xs md:text-sm">Last Updated</div>
-                  <div className="font-bold mt-1 text-xs md:text-sm">{new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>
-                </div>
-                <div className="bg-white/10 rounded-lg p-2 md:p-3">
-                  <div className="text-orange-200 text-xs md:text-sm">Data Source</div>
-                  <div className="font-bold mt-1">Supabase</div>
-                </div>
-                <div className="bg-white/10 rounded-lg p-2 md:p-3">
-                  <div className="text-orange-200 text-xs md:text-sm">Auto Refresh</div>
-                  <div className="font-bold mt-1 text-xs md:text-sm">Every 5min</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Order Stats - List Format with Collapsible Cards - Mobile Optimized */}
-        <div className="space-y-3 md:space-y-4">
-          {orderCards.map((card) => (
-            <div 
-              key={card.id}
-              className={`bg-white rounded-lg md:rounded-xl shadow-md md:shadow-lg hover:shadow-lg md:hover:shadow-xl transition-all duration-300 cursor-pointer border-l-4 border-${card.color}-500`}
-              onClick={() => setExpandedCard(expandedCard === card.id ? null : card.id)}
-            >
-              <div className="p-3 md:p-5">
-                <div className="flex items-center justify-between gap-2 md:gap-4">
-                  <div className="flex items-center flex-1 gap-2 md:gap-4">
-                    <div className={`p-2 md:p-3 bg-${card.color}-100 rounded-lg md:rounded-xl flex-shrink-0`}>
-                      <span className="text-xl md:text-2xl">{card.icon}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm md:text-lg font-bold text-gray-900 truncate">{card.title}</h3>
-                      <p className="text-xs md:text-sm text-gray-600 truncate">{card.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
-                    <div className="text-right">
-                      <div className="text-lg md:text-3xl font-bold text-gray-900">
-                        {orderStats.loading ? '...' : card.value}
-                      </div>
-                    </div>
-                    <FiChevronDown className={`text-gray-400 transition-transform duration-300 flex-shrink-0 ${expandedCard === card.id ? 'rotate-180' : ''}`} />
-                  </div>
-                </div>
-
-                {/* Expanded Content */}
-                {expandedCard === card.id && (
-                  <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-gray-200 animate-fadeIn">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                      <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-                        <div className="text-xs md:text-sm text-gray-600 mb-1">Details</div>
-                        <div className="font-medium text-sm md:text-base text-gray-900">{card.details}</div>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-                        <div className="text-xs md:text-sm text-gray-600 mb-1">Last Updated</div>
-                        <div className="font-medium text-sm md:text-base text-gray-900 flex items-center gap-2">
-                          <FiRefreshCw className="text-green-500 flex-shrink-0" />
-                          <span className="truncate">{new Date().toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-3 md:mt-4 flex justify-end gap-2 flex-wrap">
-                      <button className={`px-3 md:px-4 py-2 text-sm md:text-base bg-${card.color}-600 text-white rounded-lg hover:bg-${card.color}-700 transition-colors flex items-center gap-1 md:gap-2`}>
-                        <FiEye className="flex-shrink-0" /> <span className="hidden sm:inline">View Details</span>
-                      </button>
-                      <button className="px-3 md:px-4 py-2 text-sm md:text-base bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1 md:gap-2">
-                        <FiDownload className="flex-shrink-0" /> <span className="hidden sm:inline">Export</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-      {/* Order Control Panel - Mobile Optimized */}
-      <div className="bg-white rounded-xl md:rounded-2xl shadow-lg md:shadow-xl p-4 md:p-8">
-        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
-          <span className="text-2xl md:text-3xl">🎛️</span>
-          <span className="truncate">Order Control Panel</span>
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-4">
-          {[
-            { title: 'Bulk Actions', icon: '🔄', action: 'Process multiple' },
-            { title: 'Priority Queue', icon: '⚡', action: 'Manage urgent' },
-            { title: 'Auto-Assignment', icon: '🤖', action: 'Automated routing' },
-            { title: 'Cancel Orders', icon: '❌', action: 'Mass cancel' },
-            { title: 'Refund Control', icon: '💸', action: 'Process refunds' },
-            { title: 'Delivery Tracking', icon: '🚚', action: 'Monitor' },
-            { title: 'Customer Alerts', icon: '📱', action: 'Send notify' },
-            { title: 'Order Analytics', icon: '📊', action: 'Generate' }
-          ].map((control, index) => (
-            <button key={index} className="bg-gradient-to-r from-orange-600 to-red-600 text-white p-2 md:p-4 rounded-lg md:rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300 text-center flex flex-col items-center justify-center">
-              <div className="text-lg md:text-2xl mb-1">{control.icon}</div>
-              <div className="font-semibold text-xs md:text-sm line-clamp-2">{control.title}</div>
-              <div className="text-xs text-white/70 mt-0.5 line-clamp-1">{control.action}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Detailed Orders List - Real data from database - Mobile Optimized */}
-      <div className="bg-white rounded-xl md:rounded-2xl shadow-lg md:shadow-xl p-4 md:p-8">
-        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
-          <span className="text-2xl md:text-3xl">📜</span>
-          <span>Recent Orders</span>
-        </h3>
-        
-        {loadingDetailedOrders ? (
-          <div className="text-center py-8">
-            <div className="animate-spin text-3xl md:text-4xl mb-3">⏳</div>
-            <p className="text-sm md:text-base text-gray-600">Loading orders...</p>
-          </div>
-        ) : detailedOrders.length === 0 ? (
-          <div className="text-center py-8 bg-gray-50 rounded-lg">
-            <p className="text-sm md:text-base text-gray-500">No orders found</p>
-          </div>
-        ) : (
-          <div className="space-y-3 md:space-y-0 md:overflow-x-auto">
-            {/* Mobile Card View */}
-            <div className="md:hidden space-y-3">
-              {detailedOrders.slice(0, 10).map((order, index) => (
-                <div key={order.id} className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-600">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Order ID</div>
-                      <div className="font-mono text-sm font-bold text-blue-600">{order.id.slice(0, 8)}...</div>
-                    </div>
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                      order.status === 'completed' 
-                        ? 'bg-green-100 text-green-800'
-                        : order.status === 'pending' || order.status === 'pending_approval'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {order.status === 'completed' && '✅ Done'}
-                      {order.status === 'pending' && '⏳ Pending'}
-                      {order.status === 'pending_approval' && '⏳ Await'}
-                      {order.status === 'sent_to_supplier' && '🚚 Sent'}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2 text-sm mb-3">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Type</span>
-                      <span className="font-semibold">{order.type === 'sale' ? '💰 Sale' : '📦 Purchase'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Customer/Supplier</span>
-                      <span className="font-semibold truncate ml-2">{order.customer || order.supplier || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="text-gray-600">Products</span>
-                      <span className="font-medium text-right truncate ml-2" title={order.products}>{order.products || `${order.items} product(s)`}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Amount</span>
-                      <span className="font-bold text-gray-900">UGX {(order.amount || 0).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Items</span>
-                      <span className="font-semibold text-gray-700">{order.items}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Date</span>
-                      <span className="text-xs font-medium">{new Date(order.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                  
-                  <button className="w-full text-sm text-blue-600 hover:text-blue-800 font-semibold py-2 bg-blue-50 rounded hover:bg-blue-100 transition-colors">
-                    View Details
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b-2 border-gray-300 bg-gray-50">
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Order ID</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Type</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Status</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Customer/Supplier</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Amount</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Items</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Date</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailedOrders.slice(0, 10).map((order, index) => (
-                    <tr key={order.id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-blue-600">{order.id.slice(0, 8)}...</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                          order.type === 'sale' 
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {order.type === 'sale' ? '💰 Sale' : '📦 Purchase'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                          order.status === 'completed' 
-                            ? 'bg-green-100 text-green-800'
-                            : order.status === 'pending' || order.status === 'pending_approval'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {order.status === 'completed' && '✅ Completed'}
-                          {order.status === 'pending' && '⏳ Pending'}
-                          {order.status === 'pending_approval' && '⏳ Pending Approval'}
-                          {order.status === 'sent_to_supplier' && '🚚 Sent'}
-                          {!['completed', 'pending', 'pending_approval', 'sent_to_supplier'].includes(order.status) && order.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        <div>{order.customer || order.supplier || 'N/A'}</div>
-                        {order.products && <div className="text-xs text-gray-500 max-w-xs truncate" title={order.products}>{order.products}</div>}
-                      </td>
-                      <td className="px-4 py-3 font-bold text-gray-900">
-                        UGX {(order.amount || 0).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-center font-semibold text-gray-700">
-                        {order.items}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        {new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button className="text-blue-600 hover:text-blue-800 font-semibold text-xs px-3 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors">
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-3">
-              <p className="text-xs sm:text-sm text-gray-600">
-                Showing 1-{Math.min(10, detailedOrders.length)} of {detailedOrders.length} orders
-              </p>
-              <button className="w-full sm:w-auto px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-semibold text-sm flex items-center justify-center gap-2">
-                <FiDownload /> <span>Export All</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-    );
-  };
 
   const renderPaymentControl = () => (
     <div className="space-y-8">
@@ -6536,6 +5540,14 @@ const AdminPortal = () => {
   // sub-views, chosen through viewMode.
   const openSection = useCallback((section, mode) => {
     if (mode) setViewMode(mode);
+    // Orders live on the dashboard now: land there and scroll to the orders block.
+    if (section === 'orders') {
+      setActiveSection('dashboard');
+      setTimeout(() => {
+        document.getElementById('dashboard-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
+      return;
+    }
     setActiveSection(section);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
@@ -6546,7 +5558,6 @@ const AdminPortal = () => {
     { id: 'business-operations', label: 'Payroll & Transport', icon: FiBriefcase },
     { id: 'transactions', label: '🧾 Transaction History', icon: FiFileText },
     { id: 'inventory-pos', label: '📦 Order Inventory - POS', icon: FiShoppingBag },
-    { id: 'orders', label: 'Orders', icon: FiShoppingCart },
     // Hidden for now (Master Inventory Control):
     // { id: 'inventory', label: 'Inventory Control', icon: FiPackage },
     { id: 'bookings', label: '📅 Bookings', icon: FiCalendar },
@@ -6765,6 +5776,7 @@ const AdminPortal = () => {
         menuItems={[
           { label: pendingUsers.length > 0 ? `Notifications (${pendingUsers.length} pending)` : 'Notifications', icon: FiBell, onClick: () => setActiveSection('users') },
           ...(!isMobile ? [{ label: 'Store Logo', icon: FiUpload, onClick: () => logoFileInputRef.current?.click() }] : []),
+          { label: 'Settings', icon: FiSettings, onClick: () => setActiveSection('settings') },
           { label: 'Security', icon: FiLock, onClick: () => setActiveSection('security') }
         ]}
       />
@@ -6837,12 +5849,19 @@ const AdminPortal = () => {
             {/* Hidden for now: Master Inventory Control
             {activeSection === 'inventory' && renderInventoryControl()}
             */}
-            {activeSection === 'orders' && renderOrderManagement()}
             {activeSection === 'payments' && renderPaymentControl()}
             {activeSection === 'suppliers' && renderSupplierNetwork()}
             {activeSection === 'users' && renderUserManagement()}
             {activeSection === 'analytics' && renderBusinessAnalytics()}
             {activeSection === 'operations' && renderSystemOperations()}
+            {activeSection === 'settings' && (
+              <AdminStoreSettings
+                supermarketId={currentAdmin.supermarket_id}
+                typeEmoji={branding.typeEmoji}
+                typeLabel={branding.typeLabel}
+                onSaved={branding.refresh}
+              />
+            )}
             
             {/* 📦 ORDER INVENTORY POS CONTROL */}
             {activeSection === 'inventory-pos' && (
