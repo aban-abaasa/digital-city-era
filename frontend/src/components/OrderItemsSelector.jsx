@@ -13,6 +13,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import { catalogItemOffer, groupBatchesByItem } from '../utils/supplierBatchExpiry';
 
 const OrderItemsSelector = ({ 
   orderItems, 
@@ -98,7 +99,35 @@ const OrderItemsSelector = ({
         }));
       }
 
-      const offerings = [...(catalog || []), ...posOfferings];
+      // Batch expiry: the supplier's near-expiry stock is discounted live, so
+      // the price shown (and ordered) already reflects today's discount.
+      let catalogWithOffers = catalog || [];
+      const catalogIds = catalogWithOffers.map(item => item.id);
+      if (catalogIds.length) {
+        const { data: batchRows, error: batchError } = await supabase
+          .from('supplier_catalog_batches').select('*').in('catalog_item_id', catalogIds);
+        if (!batchError) {
+          const byItem = groupBatchesByItem(batchRows);
+          catalogWithOffers = catalogWithOffers.map(item => {
+            const batches = byItem[item.id] || [];
+            if (!batches.length) return item;
+            const offer = catalogItemOffer(item, batches);
+            // Every batch expired / out of stock: nothing safe to order.
+            if (!offer.first) return { ...item, is_unavailable_expired: true };
+            return {
+              ...item,
+              list_price: offer.basePrice,
+              price_per_unit: offer.price,
+              expiry_discount_percent: offer.percent,
+              next_expiry_date: offer.first.batch.expiry_date,
+              next_expiry_label: offer.first.status.label,
+              next_batch_quantity: offer.first.batch.quantity
+            };
+          }).filter(item => !item.is_unavailable_expired);
+        }
+      }
+
+      const offerings = [...catalogWithOffers, ...posOfferings];
       setSupplierCatalogItems(offerings);
       setSupplierPrices(Object.fromEntries(offerings.map(item => [item.name.trim().toLowerCase(), Number(item.price_per_unit) || 0])));
     };
@@ -601,7 +630,15 @@ const OrderItemsSelector = ({
                     {item.image_url ? <img src={item.image_url} alt={item.name} className="h-24 w-full object-cover" /> : <div className="flex h-24 items-center justify-center bg-emerald-50 text-3xl">📦</div>}
                     <div className="p-2">
                       <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
-                      <p className="text-xs text-emerald-700">{formatCurrency(item.price_per_unit)} / {item.unit || 'unit'}</p>
+                      <p className="text-xs text-emerald-700">
+                        {item.expiry_discount_percent > 0 && <span className="mr-1 text-gray-400 line-through">{formatCurrency(item.list_price)}</span>}
+                        {formatCurrency(item.price_per_unit)} / {item.unit || 'unit'}
+                      </p>
+                      {item.expiry_discount_percent > 0 && (
+                        <p className="text-[11px] font-semibold text-orange-700">
+                          −{item.expiry_discount_percent}% · {item.next_expiry_label} ({item.next_batch_quantity} in batch)
+                        </p>
+                      )}
                       {item.admin_selling_price > 0 && <p className="text-[11px] text-blue-700">Sell: {formatCurrency(item.admin_selling_price)}</p>}
                       <p className="text-[11px] text-gray-500">Min {item.min_order_qty || 1}</p>
                     </div>

@@ -6,6 +6,13 @@ import {
   SUPPLIER_CATALOG_CATEGORIES as CATEGORIES,
   catalogItemToFormData
 } from '../utils/supplierCatalog';
+import SupplierBatchManager from './SupplierBatchManager';
+import {
+  catalogItemOffer,
+  groupBatchesByItem,
+  formatExpiryDate,
+  isMissingBatchTable
+} from '../utils/supplierBatchExpiry';
 
 // ── shared helpers ─────────────────────────────────────────────────────────────
 const fmtUGX = n => n ? 'UGX ' + Number(n).toLocaleString() : '—';
@@ -17,6 +24,10 @@ export function SupplierCatalogTab({ userId }) {
   // Adding and editing both use the shared full Add Product form (the one the
   // admin portal uses) in supplier mode; `modal.item` is null for a new item.
   const [modal, setModal]     = useState({ open: false, item: null });
+  // Batches (each with its own expiry date) per catalog item, and the item
+  // whose batch manager is open.
+  const [batches, setBatches]   = useState([]);
+  const [batchItemId, setBatchItemId] = useState(null);
 
   useEffect(() => { load(); }, [userId]);
 
@@ -29,6 +40,22 @@ export function SupplierCatalogTab({ userId }) {
       .order('created_at', { ascending: false });
     setItems(data || []);
     setLoading(false);
+    await loadBatches((data || []).map(item => item.id));
+  };
+
+  const loadBatches = async (itemIds) => {
+    if (!itemIds.length) { setBatches([]); return; }
+    const { data, error } = await supabase
+      .from('supplier_catalog_batches')
+      .select('*')
+      .in('catalog_item_id', itemIds);
+    if (error) {
+      // Table not created yet: the catalog still works, just without batches.
+      if (!isMissingBatchTable(error)) console.warn('Could not load batches:', error.message);
+      setBatches([]);
+      return;
+    }
+    setBatches(data || []);
   };
 
   const openNew = () => setModal({ open: true, item: null });
@@ -47,6 +74,11 @@ export function SupplierCatalogTab({ userId }) {
     toast.success('Item removed');
   };
 
+  const batchesByItem = groupBatchesByItem(batches);
+  const offers = Object.fromEntries(items.map(item => [item.id, catalogItemOffer(item, batchesByItem[item.id])]));
+  const flaggedItems = items.filter(item => offers[item.id].flaggedCount > 0 || offers[item.id].expiredCount > 0);
+  const batchItem = items.find(item => item.id === batchItemId) || null;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -62,6 +94,27 @@ export function SupplierCatalogTab({ userId }) {
           + Add Item
         </button>
       </div>
+
+      {/* Near-expiry flags: batches inside the flag window are discounted for buyers automatically */}
+      {flaggedItems.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-bold text-amber-900">⏰ {flaggedItems.length} item{flaggedItems.length > 1 ? 's have' : ' has'} batches close to expiry</p>
+          <p className="text-xs text-amber-800 mt-0.5">Discounts update by themselves every day. Open Batches to change an expiry date or the discount.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {flaggedItems.map(item => {
+              const offer = offers[item.id];
+              return (
+                <button key={item.id} onClick={() => setBatchItemId(item.id)}
+                  className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100">
+                  {item.name}
+                  {offer.first ? ` · ${offer.first.status.label}` : ' · expired'}
+                  {offer.percent > 0 ? ` · −${offer.percent}%` : ''}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Catalog list */}
       {loading ? (
@@ -104,8 +157,33 @@ export function SupplierCatalogTab({ userId }) {
               )}
               <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
                 <span>Min: {item.min_order_qty} {item.unit}</span>
-                <span>{item.price_per_unit ? fmtUGX(item.price_per_unit) + '/' + item.unit : 'Negotiable'}</span>
+                {offers[item.id].onOffer ? (
+                  <span>
+                    <span className="line-through mr-1">{fmtUGX(item.price_per_unit)}</span>
+                    <b className="text-purple-700">{fmtUGX(offers[item.id].price)}/{item.unit}</b>
+                  </span>
+                ) : (
+                  <span>{item.price_per_unit ? fmtUGX(item.price_per_unit) + '/' + item.unit : 'Negotiable'}</span>
+                )}
               </div>
+              {(() => {
+                const offer = offers[item.id];
+                const nearest = offer.first;
+                return (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-gray-500 min-w-0 truncate">
+                      {nearest
+                        ? <>Next expiry <b className={nearest.flagged ? 'text-amber-700' : 'text-gray-700'}>{formatExpiryDate(nearest.batch.expiry_date)}</b>
+                            {offer.percent > 0 && <b className="text-purple-700"> · −{offer.percent}%</b>}</>
+                        : offer.rows.length ? 'All batches expired' : 'No batches tracked'}
+                    </span>
+                    <button onClick={() => setBatchItemId(item.id)}
+                      className="shrink-0 rounded-lg border border-purple-200 px-2 py-0.5 text-[11px] font-semibold text-purple-600 hover:bg-purple-50">
+                      Batches{offer.rows.length ? ` (${offer.rows.length})` : ''}
+                    </button>
+                  </div>
+                );
+              })()}
               <button onClick={() => toggle(item)}
                 className={`mt-2 w-full py-1 rounded-lg text-xs font-semibold ${item.is_available
                   ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
@@ -115,6 +193,15 @@ export function SupplierCatalogTab({ userId }) {
             </div>
           ))}
         </div>
+      )}
+
+      {batchItem && (
+        <SupplierBatchManager
+          item={batchItem}
+          batches={batchesByItem[batchItem.id] || []}
+          onClose={() => setBatchItemId(null)}
+          onChanged={() => loadBatches(items.map(item => item.id))}
+        />
       )}
 
       <AddProductModal
