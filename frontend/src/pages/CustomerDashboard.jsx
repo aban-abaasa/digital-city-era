@@ -476,6 +476,8 @@ const CustomerDashboard = () => {
   }, [showTrackModal, user?.id]);
 
   const switchTab = (id) => { setActiveTab(id); setMobileMenu(false); };
+  // Shop, Book Ride and Delivery use the whole page: no container, gutters or sidebar.
+  const fullBleed = activeTab === 'shop' || activeTab === 'book-ride' || activeTab === 'delivery';
 
   // Delivery is its own tab, separate from Book Ride — both render
   // EnhancedRideRequest (the one real matching-engine implementation) but
@@ -796,7 +798,7 @@ const CustomerDashboard = () => {
       {/* Role Banner — admin / manager / cashier / supplier. One slim ink bar with a
           gold hairline (an inset rounded pill on phones) instead of a tall
           gradient card; the long label only appears where there's room. */}
-      {staffRole && activeTab !== 'shop' && (() => {
+      {staffRole && !fullBleed && (() => {
         const config = {
           admin:   { path: '/admin-portal',   icon: '⚙️', label: 'Admin' },
           manager: { path: '/manager-portal', icon: '👔', label: 'Manager' },
@@ -827,7 +829,7 @@ const CustomerDashboard = () => {
 
       {/* Shop runs edge-to-edge (no max-width container, gutters or sidebar) so the
           product grid gets the whole screen; every other tab keeps the container. */}
-      <div className={activeTab === 'shop' ? 'w-full px-2 sm:px-4 pt-2 pb-28 sm:pb-8' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8'}>
+      <div className={fullBleed ? 'w-full px-2 sm:px-4 pt-2 pb-28 sm:pb-8' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8'}>
         {/* Phone Overview — loyalty card, live counts, service shortcuts and
             next steps as one scroll (used to be three tabs hiding each other,
             and used to render above EVERY tab, not just Overview). */}
@@ -879,9 +881,9 @@ const CustomerDashboard = () => {
         )}
 
         {/* Tab Content */}
-        <div className={activeTab === 'shop' ? '' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
+        <div className={fullBleed ? '' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
           {/* Main Content */}
-          <div className={activeTab === 'shop' ? '' : 'lg:col-span-2'}>
+          <div className={fullBleed ? '' : 'lg:col-span-2'}>
             {activeTab === 'overview' && (
               <div className="space-y-4">
                 {/* Small sub-tabs instead of two stacked cards — tabs always
@@ -994,19 +996,18 @@ const CustomerDashboard = () => {
 
             {/* Book Ride — mybodaguy ride booking */}
             {activeTab === 'book-ride' && (
-              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="mx-auto w-full max-w-5xl">
                 <a
                   href="https://bodagoera.icanera.space"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-950"
+                  className="mb-3 flex items-center gap-2 px-1 text-xs text-amber-800 transition-colors hover:text-amber-950 dark:text-amber-200"
                 >
-                  <span className="text-lg" aria-hidden="true">🏍️</span>
-                  <span className="flex-1">
-                    <strong className="font-semibold">For a better experience, open BodaGoEra.</strong>{' '}
-                    It has the full ride booking experience.
+                  <span aria-hidden="true">🏍️</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <strong className="font-semibold">Open BodaGoEra</strong> for the full ride booking experience
                   </span>
-                  <FiExternalLink className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                  <FiExternalLink className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
                 </a>
                 <EnhancedRideRequest customerId={user?.id} fixedServiceType="ride" />
               </div>
@@ -1031,7 +1032,7 @@ const CustomerDashboard = () => {
             {/* Delivery — same real matching-engine flow as Book Ride,
                 locked to delivery so the two never mix */}
             {activeTab === 'delivery' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="mx-auto w-full max-w-5xl">
                 <EnhancedRideRequest customerId={user?.id} fixedServiceType="delivery" />
               </div>
             )}
@@ -1229,8 +1230,8 @@ const CustomerDashboard = () => {
             )}
           </div>
 
-          {/* Sidebar — hidden on Shop so the storefront can take the full page */}
-          <div className={activeTab === 'shop' ? 'hidden' : 'space-y-6'}>
+          {/* Sidebar — hidden on Shop / Ride / Delivery so they can take the full page */}
+          <div className={fullBleed ? 'hidden' : 'space-y-6'}>
             {/* Quick Actions — hidden on the phone Overview (the hero already offers
                 them), shown on every other tab and on web. */}
             <div className={`classic-card p-4 ${activeTab === 'overview' ? 'hidden sm:block' : ''}`}>

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import * as React from 'react';
-import { MapPin, Search, Crown, Home, DollarSign, Star, Navigation, Phone, X, Clock, CheckCircle, XCircle, ArrowLeft, Zap, Fuel, Umbrella, Bike, Package, Tag, Car, Truck, Plane } from 'lucide-react';
+import { MapPin, Search, Crown, Home, DollarSign, Star, Navigation, Phone, X, Clock, CheckCircle, XCircle, ArrowLeft, Zap, Fuel, Umbrella, Bike, Package, Tag, Car, Truck, Plane, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Location } from '../data/locationTypes';
 import { supabase } from '../services/supabaseClient';
@@ -815,17 +815,21 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
   return (
     <div className="ride-booking-flow space-y-4 sm:space-y-6">
       {/* Search Form */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg sm:p-6 dark:border-slate-700 dark:bg-slate-900">
+      <div>
         {showJourneyOption && (
           <button
             onClick={() => setBookingMode('journey')}
-            className="mb-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-orange-300 py-2.5 text-sm font-semibold text-orange-700 transition-all hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-950/40"
+            className="mb-3 flex min-h-9 w-full items-center gap-2 px-1 text-left text-sm text-violet-700 transition-colors hover:text-violet-900 dark:text-violet-300"
           >
-            <Plane size={16} /> Flying somewhere? Book a full journey instead
+            <Plane size={15} className="flex-shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              <strong className="font-semibold">Flying somewhere?</strong>{' '}
+              <span className="text-slate-500 dark:text-slate-400">Book a full journey instead</span>
+            </span>
           </button>
         )}
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 sm:text-xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="hidden text-lg font-bold text-slate-800 dark:text-slate-100 sm:block sm:text-xl">
             {serviceType === 'ride'
               ? 'Book a Ride'
               : deliveryMode === 'supermarket'
@@ -835,7 +839,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           {(pickup || dropoff) && (
             <button
               onClick={handleClearSearch}
-              className="flex min-h-10 items-center gap-1 text-sm text-slate-600 hover:text-orange-600 dark:text-slate-300"
+              className="ml-auto flex min-h-10 items-center gap-1 text-sm text-slate-600 hover:text-orange-600 dark:text-slate-300"
             >
               <X size={16} />
               Clear
@@ -942,9 +946,12 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
         {!needsCrossBorderPath && (
         <>
         {/* Ride mode preference — filters matched riders by their real pricing mode */}
-        <div className="mb-4">
-          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">Ride Type</label>
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+        <details className="group mb-4">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-slate-700 dark:text-slate-200 [&::-webkit-details-marker]:hidden">
+            <span>Ride Type · <span className="font-semibold text-orange-600">{({ all: 'All', normal: 'Normal', vip: 'VIP +10%', discount: 'Discount -10%', return: 'Return -30%' } as Record<string, string>)[modePreference] ?? 'All'}</span></span>
+            <ChevronDown size={16} className="text-slate-400 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-2 grid grid-cols-4 gap-1.5 sm:gap-2">
             {(
               [
                 { id: 'all' as ModePreference, label: 'All', icon: null, badge: null },
@@ -979,7 +986,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             <Home size={14} />
             <span>Return (rider going home) — -30%</span>
           </button>
-        </div>
+        </details>
 
         {/* Ride type — Boda vs Car, matched against mbg_find_available_riders'
             p_vehicle_types filter so a request actually only reaches
@@ -1238,7 +1245,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           : matchedRiders.filter(r => r.mode === modePreference);
 
         return (
-          <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
+          <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg sm:text-xl font-bold text-slate-800">
                 Available Riders ({displayedRiders.length})
