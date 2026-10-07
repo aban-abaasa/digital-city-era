@@ -3686,10 +3686,16 @@ const CashierPortal = () => {
         name={cashierProfile.name}
         email={cashierProfile.email}
         initial={(cashierProfile.name || 'C').charAt(0).toUpperCase()}
+        bottomTabs={[
+          { id: 'pos', label: 'POS' },
+          { id: 'dashboard', label: 'Dashboard' },
+          { id: 'transactions', label: 'Receipts' },
+          { id: 'ican-wallet', label: 'Wallet' }
+        ]}
       />
 
       {/* Main Content */}
-      <div className={`${isMobile ? 'w-full px-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} ${isMobile ? 'pt-4 pb-6' : 'py-8'}`}>
+      <div className={`${isMobile ? 'w-full px-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} ${isMobile ? 'pt-4 pb-28' : 'py-8'}`}>
         {(!isOnline || catalogSavedAt || pendingSalesCount > 0) && (
           <div role="status" className="mb-4 mx-4 md:mx-0 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 flex flex-wrap gap-x-4 gap-y-1">
             {!isOnline && (
