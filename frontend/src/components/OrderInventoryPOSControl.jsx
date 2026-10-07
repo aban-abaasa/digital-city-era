@@ -451,7 +451,8 @@ const OrderInventoryPOSControl = () => {
       console.log('⚡ Auto-registering new product...');
       
       const generatedName = `Product - ${trimmedBarcode}`;
-      const generatedSKU = `SKU-${trimmedBarcode.substring(0, 8)}`;
+      // Full barcode, not a prefix: SKU is unique and barcodes from one maker share their first digits
+      const generatedSKU = `SKU-${trimmedBarcode}`;
       const { data: storeProfile } = await supabase
         .from('supermarkets')
         .select('business_type')
@@ -466,19 +467,21 @@ const OrderInventoryPOSControl = () => {
           barcode: trimmedBarcode,
           sku: generatedSKU,
           cost_price: 0,
+          price: 0,
           selling_price: 0,
           tax_rate: 18,
-          quantity: 0,
           is_active: true,
-          created_at: new Date().toISOString(),
-          supermarket_id: supermarketId || undefined
+          supermarket_id: supermarketId
         }])
         .select()
         .single();
 
       if (createError) {
         console.error('❌ Error creating product:', createError);
-        toast.error('❌ Failed to register barcode');
+        // products.barcode is unique across every store, so a code another store registered can't be reused
+        toast.error(createError.code === '23505'
+          ? '❌ This barcode is already registered to another store'
+          : `❌ Failed to register barcode${createError.message ? `: ${createError.message}` : ''}`);
         return;
       }
 

@@ -346,7 +346,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       setFormData(prev => ({
         ...prev,
         barcode: barcode,
-        sku: `SKU-${barcode.substring(0, 8)}`
+        sku: `SKU-${barcode}`
       }));
       
       toast.success(`✅ Barcode scanned & registered: ${barcode}`);
