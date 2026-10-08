@@ -44,6 +44,7 @@ import {
   FiGrid,
   FiExternalLink,
   FiSearch,
+  FiRepeat,
 } from 'react-icons/fi';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { referralService } from '../services/referralService';
@@ -56,6 +57,7 @@ import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
 import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import DesktopOverview from '../components/customerDashboard/DesktopOverview';
+import InstallmentsHub from '../components/installments/InstallmentsHub';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
@@ -183,7 +185,7 @@ const CustomerDashboard = () => {
   // Overview — falls back to 'overview' for anything not a real tab id.
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const validTabs = ['overview', 'book-ride', 'journey', 'shop', 'delivery', 'rewards', 'profile'];
+    const validTabs = ['overview', 'book-ride', 'journey', 'shop', 'delivery', 'payments', 'rewards', 'profile'];
     return validTabs.includes(requested) ? requested : 'overview';
   });
   // Overview main column: Recent Orders / Recommended split into small tabs
@@ -492,6 +494,7 @@ const CustomerDashboard = () => {
     { id: 'shop', label: 'Shop', emoji: '🛒', icon: FiShoppingBag },
     { id: 'book-service', label: 'Book', emoji: '📅', icon: FiCalendar },
     { id: 'delivery', label: 'Delivery', emoji: '📦', icon: FiPackage },
+    { id: 'payments', label: 'Payments', emoji: '💳', icon: FiRepeat },
     { id: 'rewards', label: 'Rewards', emoji: '🎁', icon: FiGift },
     { id: 'profile', label: 'Profile', emoji: '👤', icon: FiUser },
   ];
@@ -1034,6 +1037,13 @@ const CustomerDashboard = () => {
             {activeTab === 'delivery' && (
               <div className="mx-auto w-full max-w-5xl">
                 <EnhancedRideRequest customerId={user?.id} fixedServiceType="delivery" />
+              </div>
+            )}
+
+            {/* Payments — instalment plans: pay for products over time, then collect or have them delivered */}
+            {activeTab === 'payments' && user?.id && (
+              <div className="mx-auto w-full max-w-3xl">
+                <InstallmentsHub customerName={customer?.full_name || null} customerPhone={customer?.phone || null} />
               </div>
             )}
 
