@@ -119,7 +119,8 @@ async function main() {
   const lanHost = await ask('Server LAN IPv4 address (reserve this address in your router)');
   if (!isIpv4Address(lanHost)) throw new Error('Enter the server computer IPv4 address on the business LAN.');
 
-  mkdirSync(dirname(targetDir), { recursive: true });
+  // Node throws EPERM when asked to "create" a drive root such as D:\ on Windows, even though it exists.
+  if (!existsSync(dirname(targetDir))) mkdirSync(dirname(targetDir), { recursive: true });
   const parentInfo = statfsSync(dirname(targetDir));
   const freeBytes = Number(parentInfo.bavail) * Number(parentInfo.bsize);
   if (freeBytes < 40 * 1024 ** 3) throw new Error('At least 40 GB of free disk space is required for the self-hosted stack and data.');
