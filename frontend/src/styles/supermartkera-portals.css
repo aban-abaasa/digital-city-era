@@ -1669,3 +1669,23 @@
   .manager-supplier-orders > .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem !important; }
   .manager-supplier-orders .supplier-order-details { padding: 0.85rem !important; }
 }
+
+/* ==========================================================================
+   Avatar menu (PortalHeader) in dark mode — the dark layer above repaints the
+   white surface but not the slate text, which left the email and every entry
+   dark-on-dark and unreadable. Colour every part explicitly, in all portals.
+   ========================================================================== */
+[data-theme="dark"] .ph-menu {
+  background-color: #0c231b !important;
+  border-color: rgba(196, 160, 82, 0.4) !important;
+  color: #ecfdf5 !important;
+}
+[data-theme="dark"] .ph-menu > div:first-child { border-color: rgba(196, 160, 82, 0.3) !important; }
+[data-theme="dark"] .ph-menu > div:first-child > div:first-child { background: #16352a !important; color: #f5dfa0 !important; }
+[data-theme="dark"] .ph-menu .classic-eyebrow { color: #f5dfa0 !important; }
+[data-theme="dark"] .ph-menu p { color: #ecfdf5 !important; }
+[data-theme="dark"] .ph-menu p.classic-eyebrow { color: #f5dfa0 !important; }
+[data-theme="dark"] .ph-menu button { color: #ecfdf5 !important; }
+[data-theme="dark"] .ph-menu button:hover { background-color: #143026 !important; }
+[data-theme="dark"] .ph-menu button.text-red-600 { color: #fca5a5 !important; }
+[data-theme="dark"] .ph-menu button.text-red-600:hover { background-color: rgba(190, 18, 60, 0.22) !important; }

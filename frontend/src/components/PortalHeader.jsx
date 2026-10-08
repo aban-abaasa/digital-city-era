@@ -188,7 +188,7 @@ const PortalHeader = ({
               )}
 
               {showMenu && (
-                <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-[#c4a052]/30 py-2 min-w-[230px] z-50 text-slate-800">
+                <div className="ph-menu absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-[#c4a052]/30 py-2 min-w-[230px] z-50 text-slate-800">
                   <div className="px-4 pb-3 pt-2 border-b border-[#c4a052]/25 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0 font-bold text-slate-700">
                       {avatarUrl ? (

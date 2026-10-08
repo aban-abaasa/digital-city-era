@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabaseConfig } from '../services/supabase';
 import businessLocalServerService from '../services/businessLocalServerService';
 import { getLocalStaffSession } from '../services/localBusinessStaffService';
+import WindowsServerSetupGuide from '../components/WindowsServerSetupGuide';
 
 const BusinessLocalServerSetup = () => {
   const [searchParams] = useSearchParams();
@@ -228,7 +229,7 @@ const BusinessLocalServerSetup = () => {
                 : 'Offline setup is not enabled yet. Your platform administrator needs to finish the one-time platform setup. You do not need to run SQL or use a terminal.'}
           </p>
           {protocolReady && (
-            <p className="mt-2 text-xs leading-5 text-slate-500">On Windows, extract the downloaded ZIP and double-click <code>local-server/installers/install-windows.cmd</code>. Keep the server computer at the business. The installer will ask for the public cloud settings and the one-time code created below.</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">On Windows, extract the downloaded ZIP and double-click <code>local-server/installers/install-windows.cmd</code> (the one with the gear icon). Do not open <code>install.js</code> yourself — Windows cannot run it and shows “Invalid character … 800A03F6”; <code>install-windows.cmd</code> starts it for you. Node.js 20 or newer must be installed first. Keep the server computer at the business. The installer will ask for the public cloud settings and the one-time code created below.</p>
           )}
           <div className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-3 text-xs sm:grid-cols-2">
             <div className="min-w-0">
@@ -248,6 +249,8 @@ const BusinessLocalServerSetup = () => {
           </div>
           <p className="mt-2 text-xs text-slate-500">These are public client settings. The installer never asks for the cloud service-role key.</p>
         </section>
+
+        <WindowsServerSetupGuide />
 
         {!user && (
           <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 text-sm">
