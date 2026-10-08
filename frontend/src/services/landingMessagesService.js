@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseConfig } from './supabase';
 
 // Tags every message with the app it was posted from — this table is a
 // single shared board across ICAN, digital-city-era, mybodaguy, FARM-AGENT.
@@ -106,10 +106,27 @@ export const getMyIcanBalance = async (authId) => {
 // no name at all, just something to dedupe against (matches the DB's
 // one-like-per-guest_key-per-message unique constraint).
 const GUEST_LIKE_KEY = 'landing_guest_like_key';
+
+// crypto.randomUUID only exists on HTTPS / localhost pages. The business LAN server is plain HTTP
+// (http://192.168.x.x), where calling it throws and takes the whole app down, so build a v4 UUID
+// from getRandomValues (available everywhere) when it is missing.
+const newGuestKey = () => {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  if (c?.getRandomValues) {
+    const b = c.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 export const getOrCreateGuestLikeKey = () => {
   let key = localStorage.getItem(GUEST_LIKE_KEY);
   if (!key) {
-    key = crypto.randomUUID();
+    key = newGuestKey();
     localStorage.setItem(GUEST_LIKE_KEY, key);
   }
   return key;
@@ -132,6 +149,9 @@ export const likeMessage = async ({ messageId, authId, guestKey }) => {
 // don't each reimplement the same threading logic. Also attaches `likeCount`/
 // `likedByMe` per message so cards can render the like button state.
 export const fetchPublicThreads = async (limit = 50, viewer = {}) => {
+  // The public board lives in the cloud database; a business LAN server's local database has no such
+  // table, so asking for it only produces 404s.
+  if (supabaseConfig.localBusinessServer) return [];
   const { authId, guestKey } = viewer;
 
   // Fetch a generous window of rows (top-level + replies mixed together),
@@ -183,6 +203,7 @@ export const fetchPublicThreads = async (limit = 50, viewer = {}) => {
 };
 
 export const subscribeToPublicLandingMessages = (onInsert) => {
+  if (supabaseConfig.localBusinessServer) return () => {};
   // Unique name per subscription — supabase.channel() returns the SAME
   // already-subscribed channel instance for a repeated fixed name (e.g. the
   // component mounting twice under React StrictMode, or two components

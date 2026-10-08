@@ -83,7 +83,9 @@ const BusinessLocalServerSetup = () => {
       if (cancelled) return;
 
       setBusinesses(ownedBusinesses);
-      setSelectedKey((current) => current || ownedBusinesses[0]?.key || '');
+      // Only a supermarket's products and stock are copied to a server, so offer that entry first.
+      const preferred = ownedBusinesses.find((business) => business.type === 'supermarket') || ownedBusinesses[0];
+      setSelectedKey((current) => current || preferred?.key || '');
       setLoadingBusinesses(false);
       setCheckingProtocol(false);
     };
@@ -318,13 +320,21 @@ const BusinessLocalServerSetup = () => {
                   aria-label="Business to set up"
                 >
                   {businesses.map((business) => (
-                    <option value={business.key} key={business.key}>{business.name} · {business.type.replace('_', ' ')}</option>
+                    <option value={business.key} key={business.key}>
+                      {business.name} · {business.type === 'supermarket' ? 'supermarket (products, stock and chat)' : 'business profile (chat only)'}
+                    </option>
                   ))}
                 </select>
               ) : (
                 <p className="bls-empty">No businesses were found for this account. Sign in as the owner, or ask the owner to open this setup page.</p>
               )}
             </div>
+
+            {selectedBusiness?.type === 'business_profile' && (
+              <p className="bls-note">
+                <strong>Choose the supermarket entry if you have one.</strong> A server only receives products and stock — and only lets the owner change inventory — when it is paired to a <em>supermarket</em>. A server paired to a business profile carries team chat only, and the pairing cannot be switched later without reinstalling the server.
+              </p>
+            )}
 
             <div>
               <button

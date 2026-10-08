@@ -612,3 +612,292 @@ GRANT EXECUTE ON FUNCTION public.business_local_authenticate_staff(UUID, TEXT, T
 GRANT EXECUTE ON FUNCTION public.business_local_list_staff() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.business_local_create_staff(TEXT, TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.business_local_set_staff_active(UUID, BOOLEAN) TO authenticated;
+
+-- ============================================================================
+-- Stock adjustments (owner / manager)
+-- ============================================================================
+-- The local catalog above is a mirror of the cloud store. Owners and managers can correct stock on
+-- this server while offline. Each change is recorded here, applied to the local catalog straight
+-- away, and queued in the sync outbox as a stock.adjustment.v1 event carrying the DIFFERENCE
+-- ("+24", "-3"), not the final number — so an offline change can never overwrite stock the cloud
+-- changed in the meantime. The cloud applies the difference when the server is next online.
+CREATE TABLE IF NOT EXISTS public.business_local_stock_adjustments (
+  id UUID PRIMARY KEY,                       -- also the sync event id
+  business_id UUID NOT NULL,
+  product_id UUID NOT NULL,
+  delta NUMERIC(12,2) NOT NULL CHECK (delta <> 0),
+  stock_before NUMERIC(12,2) NOT NULL,
+  stock_after NUMERIC(12,2) NOT NULL CHECK (stock_after >= 0),
+  reason TEXT NOT NULL CHECK (reason IN ('received', 'returned', 'damaged', 'expired', 'lost', 'correction', 'count')),
+  note TEXT CHECK (note IS NULL OR length(note) <= 500),
+  staff_id UUID NOT NULL,
+  staff_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_business_local_stock_adjustments_product
+  ON public.business_local_stock_adjustments(business_id, product_id, created_at DESC);
+
+ALTER TABLE public.business_local_stock_adjustments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.business_local_stock_adjustments FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.business_local_stock_adjustments TO service_role;
+
+-- Change one product's stock. p_mode: 'add' | 'remove' | 'set' (p_quantity is the amount to add or
+-- remove, or the counted total for 'set'). Returns {success, stock, delta} or {success:false, error}.
+CREATE OR REPLACE FUNCTION public.business_local_adjust_stock(
+  p_product_id UUID,
+  p_mode TEXT,
+  p_quantity NUMERIC,
+  p_reason TEXT,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+  v_staff_name TEXT := COALESCE(NULLIF(trim(auth.jwt()->'user_metadata'->>'full_name'), ''), auth.jwt()->'user_metadata'->>'username', 'Staff');
+  v_stock NUMERIC;
+  v_mode TEXT;
+  v_delta NUMERIC;
+  v_after NUMERIC;
+  v_id UUID := gen_random_uuid();
+  v_note TEXT := NULLIF(trim(COALESCE(p_note, '')), '');
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can change stock.');
+  END IF;
+  IF p_mode NOT IN ('add', 'remove', 'set')
+     OR p_quantity IS NULL
+     OR p_quantity > 1000000000
+     OR (p_mode = 'set' AND p_quantity < 0)
+     OR (p_mode <> 'set' AND p_quantity <= 0) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Enter a valid quantity.');
+  END IF;
+  v_mode := p_mode;
+  IF p_reason NOT IN ('received', 'returned', 'damaged', 'expired', 'lost', 'correction', 'count') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Choose a reason for the change.');
+  END IF;
+  IF v_note IS NOT NULL AND length(v_note) > 500 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'The note is too long (500 characters at most).');
+  END IF;
+
+  SELECT c.current_stock INTO v_stock
+  FROM public.business_local_catalog c
+  WHERE c.business_id = v_business_id
+    AND c.product_id = p_product_id
+    AND c.is_active
+    AND c.inventory_mode = 'stock_controlled'
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'That product is not stock-controlled on this server, so its stock cannot be changed here.');
+  END IF;
+
+  v_delta := CASE v_mode
+    WHEN 'add' THEN round(p_quantity, 2)
+    WHEN 'remove' THEN -round(p_quantity, 2)
+    ELSE round(p_quantity, 2) - v_stock
+  END;
+  IF v_delta = 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', format('Stock is already %s.', v_stock));
+  END IF;
+  v_after := v_stock + v_delta;
+  IF v_after < 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', format('Not enough stock: only %s in stock.', v_stock));
+  END IF;
+
+  INSERT INTO public.business_local_stock_adjustments (
+    id, business_id, product_id, delta, stock_before, stock_after, reason, note, staff_id, staff_name
+  ) VALUES (
+    v_id, v_business_id, p_product_id, v_delta, v_stock, v_after, p_reason, v_note, auth.uid(), v_staff_name
+  );
+
+  UPDATE public.business_local_catalog
+  SET current_stock = v_after, stock_updated_at = now()
+  WHERE business_id = v_business_id AND product_id = p_product_id;
+
+  INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
+  VALUES (
+    v_id, 'stock.adjustment.v1', 1,
+    jsonb_build_object(
+      'product_id', p_product_id,
+      'delta', v_delta,
+      'reason', p_reason,
+      'note', v_note,
+      'staff_name', v_staff_name
+    ),
+    now()
+  );
+
+  RETURN jsonb_build_object('success', true, 'stock', v_after, 'delta', v_delta);
+END;
+$$;
+
+-- Changes made on this server that the cloud has not confirmed yet, per product (for "waiting to sync").
+CREATE OR REPLACE FUNCTION public.business_local_pending_stock()
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can view stock changes.');
+  END IF;
+  RETURN jsonb_build_object('success', true, 'pending', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object('product_id', product_id, 'delta', delta, 'changes', changes))
+    FROM (
+      SELECT a.product_id, sum(a.delta) AS delta, count(*) AS changes
+      FROM public.business_local_stock_adjustments a
+      JOIN public.business_local_sync_outbox o ON o.event_id = a.id
+      WHERE a.business_id = v_business_id AND o.synced_at IS NULL
+      GROUP BY a.product_id
+    ) pending
+  ), '[]'::jsonb));
+END;
+$$;
+
+-- Recent stock changes, newest first — for one product or all of them.
+CREATE OR REPLACE FUNCTION public.business_local_stock_history(
+  p_product_id UUID DEFAULT NULL,
+  p_limit INTEGER DEFAULT 30
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can view stock changes.');
+  END IF;
+  RETURN jsonb_build_object('success', true, 'history', COALESCE((
+    SELECT jsonb_agg(row_to_json(h) ORDER BY h.created_at DESC)
+    FROM (
+      SELECT a.id, a.product_id, a.delta, a.stock_before, a.stock_after, a.reason, a.note,
+             a.staff_name, a.created_at, (o.synced_at IS NOT NULL) AS synced
+      FROM public.business_local_stock_adjustments a
+      LEFT JOIN public.business_local_sync_outbox o ON o.event_id = a.id
+      WHERE a.business_id = v_business_id
+        AND (p_product_id IS NULL OR a.product_id = p_product_id)
+      ORDER BY a.created_at DESC
+      LIMIT LEAST(GREATEST(COALESCE(p_limit, 30), 1), 200)
+    ) h
+  ), '[]'::jsonb));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.business_local_adjust_stock(UUID, TEXT, NUMERIC, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.business_local_pending_stock() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.business_local_stock_history(UUID, INTEGER) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.business_local_adjust_stock(UUID, TEXT, NUMERIC, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.business_local_pending_stock() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.business_local_stock_history(UUID, INTEGER) TO authenticated;
+
+-- Add a new product on this server (owner / manager). It appears in the local catalog immediately with
+-- its opening stock and is queued as a product.create.v1 event so the cloud store gets the same
+-- product (same id) when the server is next online. Returns {success, product_id} or {success:false, error}.
+CREATE OR REPLACE FUNCTION public.business_local_add_product(
+  p_name TEXT,
+  p_selling_price NUMERIC,
+  p_sku TEXT DEFAULT NULL,
+  p_barcode TEXT DEFAULT NULL,
+  p_tax_rate NUMERIC DEFAULT 0,
+  p_initial_stock NUMERIC DEFAULT 0,
+  p_minimum_stock NUMERIC DEFAULT 10,
+  p_reorder_point NUMERIC DEFAULT 20
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+  v_staff_name TEXT := COALESCE(NULLIF(trim(auth.jwt()->'user_metadata'->>'full_name'), ''), auth.jwt()->'user_metadata'->>'username', 'Staff');
+  v_name TEXT := trim(COALESCE(p_name, ''));
+  v_sku TEXT := NULLIF(trim(COALESCE(p_sku, '')), '');
+  v_barcode TEXT := NULLIF(trim(COALESCE(p_barcode, '')), '');
+  v_price NUMERIC := round(COALESCE(p_selling_price, -1), 2);
+  v_tax NUMERIC := round(COALESCE(p_tax_rate, 0), 3);
+  v_stock NUMERIC := round(COALESCE(p_initial_stock, 0), 2);
+  v_min NUMERIC := round(COALESCE(p_minimum_stock, 0), 2);
+  v_reorder NUMERIC := round(COALESCE(p_reorder_point, 0), 2);
+  v_id UUID := gen_random_uuid();
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can add products.');
+  END IF;
+  IF length(v_name) NOT BETWEEN 1 AND 255 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Enter the product name (255 characters at most).');
+  END IF;
+  IF v_price < 0 OR v_price > 1000000000000 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Enter a valid selling price.');
+  END IF;
+  IF v_tax < 0 OR v_tax > 100 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Tax rate must be between 0 and 100.');
+  END IF;
+  IF v_stock < 0 OR v_stock > 1000000000 OR v_min < 0 OR v_min > 1000000000 OR v_reorder < 0 OR v_reorder > 1000000000 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Stock quantities must be zero or more.');
+  END IF;
+  IF length(COALESCE(v_sku, '')) > 100 OR length(COALESCE(v_barcode, '')) > 100 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'SKU and barcode can be 100 characters at most.');
+  END IF;
+
+  -- Barcodes are unique across every store in the cloud, so a product without one gets a generated code.
+  IF v_barcode IS NULL THEN
+    v_barcode := 'AUTO-' || (extract(epoch FROM clock_timestamp()) * 1000)::BIGINT || '-' || substr(replace(v_id::TEXT, '-', ''), 1, 6);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.business_local_catalog c
+    WHERE c.business_id = v_business_id
+      AND ((c.barcode IS NOT NULL AND lower(c.barcode) = lower(v_barcode))
+           OR (v_sku IS NOT NULL AND c.sku IS NOT NULL AND lower(c.sku) = lower(v_sku)))
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'A product with that barcode or SKU already exists.');
+  END IF;
+
+  INSERT INTO public.business_local_catalog (
+    business_id, product_id, name, sku, barcode, price, selling_price, tax_rate, inventory_mode,
+    is_active, current_stock, reserved_stock, minimum_stock, reorder_point, product_updated_at, stock_updated_at
+  ) VALUES (
+    v_business_id, v_id, v_name, v_sku, v_barcode, v_price, v_price, v_tax, 'stock_controlled',
+    true, v_stock, 0, v_min, v_reorder, now(), now()
+  );
+
+  INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
+  VALUES (
+    gen_random_uuid(), 'product.create.v1', 1,
+    jsonb_build_object(
+      'product_id', v_id,
+      'name', v_name,
+      'sku', v_sku,
+      'barcode', v_barcode,
+      'selling_price', v_price,
+      'tax_rate', v_tax,
+      'initial_stock', v_stock,
+      'minimum_stock', v_min,
+      'reorder_point', v_reorder,
+      'staff_name', v_staff_name
+    ),
+    now()
+  );
+
+  RETURN jsonb_build_object('success', true, 'product_id', v_id, 'barcode', v_barcode);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.business_local_add_product(TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.business_local_add_product(TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC) TO authenticated;

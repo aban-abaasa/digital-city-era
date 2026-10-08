@@ -12,7 +12,8 @@ or an installable PWA.
 **This is preview software.** Team text messages queue on the local server and
 sync to the cloud when internet returns. Supermarket nodes also receive current
 product names, selling prices, and stock, plus cloud product/stock updates.
-That mirror is read-only: local cash sales, stock movements, ICAN, BodaGoEra,
+That mirror is read-only except for owner/manager stock corrections (see
+**Inventory** below): local cash sales, purchasing, ICAN, BodaGoEra,
 attachments, and the rest of the business database are not enabled offline.
 Local owner/cashier/manager PIN accounts are installed. The local database
 validates staff for team-message writes and supplies the saved sender name and
@@ -64,6 +65,110 @@ role. Cash sales and stock movements are not enabled.
    for the cloud Supabase project URL, public anon/publishable key, and the
    one-time pairing code. It checks for cloud protocol v3, team-history
    bootstrap, and supermarket-catalog support before consuming the code.
+
+   - **Folder:** type a full path that starts with the drive and a backslash and
+     sits one folder inside the drive, for example
+     `D:\Servers\DigitalCityLocalServer`. It must not exist yet — the installer
+     never overwrites an existing folder — and its drive needs 40 GB free.
+   - **Address:** the computer's own IPv4 address from `ipconfig` (the Wi-Fi or
+     Ethernet adapter, not a `vEthernet`/WSL/Docker one, and not the router's
+     address). Reserve it in the router, or set it as a fixed address on the
+     computer, **before** installing: the installer records it, and phones
+     stop reaching the server if it changes later.
+   - **Cloud values:** copy and paste **one value at a time** (URL, then key,
+     then pairing code). A multi-line paste presses Enter for you and puts
+     answers in the wrong prompts. Create the pairing code on the Offline
+     server settings page only when the installer asks for it: it works once
+     and expires after 10 minutes.
+
+## Before you start (Windows)
+
+The Offline server settings page has a step-by-step guide with copy buttons for
+every command. In short, Docker Desktop needs the Windows **Virtual Machine
+Platform** feature and a current WSL:
+
+```powershell
+# Administrator PowerShell, then restart Windows (Restart, not Shut down)
+Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -NoRestart
+wsl --install --no-distribution --web-download
+```
+
+Start Docker Desktop, wait for **Engine running**, and check that
+`docker info --format "{{.OSType}}"` prints `linux`.
+
+## First sign-in
+
+Open `http://<reserved-lan-ip>:8080`. On a new server the sign-in page opens on
+**Create the owner account**. Enter the one-time owner setup code (the
+installer prints it; to show it again, run
+`Select-String LOCAL_SETUP_TOKEN .env.local-sync` in the install folder), your
+name, a username (3-64 letters, numbers, `.`, `_` or `-`, no spaces) and a PIN
+of 6-12 digits, typed twice. There is no PIN recovery email on a local server,
+so keep a written copy somewhere safe. After the owner exists the setup code
+stops working and the page shows only the normal staff sign-in.
+
+After signing in, the **Home** page links to the cashier station (catalog
+view), and — for the owner — **Manage local staff** (add cashiers and
+managers, generate and hand over their PINs, disable accounts) and the server
+settings. Owners and managers also get **Inventory**.
+
+## Inventory (owner and managers)
+
+The **Inventory** page lists the store's products with their stock. The owner
+or a manager can **add a new product** (name, selling price, opening stock and,
+optionally, barcode, SKU, tax rate and low-stock level), add received stock,
+remove damaged or lost stock, or set a counted total, with a reason and an
+optional note. Everything is saved on the server immediately (it works without
+internet) and queued for the cloud; stock changes show as "waiting to sync"
+until the cloud confirms them.
+
+- **Pair the server to the supermarket entry.** Only a supermarket's products
+  and stock are copied to a server. On the Offline server settings page, the
+  "Choose the business" list shows each entry as *supermarket* or *business
+  profile*; a server paired to a business profile has no products and the
+  Inventory page stays empty. The pairing cannot be switched later without
+  reinstalling.
+- **Changes are sent as differences** ("+24", "-3"), never as final numbers, so
+  an offline change cannot overwrite stock the cloud changed meanwhile (online
+  sales, other deliveries). The cloud never lets stock drop below zero.
+- **Cloud migration (optional but needed for the cloud to apply them).** Run
+  `backend/database/migrations/ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` once
+  in the cloud Supabase project, after the four migrations above (it is also
+  served from `/local-server-migrations/`). Without it the server still keeps
+  its own corrected stock and new products, but the cloud quarantines those
+  events instead of applying them. A new product keeps the id the server gave
+  it, so the cloud's own catalog update then refreshes the same row. Barcodes
+  are unique across **all** stores in the cloud: a barcode or SKU that another
+  store already uses is refused by the cloud (the product then exists on the
+  server only), so use real barcodes, or leave the barcode blank to get a
+  generated one. A server paired to a business profile can add products
+  locally, but they never reach the cloud. Existing servers need nothing re-installed for the
+  server-side part: re-run `local-server/agent/sql/local-sync-storage.sql`
+  against the local database (every statement is safe to repeat).
+- Products that are not stock-controlled (listing-only, service and batch
+  products) cannot be changed here.
+
+## If setup stops part-way
+
+Once the installer has printed `Paired node ...` the pairing code is used up and
+the configuration is saved. If it then stops (for example `unexpected EOF`
+while pulling images because the internet dropped), do not re-run the
+installer: it refuses an existing folder. Resume from PowerShell in the
+install folder:
+
+```powershell
+cd D:\Servers\DigitalCityLocalServer
+$c = @('compose','--env-file','.env','--env-file','.env.local-sync','-f','docker-compose.yml','-f','docker-compose.local-business.yml')
+docker @c pull db api-gw auth rest realtime storage imgproxy meta functions studio supavisor
+docker @c up -d --wait db auth
+Get-Content local-server\agent\sql\local-sync-storage.sql -Raw | docker @c exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1
+docker @c up -d --build --wait
+```
+
+`up -d --wait` can report studio or storage as unhealthy on a first start;
+they normally become healthy within a minute, so run the last command again.
+If the installer fails **before** pairing (wrong prompt, bad folder), delete
+the half-made install folder and start again with a new folder name.
 
 The installer generates unique local keys, creates a one-time local owner setup
 code, installs local staff PIN sign-in and owner-managed cashier/manager

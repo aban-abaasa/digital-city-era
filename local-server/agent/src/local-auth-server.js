@@ -118,7 +118,31 @@ function sendJson(response, status, result) {
   response.end(JSON.stringify(result));
 }
 
+// Whether this server's owner account has been created yet. Lets the sign-in page open on "create the
+// owner" for a fresh server instead of a sign-in form that can only fail. Reveals one boolean, nothing else.
+async function ownerExists() {
+  const response = await fetch(
+    `${localUrl}/rest/v1/business_local_staff?select=id&business_id=eq.${businessId}&is_owner=eq.true&limit=1`,
+    {
+      headers: { apikey: localServiceKey, Authorization: `Bearer ${localServiceKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    },
+  );
+  if (!response.ok) throw new Error(`Owner check returned ${response.status}.`);
+  const rows = await response.json().catch(() => null);
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 const server = createServer(async (request, response) => {
+  if (request.method === 'GET' && request.url === '/status') {
+    try {
+      sendJson(response, 200, { success: true, ownerExists: await ownerExists() });
+    } catch (error) {
+      console.warn('[local-auth] status check failed:', error.message);
+      sendJson(response, 503, { success: false, error: 'Local staff service is unavailable. Try again.' });
+    }
+    return;
+  }
   if (request.method !== 'POST' || !['/login', '/bootstrap-owner'].includes(request.url)) {
     sendJson(response, 404, { success: false, error: 'Not found.' });
     return;

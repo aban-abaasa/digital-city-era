@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FiSun, FiMoon, FiUser, FiLogOut, FiShoppingBag, FiServer } from 'react-icons/fi';
+import { FiSun, FiMoon, FiUser, FiLogOut, FiShoppingBag, FiServer, FiHome } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import { supabaseConfig } from '../services/supabase';
 import { clearLocalStaffSession } from '../services/localBusinessStaffService';
@@ -132,7 +132,8 @@ const PortalHeader = ({
   const handleProfile = () => {
     setShowMenu(false);
     if (onProfile) onProfile();
-    else navigate('/profile');
+    // The cloud profile page means nothing on a business LAN server; send people to its home instead.
+    else navigate(supabaseConfig.localBusinessServer ? '/local-home' : '/profile');
   };
 
   const tabClass = (isActive) => `flex items-center gap-1 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
@@ -207,8 +208,8 @@ const PortalHeader = ({
                     onClick={handleProfile}
                     className="w-full px-4 py-2 text-left hover:bg-slate-50 flex items-center gap-2"
                   >
-                    <FiUser size={16} />
-                    <span className="text-sm font-medium">My Profile</span>
+                    {supabaseConfig.localBusinessServer ? <FiHome size={16} /> : <FiUser size={16} />}
+                    <span className="text-sm font-medium">{supabaseConfig.localBusinessServer ? 'Local home' : 'My Profile'}</span>
                   </button>
                   <button
                     type="button"

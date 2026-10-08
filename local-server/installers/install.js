@@ -234,7 +234,9 @@ async function main() {
 
   console.log('\nPulling the pinned Supabase services and starting the local database...');
   runCompose(targetDir, envFiles, composeFiles, ['pull', 'db', 'api-gw', 'auth', 'rest', 'realtime', 'storage', 'imgproxy', 'meta', 'functions', 'studio', 'supavisor']);
-  runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--wait', 'db']);
+  // The sync SQL uses auth.jwt(), which the auth service (GoTrue) only creates the first time it starts,
+  // so auth must be up and healthy before the SQL runs.
+  runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--wait', 'db', 'auth']);
 
   console.log('Creating local sync inbox/outbox tables...');
   const syncSql = readFileSync(join(installedAgent, 'sql', 'local-sync-storage.sql'), 'utf8');
@@ -244,7 +246,15 @@ async function main() {
   );
 
   console.log('\nStarting the local Supabase stack and sync transport...');
-  runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--build', '--wait']);
+  try {
+    runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--build', '--wait']);
+  } catch {
+    // On a first start some services (studio, storage) can take longer than --wait allows; they are
+    // usually healthy a minute later, so give them a moment and try once more before giving up.
+    console.log('\nSome services were slow to start. Waiting a moment and trying once more...');
+    spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},30000)'], { windowsHide: true });
+    runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--build', '--wait']);
+  }
 
   console.log('\nLocal business server preview is running.');
   console.log(`Local business app: http://${lanHost}:8080`);

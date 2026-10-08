@@ -25,7 +25,7 @@ const opensStraightToTill = () =>
 const getLocalLandingRoute = () => {
   const session = getLocalStaffSession();
   if (!session) return '/local-staff-login';
-  return session.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal';
+  return '/local-home';
 };
 
 // Portals are separate lazily-loaded pages (see utils/portalPages.js)
@@ -69,6 +69,8 @@ import PayRequestPublicPage from '@/pages/PayRequestPublicPage';
 import BusinessLocalServerSetup from '@/pages/BusinessLocalServerSetup';
 import LocalStaffLogin from '@/pages/LocalStaffLogin';
 import LocalBusinessStaffPage from '@/pages/LocalBusinessStaffPage';
+import LocalHome from '@/pages/LocalHome';
+import LocalInventory from '@/pages/LocalInventory';
 import { supabaseConfig } from '@/services/supabase';
 import { getLocalStaffSession } from '@/services/localBusinessStaffService';
 
@@ -355,6 +357,8 @@ function App() {
               <Route path="/profile" element={<UnifiedProfilePage />} />
               <Route path="/business-local-server" element={<BusinessLocalServerSetup />} />
               <Route path="/local-staff-login" element={<LocalStaffLogin />} />
+              <Route path="/local-home" element={<LocalHome />} />
+              <Route path="/local-inventory" element={<LocalInventory />} />
               <Route path="/local-staff" element={<RoleProtectedRoute minLevel={3}><LocalBusinessStaffPage /></RoleProtectedRoute>} />
 
               {/* Developer panel — hardcoded credentials, not for end users */}
