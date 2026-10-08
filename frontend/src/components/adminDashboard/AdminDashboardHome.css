@@ -295,6 +295,14 @@
   --line: rgba(196, 160, 82, 0.32); --shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.7);
 }
 [data-theme="dark"] .adh .adh-eyebrow { color: #f5dfa0; }
+/* The page behind the dashboard stays light (store background image / ivory) in dark mode, so a
+   heading sitting directly on it can't use the near-white dark ink — it gets its own dark plate. */
+[data-theme="dark"] .adh-section > .adh-section-head {
+  padding: 8px 14px; border-radius: 16px;
+  background: #0c231b; border: 1px solid var(--gold-soft);
+}
+[data-theme="dark"] .adh-section > .adh-section-head h3 { color: #f5dfa0; }
+[data-theme="dark"] .adh-section > .adh-section-head .adh-panel-sub { color: #9fb8ad; }
 [data-theme="dark"] .adh-card-value, [data-theme="dark"] .adh-tile-text b, [data-theme="dark"] .adh-sale-main b,
 [data-theme="dark"] .adh-attn-text, [data-theme="dark"] .adh-lowlist button { color: #ecfdf5; }
 [data-theme="dark"] .adh-card-label { color: #9fb8ad; }

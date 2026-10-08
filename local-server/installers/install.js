@@ -65,7 +65,7 @@ function checkRequirements() {
   if (currentNode < 20) throw new Error('Node.js 20 or newer is required.');
   failIf('git', ['--version'], 'Git is required');
   const composeVer = composeVersion();
-  const engineOs = failIf('docker', ['info', '--format', '{{.OSType}}'], 'Docker Desktop must be running');
+  const engineOs = failIf('docker', ['info', '--format', '{{.OSType}}'], 'Docker Desktop must be running. Open Docker Desktop from the Start menu (install it from https://www.docker.com/products/docker-desktop/ if it is missing), wait until it says "Engine running" (about a minute), then run install-windows.cmd again');
   if (engineOs.toLowerCase() !== 'linux') {
     throw new Error('This Supabase server uses Linux containers and can run on a Windows computer. Open the Docker Desktop menu, choose "Switch to Linux containers", wait for Docker to restart, then run setup again.');
   }
