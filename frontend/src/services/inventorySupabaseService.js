@@ -150,7 +150,7 @@ class InventorySupabaseService {
       } = options;
 
       if (supabaseConfig.localBusinessServer) {
-        if (supabaseConfig.businessType !== 'supermarket' || !supabaseConfig.businessId) return [];
+        if (!supabaseConfig.businessId) return [];
 
         let localQuery = supabase
           .from('business_local_catalog')

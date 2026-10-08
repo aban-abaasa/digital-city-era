@@ -349,7 +349,7 @@ const CashierPortal = () => {
       // Resolve the authenticated user's supermarket directly so this query
       // always reads the catalog created by that supermarket's admin.
       let supermarketId = supabaseConfig.localBusinessServer
-        ? (supabaseConfig.businessType === 'supermarket' ? supabaseConfig.businessId : null)
+        ? supabaseConfig.businessId
         : cashierProfile?.supermarket_id;
       if (!supermarketId && navigator.onLine) {
         try {
@@ -594,14 +594,14 @@ const CashierPortal = () => {
       if (supabaseConfig.localBusinessServer) {
         const localStaff = getLocalStaffSession()?.user;
         if (!localStaff) {
-          setCashierProfile((prev) => ({ ...prev, name: 'Local staff', email: '', supermarket_id: supabaseConfig.businessType === 'supermarket' ? supabaseConfig.businessId : null }));
+          setCashierProfile((prev) => ({ ...prev, name: 'Local staff', email: '', supermarket_id: supabaseConfig.businessId }));
           return;
         }
         const loadedProfile = {
           id: localStaff.id,
           user_id: localStaff.id,
           local_staff_id: localStaff.id,
-          supermarket_id: supabaseConfig.businessType === 'supermarket' ? supabaseConfig.businessId : null,
+          supermarket_id: supabaseConfig.businessId,
           businessType: null,
           name: localStaff.name || localStaff.full_name || localStaff.username,
           phone: '',

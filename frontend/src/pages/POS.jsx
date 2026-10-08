@@ -241,7 +241,7 @@ const POS = () => {
   const fetchProducts = async () => {
     try {
       if (supabaseConfig.localBusinessServer) {
-        if (supabaseConfig.businessType !== 'supermarket' || !supabaseConfig.businessId) {
+        if (!supabaseConfig.businessId) {
           setProducts([]);
           return;
         }

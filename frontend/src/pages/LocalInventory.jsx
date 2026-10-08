@@ -200,12 +200,6 @@ const AddProductSheet = ({ pairedToProfile, onClose, onAdded }) => {
           <button type="button" className="bls-btn is-ghost is-small" onClick={onClose} aria-label="Close"><FiX /></button>
         </div>
 
-        {pairedToProfile && (
-          <p className="bls-note">
-            This server is paired to a business profile, not a supermarket, so the product will stay on <strong>this server only</strong> and will not reach the cloud. Pair the server to your supermarket entry to sync products.
-          </p>
-        )}
-
         <div className="bls-field">
           <label htmlFor="np-name">Product name</label>
           <input id="np-name" className="bls-input" autoFocus maxLength={255} autoComplete="off" value={form.name} onChange={set('name')} />
@@ -372,9 +366,7 @@ const LocalInventory = () => {
               <div className="bls-empty">
                 <FiPackage style={{ verticalAlign: '-2px', marginRight: 6 }} />
                 <strong>No products on this server yet.</strong>{' '}
-                {business === 'business_profile'
-                  ? 'This server is paired to a business profile, and only a supermarket’s products and stock are copied to a server, so nothing arrives from the cloud. You can still add products here, but they stay on this server only. To sync with your store, pair the server to your supermarket entry (Offline server settings → choose the entry marked “supermarket”).'
-                  : 'Products from your cloud store are copied here a little while after pairing and whenever the internet is available. You can also add products here yourself.'}
+                Products from your cloud store are copied here a little while after pairing and whenever the internet is available. You can also add products here yourself.
                 <div style={{ marginTop: 10 }}>
                   <button type="button" className="bls-btn is-small" onClick={() => setAdding(true)}><FiPlus /> Add your first product</button>
                 </div>
