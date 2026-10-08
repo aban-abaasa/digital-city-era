@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader, Minus, Plus, Search, Store, Truck, X } from 'lucide-react';
-import { browseProducts, formatUGX, productOffers, resellerShelf } from '../../services/installmentService';
+import { ArrowLeft, Globe, Loader, Minus, Plus, Search, Store, Truck, X } from 'lucide-react';
+import { browseProducts, formatMoney, productOffers, resellerShelf } from '../../services/installmentService';
 import InstallmentOfferCard from './InstallmentOfferCard';
 /**
  * Find something to pay for in instalments: browse products across every
@@ -66,7 +66,7 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
           </button>
           <div className="min-w-0">
             <p className="truncate font-semibold text-slate-800">{seller.name}</p>
-            <p className="text-[11px] text-slate-400">Choose what to put on your plan</p>
+            <p className="text-[11px] text-slate-400">{shelf?.[0]?.store_country ? `Ships from ${shelf[0].store_country} · ` : ''}Choose what to put on your plan</p>
           </div>
         </div>
         {!shelf ? (
@@ -85,7 +85,13 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
                     </div>
                     <div className="flex flex-1 flex-col p-2.5">
                       <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium text-slate-800">{item.name}</p>
-                      <p className="mt-1 font-bold text-orange-600">{formatUGX(item.listed_price)}</p>
+                      <p className="mt-1 font-bold text-orange-600">{formatMoney(item.listed_price, item.currency)}</p>
+                      {item.cross_border && (
+                        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-sky-600">
+                          <Globe size={11} />
+                          Abroad{item.store_country ? ` · ${item.store_country}` : ''}
+                        </p>
+                      )}
                       {!item.in_stock ? (
                         <p className="mt-2 text-xs text-red-500">Out of stock</p>
                       ) : q === 0 ? (
@@ -128,6 +134,10 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
           className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800"
         />
       </div>
+      <p className="flex items-start gap-1.5 text-[11px] text-slate-400">
+        <Globe size={13} className="mt-0.5 shrink-0" />
+        Shops from around the world. Items from abroad are priced in the shop's currency and shipped to you once they are paid in full.
+      </p>
       {products === null ? (
         <div className="flex justify-center py-10">
           <Loader className="animate-spin text-slate-400" />
@@ -147,11 +157,17 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
               </div>
               <div className="p-2.5">
                 <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium text-slate-800">{p.name}</p>
-                <p className="mt-0.5 text-xs font-semibold text-orange-600">From {formatUGX(p.min_price)}</p>
+                <p className="mt-0.5 text-xs font-semibold text-orange-600">From {formatMoney(p.min_price, p.currency)}</p>
+                {p.cross_border && (
+                  <p className="flex items-center gap-1 text-[11px] text-sky-600">
+                    <Globe size={11} />
+                    Ships from {p.store_country || 'abroad'}
+                  </p>
+                )}
                 <p className="text-[11px] text-slate-400">
                   {p.reseller_count} seller{p.reseller_count === 1 ? '' : 's'}
                 </p>
-                {p.any_free_delivery && (
+                {p.any_free_delivery && p.currency === 'UGX' && (
                   <p className="mt-0.5 flex items-center gap-1 text-[11px] text-emerald-600">
                     <Truck size={11} />
                     Free delivery
@@ -184,8 +200,8 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
                   <div className="min-w-0">
                     <p className="truncate text-sm text-slate-800">{o.reseller_name}</p>
                     <p className="flex items-center gap-1.5 text-xs text-slate-500">
-                      {formatUGX(o.listed_price)}
-                      {o.free_delivery && (
+                      {formatMoney(o.listed_price, o.currency)}
+                      {o.free_delivery && o.currency === 'UGX' && (
                         <span className="flex items-center gap-0.5 text-emerald-600">
                           <Truck size={11} />
                           Free delivery

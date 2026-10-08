@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarClock, ChevronRight, Loader, ShoppingBag, Store } from 'lucide-react';
-import { STATUS_LABELS, formatUGX, getMyBusinessAccounts, getMyInstallmentPlans } from '../../services/installmentService';
+import { STATUS_LABELS, formatMoney, getMyBusinessAccounts, getMyInstallmentPlans } from '../../services/installmentService';
 import InstallmentPlanView from './InstallmentPlanView';
 import InstallmentShop from './InstallmentShop';
-const ORDER = { awaiting_deposit: 0, active: 1, ready: 2, pickup_ready: 3, dispatched: 4, completed: 5, cancelled: 6, lapsed: 6 };
+const ORDER = { awaiting_deposit: 0, active: 1, ready: 2, pickup_ready: 3, dispatched: 4, shipping_pending: 4, shipped: 4, disputed: 3, completed: 5, cancelled: 6, lapsed: 6 };
 /**
  * "My payments": every instalment plan the customer is paying off (with any
  * business, on any IcanEra site), the businesses they have an account with,
@@ -86,8 +86,14 @@ export default function InstallmentsHub({ customerName, customerPhone }) {
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-sm font-semibold text-emerald-600">Paid {formatUGX(a.paid_ugx)}</p>
-                      {a.balance_ugx > 0 && <p className="text-[11px] text-slate-500">Owing {formatUGX(a.balance_ugx)}</p>}
+                      {a.totals
+                        .filter(t => t.paid_amount > 0 || t.balance_amount > 0)
+                        .map(t => (
+                          <div key={t.currency}>
+                            <p className="text-sm font-semibold text-emerald-600">Paid {formatMoney(t.paid_amount, t.currency)}</p>
+                            {t.balance_amount > 0 && <p className="text-[11px] text-slate-500">Owing {formatMoney(t.balance_amount, t.currency)}</p>}
+                          </div>
+                        ))}
                     </div>
                   </div>
                 ))}
@@ -126,11 +132,11 @@ export default function InstallmentsHub({ customerName, customerPhone }) {
                           {STATUS_LABELS[p.status] || p.status} · {p.code}
                         </span>
                         <span className="text-slate-600">
-                          {formatUGX(p.paid_ugx)} of {formatUGX(p.total_ugx)}
+                          {formatMoney(p.paid_amount, p.currency)} of {formatMoney(p.total_amount, p.currency)}
                         </span>
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full bg-orange-500" style={{ width: `${Math.min(100, Math.round((p.paid_ugx / Math.max(p.total_ugx, 1)) * 100))}%` }} />
+                        <div className="h-full bg-orange-500" style={{ width: `${Math.min(100, Math.round((p.paid_amount / Math.max(p.total_amount, 1)) * 100))}%` }} />
                       </div>
                     </button>
                   ))}
