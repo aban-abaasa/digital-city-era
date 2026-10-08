@@ -53,6 +53,24 @@ async function postLocalAuth(path, payload) {
   });
 }
 
+// true / false once the server has answered, null when it cannot be asked (older server, offline):
+// callers then fall back to offering both "sign in" and "create owner".
+export async function getLocalOwnerExists() {
+  if (!supabaseConfig.localBusinessServer) return null;
+  try {
+    const response = await fetch(new URL('/local-auth/status', window.location.origin), {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result?.success || typeof result.ownerExists !== 'boolean') return null;
+    return result.ownerExists;
+  } catch {
+    return null;
+  }
+}
+
 export function signInLocalStaff({ username, pin }) {
   return postLocalAuth('login', { username, pin });
 }

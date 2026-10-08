@@ -24,7 +24,9 @@ $migrationFiles = @(
   'ADD_BUSINESS_LOCAL_SYNC_CONTROL_PLANE.sql',
   'ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql',
   'ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql',
-  'ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql'
+  'ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql',
+  # Optional fifth migration: lets owner/manager stock changes made on a server reach cloud inventory
+  'ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql'
 )
 foreach ($migrationFile in $migrationFiles) {
   $migrationPath = Join-Path $projectRoot "backend\database\migrations\$migrationFile"

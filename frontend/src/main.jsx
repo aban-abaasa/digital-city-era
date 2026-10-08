@@ -11,8 +11,9 @@ import PWAInstallPrompt from './components/PWAInstallPrompt.jsx'
 import PushAlertsPrompt from './components/PushAlertsPrompt.jsx'
 import { startGlobalPosSync } from './services/posOfflineQueue.js'
 
-// Vercel Speed Insights (no-op outside a Vercel deployment).
-injectSpeedInsights()
+// Vercel Speed Insights (no-op outside a Vercel deployment). A business LAN server has no Vercel
+// script to load, so don't ask for one.
+if (!window.__APP_RUNTIME_CONFIG__?.localBusinessServer) injectSpeedInsights()
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

@@ -1,39 +1,76 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { FiArrowLeft, FiLock, FiServer, FiUser } from 'react-icons/fi';
+import { FiArrowLeft, FiCopy, FiLock, FiServer } from 'react-icons/fi';
+import PinInput from '../components/PinField';
 import { supabaseConfig } from '../services/supabase';
-import { bootstrapLocalOwner, getLocalStaffSession, signInLocalStaff } from '../services/localBusinessStaffService';
+import { bootstrapLocalOwner, getLocalOwnerExists, getLocalStaffSession, signInLocalStaff } from '../services/localBusinessStaffService';
+import './BusinessLocalServerSetup.css';
+
+const FIND_CODE_COMMAND = 'Select-String LOCAL_SETUP_TOKEN .env.local-sync';
+const COMMON_PINS = new Set(['123456', '1234567', '12345678', '654321', '000000', '111111', '222222', '333333', '444444', '555555', '666666', '777777', '888888', '999999', '123123', '121212', '112233']);
+
+const Check = ({ ok, children }) => (
+  <li className={ok ? 'is-ok' : ''}><i aria-hidden="true">{ok ? '✓' : ''}</i>{children}</li>
+);
+
+// Letters, numbers and . _ - only (the server rejects anything else, including spaces)
+const USERNAME_OK = /^[A-Za-z0-9._-]{3,64}$/;
 
 const LocalStaffLogin = () => {
   const location = useLocation();
+  // null = still asking the server, true/false = answered. A server that cannot answer (null after the
+  // check) falls back to offering both screens, as before.
+  const [ownerExists, setOwnerExists] = useState(undefined);
   const [setupMode, setSetupMode] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [pin, setPin] = useState('');
+  const [pinAgain, setPinAgain] = useState('');
   const [setupToken, setSetupToken] = useState('');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!supabaseConfig.localBusinessServer) return undefined;
+    let cancelled = false;
+    getLocalOwnerExists().then((exists) => {
+      if (cancelled) return;
+      setOwnerExists(exists);
+      if (exists === false) setSetupMode(true);
+      if (exists === true) setSetupMode(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const codeLooksRight = /^[0-9a-f]{64}$/i.test(setupToken);
+  const pinLengthOk = pin.length >= 6 && pin.length <= 12;
+  const pinsMatch = pin.length > 0 && pin === pinAgain;
+  const pinIsCommon = COMMON_PINS.has(pin);
+  const setupReady = useMemo(
+    () => codeLooksRight && displayName.trim().length > 0 && USERNAME_OK.test(username.trim()) && pinLengthOk && pinsMatch,
+    [codeLooksRight, displayName, username, pinLengthOk, pinsMatch],
+  );
 
   if (!supabaseConfig.localBusinessServer) return <Navigate to="/login" replace />;
   const activeSession = getLocalStaffSession();
-  if (activeSession) {
-    return <Navigate to={activeSession.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal'} replace />;
-  }
+  if (activeSession) return <Navigate to="/local-home" replace />;
+
+  const checking = ownerExists === undefined;
+  const canToggle = ownerExists === null; // only when the server could not say which screen applies
 
   const submit = async (event) => {
     event.preventDefault();
+    if (setupMode && !setupReady) return;
     setError('');
     setWorking(true);
     try {
-      const session = setupMode
-        ? await bootstrapLocalOwner({ setupToken, username, displayName, pin })
-        : await signInLocalStaff({ username, pin });
+      if (setupMode) await bootstrapLocalOwner({ setupToken, username: username.trim(), displayName: displayName.trim(), pin });
+      else await signInLocalStaff({ username: username.trim(), pin });
       const requestedPath = location.state?.from?.pathname;
-      const destination = setupMode
-        ? '/local-staff'
-        : requestedPath && requestedPath.startsWith('/') && !requestedPath.startsWith('//')
-          ? requestedPath
-          : session.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal';
+      const destination = !setupMode && requestedPath && requestedPath.startsWith('/') && !requestedPath.startsWith('//')
+        ? requestedPath
+        : '/local-home';
       window.location.assign(destination);
     } catch (requestError) {
       setError(requestError.message || 'Could not sign in to this local server.');
@@ -42,57 +79,120 @@ const LocalStaffLogin = () => {
     }
   };
 
+  const copyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(FIND_CODE_COMMAND);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard blocked on plain HTTP: the command is selectable below */ }
+  };
+
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">
-      <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-lg sm:p-8">
-        <a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900">
-          <FiArrowLeft /> Local app
-        </a>
-        <div className="mt-7 flex items-center gap-3">
-          <span className="rounded-xl bg-cyan-100 p-3 text-cyan-800"><FiServer className="h-6 w-6" /></span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-800">Business LAN</p>
-            <h1 className="text-2xl font-bold">{setupMode ? 'Create local owner' : 'Staff sign in'}</h1>
+    <main className="bls-page">
+      <div className="bls bls-auth">
+        <a href="/" className="bls-back"><FiArrowLeft /> Local app</a>
+
+        <header className="bls-hero">
+          <p className="bls-eyebrow">Business LAN</p>
+          <h1>{checking ? 'Local server' : setupMode ? 'Create the owner account' : 'Staff sign in'}</h1>
+          <p className="bls-lead">
+            {setupMode
+              ? 'This server has no owner yet. Create it once with the setup code from the installer — then you can add your staff.'
+              : 'Sign in with your username and PIN. Accounts live on this business server, so the internet is not needed.'}
+          </p>
+        </header>
+
+        <section className="bls-card">
+          <div className="bls-body" style={{ paddingTop: 18 }}>
+            {checking ? (
+              <>
+                <div className="bls-skel" style={{ width: '60%' }} />
+                <div className="bls-skel" style={{ width: '90%' }} />
+                <div className="bls-skel" style={{ width: '75%' }} />
+              </>
+            ) : (
+              <form onSubmit={submit} className="bls-form">
+                {setupMode && (
+                  <>
+                    <div className="bls-field">
+                      <label htmlFor="ls-code">One-time owner setup code<small>{setupToken.length}/64</small></label>
+                      <input
+                        id="ls-code"
+                        className="bls-input is-mono"
+                        value={setupToken}
+                        onChange={(event) => setSetupToken(event.target.value.replace(/\s/g, ''))}
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        required
+                      />
+                    </div>
+                    <details className="bls-trouble">
+                      <summary><span>Where do I find the setup code?</span><span className="bls-chev" aria-hidden="true" /></summary>
+                      <p>
+                        The installer prints it at the end. To show it again, open PowerShell on the <strong>server computer</strong>, go to the install folder (for example <code>cd D:\Servers\DigitalCityLocalServer</code>) and run the command below. The code is the long value after <code>LOCAL_SETUP_TOKEN=</code>.
+                      </p>
+                      <div className="bls-cmd" style={{ margin: '0 14px 12px' }}>
+                        <code>{FIND_CODE_COMMAND}</code>
+                        <button type="button" onClick={copyCommand}><FiCopy /> {copied ? 'Copied' : 'Copy'}</button>
+                      </div>
+                    </details>
+                    <div className="bls-field">
+                      <label htmlFor="ls-name">Your name<small>shown to staff</small></label>
+                      <input id="ls-name" className="bls-input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" maxLength={120} required />
+                    </div>
+                  </>
+                )}
+
+                <div className="bls-field">
+                  <label htmlFor="ls-user">Username{setupMode && <small>letters, numbers . _ - (no spaces)</small>}</label>
+                  <input id="ls-user" className="bls-input" value={username} onChange={(event) => setUsername(event.target.value.replace(/\s/g, ''))} autoComplete="username" autoCapitalize="off" spellCheck={false} minLength={3} maxLength={64} required />
+                </div>
+
+                <PinInput
+                  id="ls-pin"
+                  label={setupMode ? 'Create a PIN' : 'PIN'}
+                  hint={setupMode ? '6 to 12 digits' : undefined}
+                  value={pin}
+                  onChange={setPin}
+                  autoComplete={setupMode ? 'new-password' : 'current-password'}
+                />
+
+                {setupMode && (
+                  <>
+                    <PinInput id="ls-pin2" label="Type the PIN again" value={pinAgain} onChange={setPinAgain} autoComplete="new-password" />
+                    <ul className="bls-checks" aria-label="Checklist">
+                      <Check ok={codeLooksRight}>Setup code is 64 letters and numbers</Check>
+                      <Check ok={USERNAME_OK.test(username.trim())}>Username is 3+ letters, numbers or . _ -</Check>
+                      <Check ok={pinLengthOk}>PIN is 6 to 12 digits</Check>
+                      <Check ok={pinsMatch}>Both PINs match</Check>
+                    </ul>
+                    {pinIsCommon && <p className="bls-note">That PIN is easy to guess. Anyone on your Wi-Fi who knows the username could try it — consider something less obvious.</p>}
+                    <p className="bls-sub"><FiLock style={{ verticalAlign: '-2px' }} /> There is no “forgot PIN” email on a local server, so choose one you will remember and keep a written copy somewhere safe.</p>
+                  </>
+                )}
+
+                {error && <p role="alert" className="bls-err">{error}</p>}
+
+                <button type="submit" disabled={working || (setupMode && !setupReady)} className="bls-btn is-block">
+                  <FiServer /> {working ? 'Please wait…' : setupMode ? 'Create owner account' : 'Sign in'}
+                </button>
+              </form>
+            )}
+
+            {canToggle && (
+              <button type="button" className="bls-linkbtn" onClick={() => { setSetupMode((value) => !value); setError(''); }}>
+                {setupMode ? 'Return to staff sign in' : 'First time setting up this server? Create its owner account'}
+              </button>
+            )}
+            {!checking && !setupMode && ownerExists === true && (
+              <p className="bls-sub">Forgot your username or PIN? Ask the server’s owner — staff accounts are managed under <strong>Manage local staff</strong>.</p>
+            )}
           </div>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Local accounts are stored on this business server. Enter your username and PIN; cloud internet is not required.
-        </p>
+        </section>
 
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          {setupMode && (
-            <label className="block text-sm font-medium">
-              One-time owner setup code
-              <input value={setupToken} onChange={(event) => setSetupToken(event.target.value.trim())} autoComplete="off" required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono" />
-              <span className="mt-1 block text-xs font-normal text-slate-500">The installer prints this code once after setup.</span>
-            </label>
-          )}
-          {setupMode && (
-            <label className="block text-sm font-medium">
-              Owner display name
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" maxLength={120} required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
-            </label>
-          )}
-          <label className="block text-sm font-medium">
-            <span className="inline-flex items-center gap-2"><FiUser /> Username</span>
-            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={64} required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
-          </label>
-          <label className="block text-sm font-medium">
-            <span className="inline-flex items-center gap-2"><FiLock /> {setupMode ? 'Create PIN' : 'PIN'}</span>
-            <input type="password" inputMode="numeric" pattern="[0-9]{6,12}" minLength={6} maxLength={12} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 12))} autoComplete="current-password" required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 tracking-[0.3em]" />
-            <span className="mt-1 block text-xs font-normal text-slate-500">Use 6 to 12 digits.</span>
-          </label>
-          {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-800">{error}</p>}
-          <button type="submit" disabled={working} className="w-full rounded-lg bg-cyan-700 px-4 py-3 font-semibold text-white hover:bg-cyan-800 disabled:opacity-60">
-            {working ? 'Please wait…' : setupMode ? 'Create owner account' : 'Sign in'}
-          </button>
-        </form>
-
-        <button type="button" onClick={() => { setSetupMode((value) => !value); setError(''); }} className="mt-5 text-sm font-medium text-cyan-800 underline underline-offset-2">
-          {setupMode ? 'Return to staff sign in' : 'First time setting up this server? Create its owner account'}
-        </button>
-        <p className="mt-5 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-500">
-          The local staff login is separate from your cloud account. Keep the one-time owner setup code private until the first owner account is created.
+        <p className="bls-sub" style={{ textAlign: 'center' }}>
+          The local staff login is separate from your cloud account. Keep the one-time owner setup code private until the owner account exists.
         </p>
       </div>
     </main>
