@@ -1,0 +1,207 @@
+/* Offline server setup — classic ivory / gold / indigo, with a proper dark palette.
+   Every colour is a variable; the dark block at the bottom swaps them (same surfaces as the
+   admin dashboard and store settings). Colours are explicit everywhere because the app's body
+   text defaults to near-white for its dark theme. Resets use :where() so they never outrank
+   component classes. */
+.bls-page {
+  --page: #f6f2e7;
+  --ink: #1e1b4b;
+  --accent: #312e81;
+  --muted: #64748b;
+  --paper: #ffffff;
+  --paper-2: #faf8f3;
+  --line: rgba(196, 160, 82, 0.35);
+  --line-soft: #ece7d8;
+  --tint: #eef2ff;
+  --gold: #c4a052;
+  --gold-strong: #8a6d1f;
+  --ok: #166534; --ok-bg: #dcfce7;
+  --bad: #991b1b; --bad-bg: #fee2e2;
+  --note-bg: #fffbeb; --note-line: #fde68a; --note-ink: #92400e;
+  --shadow: 0 1px 2px rgba(30, 27, 75, 0.05), 0 14px 30px -18px rgba(30, 27, 75, 0.3);
+  --focus: #4f46e5;
+  --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  min-height: 100vh;
+  padding: 18px 14px 56px;
+  background: var(--page);
+  color: var(--ink);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.bls {
+  display: flex; flex-direction: column; gap: 14px;
+  width: 100%; max-width: 880px; margin: 0 auto; min-width: 0;
+}
+:where(.bls-page) *, :where(.bls-page) *::before, :where(.bls-page) *::after { box-sizing: border-box; }
+:where(.bls-page) :is(button, input, select) { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+:where(.bls-page) button { cursor: pointer; }
+:where(.bls-page) button:disabled { cursor: not-allowed; opacity: 0.55; }
+:where(.bls-page) :is(p, h1, h2, h3, ul, ol, li) { margin: 0; padding: 0; }
+:where(.bls-page) :is(ul, ol) { list-style: none; }
+.bls-page :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.bls-page a { color: var(--accent); }
+.bls-page code { padding: 1px 6px; border-radius: 6px; background: var(--tint); color: var(--accent); font-size: 0.9em; }
+
+.bls-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; text-decoration: none; color: var(--muted) !important; }
+.bls-back:hover { color: var(--ink) !important; }
+
+/* ---------- Hero ---------- */
+.bls-hero {
+  position: relative; overflow: hidden; padding: 20px 18px; border-radius: 22px; color: #fff;
+  background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 55%, #6d28d9 100%);
+  border: 1px solid #f5dfa0; box-shadow: 0 18px 36px -20px rgba(49, 46, 129, 0.75);
+}
+.bls-hero::after {
+  content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 223, 160, 0.28), transparent 70%); pointer-events: none;
+}
+.bls-hero > * { position: relative; z-index: 1; }
+.bls-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-strong); }
+.bls-hero .bls-eyebrow { color: #f5dfa0; }
+.bls-hero h1 { margin-top: 6px; font-family: var(--serif); font-size: 1.7rem; line-height: 1.15; font-weight: 700; color: #fff; }
+.bls-hero p.bls-lead { margin-top: 8px; max-width: 560px; font-size: 14px; line-height: 1.55; color: rgba(224, 231, 255, 0.92); }
+.bls-pill {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 5px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.28); color: #fff;
+}
+.bls-pill i { width: 8px; height: 8px; border-radius: 50%; background: #fbbf24; }
+.bls-pill.is-ready i { background: #4ade80; }
+.bls-pill.is-wait i { background: #fbbf24; }
+
+.bls-note { padding: 11px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; background: var(--note-bg); border: 1px solid var(--note-line); color: var(--note-ink); }
+
+/* ---------- Cards ---------- */
+.bls-card { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+.bls-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 18px 12px; }
+.bls-card-head h2 { font-family: var(--serif); font-size: 1.1rem; font-weight: 700; color: var(--ink); }
+.bls-card-head p { margin-top: 3px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.bls-body { padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 1.55; color: var(--ink); }
+.bls-sub { font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+/* ---------- Buttons ---------- */
+.bls-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 9px 16px;
+  border-radius: 12px; font-size: 14px; font-weight: 700; text-decoration: none;
+  background: var(--accent); color: #fff !important; border: 1px solid var(--accent);
+  box-shadow: 0 6px 14px -8px rgba(49, 46, 129, 0.7); transition: transform 0.12s ease;
+}
+.bls-btn:hover:not(:disabled):not([aria-disabled="true"]) { transform: translateY(-1px); }
+.bls-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+.bls-btn.is-ghost { background: transparent; color: var(--accent) !important; border-color: var(--line); box-shadow: none; }
+.bls-btn.is-bad { background: transparent; color: var(--bad) !important; border-color: rgba(220, 38, 38, 0.4); box-shadow: none; min-height: 36px; padding: 6px 12px; }
+.bls-btn.is-small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+
+/* ---------- Requirement chips ---------- */
+.bls-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.bls-chips li { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--paper-2); border: 1px solid var(--line); color: var(--ink); }
+
+/* ---------- Collapsible (native <details>, no script needed) ---------- */
+.bls-collapse > summary, .bls-step > summary, .bls-trouble > summary { list-style: none; cursor: pointer; }
+.bls-collapse > summary::-webkit-details-marker, .bls-step > summary::-webkit-details-marker, .bls-trouble > summary::-webkit-details-marker { display: none; }
+.bls-collapse > summary { display: flex; align-items: center; gap: 12px; padding: 16px 18px; }
+.bls-collapse > summary:hover { background: var(--paper-2); }
+.bls-sum-text { flex: 1; min-width: 0; }
+.bls-sum-text h2 { font-family: var(--serif); font-size: 1.1rem; font-weight: 700; color: var(--ink); }
+.bls-sum-text p { margin-top: 3px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.bls-sum-badge { flex: none; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--tint); color: var(--accent); }
+.bls-chev { flex: none; width: 9px; height: 9px; border-right: 2px solid var(--gold-strong); border-bottom: 2px solid var(--gold-strong); transform: rotate(45deg); transition: transform 0.18s ease; margin: 0 4px 3px 0; }
+details[open] > summary .bls-chev { transform: rotate(-135deg); margin-bottom: -3px; }
+.bls-collapse[open] > summary { border-bottom: 1px solid var(--line-soft); }
+
+/* ---------- Guide steps ---------- */
+.bls-phase { padding: 14px 18px 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-strong); }
+.bls-steps { padding: 4px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.bls-step { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--paper-2); }
+.bls-step[open] { background: var(--paper); border-color: var(--line); }
+.bls-step > summary { display: flex; align-items: center; gap: 12px; padding: 11px 12px; }
+.bls-num {
+  flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  font-size: 12px; font-weight: 800; color: #fff; background: var(--accent);
+}
+.bls-step.is-done .bls-num { background: #15803d; }
+.bls-step-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; color: var(--ink); }
+.bls-step-title small { display: block; margin-top: 1px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.bls-step-body { padding: 2px 14px 14px 52px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.6; color: var(--ink); }
+.bls-step-body ul { list-style: disc; padding-left: 20px; }
+.bls-step-body ol { list-style: decimal; padding-left: 20px; }
+.bls-step-body li + li { margin-top: 3px; }
+.bls-tip { padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; background: var(--note-bg); border: 1px solid var(--note-line); color: var(--note-ink); }
+.bls-done-btn { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.bls-step.is-done .bls-done-btn { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+
+/* ---------- Copyable command (always dark, like a terminal) ---------- */
+.bls-cmd-label { margin-bottom: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.bls-cmd { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border-radius: 12px; background: #0b1a14; border: 1px solid rgba(196, 160, 82, 0.35); }
+.bls-cmd code { flex: 1; min-width: 0; padding: 4px 6px; background: transparent; color: #d1fae5; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; line-height: 1.5; word-break: break-all; user-select: all; }
+.bls-cmd button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 9px; font-size: 12px; font-weight: 700; background: rgba(245, 223, 160, 0.14); color: #f5dfa0; border: 1px solid rgba(245, 223, 160, 0.3); }
+.bls-cmd button:hover { background: rgba(245, 223, 160, 0.24); }
+
+/* ---------- Troubleshooting ---------- */
+.bls-trouble-list { padding: 4px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.bls-trouble { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--paper-2); }
+.bls-trouble[open] { background: var(--paper); border-color: var(--line); }
+.bls-trouble > summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.bls-trouble > summary span { flex: 1; min-width: 0; }
+.bls-trouble > p { padding: 0 14px 12px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.bls-trouble > p strong { color: var(--ink); }
+
+/* ---------- Copy rows (cloud URL / key) ---------- */
+.bls-copyrows { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.bls-copyrow { min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--paper-2); border: 1px solid var(--line-soft); }
+.bls-copyrow b { display: block; font-size: 12px; color: var(--ink); }
+.bls-copyrow div { margin-top: 6px; display: flex; align-items: flex-start; gap: 8px; }
+.bls-copyrow code { flex: 1; min-width: 0; padding: 0; background: transparent; color: var(--muted); word-break: break-all; font-size: 12px; max-height: 3.6em; overflow: hidden; }
+
+/* ---------- Business picker + pairing code ---------- */
+.bls-select { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; font-size: 16px; color: var(--ink); background: var(--paper-2); border: 1px solid var(--line-soft); }
+.bls-select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15); outline: none; }
+.bls-empty { padding: 14px; border-radius: 12px; font-size: 13px; background: var(--paper-2); color: var(--muted); }
+.bls-code { padding: 14px; border-radius: 14px; background: var(--tint); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.bls-code-value { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; line-height: 1.5; word-break: break-all; color: var(--ink); }
+.bls-code-time { font-size: 12px; font-weight: 700; color: var(--ok); }
+.bls-code-time.is-late { color: var(--bad); }
+.bls-code-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Registered servers ---------- */
+.bls-nodes { display: flex; flex-direction: column; }
+.bls-nodes li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 11px 0; border-top: 1px solid var(--line-soft); }
+.bls-nodes li:first-child { border-top: 0; }
+.bls-nodes b { font-size: 14px; color: var(--ink); }
+.bls-nodes small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+
+/* ---------- Toast ---------- */
+.bls-toast {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: 10px; max-width: min(92vw, 520px); padding: 11px 14px; border-radius: 14px;
+  font-size: 13.5px; font-weight: 600; background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(21, 128, 61, 0.35);
+  box-shadow: 0 14px 30px -14px rgba(0, 0, 0, 0.5);
+}
+.bls-toast.is-bad { background: var(--bad-bg); color: var(--bad); border-color: rgba(220, 38, 38, 0.35); }
+.bls-toast button { flex: none; background: transparent; border: 0; color: inherit; font-size: 16px; line-height: 1; padding: 2px 4px; }
+
+@media (min-width: 640px) {
+  .bls-page { padding: 28px 24px 64px; }
+  .bls-hero { padding: 26px 28px; }
+  .bls-hero h1 { font-size: 2rem; }
+  .bls-copyrows { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---------- Dark theme (same surfaces as the admin dashboard) ---------- */
+[data-theme="dark"] .bls-page {
+  --page: #061510;
+  --ink: #ecfdf5; --accent: #a5b4fc; --muted: #9fb8ad; --paper: #0f2a20; --paper-2: #0c231b;
+  --line: rgba(196, 160, 82, 0.32); --line-soft: rgba(255, 255, 255, 0.1); --tint: rgba(99, 102, 241, 0.2);
+  --gold-strong: #f5dfa0;
+  --ok: #86efac; --ok-bg: rgba(34, 197, 94, 0.18); --bad: #fca5a5; --bad-bg: rgba(239, 68, 68, 0.2);
+  --note-bg: rgba(245, 158, 11, 0.12); --note-line: rgba(245, 158, 11, 0.35); --note-ink: #fcd34d;
+  --shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.7); --focus: #a5b4fc;
+  color-scheme: dark;
+}
+[data-theme="dark"] .bls-btn { background: #4338ca; border-color: #4338ca; }
+[data-theme="dark"] .bls-btn.is-ghost { background: transparent; color: #a5b4fc !important; border-color: var(--line); }
+[data-theme="dark"] .bls-btn.is-bad { background: transparent; }
+[data-theme="dark"] .bls-step.is-done .bls-num { background: #15803d; }
+[data-theme="dark"] .bls-cmd { background: #040d09; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bls-page *, .bls-page *::before, .bls-page *::after { transition-duration: 0.01ms !important; }
+}
