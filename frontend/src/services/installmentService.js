@@ -14,6 +14,11 @@
  */
 import { supabase } from './supabase';
 import { payWithFlutterwave } from './flutterwaveClient';
+/** Plans and business websites live on icanera.space: links from here always open them there. */
+export const ICANERA_ORIGIN = 'https://icanera.space';
+export const businessSiteUrl = (businessProfileId) => `${ICANERA_ORIGIN}/store/${businessProfileId}`;
+export const installmentPlanUrl = (code) => `${ICANERA_ORIGIN}/plan/${code}`;
+
 const PENDING_KEY = 'icanera_installment_pending';
 const readPending = () => {
   try {

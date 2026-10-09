@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Camera, CameraOff, ScanLine, X, Plus, Minus, Trash2,
   ShoppingCart, CheckCircle, Loader, AlertCircle, Coins,
-  ReceiptText, QrCode, Store, ChevronDown,
+  ReceiptText, QrCode, Store, ChevronDown, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../services/supabaseClient';
+import { getStoreSiteForCustomer } from '../services/storeWebsite';
 import {
   getBalance,
   ugxToICAN,
@@ -571,6 +572,24 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
+  // The store's business website on icanera.space: its Market tab lists the store's products (tap one to pay for
+  // it) and its Pay tab takes cash, Mobile Money, card or bank. Every store has a website; with no company site
+  // yet this falls back to the store's storefront. Opened synchronously-first so mobile browsers don't block it.
+  async function openStoreWebsite(tab: 'market' | 'pay') {
+    if (!selectedSupermarketId) { toast.error('Choose a store first'); return; }
+    const win = window.open('', '_blank');
+    const site = await getStoreSiteForCustomer({ supermarketId: selectedSupermarketId });
+    if (!site) {
+      win?.close();
+      toast.error("We couldn't find this store's website. Try again in a moment.");
+      return;
+    }
+    // The storefront fallback has no Pay tab to deep-link into.
+    const target = site.viaStorefront ? site.url : `${site.url}?${tab === 'pay' ? 'pay=1' : 'tab=market'}`;
+    if (win) { win.opener = null; win.location.href = target; }
+    else window.location.href = target;
+  }
+
   const totals = cartTotals(cart);
   const icanNeeded = ugxToICAN(totals.total);
   const canPayICAN = (icanBalance?.ican ?? 0) >= icanNeeded;
@@ -739,6 +758,16 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
                 <p className="text-xs text-slate-400">No stores of this type yet.</p>
               )}
             </div>
+          )}
+
+          {selectedSupermarketId && !storePanelOpen && (
+            <button
+              type="button"
+              onClick={() => openStoreWebsite('market')}
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-orange-200 bg-orange-50 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-100 transition-colors"
+            >
+              <Store size={15} /> Open this store's Market <ExternalLink size={13} />
+            </button>
           )}
 
           {/* Browse-a-store — real inventory, full-page, no scanning needed */}
@@ -1017,6 +1046,16 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
                   </span>
                 )}
               </button>
+              {selectedSupermarketId && (
+                <button
+                  type="button"
+                  onClick={() => openStoreWebsite('pay')}
+                  className="py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <ExternalLink size={14} />
+                  Cash, Mobile Money, card or bank — on the store's website
+                </button>
+              )}
             </div>
 
             {payment !== 'ican' && (

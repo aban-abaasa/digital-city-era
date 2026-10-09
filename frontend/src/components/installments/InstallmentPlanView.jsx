@@ -44,6 +44,7 @@ import {
   payInstallmentWithFlutterwave,
   quoteInstallmentDelivery,
   resumePendingInstallmentPayment,
+  installmentPlanUrl,
 } from '../../services/installmentService';
 const DELIVERY_WINDOWS = [
   { hours: 1, label: 'Within 1 hour' },
@@ -200,6 +201,7 @@ export default function InstallmentPlanView({ code, onBack, notice: initialNotic
           {!closed && !DONE_PAYING.includes(plan.status) ? ` · due in full by ${fmtDate(plan.final_due_at)}` : ''}
         </p>
         {plan.held_ican > 0 && !closed && <p className="mt-0.5 text-[11px] text-slate-400">Held for you as {formatCoinAmount(plan.held_ican)} until your order is handed over.</p>}
+        <a href={installmentPlanUrl(plan.code)} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-orange-600 underline">Open this plan on icanera.space <ExternalLink size={12} /></a>
         <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
           {plan.items.map(it => (
             <div key={it.product_id} className="flex justify-between gap-2 text-sm">
