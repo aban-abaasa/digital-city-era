@@ -21,7 +21,6 @@ import {
 import { toast } from 'react-toastify';
 import DualScannerInterface from '../components/DualScannerInterface';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
-import AddProductModal from '../components/AddProductModal';
 import Receipt from '../components/Receipt';
 import TransactionHistory from '../components/TransactionHistory';
 import ClassicNotificationList from '../components/ClassicNotificationList';
@@ -102,7 +101,6 @@ const CashierPortal = () => {
   const [quickCashAmounts, setQuickCashAmounts] = useState([]);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [showDualScanner, setShowDualScanner] = useState(false);
-  const [showAddProductModal, setShowAddProductModal] = useState(false);
 
   // 👗 Boutique variant picker - shown before adding a product with
   // size/color variants to the cart
@@ -1583,15 +1581,6 @@ const CashierPortal = () => {
     toast.success(`✅ Added ${product.name}${variant ? ` (${variant.variant_value})` : ''} to cart`);
   };
 
-  // 🔥 Handle new product added - refresh products list
-  const handleProductAdded = async (newProduct) => {
-    console.log('✅ New product added:', newProduct);
-    toast.success(`🎉 Product "${newProduct.name}" added successfully!`);
-    
-    // Reload products to include the new one
-    await loadProductsFromSupabase();
-  };
-
   // Adds the scanned product to the cart. Returns true when the barcode matched a
   // product in this store's catalog, so the caller can keep the scanner open on a miss.
   const handleBarcodeScanned = (barcode) => {
@@ -2048,13 +2037,6 @@ const CashierPortal = () => {
               🛒 <span>Products</span>
             </h3>
             <div className="flex items-center gap-1 md:gap-2">
-              <button
-                onClick={() => setShowAddProductModal(true)}
-                className="px-2 md:px-4 py-1 md:py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-xs md:text-sm font-bold hover:from-purple-700 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 flex items-center gap-1 md:gap-2 shadow-lg"
-              >
-                <FiPlus className="h-4 md:h-5 w-4 md:w-5" />
-                <span className="hidden md:inline">Add</span>
-              </button>
               <button
                 onClick={() => setShowDualScanner(true)}
                 className="px-2 md:px-4 py-1 md:py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg text-xs md:text-sm font-bold hover:from-cyan-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 flex items-center gap-1 md:gap-2 shadow-lg animate-pulse"
@@ -3507,13 +3489,6 @@ const CashierPortal = () => {
           onClose={() => setShowBarcodeScanner(false)}
         />
       )}
-
-      {/* Add Product Modal - Supabase Connected */}
-      <AddProductModal
-        isOpen={showAddProductModal}
-        onClose={() => setShowAddProductModal(false)}
-        onProductAdded={handleProductAdded}
-      />
 
       {/* 👗 Variant Picker - boutique size/color, shown before adding to cart */}
       {variantPickerProduct && (
