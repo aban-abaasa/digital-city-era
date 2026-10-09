@@ -10,6 +10,7 @@ import ProductPicker, { CartLine } from './ProductPicker';
 import LocationPickerMap from './LocationPickerMap';
 import LiveTrackingMap from './LiveTrackingMap';
 import JourneyBookingFlow from './JourneyBookingFlow';
+import { useVehicleClassQuotes, describeRates, formatUgxShort, CARGO_CLASSES, type CargoClass, type VehicleClassQuote } from '../services/vehicleRateService';
 import { geocodeAddress, reverseGeocodeCountry, searchAddresses, type CountryLookup } from '../services/geocodeService';
 
 type RideStatus = 'searching' | 'waiting_acceptance' | 'accepted' | 'declined' | 'journey_started' | 'completed';
@@ -18,6 +19,155 @@ type DeliveryMode = 'supermarket' | 'normal';
 type PowerFilter = 'any' | 'electric' | 'fuel';
 type VehicleTypeFilter = 'any' | 'motorcycle' | 'car' | 'van' | 'truck';
 type ModePreference = 'all' | 'normal' | 'vip' | 'discount' | 'return';
+
+const VEHICLE_OPTIONS: { id: VehicleTypeFilter; label: string; icon: typeof Car | null }[] = [
+  { id: 'any', label: 'Any Ride', icon: null },
+  { id: 'motorcycle', label: 'Boda', icon: Bike },
+  { id: 'car', label: 'Car', icon: Car },
+  { id: 'van', label: 'Van', icon: Truck },
+  { id: 'truck', label: 'Truck', icon: Truck },
+];
+
+// Boda / Car / Van / Truck each have their own fare rates, so once there is a
+// route the same trip is priced for every class side by side — the customer
+// sees what each vehicle costs (and how many are online) before choosing. Van
+// and truck are freight: the weight and kind of cargo are part of the price,
+// and only vehicles that can carry the load are offered. Without a route, or if
+// the quote can't be loaded, it is just the chooser.
+function VehicleClassPicker({ value, onChange, pickup, dropoff, cargoWeight, onCargoWeight, cargoClass, onCargoClass }: {
+  value: VehicleTypeFilter;
+  onChange: (v: VehicleTypeFilter) => void;
+  pickup: Location | null;
+  dropoff: Location | null;
+  cargoWeight: string;
+  onCargoWeight: (v: string) => void;
+  cargoClass: CargoClass;
+  onCargoClass: (v: CargoClass) => void;
+}) {
+  const isFreight = value === 'van' || value === 'truck';
+  const weightKg = isFreight && Number(cargoWeight) > 0 ? Number(cargoWeight) : null;
+  const { quotes } = useVehicleClassQuotes(
+    pickup?.coordinates ?? null,
+    dropoff?.coordinates ?? null,
+    isFreight ? { weightKg, cargoClass } : null,
+  );
+  const quoteFor = (id: VehicleTypeFilter) => quotes?.find(q => q.vehicle_type === id) ?? null;
+
+  const classPrices = (['motorcycle', 'car', 'van', 'truck'] as const)
+    .map(id => quoteFor(id))
+    .filter((q): q is VehicleClassQuote => !!q)
+    .map(q => q.fare);
+  const cheapest = classPrices.length ? Math.min(...classPrices) : null;
+  const selected = value === 'any' ? null : quoteFor(value);
+
+  return (
+    <div className="mb-3 space-y-2">
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+        {VEHICLE_OPTIONS.map(opt => {
+          const quote = quoteFor(opt.id);
+          const cannotCarry = !!quote && !quote.can_carry;
+          const price = opt.id === 'any'
+            ? (cheapest != null ? `from ${formatUgxShort(cheapest)}` : null)
+            : (quote ? formatUgxShort(quote.fare) : null);
+          return (
+            <button
+              key={opt.id}
+              onClick={() => onChange(opt.id)}
+              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-xs font-semibold border-2 transition-all sm:text-sm ${
+                value === opt.id ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
+              } ${cannotCarry ? 'opacity-40' : ''}`}
+            >
+              <span className="flex items-center gap-1">
+                {opt.icon && <opt.icon size={14} />}
+                {opt.label}
+              </span>
+              {price && <span className="text-[10px] font-semibold leading-none opacity-70">{price}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {quotes && (
+        <p className="text-center text-[11px] text-slate-400">
+          Estimated price for this {quotes[0].distance_km.toFixed(1)} km trip, in UGX. Each driver's final price is shown before you book.
+        </p>
+      )}
+
+      {isFreight && (
+        <div className="space-y-3 rounded-xl border-2 border-slate-200 p-3 dark:border-slate-600">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">How heavy is the load?</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={cargoWeight}
+                onChange={e => onCargoWeight(e.target.value)}
+                placeholder={value === 'truck' ? 'e.g. 5000' : 'e.g. 300'}
+                className="w-full rounded-lg border-2 border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-orange-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <span className="text-sm font-semibold text-slate-500 dark:text-slate-300">kg</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(value === 'truck' ? [1000, 5000, 10000] : [100, 500, 1000]).map(kg => (
+                <button
+                  key={kg}
+                  type="button"
+                  onClick={() => onCargoWeight(String(kg))}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                    Number(cargoWeight) === kg ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {kg >= 1000 ? `${kg / 1000} t` : `${kg} kg`}
+                </button>
+              ))}
+              {weightKg != null && weightKg >= 1000 && (
+                <span className="self-center text-[11px] text-slate-400">= {Number((weightKg / 1000).toFixed(2))} tonnes</span>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">What are you moving?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {CARGO_CLASSES.map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={cargoClass === c.id}
+                  onClick={() => onCargoClass(c.id)}
+                  className={`rounded-lg border-2 px-2.5 py-2 text-left transition-all ${
+                    cargoClass === c.id ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/50' : 'border-slate-200 dark:border-slate-600'
+                  }`}
+                >
+                  <span className={`block text-xs font-semibold ${cargoClass === c.id ? 'text-orange-700 dark:text-orange-200' : 'text-slate-700 dark:text-slate-200'}`}>{c.label}</span>
+                  <span className="block text-[10px] leading-tight text-slate-400">{c.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {weightKg != null && selected && !selected.can_carry && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-600 dark:bg-red-950/40 dark:text-red-300">
+              No {selected.label.toLowerCase()} can carry {weightKg.toLocaleString()} kg — choose a larger vehicle.
+            </p>
+          )}
+        </div>
+      )}
+
+      {selected && (
+        <div className="rounded-lg border border-orange-100 bg-orange-50/60 px-3 py-2 text-[11px] leading-relaxed text-slate-600 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-slate-300">
+          <span className="font-semibold text-orange-700 dark:text-orange-200">{selected.label} rates:</span>{' '}
+          {describeRates(selected).join(' · ')}.
+          {selected.freight_priced && ' Priced at the live icaneracoin value.'}{' '}
+          <span className="font-semibold">
+            {selected.available_riders > 0 ? `${selected.available_riders} online now.` : 'None online right now.'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface MatchedRider {
   rider_id: string;
@@ -109,6 +259,13 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
   const [deliveryCart, setDeliveryCart] = useState<CartLine[]>([]);
   const [powerFilter, setPowerFilter] = useState<PowerFilter>('any');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<VehicleTypeFilter>('any');
+  // What a van / truck is carrying: part of the price, and only vehicles that can carry it are offered.
+  const [cargoWeight, setCargoWeight] = useState('');
+  const [cargoClass, setCargoClass] = useState<CargoClass>('standard');
+  const isFreightRide = vehicleTypeFilter === 'van' || vehicleTypeFilter === 'truck';
+  const cargoArgs = isFreightRide
+    ? { p_cargo_class: cargoClass, ...(Number(cargoWeight) > 0 ? { p_cargo_weight_kg: Number(cargoWeight) } : {}) }
+    : {};
   const [umbrellaRequired, setUmbrellaRequired] = useState(false);
   const [modePreference, setModePreference] = useState<ModePreference>('all');
   // Wallet = charged automatically (fare + 7% convenience surcharge) the
@@ -544,6 +701,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           p_exclude_rider_ids: [],
           p_limit: 10,
           p_vehicle_types: vehicleTypeFilter === 'any' ? null : [vehicleTypeFilter],
+          ...cargoArgs,
         });
         if (error) throw error;
         riders = (data || []) as MatchedRider[];
@@ -557,7 +715,9 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
       });
 
       if (riders.length === 0) {
-        toast.error('No available riders match your filters right now');
+        toast.error(isFreightRide && Number(cargoWeight) > 0
+          ? `No available ${vehicleTypeFilter} can carry ${Number(cargoWeight).toLocaleString()} kg right now`
+          : 'No available riders match your filters right now');
       } else {
         toast.success(`Found ${riders.length} available riders near you!`);
       }
@@ -592,6 +752,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
         p_power_type_requested: powerFilter === 'any' ? null : powerFilter,
         p_umbrella_requested: umbrellaRequired,
         p_order_notes: orderNotes,
+        ...cargoArgs,
       };
       const { data, error } = needsCrossBorderPath
         ? await supabase.rpc('mbg_request_cross_border_delivery', {
@@ -623,6 +784,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             p_umbrella_requested: umbrellaRequired,
             p_order_notes: orderNotes,
             p_payment_method: paymentMethod,
+            ...cargoArgs,
           });
 
       if (error) throw error;
@@ -992,26 +1154,16 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             p_vehicle_types filter so a request actually only reaches
             drivers of the chosen type, instead of any vehicle_type mixed
             together with no way to tell them apart before choosing. */}
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-3">
-          {([
-            { id: 'any' as VehicleTypeFilter, label: 'Any Ride', icon: null },
-            { id: 'motorcycle' as VehicleTypeFilter, label: 'Boda', icon: Bike },
-            { id: 'car' as VehicleTypeFilter, label: 'Car', icon: Car },
-            { id: 'van' as VehicleTypeFilter, label: 'Van', icon: Truck },
-            { id: 'truck' as VehicleTypeFilter, label: 'Truck', icon: Truck },
-          ]).map(opt => (
-            <button
-              key={opt.id}
-              onClick={() => setVehicleTypeFilter(opt.id)}
-              className={`flex min-h-12 items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold border-2 transition-all sm:text-sm ${
-                vehicleTypeFilter === opt.id ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-300'
-              }`}
-            >
-              {opt.icon && <opt.icon size={14} />}
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <VehicleClassPicker
+          value={vehicleTypeFilter}
+          onChange={setVehicleTypeFilter}
+          pickup={selectedPickup}
+          dropoff={selectedDropoff}
+          cargoWeight={cargoWeight}
+          onCargoWeight={setCargoWeight}
+          cargoClass={cargoClass}
+          onCargoClass={setCargoClass}
+        />
 
         {/* Vehicle / weather filters — fuel/electric and rain cover only mean
             anything for a boda (motorcycle/bicycle/tuktuk); a car/van/truck
