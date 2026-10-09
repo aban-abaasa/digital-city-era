@@ -1,10 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
   FiCalendar, FiCheck, FiExternalLink, FiImage, FiMapPin, FiPackage, FiServer, FiShoppingBag,
   FiTrash2, FiUpload, FiUsers
 } from 'react-icons/fi';
 import { supabase } from '../../services/supabase';
+import { reverseGeocodeCountry } from '../../vendor/mybodaguy/services/geocodeService';
 import './AdminStoreSettings.css';
+
+// Leaflet only loads when someone actually opens the map editor.
+const LocationPickerMap = lazy(() => import('../../vendor/mybodaguy/components/LocationPickerMap'));
 
 const LOGO_MAX_MB = 2;
 const BACKGROUND_MAX_MB = 3;
@@ -74,6 +78,8 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(''); // details | logo | background | offers | pickup
   const [flash, setFlash] = useState({}); // { [sectionId]: { tone, text } }
+  const [pinEditing, setPinEditing] = useState(false);
+  const [pin, setPin] = useState(null); // the draft pickup point being placed on the map
   const logoInput = useRef(null);
   const backgroundInput = useRef(null);
   const flashTimer = useRef({});
@@ -182,28 +188,54 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
   };
 
   // Rider delivery needs real coordinates; a street address alone is not enough to route a rider here.
-  const usePickupLocation = () => {
-    if (!navigator.geolocation) { say('pickup', 'This browser can’t share a location', 'bad'); return; }
-    setBusy('pickup');
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          await patch({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-          say('pickup', 'Pickup point saved');
-        } catch (err) {
-          say('pickup', err.message || 'Could not save the location', 'bad');
-        } finally {
-          setBusy('');
-        }
-      },
-      () => {
-        say('pickup', 'Couldn’t get your location — stand at the store and allow location access', 'bad');
-        setBusy('');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+  // The admin places the pin by searching for the place, tapping the map or using their location, so a
+  // store can be set up from any computer, not only by standing at the shop with a GPS.
+  const openPinEditor = () => {
+    const hasPin = store.latitude !== null && store.latitude !== undefined && store.longitude !== null && store.longitude !== undefined;
+    setPin(hasPin ? {
+      id: 'store_pickup',
+      name: store.name || 'Store',
+      area: store.location || store.name || 'Store',
+      fullAddress: store.address || store.location || '',
+      coordinates: { lat: Number(store.latitude), lng: Number(store.longitude) }
+    } : null);
+    setPinEditing(true);
   };
 
+  const savePin = async () => {
+    if (!pin) { say('pickup', 'Search for the place or tap the map first', 'bad'); return; }
+    const { lat, lng } = pin.coordinates;
+    setBusy('pickup');
+    try {
+      // Keep a street address the owner typed; only fill it from the pin when there is none yet.
+      const address = store.address ? null : (pin.fullAddress || null);
+      const country = await reverseGeocodeCountry(lat, lng).catch(() => null);
+      // fn_supermarket_set_location (ICAN BUSINESS_BRANCH_LOCATIONS.sql) also moves the matching branch
+      // business profile, so the admin's Branches view and the riders never disagree. Where it is not
+      // installed (or this account is not its owner/manager) the plain write below is what RLS allows.
+      const { error: rpcError } = await supabase.rpc('fn_supermarket_set_location', {
+        p_supermarket_id: supermarketId,
+        p_latitude: lat,
+        p_longitude: lng,
+        p_address: address,
+        p_directions: null,
+        p_country: country?.name || null
+      });
+      if (rpcError) {
+        console.warn('[AdminStoreSettings] fn_supermarket_set_location unavailable, saving directly:', rpcError.message);
+        await patch({ latitude: lat, longitude: lng, ...(address ? { address } : {}) });
+      } else {
+        const { data } = await supabase.from('supermarkets').select('*').eq('id', supermarketId).maybeSingle();
+        if (data) { setStore(data); if (onSaved) onSaved(); }
+      }
+      setPinEditing(false);
+      say('pickup', 'Pickup point saved');
+    } catch (err) {
+      say('pickup', err.message || 'Could not save the location', 'bad');
+    } finally {
+      setBusy('');
+    }
+  };
   if (!supermarketId) {
     return <div className="ass"><p className="ass-note">Your admin account isn’t linked to a store yet, so there are no settings to show.</p></div>;
   }
@@ -320,20 +352,45 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         </ul>
       </Section>
 
-      <Section id="pickup" title="Delivery pickup point" hint="Riders need real coordinates to find your store — a street address alone isn’t enough." flash={flash.pickup}>
+      <Section id="pickup" title="Delivery pickup point" hint="Riders need real coordinates to find your store. Search for the place or tap the map — you don’t need to be at the store." flash={flash.pickup}>
         <div className="ass-pickup">
           <div className="ass-row-text">
             <b>{hasPickup ? 'Pickup point set' : 'Not set yet'}</b>
             <span>
               {hasPickup
-                ? `${Number(store.latitude).toFixed(5)}, ${Number(store.longitude).toFixed(5)}`
-                : 'Stand at the store, then use your current location.'}
+                ? `${store.address || store.location || 'On the map'} · ${Number(store.latitude).toFixed(5)}, ${Number(store.longitude).toFixed(5)}`
+                : 'Search for your store on the map, or tap its spot.'}
             </span>
           </div>
-          <button type="button" className="ass-btn" onClick={usePickupLocation} disabled={busy === 'pickup'}>
-            <FiMapPin aria-hidden="true" />{busy === 'pickup' ? 'Locating…' : hasPickup ? 'Update location' : 'Use my current location'}
-          </button>
+          {!pinEditing && (
+            <button type="button" className="ass-btn" onClick={openPinEditor}>
+              <FiMapPin aria-hidden="true" />{hasPickup ? 'Update location' : 'Set on map'}
+            </button>
+          )}
         </div>
+        {pinEditing && (
+          <div className="ass-map">
+            <Suspense fallback={<p className="ass-note" role="status">Loading the map…</p>}>
+              <LocationPickerMap
+                pickup={pin}
+                dropoff={null}
+                onPickupChange={setPin}
+                onDropoffChange={() => {}}
+                selectionMode="pickup"
+                autoFillOnMount={false}
+                searchCountry={store.country || undefined}
+                height={320}
+              />
+            </Suspense>
+            {pin && <p className="ass-note">📍 {pin.fullAddress}</p>}
+            <div className="ass-actions">
+              <button type="button" className="ass-btn ass-btn-primary" onClick={savePin} disabled={!pin || busy === 'pickup'}>
+                <FiCheck aria-hidden="true" />{busy === 'pickup' ? 'Saving…' : 'Save location'}
+              </button>
+              <button type="button" className="ass-btn ass-btn-quiet" onClick={() => setPinEditing(false)} disabled={busy === 'pickup'}>Cancel</button>
+            </div>
+          </div>
+        )}
       </Section>
 
       <Section id="more" title="More" hint="Other places that shape how your store runs.">

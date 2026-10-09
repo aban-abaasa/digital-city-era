@@ -106,6 +106,7 @@
 .ass-row-text b { font-size: 14px; font-weight: 700; color: var(--ink); }
 .ass-row-text span { font-size: 13px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
 .ass-pickup { display: flex; flex-direction: column; gap: 12px; }
+.ass-map { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
 
 /* ---------- Switch ---------- */
 .ass-switch {

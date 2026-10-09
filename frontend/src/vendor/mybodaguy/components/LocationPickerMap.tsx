@@ -7,6 +7,7 @@ import 'leaflet/dist/leaflet.css';
 import { Locate, Navigation, Search, Loader2, MapPin } from 'lucide-react';
 import type { Location } from '../data/locationTypes';
 import { geocodeAddress, reverseGeocode, searchAddresses, type AddressSuggestion } from '../services/geocodeService';
+import { describeGeoFailure, locateDevice } from '../utils/geolocation';
 
 // Kampala city center — used only as a fallback when GPS is denied/unavailable.
 const DEFAULT_CENTER: [number, number] = [0.3157, 32.5756];
@@ -65,6 +66,12 @@ interface LocationPickerMapProps {
   selectionMode?: 'pickup' | 'dropoff';
   /** Optional country hint for the map search. */
   searchCountry?: string;
+  /** Drop a pin on the device's position as soon as the map opens. Off when the
+   * person is setting a place that is not where they are standing (e.g. a store
+   * location from the admin's office); the "Use my current location" button stays. */
+  autoFillOnMount?: boolean;
+  /** Map height in px. */
+  height?: number;
 }
 
 export default function LocationPickerMap({
@@ -77,6 +84,8 @@ export default function LocationPickerMap({
   autoLocateGPS = true,
   selectionMode = 'dropoff',
   searchCountry,
+  autoFillOnMount = true,
+  height = 420,
 }: LocationPickerMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -89,6 +98,8 @@ export default function LocationPickerMap({
   const [mapSuggestions, setMapSuggestions] = useState<AddressSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  // Not an error: GPS being unavailable is normal on a computer, and search/tap still work.
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
 
   // Init the map once.
   useEffect(() => {
@@ -112,24 +123,29 @@ export default function LocationPickerMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-detect the customer's live GPS position as the initial pickup pin,
-  // only if the parent hasn't already supplied one (e.g. from a supermarket
-  // auto-fill or a typed suggestion).
+  // Auto-detect the live GPS position as the initial pickup pin, only if the
+  // parent hasn't already supplied one (e.g. from a supermarket auto-fill or a
+  // typed suggestion).
   useEffect(() => {
-    if (pickup || !autoLocateGPS || !navigator.geolocation) return;
+    if (pickup || !autoLocateGPS || !autoFillOnMount) return;
+    let cancelled = false;
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const loc = await toLocation('gps', 'My Location', pos.coords.latitude, pos.coords.longitude);
-        onPickupChange(loc);
+    locateDevice().then(async (result) => {
+      if (cancelled) return;
+      if (!result.ok) {
         setLocating(false);
-      },
-      () => {
-        setLocating(false);
-        setLocationError('Location access was denied or unavailable. Search for your area or tap the map instead.');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+        setLocationNotice(describeGeoFailure(result.failure));
+        return;
+      }
+      const loc = await toLocation('gps', 'My Location', result.fix.lat, result.fix.lng);
+      if (cancelled) return;
+      onPickupChange(loc);
+      if (result.fix.accuracy > 1000) setLocationNotice('This is an approximate location — drag the pin to the exact spot.');
+      setLocating(false);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -218,31 +234,32 @@ export default function LocationPickerMap({
     };
   }, [pickup?.coordinates?.lat, pickup?.coordinates?.lng, dropoff?.coordinates?.lat, dropoff?.coordinates?.lng, onRouteInfo]);
 
-  const useMyLocation = () => {
-    if (!navigator.geolocation || pickupLocked) {
-      setLocationError('GPS is unavailable. Search for your area or tap the map instead.');
+  const useMyLocation = async () => {
+    if (pickupLocked) {
+      setLocationError('This pickup is locked to the store\'s own location.');
       return;
     }
     setLocating(true);
     setLocationError(null);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const loc = await toLocation('gps', 'My Location', pos.coords.latitude, pos.coords.longitude);
-        onPickupChange(loc);
-        setLocating(false);
-      },
-      () => {
-        setLocating(false);
-        setLocationError('Could not access your location. On a phone, allow location permission and use HTTPS, or search/tap the map.');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    setLocationNotice(null);
+    const result = await locateDevice();
+    if (!result.ok) {
+      setLocating(false);
+      setLocationError(describeGeoFailure(result.failure));
+      return;
+    }
+    const loc = await toLocation('gps', 'My Location', result.fix.lat, result.fix.lng);
+    onPickupChange(loc);
+    mapRef.current?.setView([result.fix.lat, result.fix.lng], result.fix.accuracy > 1000 ? 14 : 16, { animate: false });
+    if (result.fix.accuracy > 1000) setLocationNotice('This is an approximate location — drag the pin to the exact spot.');
+    setLocating(false);
   };
 
   const searchLocation = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
     setLocationError(null);
+    setLocationNotice(null);
     try {
       const result = await geocodeAddress(searchQuery, searchCountry);
       if (!result) {
@@ -322,7 +339,7 @@ export default function LocationPickerMap({
           </div>
         )}
       </div>
-      <div ref={containerRef} className="rounded-lg border-2 border-slate-200" style={{ height: 420, width: '100%' }} />
+      <div ref={containerRef} className="rounded-lg border-2 border-slate-200" style={{ height, width: '100%' }} />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         {autoLocateGPS && (
           <button
@@ -343,6 +360,7 @@ export default function LocationPickerMap({
         )}
       </div>
       {locationError && <p className="rounded-lg bg-red-50 p-2 text-xs text-red-700">{locationError}</p>}
+      {!locationError && locationNotice && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">{locationNotice}</p>}
       <p className="text-xs text-slate-500">Search precisely, use your current location, or tap the map to set your {selectionMode}. Drag the pin to fine-tune it.</p>
     </div>
   );
