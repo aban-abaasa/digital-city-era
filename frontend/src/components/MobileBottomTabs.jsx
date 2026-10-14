@@ -1,4 +1,5 @@
 import React from 'react';
+import NavGlowDefs from './NavGlowDefs';
 import '../styles/mobile-bottom-tabs.css';
 
 /**
@@ -6,11 +7,11 @@ import '../styles/mobile-bottom-tabs.css';
  * of the thumb. Capped at 4 on purpose — everything else stays in the section
  * bar's Menu sheet.
  *
- * Styled like the ICAN app's bottom bar: truly transparent -- no bar fill and no
- * tile fill, just each icon (over a small label) with its own colour line along
- * its edge, orbiting on the active one -- spaced apart in a row that scrolls
- * sideways (see mobile-bottom-tabs.css). Hidden from `sm` up, where every
- * portal already shows its full top tab strip.
+ * Styled like the ICAN app's bottom bar: bare icons, like TikTok's, with nothing
+ * painted behind or around them. The current one is drawn in colours that travel
+ * along its own shape; the row is spaced apart and scrolls sideways (see
+ * mobile-bottom-tabs.css). Hidden from `sm` up, where every portal already
+ * shows its full top tab strip.
  *
  * tabs: [{ id, label, icon, badge? }]. Pages need ~5rem of bottom padding so
  * their last card isn't hidden under the bar.
@@ -24,6 +25,7 @@ const MobileBottomTabs = ({ tabs, activeTab, onSelect }) => {
       aria-label="Primary"
       className="sk-bottom-nav fixed inset-x-0 bottom-0 z-[60] flex sm:hidden"
     >
+      <NavGlowDefs />
       {visible.map((tab) => {
         const active = activeTab === tab.id;
         const Icon = tab.icon;
