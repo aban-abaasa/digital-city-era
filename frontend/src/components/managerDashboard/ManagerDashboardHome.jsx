@@ -1,8 +1,8 @@
 import React, { memo, useMemo, useRef, useState } from 'react';
 import {
-  FiAlertTriangle, FiArrowUpRight, FiBarChart2, FiBell, FiBriefcase, FiCalendar, FiCheckCircle,
-  FiChevronDown, FiChevronLeft, FiChevronRight, FiClipboard, FiDollarSign, FiFileText, FiInbox, FiLayers,
-  FiNavigation, FiPackage, FiPlus, FiRefreshCw, FiSend, FiShoppingBag, FiShoppingCart, FiTrendingUp,
+  FiAlertTriangle, FiArrowUpRight, FiBriefcase, FiCalendar, FiCheckCircle,
+  FiChevronDown, FiChevronLeft, FiChevronRight, FiClipboard, FiDollarSign, FiInbox, FiLayers,
+  FiPackage, FiPlus, FiRefreshCw, FiSend, FiShoppingBag, FiShoppingCart, FiTrendingUp,
   FiTruck, FiUserCheck, FiUserPlus, FiUsers
 } from 'react-icons/fi';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -115,32 +115,32 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
         id: 'rev-today', group: 'sales', icon: FiDollarSign, tone: 'emerald', label: "Today's takings",
         value: v(() => moneyShort(data.today.revenue)), title: moneyFull(data.today.revenue),
         delta: salesUnavailable ? undefined : pct(data.today.revenue, data.yesterday.revenue), deltaLabel: 'vs yesterday',
-        spark: spark('revenue'), open: 'transactions', hint: 'Transactions'
+        spark: spark('revenue')
       },
       {
         id: 'sales-today', group: 'sales', icon: FiShoppingCart, tone: 'indigo', label: "Today's sales",
         value: v(() => num(data.today.orders)),
         delta: salesUnavailable ? undefined : pct(data.today.orders, data.yesterday.orders), deltaLabel: 'vs yesterday',
-        spark: spark('orders'), open: 'transactions', hint: 'Transactions'
+        spark: spark('orders')
       },
       {
         id: 'rev-week', group: 'sales', icon: FiTrendingUp, tone: 'gold', label: 'Last 7 days',
         value: v(() => moneyShort(data.week.revenue)), title: moneyFull(data.week.revenue),
         delta: salesUnavailable ? undefined : pct(data.week.revenue, data.prevWeek.revenue), deltaLabel: 'vs prior week',
-        spark: spark('revenue', 7), open: 'reports', hint: 'Reports'
+        spark: spark('revenue', 7)
       },
       {
         id: 'basket', group: 'sales', icon: FiShoppingBag, tone: 'plum', label: 'Average basket',
         value: v(() => moneyShort(data.avgBasket)), title: moneyFull(data.avgBasket),
-        sub: 'per sale · 30 days', open: 'reports', hint: 'Reports'
+        sub: 'per sale · 30 days'
       },
       {
         id: 'products', group: 'stock', icon: FiPackage, tone: 'indigo', label: 'Products on sale',
-        value: num(data.products), sub: 'active in your POS', open: 'pos', hint: 'POS inventory'
+        value: num(data.products), sub: 'active in your POS'
       },
       {
         id: 'low', group: 'stock', icon: FiAlertTriangle, tone: data.lowStock > 0 ? 'amber' : 'emerald', label: 'Running low',
-        value: num(data.lowStock), sub: data.lowStock > 0 ? 'at or below minimum' : 'all above minimum', open: 'pos', hint: 'Restock'
+        value: num(data.lowStock), sub: data.lowStock > 0 ? 'at or below minimum' : 'all above minimum', open: 'new-order', hint: 'Restock'
       },
       {
         id: 'out', group: 'stock', icon: FiInbox, tone: data.outOfStock > 0 ? 'rose' : 'emerald', label: 'Out of stock',
@@ -152,7 +152,7 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
       },
       {
         id: 'suppliers', group: 'buying', icon: FiTruck, tone: 'gold', label: 'Approved suppliers',
-        value: num(data.suppliers), sub: 'you can buy from', open: 'suppliers', hint: 'Suppliers'
+        value: num(data.suppliers), sub: 'you can buy from'
       },
       {
         id: 'wallet', group: 'buying', icon: FiDollarSign, tone: 'teal', label: 'Business ICAN wallet',
@@ -162,11 +162,11 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
       {
         id: 'team', group: 'people', icon: FiUserCheck, tone: 'teal', label: 'Your team',
         value: data.team.cashiers === null ? '—' : num(data.team.cashiers),
-        sub: `${num(data.team.cashiers)} ${plural(data.team.cashiers, 'cashier', 'cashiers')} on the tills`, open: 'team', hint: 'Team'
+        sub: `${num(data.team.cashiers)} ${plural(data.team.cashiers, 'cashier', 'cashiers')} on the tills`
       },
       {
         id: 'customers', group: 'people', icon: FiUsers, tone: 'plum', label: 'Customers',
-        value: num(data.customers), sub: 'registered with your store', open: 'reports', hint: 'Reports'
+        value: num(data.customers), sub: 'registered with your store'
       }
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,9 +220,8 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
   const attention = [
     { id: 'appr', count: awaitingApproval, text: plural(awaitingApproval, 'purchase order waiting for approval', 'purchase orders waiting for approval'), icon: FiClipboard, tone: 'amber', open: 'orders' },
     { id: 'recv', count: toReceive, text: plural(toReceive, 'delivery to receive and check in', 'deliveries to receive and check in'), icon: FiTruck, tone: 'indigo', open: 'orders' },
-    { id: 'out', count: data.outOfStock, text: plural(data.outOfStock, 'product out of stock', 'products out of stock'), icon: FiInbox, tone: 'rose', open: 'pos' },
-    { id: 'low', count: data.lowStock, text: plural(data.lowStock, 'product running low', 'products running low'), icon: FiAlertTriangle, tone: 'amber', open: 'pos' },
-    { id: 'alerts', count: alertCount, text: plural(alertCount, 'unread alert', 'unread alerts'), icon: FiBell, tone: 'plum', open: 'alerts' }
+    { id: 'out', count: data.outOfStock, text: plural(data.outOfStock, 'product out of stock', 'products out of stock'), icon: FiInbox, tone: 'rose', open: 'new-order' },
+    { id: 'low', count: data.lowStock, text: plural(data.lowStock, 'product running low', 'products running low'), icon: FiAlertTriangle, tone: 'amber', open: 'new-order' }
   ].filter((a) => a.count > 0);
 
   // Every manager function, grouped the way a shift actually runs
@@ -230,10 +229,7 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
     {
       title: 'Sell & stock',
       items: [
-        { label: 'POS inventory', hint: 'Products, prices & stock at the till', icon: FiShoppingBag, open: 'pos' },
-        { label: 'Stock manager', hint: 'Adjust quantities & minimums', icon: FiPackage, open: 'inventory-modal' },
-        { label: 'Till supplies', hint: 'Bags, paper rolls & till needs', icon: FiLayers, open: 'tillsupplies' },
-        { label: 'Transactions', hint: 'Every sale, with receipts', icon: FiFileText, open: 'transactions' }
+        { label: 'Stock manager', hint: 'Adjust quantities & minimums', icon: FiPackage, open: 'inventory-modal' }
       ]
     },
     {
@@ -241,24 +237,14 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
       items: [
         { label: 'New purchase order', hint: 'Order stock from a supplier', icon: FiPlus, open: 'new-order', accent: true },
         { label: 'Orders', hint: 'Approve, send, receive & pay', icon: FiShoppingCart, open: 'orders', badge: awaitingApproval },
-        { label: 'Suppliers', hint: 'Supplier network & deliveries', icon: FiTruck, open: 'suppliers' },
         { label: 'IcanEra Wallet', hint: 'Balance & supplier payments', icon: FiDollarSign, open: 'ican-wallet' }
       ]
     },
     {
       title: 'People',
       items: [
-        { label: 'Team', hint: 'Cashiers, shifts & performance', icon: FiUsers, open: 'team' },
         { label: 'Add cashier', hint: 'Give someone a till login', icon: FiUserPlus, open: 'add-cashier' },
-        { label: 'Alerts', hint: 'Store notifications', icon: FiBell, open: 'alerts', badge: alertCount },
         { label: 'Payroll & Transport', hint: 'Employees and pay', icon: FiBriefcase, open: 'business-operations' }
-      ]
-    },
-    {
-      title: 'Oversight',
-      items: [
-        { label: 'Reports', hint: 'Sales, stock & staff reports', icon: FiBarChart2, open: 'reports' },
-        { label: 'Portal control', hint: 'Live status of every portal', icon: FiNavigation, open: 'portal-control' }
       ]
     }
   ];
@@ -291,9 +277,6 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
         <div className="mdh-hero-actions">
           <button type="button" className="mdh-hero-btn is-gold" onClick={() => go('new-order')}>
             <FiPlus /> New purchase order
-          </button>
-          <button type="button" className="mdh-hero-btn" onClick={() => go('pos')}>
-            <FiShoppingBag /> POS inventory
           </button>
           <button type="button" className="mdh-hero-btn" onClick={() => go('add-cashier')}>
             <FiUserPlus /> Add cashier
@@ -334,10 +317,10 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
           {visibleCards.map((c) => {
             const Icon = c.icon;
             return (
-              <button key={c.id} type="button" className={`adh-card tone-${c.tone}`} onClick={() => go(c.open)} title={c.title}>
+              <button key={c.id} type="button" className={`adh-card tone-${c.tone} ${c.open ? '' : 'is-static'}`} onClick={c.open ? () => go(c.open) : undefined} title={c.title}>
                 <span className="adh-card-top">
                   <span className="adh-card-icon"><Icon /></span>
-                  <span className="adh-card-go">{c.hint} <FiArrowUpRight /></span>
+                  {c.open && <span className="adh-card-go">{c.hint} <FiArrowUpRight /></span>}
                 </span>
                 <span className="adh-card-label">{c.label}</span>
                 <span className={`adh-card-value ${loading && !updatedAt ? 'is-loading' : ''}`}>{loading && !updatedAt ? '…' : c.value}</span>
@@ -515,7 +498,7 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
                 <ul className="adh-sales">
                   {data.recentSales.map((s) => (
                     <li key={s.id}>
-                      <button type="button" onClick={() => go('transactions')}>
+                      <button type="button" className="is-static">
                         <span className="adh-sale-icon"><FiShoppingBag /></span>
                         <span className="adh-sale-main">
                           <b>{moneyFull(s.amount)}</b>
@@ -526,9 +509,6 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
                     </li>
                   ))}
                 </ul>
-                <button type="button" className="adh-link adh-link-block" onClick={() => go('transactions')}>
-                  Open all transactions <FiChevronRight />
-                </button>
               </>
             )}
           </div>
