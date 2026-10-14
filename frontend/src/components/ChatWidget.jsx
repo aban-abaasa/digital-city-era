@@ -37,6 +37,10 @@ import CallDock from './calls/CallDock';
 import CallStage from './calls/CallStage';
 import IncomingCallOverlay from './calls/IncomingCallOverlay';
 import CommunityLiveStage from './community/CommunityLiveStage';
+import NavGlowDefs from './NavGlowDefs';
+
+// The colours that travel along the floating chat button's own outline (see NavGlowDefs).
+const CHAT_RAINBOW = ['#f43f5e', '#f59e0b', '#facc15', '#22c55e', '#06b6d4', '#6366f1', '#d946ef'];
 
 // Small audio/video call-launch buttons, shown next to the Support header
 // once a conversation exists — hidden once a call is already in progress.
@@ -990,15 +994,12 @@ const ChatWidget = () => {
         title="Chat with us"
       >
         <style>{`
-          @keyframes ican-chat-ring-spin { to { transform: rotate(360deg); } }
-          @keyframes ican-chat-ring-hue { to { filter: hue-rotate(360deg); } }
-          .ican-chat-ring {
-            background: conic-gradient(from 0deg, #f43f5e, #f59e0b, #facc15, #22c55e, #06b6d4, #6366f1, #d946ef, #f43f5e);
-            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-            mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-            animation: ican-chat-ring-spin 3s linear infinite, ican-chat-ring-hue 6s linear infinite;
+          /* No ring and no badge: the chat bubble itself carries a rainbow that travels along its real outline
+             (the gradient is the NavGlowDefs below). The plain colour after url() is the fallback. */
+          .ican-fab > svg.ican-chat-icon {
+            stroke: url(#ican-chat-line) #b8892b;
+            stroke-width: 2.25;
           }
-          @media (prefers-reduced-motion: reduce) { .ican-chat-ring { animation: none; } }
           .ican-classic-head { padding-top: .3rem !important; padding-bottom: .3rem !important; gap: .5rem; }
           .ican-classic-head::after { display: none; }
           .ican-sub { display: none !important; }
@@ -1062,8 +1063,8 @@ const ChatWidget = () => {
           .ican-classic-chat.is-dark [class*="text-cyan-"], .ican-classic-chat.is-dark [class*="text-violet-"] { color: #e6c980 !important; }
           .ican-classic-chat.is-dark .bg-gradient-to-br, .ican-classic-chat.is-dark .bg-gradient-to-r { color: #1e1b0f; }
               `}</style>
-        <span aria-hidden="true" className="ican-chat-ring pointer-events-none absolute -inset-[4px] rounded-full" />
-        {open ? <FiX className="h-6 w-6" /> : <FiMessageCircle className="h-6 w-6" />}
+        <NavGlowDefs id="ican-chat-line" colors={CHAT_RAINBOW} />
+        {open ? <FiX className="h-7 w-7 ican-chat-icon" /> : <FiMessageCircle className="h-7 w-7 ican-chat-icon" />}
         {!open && anyUnread && (
           <span className="absolute -top-1 -right-1 h-4 w-4 animate-pulse rounded-full border-2 border-white bg-red-500" />
         )}
