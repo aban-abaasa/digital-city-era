@@ -85,3 +85,7 @@
 [data-theme="dark"] .mdh-stage-dot { background: #0c231b; border-color: rgba(196, 160, 82, 0.35); }
 [data-theme="dark"] .mdh-stage-count { color: #ecfdf5; }
 [data-theme="dark"] .mdh-tile-accent { background: linear-gradient(180deg, #1a2e22 0%, #213626 100%); }
+
+/* Cards and rows that no longer open a tab are informational only */
+.adh-card.is-static, .adh-sales button.is-static { cursor: default; }
+.adh-card.is-static:hover, .adh-card.is-static:active { transform: none; }
