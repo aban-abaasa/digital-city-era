@@ -13,7 +13,7 @@ import MobileBottomTabs from './MobileBottomTabs';
  * tabs: [{ id, label, icon, badge? }]. Pass showWallet + onWallet only when the
  * wallet isn't already one of the tabs.
  *
- * bottomTabs: the 4 vital tabs for the phone's transparent bottom bar, as
+ * bottomTabs: the 4 vital tabs for the phone's bottom bar, as
  * [{ id, label? }] — icon/badge come from the matching entry in `tabs`, and
  * `label` is an optional short name for the bar. Defaults to the first 4 tabs.
  */

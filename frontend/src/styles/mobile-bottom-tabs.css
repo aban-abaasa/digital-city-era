@@ -1,0 +1,47 @@
+/* Phone bottom navigation (MobileBottomTabs).
+
+   Same pattern as the ICAN business websites' bottom bar: an edge-to-edge
+   frosted bar with a hairline on top, icon over a small semibold label, and
+   the active tab shown by colour alone. Only colour lives here -- layout
+   (fixed, flex, sm:hidden) stays in the component's Tailwind classes so the
+   `sm:hidden` breakpoint can never lose a cascade fight with this file.
+
+   Own class + own variables (rather than Tailwind colour utilities) because
+   the portal/customer dark layers force text colours with !important on the
+   slate utilities and would repaint the labels. Light = white paper with a
+   brass hairline and ink-indigo active; dark = deep green with pale gold. */
+
+.sk-bottom-nav {
+  --bn-bg: rgba(255, 255, 255, 0.92);
+  --bn-line: rgba(196, 160, 82, 0.35);
+  --bn-text: #64748b;
+  --bn-text-hover: #1e1b4b;
+  --bn-active: #312e81;
+  background: var(--bn-bg);
+  border-top: 1px solid var(--bn-line);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  /* Clear the iOS home indicator / gesture bar. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html[data-theme="dark"] .sk-bottom-nav {
+  --bn-bg: rgba(12, 35, 27, 0.92);
+  --bn-line: rgba(196, 160, 82, 0.3);
+  --bn-text: rgba(209, 250, 229, 0.6);
+  --bn-text-hover: #f5dfa0;
+  --bn-active: #f5dfa0;
+}
+
+.sk-bottom-nav-tab {
+  color: var(--bn-text);
+  transition: color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.sk-bottom-nav-tab:hover { color: var(--bn-text-hover); }
+.sk-bottom-nav-tab-active,
+.sk-bottom-nav-tab-active:hover { color: var(--bn-active); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-bottom-nav-tab { transition: none; }
+}
