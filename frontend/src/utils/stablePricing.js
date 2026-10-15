@@ -267,3 +267,57 @@ export const summarizeCatalog = (analyses) => {
     needAttention: counts[STATUS.LOSING] + counts[STATUS.AT_RISK],
   };
 };
+
+// ─── Telling the admin what moved ────────────────────────────────────────────
+//
+// When ICEC-S moves, the shilling price of every product priced in it moves too.
+// These turn the stored change rows ({ product_name, old_price, new_price,
+// changed_at, seen_at }) into what the admin reads.
+
+export const changePct = (oldPrice, newPrice) => (
+  num(oldPrice) > 0 ? ((num(newPrice) - num(oldPrice)) / num(oldPrice)) * 100 : null
+);
+
+// A product on an expiry offer is deliberately left alone (repricing it would end
+// the offer), so it can't be moved onto — or repriced by — the stable coin.
+export const isOnOffer = (row) => row?.clearance_original_price !== null
+  && row?.clearance_original_price !== undefined && num(row.clearance_original_price) > 0;
+
+// Net move per product: where it started (the first change's old price) against where
+// it ended up (the last change's new price), so a product that moved twice reads once.
+// Rows are taken oldest-first by changed_at when they have it, else in the order given.
+export const netChangesByProduct = (changes) => {
+  const rows = (Array.isArray(changes) ? changes : []).filter((c) => num(c?.old_price) > 0);
+  const timed = rows.every((c) => Number.isFinite(Date.parse(c?.changed_at)));
+  const ordered = timed ? [...rows].sort((a, b) => Date.parse(a.changed_at) - Date.parse(b.changed_at)) : rows;
+  const byProduct = new Map();
+  ordered.forEach((c) => {
+    const key = c.product_id ?? c.product_name;
+    const entry = byProduct.get(key);
+    if (entry) entry.new_price = num(c.new_price);
+    else byProduct.set(key, { product_id: c.product_id, product_name: c.product_name, old_price: num(c.old_price), new_price: num(c.new_price) });
+  });
+  return [...byProduct.values()].map((e) => ({ ...e, pct: changePct(e.old_price, e.new_price) }));
+};
+
+export const summarizeChanges = (changes) => {
+  const net = netChangesByProduct(changes).filter((e) => e.new_price !== e.old_price);
+  const pcts = net.map((e) => e.pct).filter((p) => p !== null);
+  return {
+    products: net.length,
+    up: net.filter((e) => e.new_price > e.old_price).length,
+    down: net.filter((e) => e.new_price < e.old_price).length,
+    avgPct: pcts.length ? pcts.reduce((sum, p) => sum + p, 0) / pcts.length : null,
+    net,
+  };
+};
+
+// One sentence for a toast / banner. `rate` is shillings per ICEC-S, when known.
+export const describeChanges = (changes, rate = null) => {
+  const s = summarizeChanges(changes);
+  if (!s.products) return '';
+  const direction = s.up && !s.down ? 'up' : (s.down && !s.up ? 'down' : 'changed');
+  const avg = s.avgPct === null ? '' : ` (${s.avgPct >= 0 ? '+' : ''}${s.avgPct.toFixed(1)}% on average)`;
+  const why = rate > 0 ? ` because 1 ICEC-S is now UGX ${Math.round(rate).toLocaleString()}` : ' with ICEC-S';
+  return `${s.products} shilling price${s.products === 1 ? '' : 's'} went ${direction}${avg}${why}.`;
+};

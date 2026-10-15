@@ -29,6 +29,9 @@ import BookingsPanel from './booking/BookingsPanel';
 import ExpiryClearancePanel from './ExpiryClearancePanel';
 import ProductBatchManager from './ProductBatchManager';
 import BatchOverviewModal from './BatchOverviewModal';
+import StablePricePanel from './StablePricePanel';
+import { refreshStablePricesQuietly, countUnseenChanges } from '../services/stablePricingService';
+import { describeChanges } from '../utils/stablePricing';
 import { groupBatchesByProduct } from '../utils/productBatches';
 import { getExpiryStatus, formatExpiryDate, isOnClearance, clearanceDiscountPercent } from '../utils/productExpiry';
 import {
@@ -258,6 +261,13 @@ const OrderInventoryPOSControl = () => {
   const [stats, setStats] = useState({});
   const [showBulkPricing, setShowBulkPricing] = useState(false);
   const [bulkPriceMultiplier, setBulkPriceMultiplier] = useState(1.1);
+  // Stable-coin (ICEC-S) pricing: the "Stable price" tab, how many shilling-price changes the admin
+  // hasn't acknowledged yet, and which products are priced in ICEC-S (id -> ICEC-S price). Kept off the
+  // product objects on purpose so editing a product can never write these back by accident.
+  const [showStablePricing, setShowStablePricing] = useState(false);
+  const [unseenPriceChanges, setUnseenPriceChanges] = useState(0);
+  const [stableMap, setStableMap] = useState({});
+  const priceChangesAnnounced = useRef(false);
   const [inventoryMap, setInventoryMap] = useState({}); // Map product_id to inventory data
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -651,6 +661,19 @@ const OrderInventoryPOSControl = () => {
         await supabase.rpc('sync_store_batch_expiry', { p_supermarket_id: supermarketId });
       }
 
+      // Products priced in ICEC-S (the stable coin) get today's shilling price before the list is read,
+      // and the admin is told what moved. Throttled and silent for a store that doesn't use it.
+      if (supermarketId) {
+        const repriced = await refreshStablePricesQuietly('product', supermarketId);
+        if (repriced?.changes?.length) {
+          priceChangesAnnounced.current = true;
+          toast.info(`${describeChanges(repriced.changes, repriced.rate)} Open Stable price to review.`, {
+            autoClose: 12000,
+            onClick: () => setShowStablePricing(true),
+          });
+        }
+      }
+
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
       const baseColumns = 'id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, is_active, images';
       const fetchProducts = (columns) => supabase
@@ -735,7 +758,26 @@ const OrderInventoryPOSControl = () => {
       setProducts(productsWithInventory);
       setFilteredProducts(productsWithInventory);
       setCategories(categoriesData || []);
-      
+
+      // Which products are priced in ICEC-S, and how many price changes the admin hasn't seen yet.
+      // A separate read so a database without the stable-pricing columns can't break the list above.
+      const { data: stableRows, error: stableError } = await supabase
+        .from('products')
+        .select('id, stable_price')
+        .eq('supermarket_id', supermarketId)
+        .eq('price_unit', 'ICEC_S');
+      setStableMap(stableError ? {} : Object.fromEntries((stableRows || []).map((r) => [r.id, Number(r.stable_price)])));
+      const unseen = await countUnseenChanges(supermarketId);
+      setUnseenPriceChanges(unseen);
+      if (unseen > 0 && !priceChangesAnnounced.current) {
+        // Changes made while nobody was here (the scheduled repricer) are announced once per visit.
+        priceChangesAnnounced.current = true;
+        toast.info(`${unseen} shilling price change${unseen === 1 ? '' : 's'} from ICEC-S since you last looked. Open Stable price to review.`, {
+          autoClose: 12000,
+          onClick: () => setShowStablePricing(true),
+        });
+      }
+
       console.log(`✅ Loaded ${productsWithInventory.length} products with inventory`);
       
       // Calculate stats with real inventory data
@@ -1008,6 +1050,9 @@ const OrderInventoryPOSControl = () => {
     try {
       const { current_stock, expiry_date, ...productUpdates } = editValues;
       if (expiryReady) productUpdates.expiry_date = expiry_date || null;
+      // A stable-coin product's shilling price belongs to ICEC-S. The value captured when this edit
+      // opened may be stale by now, so never write it back over the current one.
+      if (stableMap[productId] !== undefined) delete productUpdates.selling_price;
       const parsedStock = Number(current_stock);
       if (!Number.isInteger(parsedStock) || parsedStock < 0) {
         toast.error('Quantity must be a whole number of zero or more.');
@@ -1256,13 +1301,18 @@ const OrderInventoryPOSControl = () => {
       return;
     }
 
-    if (filteredProducts.length === 0) {
-      toast.warning('No products to update');
+    // A product priced in ICEC-S has its shilling price set by the stable coin; a cost-multiplier here
+    // would be undone at the next repricing, so those are left out (change them in Stable price).
+    const bulkTargets = filteredProducts.filter(p => stableMap[p.id] === undefined);
+    const onStableCoin = filteredProducts.length - bulkTargets.length;
+
+    if (bulkTargets.length === 0) {
+      toast.warning(onStableCoin > 0 ? 'Every product here is priced on the stable coin — use Stable price to change them' : 'No products to update');
       return;
     }
 
     try {
-      const updates = filteredProducts.map(p => ({
+      const updates = bulkTargets.map(p => ({
         id: p.id,
         selling_price: Math.round((p.cost_price || 0) * bulkPriceMultiplier)
       }));
@@ -1277,7 +1327,7 @@ const OrderInventoryPOSControl = () => {
       // Reload data
       await loadData();
       setShowBulkPricing(false);
-      toast.success(`✅ Updated ${updates.length} products with new pricing`);
+      toast.success(`✅ Updated ${updates.length} products with new pricing${onStableCoin > 0 ? ` (${onStableCoin} on the stable coin left as they are)` : ''}`);
     } catch (error) {
       console.error('❌ Error applying bulk pricing:', error);
       toast.error('Failed to apply bulk pricing');
@@ -1540,13 +1590,36 @@ const OrderInventoryPOSControl = () => {
           </button>
           <button
             onClick={() => {
+              if (!isAdmin) {
+                toast.error('❌ Only Admins can set stable prices');
+                return;
+              }
+              setShowStablePricing(!showStablePricing);
+            }}
+            disabled={!isAdmin}
+            title="Keep prices on the stable coin (ICEC-S) so inflation can't eat them"
+            className={`${toolBtn} ${isAdmin ? (showStablePricing ? 'oi-btn-on' : toolBtnOn) : toolBtnOff}`}
+          >
+            <span aria-hidden="true">🪙</span>
+            <span>Stable price</span>
+            {unseenPriceChanges > 0 && (
+              <span
+                className="ml-0.5 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-4 text-white"
+                aria-label={`${unseenPriceChanges} new price changes`}
+              >
+                {unseenPriceChanges > 99 ? '99+' : unseenPriceChanges}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => {
               loadData().then(() => {
                 toast.success('✅ Inventory synced from Admin Portal!');
               });
             }}
             disabled={refreshing}
             title="Refresh from the live POS data"
-            className={`${toolBtn} ${toolBtnOn} disabled:opacity-60`}
+            className={`${toolBtn} ${toolBtnOn} col-span-2 sm:col-span-1 disabled:opacity-60`}
           >
             <FiRefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             <span>{refreshing ? 'Syncing...' : 'Refresh'}</span>
@@ -1580,13 +1653,18 @@ const OrderInventoryPOSControl = () => {
                   className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg focus:outline-none"
                 />
               </div>
-              <div className="flex items-end gap-2">
+              <div className="flex flex-col justify-end gap-1">
                 <button
                   onClick={applyBulkPricing}
                   className="flex-1 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors font-semibold"
                 >
-                  ✅ Apply to {filteredProducts.length} products
+                  ✅ Apply to {filteredProducts.filter(p => stableMap[p.id] === undefined).length} products
                 </button>
+                {filteredProducts.some(p => stableMap[p.id] !== undefined) && (
+                  <p className="mt-1 text-xs text-gray-600">
+                    {filteredProducts.filter(p => stableMap[p.id] !== undefined).length} on the stable coin are skipped — their price follows ICEC-S.
+                  </p>
+                )}
               </div>
               <div className="flex items-end">
                 <button
@@ -1598,6 +1676,16 @@ const OrderInventoryPOSControl = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Stable price: keep products on the stable coin, and see every shilling change it causes */}
+        {showStablePricing && isAdmin && (
+          <StablePricePanel
+            supermarketId={supermarketId}
+            onChanged={loadData}
+            onUnseenChange={setUnseenPriceChanges}
+            onClose={() => setShowStablePricing(false)}
+          />
         )}
 
         {/* Search and filters */}
@@ -1760,7 +1848,10 @@ const OrderInventoryPOSControl = () => {
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">POS Selling Price</label>
-                      <input type="number" value={editValues.selling_price} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm" />
+                      <input type="number" value={editValues.selling_price} disabled={stableMap[product.id] !== undefined} title={stableMap[product.id] !== undefined ? 'Priced on the stable coin — change it in Stable price' : undefined} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm disabled:opacity-60 disabled:cursor-not-allowed" />
+                      {stableMap[product.id] !== undefined && (
+                        <p className="mt-1 text-[11px] text-gray-600">On the stable coin ({stableMap[product.id]} ICEC-S) — follows ICEC-S. Change it in Stable price.</p>
+                      )}
                       {isOnClearance(product) && (
                         <p className="mt-1 text-[10px] text-amber-700">Reduced from {formatCurrency(product.clearance_original_price)}. Changing it ends the offer.</p>
                       )}
@@ -1831,6 +1922,14 @@ const OrderInventoryPOSControl = () => {
                     <div className="oi-card p-2">
                       <p className="text-xs font-semibold text-gray-600">POS SELLING</p>
                       <p className="text-sm md:text-base font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
+                      {stableMap[product.id] !== undefined && (
+                        <span
+                          className="oi-pill-ok mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                          title="Priced on the stable coin (ICEC-S); the UGX price follows it"
+                        >
+                          {stableMap[product.id]} ICEC-S
+                        </span>
+                      )}
                     </div>
                     {expiryReady && (
                       <div className="oi-card p-2">
