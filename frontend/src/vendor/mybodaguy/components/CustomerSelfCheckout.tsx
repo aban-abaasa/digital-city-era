@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Camera, CameraOff, ScanLine, X, Plus, Minus, Trash2,
   ShoppingCart, CheckCircle, Loader, AlertCircle, Coins,
-  ReceiptText, QrCode, Store, ChevronDown, ExternalLink,
+  ReceiptText, QrCode, Store, ChevronDown, ExternalLink, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../services/supabaseClient';
@@ -166,6 +166,8 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
   const [selectedSupermarketId, setSelectedSupermarketId] = useState('');
   // Simple store list — collapsed by default; products from every store always show
   const [storePanelOpen, setStorePanelOpen] = useState(false);
+  // Scan mode: type a store name to narrow the store list
+  const [storeQuery, setStoreQuery] = useState('');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -742,6 +744,20 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
           {/* Simple store list — tap a store to narrow the products to it, tap again for all stores.
               Scanning needs a store, so the list stays open until one is picked. */}
           {(storePanelOpen || (shopMode === 'scan' && !selectedSupermarketId)) && (
+            <>
+            {shopMode === 'scan' && (
+              <div className="relative mb-2">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={storeQuery}
+                  onChange={e => setStoreQuery(e.target.value)}
+                  placeholder="Search store name…"
+                  aria-label="Search stores by name"
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                />
+              </div>
+            )}
             <ul className="divide-y divide-slate-100 text-sm" aria-label="Stores">
               {shopMode === 'browse' && (
                 <li>
@@ -754,11 +770,14 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                   </button>
                 </li>
               )}
-              {supermarkets.map(sm => (
+              {supermarkets
+                .filter(sm => shopMode !== 'scan' || !storeQuery.trim() ||
+                  `${sm.name} ${sm.location ?? ''}`.toLowerCase().includes(storeQuery.trim().toLowerCase()))
+                .map(sm => (
                 <li key={sm.id}>
                   <button
                     type="button"
-                    onClick={() => { setSelectedSupermarketId(sm.id === selectedSupermarketId && shopMode === 'browse' ? '' : sm.id); setStorePanelOpen(false); }}
+                    onClick={() => { setSelectedSupermarketId(sm.id === selectedSupermarketId && shopMode === 'browse' ? '' : sm.id); setStorePanelOpen(false); setStoreQuery(''); }}
                     className={`flex w-full items-baseline justify-between gap-3 py-2 text-left ${sm.id === selectedSupermarketId ? 'font-bold text-orange-600' : 'text-slate-700'}`}
                   >
                     <span className="min-w-0 truncate">{sm.name}</span>
@@ -767,7 +786,12 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                 </li>
               ))}
               {supermarkets.length === 0 && <li className="py-2 text-xs text-slate-400">No stores yet.</li>}
+              {supermarkets.length > 0 && shopMode === 'scan' && storeQuery.trim() &&
+                !supermarkets.some(sm => `${sm.name} ${sm.location ?? ''}`.toLowerCase().includes(storeQuery.trim().toLowerCase())) && (
+                <li className="py-2 text-xs text-slate-400">No store matches "{storeQuery.trim()}".</li>
+              )}
             </ul>
+            </>
           )}
 
           {selectedSupermarketId && !storePanelOpen && (
