@@ -685,27 +685,32 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
               <ChevronDown size={15} className={`flex-shrink-0 text-slate-400 transition-transform ${storePanelOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            <div className="flex flex-shrink-0 gap-0.5 rounded-full bg-slate-100 p-0.5" role="tablist" aria-label="Shop mode">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={shopMode === 'browse'}
-                aria-label="Browse store"
-                onClick={() => setShopMode('browse')}
-                className={`grid h-8 w-9 place-items-center rounded-full transition-colors ${shopMode === 'browse' ? 'bg-white text-orange-600 shadow' : 'text-slate-500'}`}
-              >
-                <Store size={15} />
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={shopMode === 'scan'}
-                aria-label="Scan barcode"
-                onClick={() => setShopMode('scan')}
-                className={`grid h-8 w-9 place-items-center rounded-full transition-colors ${shopMode === 'scan' ? 'bg-white text-orange-600 shadow' : 'text-slate-500'}`}
-              >
-                <ScanLine size={15} />
-              </button>
+            <div className="flex flex-shrink-0 flex-col items-center gap-0.5">
+              <span className="text-[10px] font-bold uppercase leading-none tracking-wider text-orange-500">Be smart</span>
+              <div className="flex gap-0.5 rounded-full bg-slate-100 p-0.5" role="tablist" aria-label="Shop mode">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={shopMode === 'browse'}
+                  aria-label="Browse store"
+                  onClick={() => setShopMode('browse')}
+                  className={`flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition-colors ${shopMode === 'browse' ? 'bg-white text-orange-600 shadow' : 'text-slate-500'}`}
+                >
+                  <Store size={15} />
+                  Store
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={shopMode === 'scan'}
+                  aria-label="Scan barcode"
+                  onClick={() => setShopMode('scan')}
+                  className={`flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition-colors ${shopMode === 'scan' ? 'bg-white text-orange-600 shadow' : 'text-slate-500'}`}
+                >
+                  <ScanLine size={15} />
+                  Scan
+                </button>
+              </div>
             </div>
 
             {icanBalance && (
