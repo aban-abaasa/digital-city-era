@@ -260,7 +260,9 @@
 .aom-only-sm { font-weight: 400; color: var(--muted); }
 .aom-totals { display: grid; gap: 6px; margin-top: 12px; padding: 12px 14px; background: var(--paper-2); border-radius: 12px; font-size: 14px; color: var(--ink); }
 .aom-totals > div { display: flex; justify-content: space-between; gap: 12px; }
-.aom-totals-grand { padding-top: 6px; border-top: 1px dashed var(--line); font-size: 16px; font-weight: 700; }
+.aom-totals-grand { font-size: 16px; font-weight: 700; }
+.aom-totals-incl { font-size: 13px; color: var(--muted); }
+.aom-totals-note { margin: 4px 0 0; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
 .aom-notes { padding: 12px 14px; background: var(--paper-2); border-radius: 12px; font-size: 14px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (min-width: 720px) {
