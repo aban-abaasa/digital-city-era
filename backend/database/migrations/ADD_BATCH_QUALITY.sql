@@ -10,7 +10,7 @@
 --     estimate (oldest expiry sold first) across all qualities of the product.
 --   * products.expiry_date still follows the batch that will be sold first.
 --
--- Additive and safe to run more than once. Run after
+-- Additive and safe to run more than once (functions are dropped and recreated). Run after
 -- ADD_PRODUCT_BATCH_EXPIRY_TRACKING.sql.
 
 DO $$
@@ -89,6 +89,7 @@ GRANT EXECUTE ON FUNCTION public.product_batch_overview(UUID, UUID) TO authentic
 -- the call stays unambiguous; existing callers that omit p_quality still work.
 -- --------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.add_product_batch(UUID, TEXT, DATE, NUMERIC, BOOLEAN);
+DROP FUNCTION IF EXISTS public.add_product_batch(UUID, TEXT, DATE, NUMERIC, BOOLEAN, TEXT);
 
 CREATE FUNCTION public.add_product_batch(
   p_product_id UUID,
