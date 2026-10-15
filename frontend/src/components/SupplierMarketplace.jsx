@@ -7,6 +7,7 @@ import {
   catalogItemToFormData
 } from '../utils/supplierCatalog';
 import SupplierBatchManager from './SupplierBatchManager';
+import { refreshStablePricesQuietly } from '../services/stablePricingService';
 import {
   catalogItemOffer,
   groupBatchesByItem,
@@ -33,6 +34,9 @@ export function SupplierCatalogTab({ userId }) {
 
   const load = async () => {
     setLoading(true);
+    // Items priced in ICEC-S (the stable coin) get today's shilling price before the list is read.
+    // Throttled, silent, and a no-op for a supplier who doesn't use it.
+    await refreshStablePricesQuietly('catalog', userId);
     const { data } = await supabase
       .from('supplier_catalog_items')
       .select('*')
@@ -146,6 +150,14 @@ export function SupplierCatalogTab({ userId }) {
                 </div>
               </div>
               {item.description && <p className="text-xs text-gray-500 mb-2">{item.description}</p>}
+              {item.price_unit === 'ICEC_S' && Number(item.stable_price) > 0 && (
+                <span
+                  className="mb-1 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                  title="Priced in ICEC-S, the stable coin. The UGX price follows it, so inflation can't eat your margin."
+                >
+                  {Number(item.stable_price)} ICEC-S · inflation-proof
+                </span>
+              )}
               {(item.brand || item.stock_quantity != null || (Array.isArray(item.price_tiers) && item.price_tiers.length > 0)) && (
                 <div className="flex flex-wrap gap-1.5 mb-1">
                   {item.brand && <span className="text-[11px] bg-slate-50 text-slate-600 px-2 py-0.5 rounded-full">{item.brand}</span>}

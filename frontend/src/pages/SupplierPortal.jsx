@@ -29,6 +29,7 @@ import SupplierPaymentsPanel from '../components/SupplierPaymentsPanel';
 import SupplierDeliveries from '../components/SupplierDeliveries';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
 import { SupplierCatalogTab } from '../components/SupplierMarketplace';
+import SupplierPriceAnalyst from '../components/SupplierPriceAnalyst';
 import SupplierNetwork from '../components/SupplierNetwork';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
@@ -2650,6 +2651,7 @@ const SupplierPortal = () => {
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
     { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
+    { id: 'price-analyst', label: 'Price Analyst', icon: FiTrendingUp },
     { id: 'supplier-network', label: 'Global Supplier Network', icon: FiSend },
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign },
   ];
@@ -2751,6 +2753,9 @@ const SupplierPortal = () => {
             {activeTab === 'notifications' && renderNotifications()}
             {activeTab === 'my-catalog' && (
               <SupplierCatalogTab userId={supplierProfile.auth_id || supplierProfile.id} />
+            )}
+            {activeTab === 'price-analyst' && (
+              <SupplierPriceAnalyst userId={supplierProfile.auth_id || supplierProfile.id} />
             )}
             {activeTab === 'supplier-network' && (
               supplierProfile.id ? (

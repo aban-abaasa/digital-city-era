@@ -25,6 +25,8 @@ import { compressImageFile } from '../utils/imageCompression';
 import {
   SUPPLIER_CATALOG_CATEGORIES, SUPPLIER_CATALOG_UNITS, saveSupplierCatalogItem
 } from '../utils/supplierCatalog';
+import { getStableQuote, savePricingMode } from '../services/stablePricingService';
+import { PRICE_UNIT_LOCAL, PRICE_UNIT_STABLE, localToStable, stableToLocal } from '../utils/stablePricing';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
@@ -113,6 +115,17 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const [calculatedMarkup, setCalculatedMarkup] = useState(0);
   const [calculatedProfit, setCalculatedProfit] = useState(0);
 
+  // Stable-coin pricing: the price can be fixed in ICEC-S (worth one US dollar,
+  // floored by Uganda's inflation) instead of shillings, so it keeps its real
+  // value. selling_price stays the cached shilling figure everything else reads;
+  // in ICEC-S mode it is derived from the ICEC-S price at today's value.
+  const wasStablePriced = prefilledData.price_unit === PRICE_UNIT_STABLE && Number(prefilledData.stable_price) > 0;
+  const [priceUnit, setPriceUnit] = useState(wasStablePriced ? PRICE_UNIT_STABLE : PRICE_UNIT_LOCAL);
+  const [stablePrice, setStablePrice] = useState(wasStablePriced ? String(Number(prefilledData.stable_price)) : '');
+  const [stableQuote, setStableQuote] = useState(null); // see getStableQuote; null while loading
+  const stableReady = stableQuote?.status === 'ok';
+  const stableMode = priceUnit === PRICE_UNIT_STABLE;
+
   // Business-type-driven extras: wholesale quantity-tier pricing and
   // boutique-style variants (see ADD_PRODUCT_PRICE_TIERS_AND_VARIANTS.sql).
   const [businessType, setBusinessType] = useState(null);
@@ -125,6 +138,32 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       loadFormData();
     }
   }, [isOpen]);
+
+  // What one ICEC-S is worth today (the form only offers ICEC-S pricing once it's known).
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let live = true;
+    getStableQuote().then((q) => { if (live) setStableQuote(q); }).catch(() => { if (live) setStableQuote({ status: 'error' }); });
+    return () => { live = false; };
+  }, [isOpen]);
+
+  // In ICEC-S mode the shilling selling price follows the ICEC-S price at today's value.
+  useEffect(() => {
+    if (!stableMode || !stableReady) return;
+    const local = stableToLocal(stablePrice, stableQuote.rate);
+    setFormData((prev) => (prev.selling_price === (local ? String(local) : '') ? prev : { ...prev, selling_price: local ? String(local) : '' }));
+  }, [stableMode, stableReady, stablePrice, stableQuote]);
+
+  const choosePriceUnit = (unit) => {
+    if (unit === priceUnit) return;
+    if (unit === PRICE_UNIT_STABLE) {
+      if (!stableReady) return;
+      // Start from what the shilling price is worth in ICEC-S today, so switching doesn't move the price.
+      const start = localToStable(formData.selling_price, stableQuote.rate);
+      setStablePrice((prev) => prev || (start ? String(Number(start.toFixed(4))) : ''));
+    }
+    setPriceUnit(unit);
+  };
 
   const loadFormData = async () => {
     try {
@@ -379,6 +418,10 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     if (sellingPrice < (costPrice || 0)) {
       newErrors.selling_price = 'Selling price should be greater than cost price';
     }
+    if (stableMode) {
+      if (!stableReady) newErrors.stable_price = 'ICEC-S has no live price right now — switch back to shillings or try again shortly';
+      else if (!(Number(stablePrice) > 0)) newErrors.stable_price = 'Enter the price in ICEC-S';
+    }
 
     const stock = parseInt(formData.initial_stock);
     if (isNaN(stock) || stock < 0) {
@@ -416,6 +459,22 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     }
   };
 
+  // Remembers on the saved row that it is priced in ICEC-S (or back in shillings). Skipped
+  // entirely for an item that was never ICEC-S priced and still isn't, so databases without
+  // ADD_STABLECOIN_PRICING.sql are never touched. Never blocks the save that already succeeded.
+  const savePriceUnit = async (kind, id) => {
+    if (!stableMode && !wasStablePriced) return;
+    try {
+      const res = await savePricingMode(kind, id, { priceUnit, stablePrice });
+      if (!res.saved && res.missingMigration) {
+        toast.warn('Saved in shillings. Remembering ICEC-S prices needs ADD_STABLECOIN_PRICING.sql to be run first.', { autoClose: 8000 });
+      }
+    } catch (error) {
+      console.error('Could not save the ICEC-S price:', error);
+      toast.warn(`Saved, but the ICEC-S price was not kept: ${error.message || 'unknown error'}`, { autoClose: 8000 });
+    }
+  };
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -437,6 +496,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           imageFile,
           existingImageUrl: Array.isArray(prefilledData.images) ? prefilledData.images[0] || null : null
         });
+        await savePriceUnit('catalog', id);
         toast.success(isEditMode
           ? `✅ "${formData.name.trim()}" updated`
           : `✅ "${formData.name.trim()}" added to your catalog`);
@@ -527,6 +587,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         toast.success(`✅ Product "${productData.name}" added successfully!`);
       }
 
+      await savePriceUnit('product', productId);
+
       if (imageFile) {
         await uploadProductPhoto(productId);
       }
@@ -593,6 +655,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     setImagePreview(null);
     setPriceTiers([]);
     setVariants([]);
+    setPriceUnit(PRICE_UNIT_LOCAL);
+    setStablePrice('');
   };
 
   if (!isOpen) return null;
@@ -1094,6 +1158,45 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   <FiDollarSign className="mr-2" />
                   Pricing (UGX)
                 </h3>
+
+                {/* Price in shillings, or fix it in ICEC-S (the stable coin) so inflation can't eat it */}
+                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3" data-testid="price-unit-picker">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-sm font-medium text-gray-700">Set my price in</span>
+                    <div className="inline-flex rounded-lg border border-gray-300 bg-white p-0.5" role="group" aria-label="Price currency">
+                      <button
+                        type="button"
+                        onClick={() => choosePriceUnit(PRICE_UNIT_LOCAL)}
+                        aria-pressed={!stableMode}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${!stableMode ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        UGX
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => choosePriceUnit(PRICE_UNIT_STABLE)}
+                        disabled={!stableReady && !stableMode}
+                        aria-pressed={stableMode}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${stableMode ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        ICEC-S (stable coin)
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600">
+                    {stableQuote === null && 'Checking the ICEC-S price…'}
+                    {stableQuote?.status === 'missing' && 'ICEC-S stable pricing is not installed on this system yet, so prices are in UGX.'}
+                    {(stableQuote?.status === 'unavailable' || stableQuote?.status === 'error') && 'ICEC-S has no live price right now, so prices stay in UGX. Try again shortly.'}
+                    {stableReady && (stableMode
+                      ? 'The shilling price below follows ICEC-S automatically, so it keeps its value as the shilling weakens.'
+                      : 'One ICEC-S is worth one US dollar and never less than its start value grown by Uganda’s inflation. Price in it and this item keeps its real value as the shilling weakens.')}
+                    {stableReady && <> Today 1 ICEC-S = <b>UGX {Number(stableQuote.rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>.</>}
+                  </p>
+                  {stableReady && stableQuote.stale && (
+                    <p className="mt-1 text-xs text-amber-700">The live exchange rates are a few hours old, so this price may move slightly when they refresh.</p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Cost Price */}
                   <div>
@@ -1118,20 +1221,43 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   {/* Selling Price */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Selling Price * <span className="text-xs text-gray-500">(Retail, VAT-inclusive)</span>
+                      Selling Price * <span className="text-xs text-gray-500">({stableMode ? 'in ICEC-S, VAT-inclusive' : 'Retail, VAT-inclusive'})</span>
                     </label>
-                    <input
-                      type="number"
-                      name="selling_price"
-                      value={formData.selling_price}
-                      onChange={handleChange}
-                      min="0"
-                      step="0.01"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        errors.selling_price ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                      placeholder="0.00"
-                    />
+                    {stableMode ? (
+                      <>
+                        <input
+                          type="number"
+                          name="stable_price"
+                          value={stablePrice}
+                          onChange={(e) => setStablePrice(e.target.value)}
+                          min="0"
+                          step="0.0001"
+                          className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 ${
+                            errors.stable_price || errors.selling_price ? 'border-red-500' : 'border-emerald-300'
+                          }`}
+                          placeholder="0.0000"
+                        />
+                        {errors.stable_price && <p className="text-red-500 text-xs mt-1">{errors.stable_price}</p>}
+                        {stableReady && (
+                          <p className="text-xs text-emerald-700 mt-1">
+                            = UGX {Number(formData.selling_price || 0).toLocaleString()} today · updates as ICEC-S moves
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <input
+                        type="number"
+                        name="selling_price"
+                        value={formData.selling_price}
+                        onChange={handleChange}
+                        min="0"
+                        step="0.01"
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                          errors.selling_price ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        placeholder="0.00"
+                      />
+                    )}
                     {errors.selling_price && <p className="text-red-500 text-xs mt-1">{errors.selling_price}</p>}
                     <p className="text-xs text-green-700 mt-1">
                       Includes {formData.tax_rate || 0}% VAT: UGX {includedTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
