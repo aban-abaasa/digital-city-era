@@ -153,8 +153,8 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
     return () => { cancelled = true; };
   }, [paymentPurpose, user?.id]);
 
-  // Browse-a-store mode — real inventory picker as an alternative to scanning
-  const [shopMode, setShopMode] = useState<ShopMode>('scan');
+  // Products load right away (browse); scanning is one tap away
+  const [shopMode, setShopMode] = useState<ShopMode>('browse');
   const [supermarkets, setSupermarkets] = useState<SupermarketRow[]>([]);
   const [selectedSupermarketId, setSelectedSupermarketId] = useState('');
   // Simple store list — collapsed by default; products from every store always show
