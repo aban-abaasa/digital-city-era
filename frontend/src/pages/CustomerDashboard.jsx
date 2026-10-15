@@ -46,6 +46,7 @@ import {
   FiSearch,
   FiRepeat,
 } from 'react-icons/fi';
+import { Store as StoreIcon, ScanLine } from 'lucide-react';
 import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { referralService } from '../services/referralService';
 import { useAuth } from '../contexts/AuthContext';
@@ -250,6 +251,7 @@ const CustomerDashboard = () => {
 
   // Mobile 3-dot nav
   const [mobileMenuOpen, setMobileMenu] = useState(false);
+  const [shopMode, setShopMode] = useState('browse');
 
   // ICAN wallet for rewards tab
   const [icanBalance, setIcanBalance] = useState(null);
@@ -786,6 +788,17 @@ const CustomerDashboard = () => {
                 {activeTabMeta.label}
               </h2>
             </div>
+            {activeTab === 'shop' && (
+              <div className="flex flex-shrink-0 gap-0.5 rounded-full bg-slate-100 p-0.5 dark:bg-slate-800" role="tablist" aria-label="Shop mode">
+                {[['browse', 'Store', StoreIcon, 'Browse store'], ['scan', 'Scan', ScanLine, 'Scan barcode']].map(([mode, label, Icon, aria]) => (
+                  <button key={mode} type="button" role="tab" aria-selected={shopMode === mode} aria-label={aria}
+                    onClick={() => setShopMode(mode)}
+                    className={`flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition-colors ${shopMode === mode ? 'bg-white text-orange-600 shadow dark:bg-slate-700' : 'text-slate-500 dark:text-slate-300'}`}>
+                    <Icon size={15} /> {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button type="button" onClick={() => setMobileMenu(true)}
               aria-label="Open menu" aria-expanded={mobileMenuOpen}
               className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-[#c4a052]/40 bg-[#faf8f3] px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition-transform active:scale-95 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
@@ -1073,7 +1086,7 @@ const CustomerDashboard = () => {
             )}
 
             {/* Shop — self-checkout POS */}
-            {activeTab === 'shop' && <CustomerSelfCheckout user={user} />}
+            {activeTab === 'shop' && <CustomerSelfCheckout user={user} shopMode={shopMode} onShopModeChange={setShopMode} />}
 
             {/* Book — appointment-style service bookings, reusing the
                 existing chat/call system for follow-up with the store */}
