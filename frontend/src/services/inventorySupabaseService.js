@@ -759,6 +759,9 @@ class InventorySupabaseService {
       }
 
       console.log(`✅ Stock adjusted for ${items.length} items`);
+
+      // Sales that picked a specific batch also take the units off that batch.
+      await this.recordBatchSale(items);
       return true;
 
     } catch (error) {
@@ -972,6 +975,34 @@ class InventorySupabaseService {
    * @param {Object} movementData - Movement details
    * @returns {Promise<Object>} Created movement record
    */
+  // Per-batch expiry, quality, price and units left (ADD_BATCH_SELLING_PRICE.sql).
+  // Resolves to [] when batch tracking isn't installed so selling carries on as before.
+  async getBatchOverview(supermarketId = null) {
+    try {
+      const id = supermarketId || await this.getCurrentSupermarketId();
+      if (!id) return [];
+      const { data, error } = await supabase.rpc('product_batch_overview', { p_supermarket_id: id });
+      return error ? [] : (data || []);
+    } catch {
+      return [];
+    }
+  }
+
+  // Takes sold units off the batches a sale named. Best effort, like the stock
+  // update: a failure here never undoes a sale that is already paid for.
+  async recordBatchSale(items) {
+    const batchItems = (items || [])
+      .filter(item => item.batch_id && Number(item.quantity) > 0)
+      .map(item => ({ batch_id: item.batch_id, quantity: Number(item.quantity) }));
+    if (batchItems.length === 0) return;
+    try {
+      const { error } = await supabase.rpc('record_batch_sale', { p_items: batchItems });
+      if (error) console.warn('Batch stock update failed:', error.message);
+    } catch (err) {
+      console.warn('Batch stock update failed:', err.message);
+    }
+  }
+
   async logInventoryMovement(movementData) {
     try {
       const { data, error } = await supabase

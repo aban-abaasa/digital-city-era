@@ -27,3 +27,13 @@ export const expiredUnits = (rows, now = new Date()) =>
 
 export const isMissingBatchSetup = (error) =>
   error?.code === 'PGRST202' || error?.code === '42883' || error?.code === '42P01' || error?.code === 'PGRST205';
+
+// Batches a cashier can sell right now: on sale, not expired, units left.
+export const sellableBatches = (rows, now = new Date()) =>
+  (rows || []).filter((row) =>
+    row.status === 'active'
+    && Number(row.remaining) > 0
+    && getExpiryStatus(row.expiry_date, now).days >= 0);
+
+// Short name that tells two batches of one product apart.
+export const batchLabel = (batch) => (batch?.quality || '').trim() || `Batch ${batch?.batch_number}`;

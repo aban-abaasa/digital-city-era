@@ -28,6 +28,7 @@ import AddProductModal from './AddProductModal';
 import BookingsPanel from './booking/BookingsPanel';
 import ExpiryClearancePanel from './ExpiryClearancePanel';
 import ProductBatchManager from './ProductBatchManager';
+import BatchOverviewModal from './BatchOverviewModal';
 import { groupBatchesByProduct } from '../utils/productBatches';
 import { getExpiryStatus, formatExpiryDate, isOnClearance, clearanceDiscountPercent } from '../utils/productExpiry';
 import {
@@ -100,7 +101,13 @@ const OI_STYLES = `
 .oi-thead { background: linear-gradient(90deg, var(--oi-ink), var(--oi-ink-2)); color: #e9dfc0; border-bottom: 2px solid var(--oi-gold); }
 
 /* Figures strip */
-.oi-figs { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 12px; color: #6b7280; }
+.oi-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; font-size: 12px; color: #6b7280; }
+.oi-figs .oi-fig-wide { grid-column: 1 / -1; }
+.oi-figs .oi-fig { flex-wrap: wrap; row-gap: 0; padding: 8px 10px; border: 1px solid var(--oi-line); border-radius: 6px; background: rgba(184, 145, 47, .06); }
+@media (min-width: 640px) {
+  .oi-figs { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+  .oi-figs .oi-fig { padding: 0; border: 0; background: none; }
+}
 .oi-fig { display: inline-flex; align-items: baseline; gap: 6px; animation: oi-pop .5s both; }
 .oi-fig:nth-child(2) { animation-delay: .06s; } .oi-fig:nth-child(3) { animation-delay: .12s; }
 .oi-fig:nth-child(4) { animation-delay: .18s; } .oi-fig:nth-child(5) { animation-delay: .24s; }
@@ -244,6 +251,7 @@ const OrderInventoryPOSControl = () => {
   // Empty until that migration is run; the page works the same without it.
   const [batchRows, setBatchRows] = useState([]);
   const [batchProductId, setBatchProductId] = useState(null);
+  const [showBatchOverview, setShowBatchOverview] = useState(false);
   const [categories, setCategories] = useState([]);
   const [businessType, setBusinessType] = useState('supermarket');
   const offersWholesale = ['wholesale', 'factory', 'hardware'].includes(businessType);
@@ -1435,7 +1443,7 @@ const OrderInventoryPOSControl = () => {
       <div className="oi-panel p-2.5 sm:p-3 space-y-2.5">
         <div className="oi-figs">
           <span className="oi-fig" style={{ '--dot': '#1f3260' }}>Products <b><CountUp value={stats.total} /></b> <span className="text-gray-400">(<CountUp value={stats.active} /> active)</span></span>
-          <span className="oi-fig" style={{ '--dot': '#1f6f4a' }}>Stock value <b><CountUp value={stats.totalValue} format={(n) => formatCurrency(Math.round(n))} /></b></span>
+          <span className="oi-fig oi-fig-wide" style={{ '--dot': '#1f6f4a' }}>Stock value <b><CountUp value={stats.totalValue} format={(n) => formatCurrency(Math.round(n))} /></b></span>
           <span className="oi-fig" style={{ '--dot': '#b8912f' }}>Avg margin <b><CountUp value={stats.avgMargin} decimals={1} />%</b></span>
           <span className="oi-fig" style={{ '--dot': stats.lowStock > 0 ? '#b45f06' : '#9ca3af' }}>Low stock <b style={stats.lowStock > 0 ? { color: '#b45f06' } : undefined}><CountUp value={stats.lowStock} /></b></span>
           <span className="oi-fig" style={{ '--dot': stats.inactive > 0 ? '#7a1f2b' : '#9ca3af' }}>Inactive <b style={stats.inactive > 0 ? { color: '#7a1f2b' } : undefined}><CountUp value={stats.inactive} /></b></span>
@@ -1447,7 +1455,7 @@ const OrderInventoryPOSControl = () => {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <button
             onClick={() => {
               if (!isAdmin) {
@@ -1495,6 +1503,16 @@ const OrderInventoryPOSControl = () => {
             )}
             <span>{uploadingProducts ? 'Importing...' : 'Import'}</span>
           </button>
+          {expiryReady && (
+            <button
+              onClick={() => setShowBatchOverview(true)}
+              title="Batches, qualities & expiry dates"
+              className={`${toolBtn} ${toolBtnOn}`}
+            >
+              <span aria-hidden="true">📦</span>
+              <span>Batches{batchRows.length > 0 ? ` (${batchRows.length})` : ''}</span>
+            </button>
+          )}
           <select
             value=""
             onChange={(e) => { if (e.target.value) exportInventory(e.target.value); e.target.value = ''; }}
@@ -1537,7 +1555,7 @@ const OrderInventoryPOSControl = () => {
             onClick={deleteAllProducts}
             disabled={!isAdmin || refreshing || products.length === 0}
             title="Permanently delete all products for this supermarket"
-            className={`${toolBtn} sm:ml-auto ${isAdmin ? 'oi-btn-danger disabled:opacity-50' : toolBtnOff}`}
+            className={`${toolBtn} col-span-2 sm:col-span-1 sm:ml-auto ${isAdmin ? 'oi-btn-danger disabled:opacity-50' : toolBtnOff}`}
           >
             <FiTrash2 className="h-4 w-4" />
             <span>Delete all</span>
@@ -1583,22 +1601,22 @@ const OrderInventoryPOSControl = () => {
         )}
 
         {/* Search and filters */}
-        <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
-          <div className="relative flex-1">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
+          <div className="relative col-span-2 flex-1">
             <FiSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search products..."
-              className="w-full pl-8 pr-3 py-1.5 sm:py-2 text-sm oi-input rounded"
+              className="w-full pl-8 pr-3 py-2 text-sm oi-input rounded"
             />
           </div>
 
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
+            className="col-span-2 w-full sm:w-auto px-2 sm:px-3 py-2 text-sm oi-input rounded"
           >
             <option value="all">All Categories</option>
             {categories && categories.length > 0 ? (
@@ -1615,7 +1633,7 @@ const OrderInventoryPOSControl = () => {
               value={filterExpiry}
               onChange={(e) => setFilterExpiry(e.target.value)}
               aria-label="Filter by expiry"
-              className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
+              className="w-full sm:w-auto min-w-0 px-2 sm:px-3 py-2 text-sm oi-input rounded"
             >
               <option value="all">Any expiry</option>
               <option value="expired">Expired</option>
@@ -1628,7 +1646,7 @@ const OrderInventoryPOSControl = () => {
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value)}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 text-sm oi-input rounded"
+            className="w-full sm:w-auto min-w-0 px-2 sm:px-3 py-2 text-sm oi-input rounded"
           >
             <option value="name">Sort by Name</option>
             {expiryReady && <option value="expiry">Sort by Expiry</option>}
@@ -1638,7 +1656,7 @@ const OrderInventoryPOSControl = () => {
           </select>
         </div>
 
-        <p className="text-xs text-gray-500">
+        <p className="border-t border-gray-200/60 pt-2 text-xs text-gray-500">
           Showing <span className="font-semibold text-gray-800">{filteredProducts.length}</span> of <span className="font-semibold text-gray-800">{products.length}</span> products
         </p>
       </div>
@@ -1652,6 +1670,15 @@ const OrderInventoryPOSControl = () => {
         batchesByProduct={groupBatchesByProduct(batchRows)}
         onOpenBatches={(product) => setBatchProductId(product.id)}
       />
+
+      {showBatchOverview && (
+        <BatchOverviewModal
+          products={products}
+          batchesByProduct={groupBatchesByProduct(batchRows)}
+          onOpenProduct={(product) => setBatchProductId(product.id)}
+          onClose={() => setShowBatchOverview(false)}
+        />
+      )}
 
       {batchProductId && (() => {
         const batchProduct = products.find(p => p.id === batchProductId);
