@@ -170,3 +170,53 @@ test('empty catalog does not divide by zero', () => {
   assert.equal(s.stableShare, 0);
   assert.equal(s.avgMarginNow, null);
 });
+
+import { changePct, isOnOffer, summarizeChanges, describeChanges } from '../src/utils/stablePricing.js';
+
+test('changePct handles first-time prices and falls', () => {
+  assert.equal(changePct(1850, 1943).toFixed(2), '5.03');
+  assert.ok(changePct(3700, 3515) < 0);
+  assert.equal(changePct(0, 100), null, 'no old price: nothing to compare against');
+});
+
+test('a product on an expiry offer is recognised, including a missing column', () => {
+  assert.equal(isOnOffer({ clearance_original_price: 3700 }), true);
+  assert.equal(isOnOffer({ clearance_original_price: null }), false);
+  assert.equal(isOnOffer({}), false, 'database without the clearance migration');
+  assert.equal(isOnOffer(undefined), false);
+});
+
+test('summary and sentence for the admin', () => {
+  const rows = [
+    { product_id: 'a', product_name: 'Sugar', old_price: 1850, new_price: 1943 },
+    { product_id: 'b', product_name: 'Oil', old_price: 3700, new_price: 3885 },
+    { product_id: 'a', product_name: 'Sugar', old_price: 1943, new_price: 1950 }, // same product moved twice
+    { product_id: 'c', product_name: 'New', old_price: 0, new_price: 500 }, // had no price: not a change
+  ];
+  const s = summarizeChanges(rows);
+  assert.equal(s.products, 2);
+  assert.equal(s.up, 2);
+  assert.equal(s.down, 0);
+  // Sugar moved twice: it reads once, 1850 -> 1950 (+5.4%); oil 3700 -> 3885 (+5.0%).
+  assert.deepEqual(s.net.map((e) => [e.product_name, e.old_price, e.new_price]), [['Sugar', 1850, 1950], ['Oil', 3700, 3885]]);
+  assert.ok(Math.abs(s.avgPct - 5.2) < 0.05);
+  assert.equal(describeChanges(rows, 3885), '2 shilling prices went up (+5.2% on average) because 1 ICEC-S is now UGX 3,885.');
+  assert.equal(describeChanges([{ product_name: 'x', old_price: 100, new_price: 90 }]), '1 shilling price went down (-10.0% on average) with ICEC-S.');
+  assert.equal(describeChanges([]), '');
+  assert.equal(describeChanges([{ old_price: 0, new_price: 5 }]), '', 'a first-time price is not announced');
+});
+
+test('net change uses changed_at, not array order, and ignores moves that cancel out', () => {
+  const newestFirst = [
+    { product_id: 'a', product_name: 'Sugar', old_price: 1900, new_price: 1850, changed_at: '2026-10-15T12:00:00Z' },
+    { product_id: 'a', product_name: 'Sugar', old_price: 1850, new_price: 1900, changed_at: '2026-10-15T10:00:00Z' },
+  ];
+  const s = summarizeChanges(newestFirst);
+  assert.equal(s.products, 0, 'went up then back down: no net change to announce');
+  assert.equal(describeChanges(newestFirst), '');
+  const oneWay = summarizeChanges([
+    { product_id: 'a', product_name: 'Sugar', old_price: 1900, new_price: 1990, changed_at: '2026-10-15T12:00:00Z' },
+    { product_id: 'a', product_name: 'Sugar', old_price: 1850, new_price: 1900, changed_at: '2026-10-15T10:00:00Z' },
+  ]);
+  assert.deepEqual(oneWay.net.map((e) => [e.old_price, e.new_price]), [[1850, 1990]]);
+});

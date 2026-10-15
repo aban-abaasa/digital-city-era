@@ -16,6 +16,14 @@ unchanged and is not used for pricing.
   ICEC-S price whenever ICEC-S moves (0.5% dead band; a supplier's bulk tiers move by the same factor).
 - Shelf prices follow the coin's **full dollar value** (`dollar_ugx`), not the pool's share, and nothing is repriced
   while ICEC-S's live rates are stale.
+- Admins get a **🪙 Stable price** tab in *Order Inventory – POS* (next to *Bulk price*): put chosen products, or every
+  shilling-priced product, on the stable coin **at their current price** (nothing changes on the shelf today), or take
+  them back to shillings. Whenever ICEC-S moves a shilling price the admin is told: a notice at the top of the tab
+  (old price → new price, % and why) that stays until they press *Got it*, a red count on the button, and a toast when
+  they open the screen. Changes made by the scheduled repricer while nobody was logged in are in the same list.
+- A product priced in ICEC-S has its shilling price set by ICEC-S, so *Bulk price* skips it and the inline price edit is
+  locked (with a pointer to *Stable price*). A product on an expiry offer is left alone, because writing its price
+  would end the offer; it is repriced once the offer ends.
 - Suppliers get a **Price Analyst** tab: per-item margin now vs. in 1/3/6/12 months, the inflation figure it used and
   where it came from (the higher of Uganda's official rate and how much dearer a US dollar became in shillings,
   measured from ICEC-S's hourly history), and a one-click "Price in ICEC-S" that keeps today's price so buyers see no change.
@@ -25,7 +33,12 @@ unchanged and is not used for pricing.
    Without it the form hides nothing and breaks nothing: the ICEC-S option is just disabled and says why.
 2. Run `backend/database/migrations/ADD_STABLECOIN_PRICING.sql` (safe to run twice). Until it is run, an ICEC-S choice
    is not remembered and the form says so.
-3. **Recommended:** schedule the server-side repricer so shelf prices follow ICEC-S even when nobody has the admin
+3. Run `backend/database/migrations/ADD_STABLE_PRICE_CHANGE_LOG.sql` **after** it (safe to run twice). It adds the
+   price-change log the admin is notified from, and replaces the scheduled repricer with a version that logs each change
+   and skips products on an expiry offer. **If you already scheduled the repricer from step 2's version, run this too:**
+   the earlier version would have ended any expiry offer on an ICEC-S priced product. Without this file the Stable price
+   tab still works, but there is no change history.
+4. **Recommended:** schedule the server-side repricer so shelf prices follow ICEC-S even when nobody has the admin
    portal open (the app only reprices a store/supplier's own items when they open their inventory/catalog, at most
    every 10 minutes):
 
@@ -35,6 +48,7 @@ unchanged and is not used for pricing.
 ## Known limits
 - Customers still settle at checkout in shillings (or IcanEra) at the converted price; this adds ICEC-S *pricing*,
   not a new ICEC-S payment method.
+- Only a store's own admin (or owner) can read or write its price-change log.
 - A store product's quantity-tier prices (`product_price_tiers`) are not scaled by the repricer; supplier catalog
   bulk tiers are.
 - The Price Analyst's projection is arithmetic on the stated inflation figure, not a forecast.
