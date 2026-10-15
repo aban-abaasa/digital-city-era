@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { FiMessageCircle, FiX, FiSend, FiThumbsUp, FiUsers, FiHeadphones, FiGlobe, FiPhone, FiVideo, FiRadio, FiMaximize2, FiMinimize2, FiImage, FiLoader } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
@@ -409,6 +409,9 @@ const ChatWidget = () => {
 
   const activeMessages = channel === 'team' ? teamMessages : supportMessages;
   const selectedThread = communityThreads.find((t) => t.id === selectedThreadId) || null;
+  // fetchPublicThreads returns newest-first, but the feed pins to the bottom
+  // like every chat — so list oldest-first and the latest lands in view.
+  const communityFeed = useMemo(() => [...communityThreads].reverse(), [communityThreads]);
 
   // Smart auto-scroll: always jump to the latest message on open/channel/
   // thread switches (deliberate navigation), but once you've scrolled up to
@@ -815,7 +818,7 @@ const ChatWidget = () => {
                   No public questions yet — ask something below.
                 </p>
               ) : (
-                communityThreads.map((t) => (
+                communityFeed.map((t) => (
                   <button
                     key={t.id}
                     onClick={() => setSelectedThreadId(t.id)}
