@@ -25,7 +25,8 @@ const STATUS_LABEL = { active: 'On sale', depleted: 'Sold out', expired: 'Pulled
 
 const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) => {
   const [dates, setDates] = useState({}); // batchId -> edited expiry date
-  const emptyDraft = { batch_number: '', quality: '', quantity: '', expiry_date: '', add_to_stock: true };
+  const [prices, setPrices] = useState({}); // batchId -> edited selling price (string)
+  const emptyDraft = { batch_number: '', quality: '', quantity: '', expiry_date: '', selling_price: '', add_to_stock: true };
   const [draft, setDraft] = useState(emptyDraft);
   const [qualityFilter, setQualityFilter] = useState('all');
   const [busy, setBusy] = useState(null);
@@ -45,16 +46,26 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
       : (error?.message || fallback));
   };
 
-  const saveDate = async (batch) => {
-    if (!isAdmin) { toast.error('❌ Only Admins can change a batch expiry date'); return; }
-    const value = dates[batch.id];
-    if (!value) return;
+  const currentPrice = (batch) => (batch.selling_price == null ? '' : String(Number(batch.selling_price)));
+
+  const saveChanges = async (batch) => {
+    if (!isAdmin) { toast.error('❌ Only Admins can change a batch'); return; }
+    const update = {};
+    const date = dates[batch.id];
+    if (date && date !== String(batch.expiry_date).slice(0, 10)) update.expiry_date = date;
+    if (prices[batch.id] !== undefined && prices[batch.id] !== currentPrice(batch)) {
+      const raw = String(prices[batch.id]).trim();
+      if (raw !== '' && !(Number(raw) >= 0)) { toast.error('Enter a valid price'); return; }
+      update.selling_price = raw === '' ? null : Number(raw);
+    }
+    if (Object.keys(update).length === 0) return;
     setBusy(batch.id);
-    const { error } = await supabase.from('product_inventory_batches').update({ expiry_date: value }).eq('id', batch.id);
+    const { error } = await supabase.from('product_inventory_batches').update(update).eq('id', batch.id);
     setBusy(null);
-    if (error) { fail(error, 'Could not change the expiry date'); return; }
-    toast.success(`Batch ${batch.batch_number} now expires ${formatExpiryDate(value)}`);
+    if (error) { fail(error, 'Could not save the batch'); return; }
+    toast.success(`Batch ${batch.batch_number} updated`);
     setDates((prev) => { const next = { ...prev }; delete next[batch.id]; return next; });
+    setPrices((prev) => { const next = { ...prev }; delete next[batch.id]; return next; });
     onChanged(product.id);
   };
 
@@ -74,6 +85,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
     if (!draft.batch_number.trim()) { toast.error('Enter a batch number'); return; }
     if (draft.quantity === '' || Number(draft.quantity) < 0) { toast.error('Enter the quantity received'); return; }
     if (!draft.expiry_date) { toast.error('Pick an expiry date'); return; }
+    if (draft.selling_price !== '' && !(Number(draft.selling_price) >= 0)) { toast.error('Enter a valid price'); return; }
     setBusy('new');
     const quality = draft.quality.trim();
     const { error } = await supabase.rpc('add_product_batch', {
@@ -85,6 +97,9 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
       // Only sent when used, so batches without a quality work before the
       // ADD_BATCH_QUALITY.sql migration has been run.
       ...(quality ? { p_quality: quality } : {}),
+      // Only sent when set, so batches without their own price work before
+      // ADD_BATCH_SELLING_PRICE.sql has been run.
+      ...(draft.selling_price !== '' ? { p_selling_price: Number(draft.selling_price) } : {}),
     });
     setBusy(null);
     if (error) {
@@ -104,7 +119,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
           <div className="min-w-0">
             <h3 className="text-lg font-bold leading-tight text-gray-800 truncate">Batches · {product.name}</h3>
             <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
-              Track each delivery by batch, and set a separate expiry date for each quality of the product. The batch sold first sets the product's expiry, which flags it and lets you publish a reduced price.
+              Track each delivery by batch, and set a separate expiry date and price for each quality of the product. The batch sold first sets the product's expiry, which flags it and lets you publish a reduced price.
             </p>
           </div>
           <button type="button" onClick={onClose} className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">×</button>
@@ -133,6 +148,8 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
               {visibleBatches.map((batch) => {
                 const status = getExpiryStatus(batch.expiry_date);
                 const edited = dates[batch.id];
+                const dirty = (edited && edited !== String(batch.expiry_date).slice(0, 10))
+                  || (prices[batch.id] !== undefined && prices[batch.id] !== currentPrice(batch));
                 const onSale = batch.status === 'active';
                 const saving = busy === batch.id;
                 return (
@@ -150,13 +167,22 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                       </div>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <label className="text-[11px] text-gray-500">Expiry date
                         <input
                           type="date"
                           value={edited ?? String(batch.expiry_date).slice(0, 10)}
                           disabled={!isAdmin}
                           onChange={(e) => setDates((prev) => ({ ...prev, [batch.id]: e.target.value }))}
+                          className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 disabled:bg-gray-100"
+                        />
+                      </label>
+                      <label className="text-[11px] text-gray-500">Price (UGX)
+                        <input
+                          type="number" min="0" step="any" inputMode="decimal" placeholder="Product price"
+                          value={prices[batch.id] ?? currentPrice(batch)}
+                          disabled={!isAdmin}
+                          onChange={(e) => setPrices((prev) => ({ ...prev, [batch.id]: e.target.value }))}
                           className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 disabled:bg-gray-100"
                         />
                       </label>
@@ -175,10 +201,10 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                           : `Expires ${formatExpiryDate(batch.expiry_date)}`}
                       </span>
                       <span className="flex items-center gap-2">
-                        {edited && edited !== String(batch.expiry_date).slice(0, 10) && (
-                          <button type="button" onClick={() => saveDate(batch)} disabled={saving}
+                        {dirty && (
+                          <button type="button" onClick={() => saveChanges(batch)} disabled={saving}
                             className="px-3.5 py-2 rounded border font-semibold oi-btn oi-btn-primary disabled:opacity-50">
-                            {saving ? 'Saving…' : 'Save date'}
+                            {saving ? 'Saving…' : 'Save changes'}
                           </button>
                         )}
                         {isAdmin && (onSale
@@ -227,6 +253,11 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                     className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
                 </label>
               </div>
+              <label className="block text-[11px] font-medium text-gray-500">Selling price (optional)
+                <input type="number" min="0" step="any" inputMode="decimal" placeholder="Leave empty to use the product price" value={draft.selling_price}
+                  onChange={(e) => setDraft((d) => ({ ...d, selling_price: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
+              </label>
               {!exactStock && (
                 <label className="flex items-center gap-3 py-1 text-sm text-gray-600">
                   <input type="checkbox" checked={draft.add_to_stock} className="h-5 w-5 shrink-0"

@@ -27,6 +27,8 @@ import ClassicNotificationList from '../components/ClassicNotificationList';
 import TillSuppliesSection from '../components/TillSuppliesSection';
 import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
+import BatchPickerModal from '../components/BatchPickerModal';
+import { groupBatchesByProduct, sellableBatches, batchLabel } from '../utils/productBatches';
 import transactionService from '../services/transactionService';
 import cashierOrdersService from '../services/cashierOrdersService';
 import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount, generateTransactionId } from '../services/posOfflineQueue';
@@ -105,6 +107,8 @@ const CashierPortal = () => {
   // 👗 Boutique variant picker - shown before adding a product with
   // size/color variants to the cart
   const [variantPickerProduct, setVariantPickerProduct] = useState(null);
+  // Batch (quality) picker - shown when a product has more than one sellable batch
+  const [batchPickerProduct, setBatchPickerProduct] = useState(null);
   
   // 🧾 RECEIPT & TRANSACTION HISTORY
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -529,6 +533,10 @@ const CashierPortal = () => {
         });
       }
 
+      // Sellable batches (qualities) per product, each with its own price and
+      // expiry. Empty when batch tracking isn't installed.
+      const batchesByProduct = groupBatchesByProduct(await inventoryService.getBatchOverview(supermarketId));
+
       // Transform products with stock data (show ALL products, inventory is optional)
       const productsWithInventory = ((productsResult.data || []).map(p => ({
         id: p.id,
@@ -542,6 +550,7 @@ const CashierPortal = () => {
         inventoryMode: p.inventory_mode || 'stock_controlled',
         priceTiers: tiersByProduct[p.id] || [],
         variants: variantsByProduct[p.id] || [],
+        batches: sellableBatches(batchesByProduct[p.id]),
         category: 'General',
         categoryName: 'General'
       }))).sort((a, b) => a.name.localeCompare(b.name));
@@ -1493,7 +1502,7 @@ const CashierPortal = () => {
   // item.price at add-time and is never wholesale-tiered — leave it as is.
   const getTieredUnitPrice = (item, quantity) => {
     const basePrice = item.selling_price || item.price || 0;
-    if (item.variant_id) return item.price;
+    if (item.variant_id || item.batch_id) return item.price;
     if (!item.priceTiers?.length) return basePrice;
     const applicable = item.priceTiers
       .filter(t => quantity >= t.min_quantity)
@@ -1505,17 +1514,23 @@ const CashierPortal = () => {
   // `variant` (boutique size/color) is optional — when present, this cart
   // line is keyed by product+variant so different variants of the same
   // product stack as separate lines instead of merging into one.
-  const addItemToTransaction = (product, variant = null) => {
+  const addItemToTransaction = (product, variant = null, batch = null) => {
     // Services and listing-only items deliberately carry no POS inventory
     // row (see inventorySupabaseService.js) — their availability is
     // controlled by is_active, not stock, so skip the stock check for them.
     const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
-    const cartLineId = variant ? `${product.id}::${variant.id}` : product.id;
+    const cartLineId = variant ? `${product.id}::${variant.id}` : batch ? `${product.id}::b::${batch.id}` : product.id;
 
     if (variant) {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
       if ((variant.stock_quantity || 0) <= currentQuantity) {
         toast.error(`⚠️ Insufficient stock for ${product.name} (${variant.variant_value}). Available: ${variant.stock_quantity || 0}`);
+        return;
+      }
+    } else if (batch) {
+      const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
+      if (Number(batch.remaining) <= currentQuantity) {
+        toast.error(`⚠️ Insufficient stock for ${product.name} (${batchLabel(batch)}). Available: ${Number(batch.remaining)}`);
         return;
       }
     } else if (!isUnlimitedItem) {
@@ -1542,16 +1557,26 @@ const CashierPortal = () => {
         );
       } else {
         // Use selling_price for Supabase products, price for sample products
-        const basePrice = getTieredUnitPrice(product, 1);
+        // A batch with its own price sells at that price; otherwise the product's.
+        const batchPrice = batch && Number(batch.selling_price) > 0 ? Number(batch.selling_price) : null;
+        const basePrice = batchPrice ?? getTieredUnitPrice(product, 1);
         const price = variant ? basePrice + (parseFloat(variant.price_adjustment) || 0) : basePrice;
         newItems = [...prev.items, {
           ...product,
+          batches: undefined, // the picker's list doesn't belong on the cart line / receipt
           quantity: 1,
           price,
           cartLineId,
           variant_id: variant?.id || null,
           variant_label: variant ? `${variant.variant_name}: ${variant.variant_value}` : null,
-          name: variant ? `${product.name} (${variant.variant_value})` : product.name
+          ...(batch ? {
+            batch_id: batch.id,
+            batch_label: batchLabel(batch),
+            batch_expiry: batch.expiry_date,
+            // totals read selling_price first, so it has to carry the batch price
+            selling_price: price
+          } : {}),
+          name: variant ? `${product.name} (${variant.variant_value})` : batch ? `${product.name} (${batchLabel(batch)})` : product.name
         }];
       }
 
@@ -1578,7 +1603,24 @@ const CashierPortal = () => {
     // Clear cash received when cart changes
     setCashReceived('');
 
-    toast.success(`✅ Added ${product.name}${variant ? ` (${variant.variant_value})` : ''} to cart`);
+    toast.success(`✅ Added ${product.name}${variant ? ` (${variant.variant_value})` : batch ? ` (${batchLabel(batch)})` : ''} to cart`);
+  };
+
+  // Variants and batches are chosen before adding. A product with several
+  // sellable batches opens the batch picker (each has its own price); a single
+  // batch with its own price is used straight away.
+  const chooseProductToAdd = (product) => {
+    if (product.variants?.length) {
+      setVariantPickerProduct(product);
+      return;
+    }
+    const batches = product.batches || [];
+    if (batches.length > 1) {
+      setBatchPickerProduct(product);
+      return;
+    }
+    const only = batches[0];
+    addItemToTransaction(product, null, only && Number(only.selling_price) > 0 ? only : null);
   };
 
   // Adds the scanned product to the cart. Returns true when the barcode matched a
@@ -1591,7 +1633,7 @@ const CashierPortal = () => {
       return false;
     }
 
-    addItemToTransaction(product);
+    chooseProductToAdd(product);
     return true;
   };
 
@@ -1751,7 +1793,8 @@ const CashierPortal = () => {
         .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
         .map(item => ({
           product_id: item.id,
-          quantity: item.quantity
+          quantity: item.quantity,
+          batch_id: item.batch_id || null
         }));
 
       const transactionPayload = {
@@ -2081,11 +2124,7 @@ const CashierPortal = () => {
                       key={product.id}
                       onClick={() => {
                         if (isOutOfStock) return;
-                        if (product.variants?.length) {
-                          setVariantPickerProduct(product);
-                        } else {
-                          addItemToTransaction(product);
-                        }
+                        chooseProductToAdd(product);
                       }}
                       className={`border rounded-lg p-2 md:p-4 hover:shadow-md transition-all duration-300 text-center ${
                         isOutOfStock 
@@ -3531,6 +3570,20 @@ const CashierPortal = () => {
         </div>
       )}
 
+      {/* 📦 Batch Picker - qualities of one product, each with its own price */}
+      {batchPickerProduct && (
+        <BatchPickerModal
+          product={batchPickerProduct}
+          batches={batchPickerProduct.batches || []}
+          formatPrice={formatUGX}
+          onPick={(batch) => {
+            addItemToTransaction(batchPickerProduct, null, batch);
+            setBatchPickerProduct(null);
+          }}
+          onClose={() => setBatchPickerProduct(null)}
+        />
+      )}
+
       {/* 🧾 Receipt Modal - Show after successful payment */}
       {showReceiptModal && receiptData && (
         <Receipt
@@ -3637,7 +3690,8 @@ const CashierPortal = () => {
                 // Update stock
                 const itemsForStockUpdate = currentTransaction.items.map(item => ({
                   product_id: item.id,
-                  quantity: item.quantity
+                  quantity: item.quantity,
+                  batch_id: item.batch_id || null
                 }));
                 
                 await inventoryService.adjustStockAfterSale(itemsForStockUpdate, `SALE_${Date.now()}`);
