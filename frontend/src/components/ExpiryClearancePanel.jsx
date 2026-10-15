@@ -231,7 +231,7 @@ const ExpiryClearancePanel = ({ products, isAdmin, ready, formatCurrency, onChan
                               return (
                                 <p className="text-[11px] text-gray-500 truncate">
                                   {next
-                                    ? <>Batch <b>{next.batch_number}</b> · {Number(next.remaining)} unit{Number(next.remaining) === 1 ? '' : 's'} expire {formatExpiryDate(next.expiry_date)}</>
+                                    ? <>Batch <b>{next.batch_number}</b>{next.quality ? ` (${next.quality})` : ''} · {Number(next.remaining)} unit{Number(next.remaining) === 1 ? '' : 's'} expire {formatExpiryDate(next.expiry_date)}</>
                                     : productBatches.length ? 'No sellable batch' : 'No batches tracked'}
                                   {stale > 0 && <span className="text-[#7a1f2b] font-semibold"> · {stale} expired unit{stale === 1 ? '' : 's'} to pull</span>}
                                   {onOpenBatches && (

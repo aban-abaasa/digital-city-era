@@ -1935,14 +1935,14 @@ const OrderInventoryPOSControl = () => {
                   </span>
                 </div>
 
-                <div className="flex gap-2 sm:w-36 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <div className="flex gap-2 sm:w-44 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ isAdmin ? 'oi-btn oi-btn-ghost border' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
                     <FiEdit className="h-3 w-3 inline mr-1" />
                     Edit
                   </button>
                   {expiryReady && (
-                    <button onClick={() => setBatchProductId(product.id)} title="Batches & expiry dates" className="flex-none px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold oi-btn oi-btn-ghost border">
-                      📦
+                    <button onClick={() => setBatchProductId(product.id)} title="Batches, qualities & expiry dates" className="flex-1 sm:flex-none px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold oi-btn oi-btn-ghost border whitespace-nowrap">
+                      📦 Batches
                     </button>
                   )}
                   <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 sm:flex-none sm:w-full px-2 py-2 sm:py-1.5 rounded text-xs sm:text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
