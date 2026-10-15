@@ -199,23 +199,10 @@ interface Supermarket {
   business_type: string;
 }
 
-// Store type filter — supermarkets, hotels, boutiques, and restaurants/cafés
-// all live in the same `supermarkets` table (business_type column). The
-// delivery_mode value stays 'supermarket' regardless of the target's actual
-// business_type (see mbg_request_ride / mbg_rides CHECK constraint) — it
-// just means "structured store delivery scoped to a supermarket_id".
-type BusinessTypeFilter = 'all' | 'supermarket' | 'pharmacy' | 'hotel' | 'boutique' | 'restaurant_cafe';
-
-const BUSINESS_TYPE_FILTERS: { value: BusinessTypeFilter; label: string; emoji: string }[] = [
-  { value: 'all', label: 'All', emoji: '🏬' },
-  { value: 'supermarket', label: 'Supermarkets', emoji: '🏪' },
-  { value: 'pharmacy', label: 'Pharmacies', emoji: '💊' },
-  { value: 'hotel', label: 'Hotels', emoji: '🏨' },
-  { value: 'boutique', label: 'Boutiques', emoji: '👗' },
-  { value: 'restaurant_cafe', label: 'Restaurants', emoji: '🍽️' },
-];
-
-const typeEmoji = (t: string) => BUSINESS_TYPE_FILTERS.find(f => f.value === t)?.emoji || '🏪';
+// Stores of every business type (supermarkets, hotels, boutiques, restaurants/cafés)
+// live in the same `supermarkets` table. The delivery_mode value stays 'supermarket'
+// regardless of the target's actual business_type (see mbg_request_ride / mbg_rides
+// CHECK constraint) — it just means "structured store delivery scoped to a supermarket_id".
 
 interface EnhancedRideRequestProps {
   customerId: string;
@@ -252,11 +239,18 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
 
   // Service options — real vehicle/weather filters matched against riders' actual registered attributes
   const [serviceType, setServiceType] = useState<ServiceType>(fixedServiceType || 'ride');
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('normal');
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('supermarket');
   const [supermarkets, setSupermarkets] = useState<Supermarket[]>([]);
   const [selectedSupermarketId, setSelectedSupermarketId] = useState('');
-  const [storeTypeFilter, setStoreTypeFilter] = useState<BusinessTypeFilter>('all');
+  const [storeListOpen, setStoreListOpen] = useState(false);
   const [deliveryCart, setDeliveryCart] = useState<CartLine[]>([]);
+  // Bumped on reset so the product picker remounts with an empty cart
+  const [pickerKey, setPickerKey] = useState(0);
+  // Products from every store are always shown. A delivery picks up from ONE
+  // store: the one the cart items come from, else the one chosen in the list.
+  const cartStoreIds = Array.from(new Set(deliveryCart.map(l => l.product.supermarket_id)));
+  const cartSpansStores = cartStoreIds.length > 1;
+  const activeStoreId = cartStoreIds.length === 0 ? selectedSupermarketId : cartStoreIds.length === 1 ? cartStoreIds[0] : '';
   const [powerFilter, setPowerFilter] = useState<PowerFilter>('any');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<VehicleTypeFilter>('any');
   // What a van / truck is carrying: part of the price, and only vehicles that can carry it are offered.
@@ -288,11 +282,11 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
     });
   }, [customerId]);
 
-  // Clear any selected products once the customer leaves the supermarket
-  // delivery flow or switches stores, so a stale cart never gets submitted.
+  // Clear any selected products once the customer leaves the store delivery
+  // flow, so a stale cart never gets submitted.
   useEffect(() => {
-    if (deliveryMode !== 'supermarket' || !selectedSupermarketId) setDeliveryCart([]);
-  }, [serviceType, deliveryMode, selectedSupermarketId]);
+    if (serviceType !== 'delivery' || deliveryMode !== 'supermarket') setDeliveryCart([]);
+  }, [serviceType, deliveryMode]);
 
   // Power-type/rain-cover filters are hidden outside the Boda filter — reset
   // them too, so switching to Car/Van/Truck can't leave a stale boda-only
@@ -381,20 +375,6 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
       });
   }, []);
 
-  // Store list filtered by the chosen business type — reset the current
-  // selection if it no longer belongs to the active filter.
-  const filteredStores = storeTypeFilter === 'all'
-    ? supermarkets
-    : supermarkets.filter(sm => sm.business_type === storeTypeFilter);
-
-  useEffect(() => {
-    if (!selectedSupermarketId) return;
-    if (!filteredStores.some(sm => sm.id === selectedSupermarketId)) {
-      setSelectedSupermarketId('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeTypeFilter]);
-
   useEffect(() => {
     if (!customerId) return;
     supabase
@@ -429,11 +409,11 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
   // coordinates is chosen, fill pickup automatically instead of making the
   // customer search for a place they already picked from a dropdown.
   useEffect(() => {
-    if (serviceType !== 'delivery' || deliveryMode !== 'supermarket' || !selectedSupermarketId) {
+    if (serviceType !== 'delivery' || deliveryMode !== 'supermarket' || !activeStoreId) {
       setPickupIsAutoFromSupermarket(false);
       return;
     }
-    const sm = supermarkets.find(s => s.id === selectedSupermarketId);
+    const sm = supermarkets.find(s => s.id === activeStoreId);
     if (sm && sm.latitude != null && sm.longitude != null) {
       const loc: Location = {
         id: `supermarket_${sm.id}`,
@@ -448,7 +428,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
     } else {
       setPickupIsAutoFromSupermarket(false);
     }
-  }, [serviceType, deliveryMode, selectedSupermarketId, supermarkets]);
+  }, [serviceType, deliveryMode, activeStoreId, supermarkets]);
 
   // Smart default drop-off: pre-fill (but keep editable) from the
   // customer's saved default area when starting a fresh request.
@@ -637,8 +617,12 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
       toast.error('Please select both pickup and drop-off locations from suggestions');
       return;
     }
-    if (serviceType === 'delivery' && deliveryMode === 'supermarket' && !selectedSupermarketId) {
-      toast.error('Please choose a supermarket for this delivery');
+    if (serviceType === 'delivery' && deliveryMode === 'supermarket' && cartSpansStores) {
+      toast.error('A delivery picks up from one store — remove items from the other stores');
+      return;
+    }
+    if (serviceType === 'delivery' && deliveryMode === 'supermarket' && !activeStoreId) {
+      toast.error('Add an item from a store (or pick a store) for this delivery');
       return;
     }
 
@@ -741,7 +725,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
       const requestArgs = {
         p_service_type: serviceType,
         p_delivery_mode: serviceType === 'delivery' ? deliveryMode : null,
-        p_supermarket_id: serviceType === 'delivery' && deliveryMode === 'supermarket' ? selectedSupermarketId : null,
+        p_supermarket_id: serviceType === 'delivery' && deliveryMode === 'supermarket' ? activeStoreId : null,
         p_rider_id: rider.rider_id,
         p_pickup_location: selectedPickup!.fullAddress,
         p_pickup_lat: selectedPickup!.coordinates.lat,
@@ -772,7 +756,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
           : await supabase.rpc('mbg_request_ride', {
             p_service_type: serviceType,
             p_delivery_mode: serviceType === 'delivery' ? deliveryMode : null,
-            p_supermarket_id: serviceType === 'delivery' && deliveryMode === 'supermarket' ? selectedSupermarketId : null,
+            p_supermarket_id: serviceType === 'delivery' && deliveryMode === 'supermarket' ? activeStoreId : null,
             p_rider_id: rider.rider_id,
             p_pickup_location: selectedPickup!.fullAddress,
             p_pickup_lat: selectedPickup!.coordinates.lat,
@@ -870,6 +854,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
     setPickupSuggestions([]);
     setDropoffSuggestions([]);
     setSelectedSupermarketId('');
+    setPickerKey(k => k + 1);
     setPickupIsAutoFromSupermarket(false);
     setRouteInfo(null);
   };
@@ -900,6 +885,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
     setPickupSuggestions([]);
     setDropoffSuggestions([]);
     setSelectedSupermarketId('');
+    setPickerKey(k => k + 1);
     setPickupIsAutoFromSupermarket(false);
     setRouteInfo(null);
   };
@@ -1056,37 +1042,60 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
             </div>
             {deliveryMode === 'supermarket' && (
               <>
-                <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                  {BUSINESS_TYPE_FILTERS.map(f => (
-                    <button
-                      key={f.value}
-                      onClick={() => setStoreTypeFilter(f.value)}
-                      className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                        storeTypeFilter === f.value ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-200'
-                      }`}
-                    >
-                      <span>{f.emoji}</span> {f.label}
-                    </button>
-                  ))}
-                </div>
-
-                <select
-                  value={selectedSupermarketId}
-                  onChange={(e) => setSelectedSupermarketId(e.target.value)}
-                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                {/* Products from every store load automatically; the store list just narrows them. */}
+                <button
+                  type="button"
+                  onClick={() => setStoreListOpen(o => !o)}
+                  aria-expanded={storeListOpen}
+                  className="flex w-full items-center justify-between gap-2 py-1 text-left text-sm font-semibold text-slate-700 dark:text-slate-200"
                 >
-                  <option value="">Select a store…</option>
-                  {filteredStores.map(sm => (
-                    <option key={sm.id} value={sm.id}>{typeEmoji(sm.business_type)} {sm.name} — {sm.location}</option>
-                  ))}
-                </select>
-                {filteredStores.length === 0 && (
-                  <p className="text-xs text-slate-400">No stores of this type yet.</p>
+                  <span className="min-w-0 truncate">
+                    🏬 {supermarkets.find(sm => sm.id === selectedSupermarketId)?.name || 'All stores'}
+                  </span>
+                  <span className="text-xs font-normal text-slate-400">{storeListOpen ? 'Hide stores' : 'Stores'}</span>
+                </button>
+
+                {storeListOpen && (
+                  <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-700" aria-label="Stores">
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedSupermarketId(''); setStoreListOpen(false); }}
+                        className={`w-full py-2 text-left ${!selectedSupermarketId ? 'font-bold text-blue-600' : 'text-slate-700 dark:text-slate-200'}`}
+                      >
+                        All stores
+                      </button>
+                    </li>
+                    {supermarkets.map(sm => (
+                      <li key={sm.id}>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedSupermarketId(sm.id === selectedSupermarketId ? '' : sm.id); setStoreListOpen(false); }}
+                          className={`flex w-full items-baseline justify-between gap-3 py-2 text-left ${sm.id === selectedSupermarketId ? 'font-bold text-blue-600' : 'text-slate-700 dark:text-slate-200'}`}
+                        >
+                          <span className="min-w-0 truncate">{sm.name}</span>
+                          {sm.location && <span className="flex-shrink-0 text-xs font-normal text-slate-400">{sm.location}</span>}
+                        </button>
+                      </li>
+                    ))}
+                    {supermarkets.length === 0 && <li className="py-2 text-xs text-slate-400">No stores yet.</li>}
+                  </ul>
                 )}
 
-                {selectedSupermarketId && (
-                  <ProductPicker supermarketId={selectedSupermarketId} onCartChange={setDeliveryCart} />
+                {cartSpansStores && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    A delivery picks up from one store. Remove items so they all come from the same store.
+                  </p>
                 )}
+
+                <ProductPicker
+                  key={pickerKey}
+                  allStores
+                  supermarketId={selectedSupermarketId || null}
+                  stores={supermarkets}
+                  onCartChange={setDeliveryCart}
+                  fullPage
+                />
               </>
             )}
           </div>
@@ -1288,7 +1297,7 @@ export default function EnhancedRideRequest({ customerId, fixedServiceType, show
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 w-2 h-2 bg-green-500 rounded-full" />
               )}
             </div>
-            {serviceType === 'delivery' && deliveryMode === 'supermarket' && selectedSupermarketId && !pickupIsAutoFromSupermarket && (
+            {serviceType === 'delivery' && deliveryMode === 'supermarket' && activeStoreId && !pickupIsAutoFromSupermarket && (
               <p className="text-xs text-amber-600 mt-1">
                 This supermarket hasn't set its exact location yet — please confirm the pickup point manually.
               </p>
