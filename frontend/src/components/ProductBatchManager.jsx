@@ -85,30 +85,30 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={`Batches for ${product.name}`}>
-      <div className="w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl shadow-xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-6" role="dialog" aria-modal="true" aria-label={`Batches for ${product.name}`}>
+      <div className="w-full sm:max-w-2xl max-h-[92vh] max-h-[92dvh] overflow-y-auto overscroll-contain bg-white rounded-t-2xl sm:rounded-2xl shadow-xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-100 bg-white px-5 pt-5 pb-4">
           <div className="min-w-0">
-            <h3 className="font-bold text-gray-800 truncate">Batches · {product.name}</h3>
-            <p className="text-xs text-gray-500">
+            <h3 className="text-lg font-bold leading-tight text-gray-800 truncate">Batches · {product.name}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
               Track each delivery by batch. The batch sold first sets the product's expiry, which flags it and lets you publish a reduced price.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-1" aria-label="Close">×</button>
+          <button type="button" onClick={onClose} className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">×</button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="space-y-5 px-5 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-6">
           {batches.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-4">No batches recorded yet — add the first one below.</p>
+            <p className="text-center text-sm text-gray-400 py-8">No batches recorded yet — add the first one below.</p>
           ) : (
-            <ul className="space-y-3">
+            <ul className="space-y-4">
               {batches.map((batch) => {
                 const status = getExpiryStatus(batch.expiry_date);
                 const edited = dates[batch.id];
                 const onSale = batch.status === 'active';
                 const saving = busy === batch.id;
                 return (
-                  <li key={batch.id} className={`rounded-xl border p-3 ${!onSale ? 'border-gray-200 bg-gray-50' : status.key === 'expired' ? 'border-red-200 bg-red-50/40' : 'border-gray-100'}`}>
+                  <li key={batch.id} className={`rounded-xl border p-4 ${!onSale ? 'border-gray-200 bg-gray-50' : status.key === 'expired' ? 'border-red-200 bg-red-50/40' : 'border-gray-100'}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-semibold text-sm text-gray-800">Batch {batch.batch_number}</p>
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -117,14 +117,14 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                       </div>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                       <label className="text-[11px] text-gray-500">Expiry date
                         <input
                           type="date"
                           value={edited ?? String(batch.expiry_date).slice(0, 10)}
                           disabled={!isAdmin}
                           onChange={(e) => setDates((prev) => ({ ...prev, [batch.id]: e.target.value }))}
-                          className="mt-0.5 w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-800 disabled:bg-gray-100"
+                          className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 disabled:bg-gray-100"
                         />
                       </label>
                       <div className="text-[11px] text-gray-500">{batch.exact ? 'In this batch' : 'Received'}
@@ -135,7 +135,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                       </div>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-gray-100 pt-3 text-xs">
                       <span className="text-gray-500">
                         {onSale && status.key === 'expired' && Number(batch.remaining) > 0
                           ? 'Expired — pull it from the shelf, then take it off sale.'
@@ -144,7 +144,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                       <span className="flex items-center gap-2">
                         {edited && edited !== String(batch.expiry_date).slice(0, 10) && (
                           <button type="button" onClick={() => saveDate(batch)} disabled={saving}
-                            className="px-3 py-1.5 rounded border font-semibold oi-btn oi-btn-primary disabled:opacity-50">
+                            className="px-3.5 py-2 rounded border font-semibold oi-btn oi-btn-primary disabled:opacity-50">
                             {saving ? 'Saving…' : 'Save date'}
                           </button>
                         )}
@@ -160,38 +160,43 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
           )}
 
           {!exactStock && batches.length > 0 && (
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] leading-relaxed text-gray-500">
               "Est. left on shelf" assumes the oldest expiry is sold first, using this product's live stock. Add a batch whenever you restock to keep it accurate.
             </p>
           )}
 
           {isAdmin ? (
-            <form onSubmit={addBatch} className="rounded-xl border border-dashed border-gray-300 p-3 space-y-2">
+            <form onSubmit={addBatch} className="rounded-xl border border-dashed border-gray-300 p-4 space-y-4">
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Add a batch</p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <input placeholder="Batch no. *" value={draft.batch_number}
-                  onChange={(e) => setDraft((d) => ({ ...d, batch_number: e.target.value }))}
-                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
-                <input type="number" min="0" step="1" inputMode="numeric" placeholder="Quantity *" value={draft.quantity}
-                  onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))}
-                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
-                <input type="date" min={todayIso()} value={draft.expiry_date} aria-label="Expiry date"
-                  onChange={(e) => setDraft((d) => ({ ...d, expiry_date: e.target.value }))}
-                  className="col-span-2 sm:col-span-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label className="block text-[11px] font-medium text-gray-500">Batch no. *
+                  <input placeholder="e.g. B-001" value={draft.batch_number}
+                    onChange={(e) => setDraft((d) => ({ ...d, batch_number: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
+                </label>
+                <label className="block text-[11px] font-medium text-gray-500">Quantity *
+                  <input type="number" min="0" step="1" inputMode="numeric" placeholder="Units received" value={draft.quantity}
+                    onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
+                </label>
+                <label className="block text-[11px] font-medium text-gray-500">Expiry date *
+                  <input type="date" min={todayIso()} value={draft.expiry_date}
+                    onChange={(e) => setDraft((d) => ({ ...d, expiry_date: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
+                </label>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {!exactStock ? (
-                  <label className="flex items-center gap-1.5 text-xs text-gray-600">
-                    <input type="checkbox" checked={draft.add_to_stock}
-                      onChange={(e) => setDraft((d) => ({ ...d, add_to_stock: e.target.checked }))} />
-                    Also add these units to stock
-                  </label>
-                ) : <span />}
-                <button type="submit" disabled={busy === 'new'}
-                  className="px-4 py-1.5 rounded border text-sm font-semibold oi-btn oi-btn-primary disabled:opacity-50">
-                  {busy === 'new' ? 'Adding…' : 'Add batch'}
-                </button>
-              </div>
+              {!exactStock && (
+                <label className="flex items-center gap-3 py-1 text-sm text-gray-600">
+                  <input type="checkbox" checked={draft.add_to_stock} className="h-5 w-5 shrink-0"
+                    onChange={(e) => setDraft((d) => ({ ...d, add_to_stock: e.target.checked }))} />
+                  Also add these units to stock
+                </label>
+              )}
+              <button type="submit" disabled={busy === 'new'}
+                className="w-full sm:w-auto sm:float-right px-6 py-2.5 rounded border text-sm font-semibold oi-btn oi-btn-primary disabled:opacity-50">
+                {busy === 'new' ? 'Adding…' : 'Add batch'}
+              </button>
+              <div className="clear-both" />
             </form>
           ) : (
             <p className="text-xs text-gray-500 text-center">Only Admins can add batches or change expiry dates.</p>
