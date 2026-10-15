@@ -31,6 +31,9 @@ export const catalogItemToFormData = (item) => ({
   minimum_stock: String(item.minimum_stock ?? 10),
   images: item.image_url ? [item.image_url] : [],
   price_tiers: Array.isArray(item.price_tiers) ? item.price_tiers : [],
+  // ICEC-S (stable coin) pricing; absent until ADD_STABLECOIN_PRICING.sql has been run.
+  price_unit: item.price_unit || 'LOCAL',
+  stable_price: item.stable_price ?? null,
 });
 
 /**

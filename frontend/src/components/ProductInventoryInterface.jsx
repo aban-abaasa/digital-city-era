@@ -4,6 +4,7 @@ import { FiPackage, FiShoppingCart, FiSettings, FiTrendingUp, FiAlertTriangle, F
 import { supabase } from '../services/supabase';
 import AddProductModal from './AddProductModal';
 import inventoryService from '../services/inventorySupabaseService';
+import { refreshStablePricesQuietly } from '../services/stablePricingService';
 import {
   SUPPORTED_IMPORT_EXTENSIONS,
   parseProductFile,
@@ -60,6 +61,10 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
       }
       productsQuery = productsQuery.eq('supermarket_id', supermarketId);
 
+      // Items priced in ICEC-S (the stable coin) get today's shilling price before the list is read.
+      // Throttled, silent, and a no-op for a store that doesn't use it.
+      await refreshStablePricesQuietly('product', supermarketId);
+
       const { data: productsData, error: productsError } = await productsQuery;
 
       if (productsError) {
@@ -95,6 +100,7 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
           sku: p.sku,
           inventoryMode: p.inventory_mode || (p.is_service ? 'service_item' : 'stock_controlled'),
           price: parseFloat(p.selling_price || p.price || 0),
+          stablePrice: p.price_unit === 'ICEC_S' && Number(p.stable_price) > 0 ? Number(p.stable_price) : null,
           stock: inv.current_stock || 0,
           minStock: inv.minimum_stock || p.low_stock_threshold || 10,
           maxStock: p.maximum_stock || p.max_stock || 100,
@@ -295,6 +301,8 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
         brand: prod.brand || '',
         cost_price: prod.cost_price != null ? String(prod.cost_price) : '',
         selling_price: prod.selling_price != null ? String(prod.selling_price) : '',
+        price_unit: prod.price_unit || 'LOCAL',
+        stable_price: prod.stable_price ?? null,
         tax_rate: prod.tax_rate != null ? String(prod.tax_rate) : '18',
         initial_stock: String(inv?.current_stock ?? 0),
         minimum_stock: String(inv?.minimum_stock ?? 10),
@@ -800,6 +808,14 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
                       <div className="font-bold text-sm md:text-base text-gray-900">{product.stock}</div>
                       <div className="text-xs text-gray-600">
                         {formatCurrency(product.price)}
+                        {product.stablePrice && (
+                          <span
+                            className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                            title={`Priced at ${product.stablePrice} ICEC-S (stable coin); the UGX price follows it`}
+                          >
+                            {product.stablePrice} ICEC-S
+                          </span>
+                        )}
                       </div>
                     </div>
                   </button>
