@@ -102,7 +102,12 @@ function cartTotals(cart: CartItem[]) {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-export default function CustomerSelfCheckout({ user }: { user: any }) {
+export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onShopModeChange }: {
+  user: any;
+  /** Optional: lets a parent (e.g. the phone section bar) own the Store/Scan toggle. */
+  shopMode?: ShopMode;
+  onShopModeChange?: (mode: ShopMode) => void;
+}) {
   const [state, setState] = useState<ScannerState>('idle');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [foundProduct, setFoundProduct] = useState<Product | null>(null);
@@ -154,7 +159,9 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
   }, [paymentPurpose, user?.id]);
 
   // Products load right away (browse); scanning is one tap away
-  const [shopMode, setShopMode] = useState<ShopMode>('browse');
+  const [shopModeLocal, setShopModeLocal] = useState<ShopMode>('browse');
+  const shopMode = shopModeProp ?? shopModeLocal;
+  const setShopMode = (mode: ShopMode) => { setShopModeLocal(mode); onShopModeChange?.(mode); };
   const [supermarkets, setSupermarkets] = useState<SupermarketRow[]>([]);
   const [selectedSupermarketId, setSelectedSupermarketId] = useState('');
   // Simple store list — collapsed by default; products from every store always show
@@ -685,8 +692,8 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
               <ChevronDown size={15} className={`flex-shrink-0 text-slate-400 transition-transform ${storePanelOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            <div className="flex flex-shrink-0 flex-col items-center gap-0.5">
-              <span className="text-[10px] font-bold uppercase leading-none tracking-wider text-orange-500">Be smart</span>
+            {/* Phone: these tabs live in the Shop header row (CustomerDashboard); shown here from sm up. */}
+            <div className="hidden flex-shrink-0 flex-col items-center gap-0.5 sm:flex">
               <div className="flex gap-0.5 rounded-full bg-slate-100 p-0.5" role="tablist" aria-label="Shop mode">
                 <button
                   type="button"
