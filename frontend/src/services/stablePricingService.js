@@ -7,7 +7,9 @@
  *  - getStableQuote     what one ICEC-S is worth in shillings right now, the official inflation figure, and whether the rates are fresh
  *  - getStableHistory   its stored hourly value, for measuring how fast the shilling is losing value
  *  - savePricingMode    remember that an item is priced in ICEC-S (or back in shillings)
- *  - repriceStableItems recompute the shilling price of one store's / one supplier's ICEC-S priced items
+ *  - repriceStableItems recompute the shilling price of one store's / one supplier's ICEC-S priced items, and log what moved
+ *  - listPricing / applyStablePricing / removeStablePricing / getPriceChanges / countUnseenChanges / markPriceChangesSeen
+ *                       what the Stable price screen needs, for a store's products or a supplier's catalog alike
  *
  * Anything that isn't installed yet is reported ({ status: 'missing' }, { missingMigration: true })
  * instead of thrown, so every screen keeps working in plain shillings and can say why.
@@ -20,9 +22,15 @@ import {
 
 export const PRICED_KINDS = {
   // A store's product: the shilling price POS sells at lives in selling_price.
-  product: { table: 'products', localKey: 'selling_price', scopeKey: 'supermarket_id' },
+  product: {
+    table: 'products', localKey: 'selling_price', scopeKey: 'supermarket_id',
+    log: { table: 'stable_price_changes', scopeKey: 'supermarket_id', itemKey: 'product_id', nameKey: 'product_name' },
+  },
   // A supplier's catalog item: what supermarkets see when they order.
-  catalog: { table: 'supplier_catalog_items', localKey: 'price_per_unit', scopeKey: 'supplier_user_id' },
+  catalog: {
+    table: 'supplier_catalog_items', localKey: 'price_per_unit', scopeKey: 'supplier_user_id',
+    log: { table: 'supplier_stable_price_changes', scopeKey: 'supplier_user_id', itemKey: 'catalog_item_id', nameKey: 'item_name' },
+  },
 };
 
 const QUOTE_TTL_MS = 60_000;
@@ -113,21 +121,46 @@ const inChunks = async (items, size, worker) => {
 // Products carry an optional clearance_original_price (an expiry offer is active when it is set).
 // A database without that migration has no such column, so every read tries with it first.
 const PRODUCT_COLUMNS = 'id, name, supermarket_id, price_unit, stable_price, selling_price, cost_price';
-const selectProducts = async (supermarketId, build) => {
-  let res = await build(supabase.from('products').select(`${PRODUCT_COLUMNS}, clearance_original_price`)).eq('supermarket_id', supermarketId);
+// price_tiers comes from a different, optional migration, so it is only asked for when repricing needs it.
+const CATALOG_COLUMNS = 'id, name, unit, category, supplier_user_id, price_unit, stable_price, price_per_unit';
+
+// Reads one scope's items; `build` adds filters/order. A product query is retried without
+// clearance_original_price, and a catalog query without price_tiers, on a database that lacks them.
+const selectItems = async (kind, scopeId, build, { tiers = false } = {}) => {
+  const spec = PRICED_KINDS[kind];
+  if (kind === 'catalog') {
+    let found = await build(supabase.from(spec.table).select(tiers ? `${CATALOG_COLUMNS}, price_tiers` : CATALOG_COLUMNS)).eq(spec.scopeKey, scopeId);
+    if (tiers && found.error && isMissingColumn(found.error)) {
+      found = await build(supabase.from(spec.table).select(CATALOG_COLUMNS)).eq(spec.scopeKey, scopeId);
+    }
+    return found;
+  }
+  let res = await build(supabase.from(spec.table).select(`${PRODUCT_COLUMNS}, clearance_original_price`)).eq(spec.scopeKey, scopeId);
   if (res.error && isMissingColumn(res.error)) {
-    res = await build(supabase.from('products').select(PRODUCT_COLUMNS)).eq('supermarket_id', supermarketId);
+    res = await build(supabase.from(spec.table).select(PRODUCT_COLUMNS)).eq(spec.scopeKey, scopeId);
   }
   return res;
 };
 
-// Best effort: the log is for telling the admin, so failing to write it must never undo a price change.
-const logPriceChanges = async (supermarketId, changes, rate) => {
+// One shape for the screen whichever kind it is showing: `price` is the shilling price.
+const normalizeItem = (kind, row) => ({
+  id: row.id,
+  name: row.name,
+  unit: row.unit || null,
+  price: Number(row[PRICED_KINDS[kind].localKey]) || 0,
+  price_unit: row.price_unit || PRICE_UNIT_LOCAL,
+  stable_price: row.stable_price ?? null,
+  clearance_original_price: row.clearance_original_price ?? null,
+});
+
+// Best effort: the log is for telling the owner, so failing to write it must never undo a price change.
+const logPriceChanges = async (kind, scopeId, changes, rate) => {
   if (!changes.length) return;
-  const { error } = await supabase.from('stable_price_changes').insert(changes.map((c) => ({
-    supermarket_id: supermarketId,
-    product_id: c.product_id,
-    product_name: c.product_name,
+  const { table, scopeKey, itemKey, nameKey } = PRICED_KINDS[kind].log;
+  const { error } = await supabase.from(table).insert(changes.map((c) => ({
+    [scopeKey]: scopeId,
+    [itemKey]: c.product_id,
+    [nameKey]: c.product_name,
     old_price: c.old_price,
     new_price: c.new_price,
     stable_price: c.stable_price,
@@ -148,10 +181,10 @@ const logPriceChanges = async (supermarketId, changes, rate) => {
  * rates are stale — the same rule the server-side repricer follows. A product on
  * an expiry offer is left alone: writing its selling_price would end the offer.
  *
- * For a store, `changes` lists each product whose shilling price moved, in the
- * same row shape as stable_price_changes ([{ product_id, product_name, old_price,
- * new_price, stable_price }]), so it feeds describeChanges() directly; the same
- * moves are written to that table so the admin is told about them.
+ * `changes` lists each item whose shilling price moved, in the shape of a log row
+ * ([{ product_id, product_name, old_price, new_price, stable_price }], whichever kind)
+ * so it feeds describeChanges() directly; the same moves are written to the kind's
+ * change log so the owner is told about them.
  */
 export const repriceStableItems = async (kind, scopeId, { quote } = {}) => {
   const spec = PRICED_KINDS[kind];
@@ -162,26 +195,12 @@ export const repriceStableItems = async (kind, scopeId, { quote } = {}) => {
   if (q.status !== 'ok') return { skipped: q.status, checked: 0, updated: 0, changes: [] };
   if (q.stale) return { skipped: 'stale', checked: 0, updated: 0, rate: q.rate, changes: [] };
 
-  let rows;
-  if (kind === 'catalog') {
-    const { data, error } = await supabase
-      .from(spec.table)
-      .select(`id, price_unit, stable_price, ${spec.localKey}, price_tiers`)
-      .eq(spec.scopeKey, scopeId)
-      .eq('price_unit', PRICE_UNIT_STABLE);
-    if (error) {
-      if (isMissingColumn(error)) return { skipped: 'missing', checked: 0, updated: 0, changes: [] };
-      throw error;
-    }
-    rows = data || [];
-  } else {
-    const { data, error } = await selectProducts(scopeId, (query) => query.eq('price_unit', PRICE_UNIT_STABLE));
-    if (error) {
-      if (isMissingColumn(error)) return { skipped: 'missing', checked: 0, updated: 0, changes: [] };
-      throw error;
-    }
-    rows = data || [];
+  const { data, error } = await selectItems(kind, scopeId, (query) => query.eq('price_unit', PRICE_UNIT_STABLE), { tiers: true });
+  if (error) {
+    if (isMissingColumn(error)) return { skipped: 'missing', checked: 0, updated: 0, changes: [] };
+    throw error;
   }
+  const rows = data || [];
 
   const onOffer = rows.filter(isOnOffer);
   const due = rows.filter((row) => !isOnOffer(row) && needsRepricing(row, q.rate, spec.localKey));
@@ -192,102 +211,123 @@ export const repriceStableItems = async (kind, scopeId, { quote } = {}) => {
     const before = Number(row[spec.localKey]) || 0;
     const patch = { [spec.localKey]: target, stable_priced_at: new Date().toISOString() };
     if (kind === 'catalog') {
-      if (before > 0) patch.price_tiers = scalePriceTiers(row.price_tiers, target / before);
+      if (before > 0 && Array.isArray(row.price_tiers)) patch.price_tiers = scalePriceTiers(row.price_tiers, target / before);
     } else if (Number(row.cost_price) > 0) {
       patch.markup_percentage = Number(((target - row.cost_price) / row.cost_price * 100).toFixed(2));
     }
     const { error: updateError } = await supabase.from(spec.table).update(patch).eq('id', row.id);
     if (updateError) throw updateError;
     updated += 1;
-    // A product that had no price yet is being set, not changed: nothing to tell the admin.
-    if (kind === 'product' && before > 0) changes.push({ product_id: row.id, product_name: row.name, old_price: before, new_price: target, stable_price: Number(row.stable_price) });
+    // An item that had no price yet is being set, not changed: nothing to tell the owner.
+    if (before > 0) changes.push({ product_id: row.id, product_name: row.name, old_price: before, new_price: target, stable_price: Number(row.stable_price) });
   });
 
-  if (kind === 'product') await logPriceChanges(scopeId, changes, q.rate);
+  await logPriceChanges(kind, scopeId, changes, q.rate);
 
   return { checked: rows.length, updated, rate: q.rate, changes, onOffer: onOffer.length };
 };
 
-// ─── A store's stable-price screen ───────────────────────────────────────────
+// ─── The stable-price screen (a store's products, or a supplier's catalog) ───
 
-/** { rows, stableReady }: the store's active products. stableReady is false on a database without the migration. */
-export const listStorePricing = async (supermarketId) => {
-  if (!supermarketId) throw new Error('A store is required');
-  const { data, error } = await selectProducts(supermarketId, (query) => query.eq('is_active', true).order('name'));
-  if (!error) return { rows: data || [], stableReady: true };
+/** { rows, stableReady }: the scope's active items. stableReady is false on a database without the migration. */
+export const listPricing = async (kind, scopeId) => {
+  const spec = PRICED_KINDS[kind];
+  if (!spec) throw new Error(`Unknown kind: ${kind}`);
+  if (!scopeId) throw new Error('A store or supplier is required');
+  const { data, error } = await selectItems(kind, scopeId, (query) => (kind === 'product' ? query.eq('is_active', true) : query).order('name'));
+  if (!error) return { rows: (data || []).map((r) => normalizeItem(kind, r)), stableReady: true };
   if (!isMissingColumn(error)) throw error;
-  // No price_unit / stable_price columns yet: still list the products, just without stable pricing.
-  const fallback = await supabase.from('products').select('id, name, selling_price, cost_price').eq('supermarket_id', supermarketId).eq('is_active', true).order('name');
-  if (fallback.error) throw fallback.error;
-  return { rows: fallback.data || [], stableReady: false };
+  // No price_unit / stable_price columns yet: still list the items, just without stable pricing.
+  const base = kind === 'product' ? 'id, name, selling_price' : 'id, name, unit, price_per_unit';
+  let fallback = supabase.from(spec.table).select(base).eq(spec.scopeKey, scopeId);
+  if (kind === 'product') fallback = fallback.eq('is_active', true);
+  const res = await fallback.order('name');
+  if (res.error) throw res.error;
+  return { rows: (res.data || []).map((r) => normalizeItem(kind, r)), stableReady: false };
 };
 
 /**
- * Puts the given products on the stable coin AT THEIR CURRENT SHILLING PRICE, so
+ * Puts the given items on the stable coin AT THEIR CURRENT SHILLING PRICE, so
  * nothing changes on the shelf today; from now on the shilling price follows ICEC-S.
- * Products with no price, or on an expiry offer (whose price is a temporary discount,
- * not their real price), are skipped and counted.
+ * Items with no price, or on an expiry offer (whose price is a temporary discount,
+ * not their real price), are skipped and counted. `items` are normalised rows (`price`).
  */
-export const applyStablePricing = async (supermarketId, products, { quote } = {}) => {
-  if (!supermarketId) throw new Error('A store is required');
+export const applyStablePricing = async (kind, scopeId, items, { quote } = {}) => {
+  const spec = PRICED_KINDS[kind];
+  if (!spec) throw new Error(`Unknown kind: ${kind}`);
+  if (!scopeId) throw new Error('A store or supplier is required');
   const q = quote || await getStableQuote();
   if (q.status !== 'ok') throw new Error('ICEC-S has no live price right now');
 
   const eligible = [];
   let skippedOffer = 0;
   let skippedNoPrice = 0;
-  (products || []).forEach((p) => {
+  (items || []).forEach((p) => {
     if (isOnOffer(p)) skippedOffer += 1;
-    else if (!(Number(p.selling_price) > 0)) skippedNoPrice += 1;
+    else if (!(Number(p.price) > 0)) skippedNoPrice += 1;
     else eligible.push(p);
   });
 
   let applied = 0;
   await inChunks(eligible, 10, async (p) => {
-    const stablePrice = Number(localToStable(p.selling_price, q.rate).toFixed(4));
-    const { error } = await supabase.from('products')
+    const stablePrice = Number(localToStable(p.price, q.rate).toFixed(4));
+    const { error } = await supabase.from(spec.table)
       .update({ price_unit: PRICE_UNIT_STABLE, stable_price: stablePrice, stable_priced_at: new Date().toISOString() })
-      .eq('id', p.id).eq('supermarket_id', supermarketId);
+      .eq('id', p.id).eq(spec.scopeKey, scopeId);
     if (error) throw error;
     applied += 1;
   });
   return { applied, skippedOffer, skippedNoPrice, rate: q.rate };
 };
 
-/** Takes the given products off the stable coin; each keeps its current shilling price. */
-export const removeStablePricing = async (supermarketId, productIds) => {
-  if (!supermarketId) throw new Error('A store is required');
-  const ids = (productIds || []).filter(Boolean);
-  if (!ids.length) return { removed: 0 };
-  const { error } = await supabase.from('products')
+/** Takes the given items off the stable coin; each keeps its current shilling price. */
+export const removeStablePricing = async (kind, scopeId, ids) => {
+  const spec = PRICED_KINDS[kind];
+  if (!spec) throw new Error(`Unknown kind: ${kind}`);
+  if (!scopeId) throw new Error('A store or supplier is required');
+  const list = (ids || []).filter(Boolean);
+  if (!list.length) return { removed: 0 };
+  const { error } = await supabase.from(spec.table)
     .update({ price_unit: PRICE_UNIT_LOCAL, stable_price: null, stable_priced_at: null })
-    .in('id', ids).eq('supermarket_id', supermarketId);
+    .in('id', list).eq(spec.scopeKey, scopeId);
   if (error) throw error;
-  return { removed: ids.length };
+  return { removed: list.length };
 };
 
-/** The store's shilling-price changes caused by ICEC-S, newest first. { rows, missing } */
-export const getPriceChanges = async (supermarketId, { limit = 60 } = {}) => {
-  if (!supermarketId) return { rows: [], missing: false };
-  const { data, error } = await supabase.from('stable_price_changes')
-    .select('id, product_id, product_name, old_price, new_price, stable_price, rate_ugx, changed_at, seen_at')
-    .eq('supermarket_id', supermarketId).order('changed_at', { ascending: false }).limit(limit);
+/** The scope's shilling-price changes caused by ICEC-S, newest first, as { id, product_id, product_name, ... }. { rows, missing } */
+export const getPriceChanges = async (kind, scopeId, { limit = 60 } = {}) => {
+  const spec = PRICED_KINDS[kind];
+  if (!spec || !scopeId) return { rows: [], missing: false };
+  const { table, scopeKey, itemKey, nameKey } = spec.log;
+  const { data, error } = await supabase.from(table)
+    .select(`id, ${itemKey}, ${nameKey}, old_price, new_price, stable_price, rate_ugx, changed_at, seen_at`)
+    .eq(scopeKey, scopeId).order('changed_at', { ascending: false }).limit(limit);
   if (error) return { rows: [], missing: true };
-  return { rows: data || [], missing: false };
+  return {
+    rows: (data || []).map((r) => ({
+      id: r.id, product_id: r[itemKey], product_name: r[nameKey], old_price: r.old_price, new_price: r.new_price,
+      stable_price: r.stable_price, rate_ugx: r.rate_ugx, changed_at: r.changed_at, seen_at: r.seen_at,
+    })),
+    missing: false,
+  };
 };
 
-/** How many price changes the admin hasn't acknowledged yet (0 when the log isn't installed). */
-export const countUnseenChanges = async (supermarketId) => {
-  if (!supermarketId) return 0;
-  const { count, error } = await supabase.from('stable_price_changes')
-    .select('id', { count: 'exact', head: true }).eq('supermarket_id', supermarketId).is('seen_at', null);
+/** How many price changes the owner hasn't acknowledged yet (0 when the log isn't installed). */
+export const countUnseenChanges = async (kind, scopeId) => {
+  const spec = PRICED_KINDS[kind];
+  if (!spec || !scopeId) return 0;
+  const { table, scopeKey } = spec.log;
+  const { count, error } = await supabase.from(table)
+    .select('id', { count: 'exact', head: true }).eq(scopeKey, scopeId).is('seen_at', null);
   return error ? 0 : (count || 0);
 };
 
-export const markPriceChangesSeen = async (supermarketId) => {
-  if (!supermarketId) return;
-  const { error } = await supabase.from('stable_price_changes')
-    .update({ seen_at: new Date().toISOString() }).eq('supermarket_id', supermarketId).is('seen_at', null);
+export const markPriceChangesSeen = async (kind, scopeId) => {
+  const spec = PRICED_KINDS[kind];
+  if (!spec || !scopeId) return;
+  const { table, scopeKey } = spec.log;
+  const { error } = await supabase.from(table)
+    .update({ seen_at: new Date().toISOString() }).eq(scopeKey, scopeId).is('seen_at', null);
   if (error) throw error;
 };
 
@@ -314,5 +354,5 @@ export const refreshStablePricesQuietly = async (kind, scopeId) => {
 
 export default {
   getStableQuote, getStableHistory, savePricingMode, repriceStableItems, refreshStablePricesQuietly,
-  listStorePricing, applyStablePricing, removeStablePricing, getPriceChanges, countUnseenChanges, markPriceChangesSeen,
+  listPricing, applyStablePricing, removeStablePricing, getPriceChanges, countUnseenChanges, markPriceChangesSeen,
 };

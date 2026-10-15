@@ -25,6 +25,7 @@ import { compressImageFile } from '../utils/imageCompression';
 import {
   SUPPLIER_CATALOG_CATEGORIES, SUPPLIER_CATALOG_UNITS, saveSupplierCatalogItem
 } from '../utils/supplierCatalog';
+import StableCoinStyles from '../styles/StableCoinStyles';
 import { getStableQuote, savePricingMode } from '../services/stablePricingService';
 import { PRICE_UNIT_LOCAL, PRICE_UNIT_STABLE, localToStable, stableToLocal } from '../utils/stablePricing';
 
@@ -1160,15 +1161,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                 </h3>
 
                 {/* Price in shillings, or fix it in ICEC-S (the stable coin) so inflation can't eat it */}
-                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3" data-testid="price-unit-picker">
+                <div className={`sc-scope sc-flat mb-4 p-3 ${isSupplierMode ? 'sc-supplier' : ''}`} data-testid="price-unit-picker">
+                  <StableCoinStyles />
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm font-medium text-gray-700">Set my price in</span>
-                    <div className="inline-flex rounded-lg border border-gray-300 bg-white p-0.5" role="group" aria-label="Price currency">
+                    <span className="sc-text text-sm font-medium">Set my price in</span>
+                    <div className="flex gap-1" role="group" aria-label="Price currency">
                       <button
                         type="button"
                         onClick={() => choosePriceUnit(PRICE_UNIT_LOCAL)}
                         aria-pressed={!stableMode}
-                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${!stableMode ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`sc-btn ${!stableMode ? 'sc-btn-on' : ''}`}
                       >
                         UGX
                       </button>
@@ -1177,23 +1179,23 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                         onClick={() => choosePriceUnit(PRICE_UNIT_STABLE)}
                         disabled={!stableReady && !stableMode}
                         aria-pressed={stableMode}
-                        className={`rounded-md px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${stableMode ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`sc-btn ${stableMode ? 'sc-btn-on' : ''}`}
                       >
                         ICEC-S (stable coin)
                       </button>
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-gray-600">
+                  <p className="sc-muted mt-2 text-xs">
                     {stableQuote === null && 'Checking the ICEC-S price…'}
                     {stableQuote?.status === 'missing' && 'ICEC-S stable pricing is not installed on this system yet, so prices are in UGX.'}
                     {(stableQuote?.status === 'unavailable' || stableQuote?.status === 'error') && 'ICEC-S has no live price right now, so prices stay in UGX. Try again shortly.'}
                     {stableReady && (stableMode
                       ? 'The shilling price below follows ICEC-S automatically, so it keeps its value as the shilling weakens.'
                       : 'One ICEC-S is worth one US dollar and never less than its start value grown by Uganda’s inflation. Price in it and this item keeps its real value as the shilling weakens.')}
-                    {stableReady && <> Today 1 ICEC-S = <b>UGX {Number(stableQuote.rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>.</>}
+                    {stableReady && <> Today 1 ICEC-S = <b className="sc-title">UGX {Number(stableQuote.rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>.</>}
                   </p>
                   {stableReady && stableQuote.stale && (
-                    <p className="mt-1 text-xs text-amber-700">The live exchange rates are a few hours old, so this price may move slightly when they refresh.</p>
+                    <p className="sc-pill sc-pill-warn mt-1">The live exchange rates are a few hours old, so this price may move slightly when they refresh</p>
                   )}
                 </div>
 
@@ -1239,7 +1241,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                         />
                         {errors.stable_price && <p className="text-red-500 text-xs mt-1">{errors.stable_price}</p>}
                         {stableReady && (
-                          <p className="text-xs text-emerald-700 mt-1">
+                          <p className="sc-scope sc-good mt-1 text-xs font-medium">
                             = UGX {Number(formData.selling_price || 0).toLocaleString()} today · updates as ICEC-S moves
                           </p>
                         )}
