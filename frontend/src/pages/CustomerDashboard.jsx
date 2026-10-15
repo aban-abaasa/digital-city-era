@@ -58,6 +58,7 @@ import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import DesktopOverview from '../components/customerDashboard/DesktopOverview';
 import InstallmentsHub from '../components/installments/InstallmentsHub';
+import { countPlansNeedingAttention, getMyInstallmentPlans } from '../services/installmentService';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
 import { productService } from '../services/productService';
@@ -185,12 +186,32 @@ const CustomerDashboard = () => {
   // Overview — falls back to 'overview' for anything not a real tab id.
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const validTabs = ['overview', 'book-ride', 'journey', 'shop', 'delivery', 'payments', 'rewards', 'profile'];
+    const validTabs = ['overview', 'book-ride', 'journey', 'shop', 'delivery', 'installments', 'rewards', 'profile'];
+    // 'payments' was this tab's old id; keep old links working.
+    if (requested === 'payments') return 'installments';
     return validTabs.includes(requested) ? requested : 'overview';
   });
   // Overview main column: Recent Orders / Recommended split into small tabs
   // instead of two stacked cards. Tabs stay visible; content collapses.
   const [overviewSubTab, setOverviewSubTab] = useState('orders');
+  // Plans waiting on the customer (deposit due, overdue, ready to collect…): the red
+  // number on the Installments icon. Re-read whenever the customer leaves that tab,
+  // so paying a plan clears it; the tab itself shows the live list.
+  const [installmentAlerts, setInstallmentAlerts] = useState(0);
+  useEffect(() => {
+    if (!user?.id || activeTab === 'installments') return undefined;
+    let live = true;
+    getMyInstallmentPlans()
+      .then(plans => {
+        if (live) setInstallmentAlerts(countPlansNeedingAttention(plans));
+      })
+      .catch(() => {
+        /* no badge if plans can't be read; the tab explains why */
+      });
+    return () => {
+      live = false;
+    };
+  }, [user?.id, activeTab]);
   const [overviewContentOpen, setOverviewContentOpen] = useState(false);
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [showRewardsModal, setShowRewardsModal] = useState(false);
@@ -494,7 +515,7 @@ const CustomerDashboard = () => {
     { id: 'shop', label: 'Shop', emoji: '🛒', icon: FiShoppingBag },
     { id: 'book-service', label: 'Book', emoji: '📅', icon: FiCalendar },
     { id: 'delivery', label: 'Delivery', emoji: '📦', icon: FiPackage },
-    { id: 'payments', label: 'Payments', emoji: '💳', icon: FiRepeat },
+    { id: 'installments', label: 'Installments', emoji: '💳', icon: FiRepeat },
     { id: 'rewards', label: 'Rewards', emoji: '🎁', icon: FiGift },
     { id: 'profile', label: 'Profile', emoji: '👤', icon: FiUser },
   ];
@@ -792,6 +813,10 @@ const CustomerDashboard = () => {
           { ...ALL_TABS.find(t => t.id === 'overview'), label: 'Home' },
           ALL_TABS.find(t => t.id === 'shop'),
           { ...ALL_TABS.find(t => t.id === 'book-ride'), label: 'Ride' },
+          {
+            ...ALL_TABS.find(t => t.id === 'installments'),
+            badge: installmentAlerts,
+          },
           { id: 'ican-wallet', label: 'Wallet', icon: FiCreditCard },
         ]}
         activeTab={activeTab}
@@ -1040,8 +1065,8 @@ const CustomerDashboard = () => {
               </div>
             )}
 
-            {/* Payments — instalment plans: pay for products over time, then collect or have them delivered */}
-            {activeTab === 'payments' && user?.id && (
+            {/* Installments — pay for products over time, then collect or have them delivered */}
+            {activeTab === 'installments' && user?.id && (
               <div className="mx-auto w-full max-w-3xl">
                 <InstallmentsHub customerName={customer?.full_name || null} customerPhone={customer?.phone || null} />
               </div>

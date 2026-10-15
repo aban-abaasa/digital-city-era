@@ -18,9 +18,9 @@ import {
 } from '../../services/installmentService';
 const fmtDate = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 /**
- * "Pay in instalments" for a basket from one seller. Pick a deposit, how many
+ * "Pay in installments" for a basket from one seller. Pick a deposit, how many
  * payments after it and how often; the items are reserved while the customer
- * pays, and once the last instalment is in they collect the order or have it
+ * pays, and once the last installment is in they collect the order or have it
  * delivered. The IcanEra account the customer is already signed in with keeps
  * their balance, receipts and pickup code.
  */
@@ -115,12 +115,12 @@ export default function InstallmentOfferCard({ businessProfileId, cart, customer
     return (
       <div className="flex items-center gap-2 text-xs text-slate-400">
         <Loader size={14} className="animate-spin" />
-        Checking instalment options…
+        Checking installment options…
       </div>
     );
   }
   if (!quote.eligible) {
-    return <p className="text-xs text-slate-400">Pay in instalments on orders from {money(terms.min_order_amount)}.</p>;
+    return <p className="text-xs text-slate-400">Pay in installments on orders from {money(terms.min_order_amount)}.</p>;
   }
   const start = async payWith => {
     if (problem) {
@@ -160,7 +160,7 @@ export default function InstallmentOfferCard({ businessProfileId, cart, customer
       <button type="button" onClick={() => setOpen(v => !v)} className="flex w-full items-center justify-between gap-2 text-left">
         <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
           <CalendarClock size={16} className="text-orange-500" />
-          Pay in instalments
+          Pay in installments
         </span>
         <ChevronDown size={16} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -178,7 +178,7 @@ export default function InstallmentOfferCard({ businessProfileId, cart, customer
             Your items are reserved for you while you pay.{' '}
             {abroad
               ? 'Once the last payment is in, you give the seller your shipping address and they send it to you.'
-              : 'Once the last instalment is in, you choose to collect them or have them delivered.'}
+              : 'Once the last installment is in, you choose to collect them or have them delivered.'}
           </p>
 
           <div>

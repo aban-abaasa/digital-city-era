@@ -5,7 +5,7 @@ import InstallmentPlanView from './InstallmentPlanView';
 import InstallmentShop from './InstallmentShop';
 const ORDER = { awaiting_deposit: 0, active: 1, ready: 2, pickup_ready: 3, dispatched: 4, shipping_pending: 4, shipped: 4, disputed: 3, completed: 5, cancelled: 6, lapsed: 6 };
 /**
- * "My payments": every instalment plan the customer is paying off (with any
+ * "My installments": every installment plan the customer is paying off (with any
  * business, on any IcanEra site), the businesses they have an account with,
  * and a shop to start a new plan.
  */
@@ -48,7 +48,7 @@ export default function InstallmentsHub({ customerName, customerPhone }) {
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
         {[
           ['plans', 'My plans', <CalendarClock key="i" size={15} />],
-          ['shop', 'Pay in instalments', <ShoppingBag key="i" size={15} />],
+          ['shop', 'Pay in installments', <ShoppingBag key="i" size={15} />],
         ].map(([id, label, icon]) => (
           <button
             key={id}
@@ -105,14 +105,14 @@ export default function InstallmentsHub({ customerName, customerPhone }) {
             (sorted.length === 0 ? (
               <div className="py-10 text-center">
                 <CalendarClock className="mx-auto mb-3 text-slate-300" size={40} />
-                <p className="text-sm text-slate-400">No instalment plans yet.</p>
+                <p className="text-sm text-slate-400">No installment plans yet.</p>
                 <button onClick={() => setView('shop')} className="mt-3 rounded-lg bg-gradient-to-r from-orange-500 to-yellow-500 px-5 py-2 text-sm font-medium text-white">
                   Find something to pay for
                 </button>
               </div>
             ) : (
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Instalment plans</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Installment plans</p>
                 <div className="space-y-2">
                   {sorted.map(p => (
                     <button key={p.code} onClick={() => setOpen({ code: p.code })} className="classic-card block w-full p-3 text-left">

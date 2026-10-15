@@ -71,6 +71,13 @@
 .sk-bottom-nav::before { margin-left: auto; margin-right: -0.5rem; }
 .sk-bottom-nav::after { margin-right: auto; margin-left: -0.5rem; }
 
+/* Very narrow phones (320px): tighten the row so five tabs still fit unscrolled. */
+@media (max-width: 340px) {
+  .sk-bottom-nav { gap: 0.125rem; padding-inline: 0.25rem; }
+  .sk-bottom-nav::before { margin-right: -0.125rem; }
+  .sk-bottom-nav::after { margin-left: -0.125rem; }
+}
+
 html[data-theme="dark"] .sk-bottom-nav {
   --bn-surface: #0c231b;
   --bn-text: rgba(209, 250, 229, 0.62);
@@ -83,7 +90,8 @@ html[data-theme="dark"] .sk-bottom-nav {
 /* ── One tab: icon over label, no box, no background ──────────────────── */
 .sk-bottom-nav-tab {
   position: relative;
-  flex: 1 0 4rem;
+  /* 3.25rem so five tabs (Home, Shop, Ride, Installments, Wallet) fit a 320px phone. */
+  flex: 1 0 3.25rem;
   max-width: 6rem;
   scroll-snap-align: center;
   border-radius: 1rem;

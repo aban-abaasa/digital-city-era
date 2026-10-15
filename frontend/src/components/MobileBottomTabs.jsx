@@ -3,8 +3,8 @@ import NavGlowDefs from './NavGlowDefs';
 import '../styles/mobile-bottom-tabs.css';
 
 /**
- * Phone-only bottom tab bar: the four vital destinations of a portal, in reach
- * of the thumb. Capped at 4 on purpose — everything else stays in the section
+ * Phone-only bottom tab bar: the vital destinations of a portal, in reach
+ * of the thumb. Capped at 5 on purpose — everything else stays in the section
  * bar's Menu sheet.
  *
  * Styled like the ICAN app's bottom bar: bare icons, like TikTok's, with nothing
@@ -17,7 +17,7 @@ import '../styles/mobile-bottom-tabs.css';
  * their last card isn't hidden under the bar.
  */
 const MobileBottomTabs = ({ tabs, activeTab, onSelect }) => {
-  const visible = (tabs || []).slice(0, 4);
+  const visible = (tabs || []).slice(0, 5);
   if (visible.length === 0) return null;
 
   return (

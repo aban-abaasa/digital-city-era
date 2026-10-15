@@ -79,7 +79,7 @@ const tone = status =>
   })[status] || 'bg-slate-100 text-slate-600';
 const Card = ({ children, className = '' }) => <div className={`classic-card p-4 ${className}`}>{children}</div>;
 /**
- * One instalment plan: what is paid and owed, pay more (wallet or Mobile Money
+ * One installment plan: what is paid and owed, pay more (wallet or Mobile Money
  * / card / bank) and — once the items are paid in full — collect them at the
  * store or have them delivered. Same plan, same rules as on icanera.space.
  */

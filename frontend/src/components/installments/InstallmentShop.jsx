@@ -3,7 +3,7 @@ import { ArrowLeft, Globe, Loader, Minus, Plus, Search, Store, Truck, X } from '
 import { browseProducts, formatMoney, productOffers, resellerShelf } from '../../services/installmentService';
 import InstallmentOfferCard from './InstallmentOfferCard';
 /**
- * Find something to pay for in instalments: browse products across every
+ * Find something to pay for in installments: browse products across every
  * reseller, pick the seller you want, fill a basket from that seller's shelf,
  * then choose the deposit and schedule.
  */
@@ -130,7 +130,7 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Search products to pay for in instalments…"
+          placeholder="Search products to pay for in installments…"
           className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800"
         />
       </div>
