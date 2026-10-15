@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import AddProductModal from './AddProductModal';
@@ -7,7 +7,10 @@ import {
   catalogItemToFormData
 } from '../utils/supplierCatalog';
 import SupplierBatchManager from './SupplierBatchManager';
-import { refreshStablePricesQuietly } from '../services/stablePricingService';
+import StablePricePanel from './StablePricePanel';
+import StableCoinStyles from '../styles/StableCoinStyles';
+import { refreshStablePricesQuietly, countUnseenChanges } from '../services/stablePricingService';
+import { describeChanges } from '../utils/stablePricing';
 import {
   catalogItemOffer,
   groupBatchesByItem,
@@ -29,6 +32,10 @@ export function SupplierCatalogTab({ userId }) {
   // whose batch manager is open.
   const [batches, setBatches]   = useState([]);
   const [batchItemId, setBatchItemId] = useState(null);
+  // Stable price (ICEC-S): the tab, and how many shilling-price changes the supplier hasn't acknowledged yet.
+  const [showStable, setShowStable] = useState(false);
+  const [unseenPriceChanges, setUnseenPriceChanges] = useState(0);
+  const priceChangesAnnounced = useRef(false);
 
   useEffect(() => { load(); }, [userId]);
 
@@ -36,7 +43,14 @@ export function SupplierCatalogTab({ userId }) {
     setLoading(true);
     // Items priced in ICEC-S (the stable coin) get today's shilling price before the list is read.
     // Throttled, silent, and a no-op for a supplier who doesn't use it.
-    await refreshStablePricesQuietly('catalog', userId);
+    const repriced = await refreshStablePricesQuietly('catalog', userId);
+    if (repriced?.changes?.length) {
+      priceChangesAnnounced.current = true;
+      toast.info(`${describeChanges(repriced.changes, repriced.rate)} Open Stable price to review.`, {
+        autoClose: 12000,
+        onClick: () => setShowStable(true),
+      });
+    }
     const { data } = await supabase
       .from('supplier_catalog_items')
       .select('*')
@@ -45,6 +59,18 @@ export function SupplierCatalogTab({ userId }) {
     setItems(data || []);
     setLoading(false);
     await loadBatches((data || []).map(item => item.id));
+
+    // How many price changes from ICEC-S the supplier hasn't seen yet. Changes made while they were away
+    // (the scheduled repricer) are announced once per visit.
+    const unseen = await countUnseenChanges('catalog', userId);
+    setUnseenPriceChanges(unseen);
+    if (unseen > 0 && !priceChangesAnnounced.current) {
+      priceChangesAnnounced.current = true;
+      toast.info(`${unseen} shilling price change${unseen === 1 ? '' : 's'} from ICEC-S since you last looked. Open Stable price to review.`, {
+        autoClose: 12000,
+        onClick: () => setShowStable(true),
+      });
+    }
   };
 
   const loadBatches = async (itemIds) => {
@@ -86,18 +112,50 @@ export function SupplierCatalogTab({ userId }) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">My Supply Catalog</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             List everything you can supply. Supermarkets browse this when reviewing your applications.
           </p>
         </div>
-        <button onClick={openNew}
-          className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-semibold rounded-xl hover:opacity-90">
-          + Add Item
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <StableCoinStyles />
+          <button
+            type="button"
+            onClick={() => setShowStable(v => !v)}
+            aria-pressed={showStable}
+            title="Fix your prices in the stable coin (ICEC-S) so inflation can't eat your margin"
+            className={`sc-scope sc-supplier sc-btn inline-flex items-center gap-1.5 whitespace-nowrap ${showStable ? 'sc-btn-on' : ''}`}
+          >
+            <span aria-hidden="true">🪙</span>
+            <span>Stable price</span>
+            {unseenPriceChanges > 0 && (
+              <span
+                className="sc-badge-count rounded-full px-1.5 text-[10px] font-bold leading-4"
+                aria-label={`${unseenPriceChanges} new price changes`}
+              >
+                {unseenPriceChanges > 99 ? '99+' : unseenPriceChanges}
+              </span>
+            )}
+          </button>
+          <button onClick={openNew}
+            className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-semibold rounded-xl hover:opacity-90">
+            + Add Item
+          </button>
+        </div>
       </div>
+
+      {/* Stable price: keep what you supply on the stable coin, and see every shilling change it causes */}
+      {showStable && (
+        <StablePricePanel
+          kind="catalog"
+          scopeId={userId}
+          onChanged={load}
+          onUnseenChange={setUnseenPriceChanges}
+          onClose={() => setShowStable(false)}
+        />
+      )}
 
       {/* Near-expiry flags: batches inside the flag window are discounted for buyers automatically */}
       {flaggedItems.length > 0 && (
@@ -152,7 +210,7 @@ export function SupplierCatalogTab({ userId }) {
               {item.description && <p className="text-xs text-gray-500 mb-2">{item.description}</p>}
               {item.price_unit === 'ICEC_S' && Number(item.stable_price) > 0 && (
                 <span
-                  className="mb-1 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                  className="sc-scope sc-supplier sc-pill sc-pill-ok mb-1"
                   title="Priced in ICEC-S, the stable coin. The UGX price follows it, so inflation can't eat your margin."
                 >
                   {Number(item.stable_price)} ICEC-S · inflation-proof

@@ -767,7 +767,7 @@ const OrderInventoryPOSControl = () => {
         .eq('supermarket_id', supermarketId)
         .eq('price_unit', 'ICEC_S');
       setStableMap(stableError ? {} : Object.fromEntries((stableRows || []).map((r) => [r.id, Number(r.stable_price)])));
-      const unseen = await countUnseenChanges(supermarketId);
+      const unseen = await countUnseenChanges('product', supermarketId);
       setUnseenPriceChanges(unseen);
       if (unseen > 0 && !priceChangesAnnounced.current) {
         // Changes made while nobody was here (the scheduled repricer) are announced once per visit.
@@ -1681,7 +1681,8 @@ const OrderInventoryPOSControl = () => {
         {/* Stable price: keep products on the stable coin, and see every shilling change it causes */}
         {showStablePricing && isAdmin && (
           <StablePricePanel
-            supermarketId={supermarketId}
+            kind="product"
+            scopeId={supermarketId}
             onChanged={loadData}
             onUnseenChange={setUnseenPriceChanges}
             onClose={() => setShowStablePricing(false)}

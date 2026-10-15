@@ -4,6 +4,7 @@ import { FiPackage, FiShoppingCart, FiSettings, FiTrendingUp, FiAlertTriangle, F
 import { supabase } from '../services/supabase';
 import AddProductModal from './AddProductModal';
 import inventoryService from '../services/inventorySupabaseService';
+import StableCoinStyles from '../styles/StableCoinStyles';
 import { refreshStablePricesQuietly } from '../services/stablePricingService';
 import {
   SUPPORTED_IMPORT_EXTENSIONS,
@@ -561,6 +562,7 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
 
   return (
     <div className="bg-white min-h-screen">
+      <StableCoinStyles />
       {/* Header - Mobile Optimized */}
       <div className="p-4 md:p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
         <div className="max-w-7xl mx-auto">
@@ -810,7 +812,7 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
                         {formatCurrency(product.price)}
                         {product.stablePrice && (
                           <span
-                            className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                            className="sc-scope sc-pill sc-pill-ok ml-1"
                             title={`Priced at ${product.stablePrice} ICEC-S (stable coin); the UGX price follows it`}
                           >
                             {product.stablePrice} ICEC-S
