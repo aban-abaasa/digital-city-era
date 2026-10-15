@@ -33,6 +33,8 @@ interface Product {
   images: { url: string }[] | null;
   available_stock: number;
   in_stock: boolean;
+  /** Store this line belongs to — checkout pays each store separately. */
+  supermarket_id?: string;
 }
 
 interface CartItem {
@@ -73,22 +75,6 @@ interface SupermarketRow {
   business_type: string;
   owner_user_id: string | null;
 }
-
-// Store type filter — supermarkets, hotels, boutiques, and restaurants/cafés
-// all live in the same `supermarkets` table (business_type column), so this
-// is purely a client-side filter over the one list already loaded.
-type BusinessTypeFilter = 'all' | 'supermarket' | 'pharmacy' | 'hotel' | 'boutique' | 'restaurant_cafe';
-
-const BUSINESS_TYPE_FILTERS: { value: BusinessTypeFilter; label: string; emoji: string }[] = [
-  { value: 'all', label: 'All', emoji: '🏬' },
-  { value: 'supermarket', label: 'Supermarkets', emoji: '🏪' },
-  { value: 'pharmacy', label: 'Pharmacies', emoji: '💊' },
-  { value: 'hotel', label: 'Hotels', emoji: '🏨' },
-  { value: 'boutique', label: 'Boutiques', emoji: '👗' },
-  { value: 'restaurant_cafe', label: 'Restaurants', emoji: '🍽️' },
-];
-
-const typeEmoji = (t: string) => BUSINESS_TYPE_FILTERS.find(f => f.value === t)?.emoji || '🏪';
 
 // Extend Window for BarcodeDetector (not in standard TS lib yet)
 declare global {
@@ -171,9 +157,8 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
   const [shopMode, setShopMode] = useState<ShopMode>('scan');
   const [supermarkets, setSupermarkets] = useState<SupermarketRow[]>([]);
   const [selectedSupermarketId, setSelectedSupermarketId] = useState('');
-  const [typeFilter, setTypeFilter] = useState<BusinessTypeFilter>('all');
-  // Store chooser stays collapsed once a store is picked, so products get the page
-  const [storePanelOpen, setStorePanelOpen] = useState(true);
+  // Simple store list — collapsed by default; products from every store always show
+  const [storePanelOpen, setStorePanelOpen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -211,20 +196,6 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
       .order('name')
       .then(({ data }) => setSupermarkets(data || []));
   }, []);
-
-  // Store list filtered by the chosen business type — reset the current
-  // selection if it no longer belongs to the active filter.
-  const filteredSupermarkets = typeFilter === 'all'
-    ? supermarkets
-    : supermarkets.filter(sm => sm.business_type === typeFilter);
-
-  useEffect(() => {
-    if (!selectedSupermarketId) return;
-    if (!filteredSupermarkets.some(sm => sm.id === selectedSupermarketId)) {
-      setSelectedSupermarketId('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter]);
 
   // ── Camera start / stop ───────────────────────────────────────────────────
 
@@ -338,7 +309,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
       return;
     }
 
-    const product = data[0] as Product;
+    const product = { ...(data[0] as Product), supermarket_id: selectedSupermarketId };
 
     if (!product.in_stock) {
       setScanError(`${product.name} is out of stock`);
@@ -395,6 +366,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           images: l.product.image_url ? [{ url: l.product.image_url }] : null,
           available_stock: l.product.stock_qty,
           in_stock: l.product.stock_qty > 0,
+          supermarket_id: l.product.supermarket_id,
         },
         quantity: l.qty,
         line_total: Number(l.product.price_ugx) * l.qty,
@@ -448,8 +420,20 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
 
     setSubmitting(true);
     setPinError('');
-    let completedTransfer: any = null;
-    let saleFinalized = false;
+    // Browsing shows every store, so one cart can span several stores. Each
+    // store is paid (and its sale recorded) separately: wallet transfer to
+    // that store's owner, then the checkout RPC for just its lines.
+    const groups = new Map<string, CartItem[]>();
+    cart.forEach(item => {
+      const storeId = item.product.supermarket_id || selectedSupermarketId;
+      groups.set(storeId, [...(groups.get(storeId) || []), item]);
+    });
+
+    const paidReceipts: any[] = [];
+    const paidProductIds = new Set<string>();
+    let firstTransactionId = '';
+    // The group currently between "wallet debited" and "sale recorded"
+    let inFlight: { ownerId: string; amountUgx: number } | null = null;
 
     try {
       const pinCheck = await verifyPin(user.id, pinValue);
@@ -458,59 +442,72 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
         return;
       }
 
-      const cartPayload = cart.map(i => ({
-        product_id: i.product.product_id,
-        quantity: i.quantity,
-        // The RPC expects a pre-tax unit price and adds the store/product tax.
-        // Convert the tax-inclusive shelf price back to its net price so the
-        // final charged amount remains exactly the displayed price.
-        unit_price: i.product.selling_price / (1 + Number(i.product.tax_rate ?? 18) / 100),
-        tax_rate: Number(i.product.tax_rate ?? 18),
-      }));
-
-      const storeUserId = selectedSupermarket?.owner_user_id;
-      if (!storeUserId) {
-        setPinError('This store has no active wallet recipient configured. Please choose another store.');
-        return;
+      // Validate every store's wallet recipient before moving any money.
+      for (const storeId of groups.keys()) {
+        const store = supermarkets.find(sm => sm.id === storeId);
+        if (!store?.owner_user_id) {
+          setPinError(`${store?.name || 'A store in your cart'} has no active wallet recipient configured. Remove its items or choose another store.`);
+          return;
+        }
       }
 
-      // The customer wallet is the payer and the selected store owner is the
-      // recipient. This is the same real wallet send operation used by IcanEra.
-      completedTransfer = await sendICAN({
-        fromUserId: user.id,
-        toUserId: storeUserId,
-        amount: ugxToICAN(totals.total),
-        note: `Store purchase at ${selectedSupermarket?.name || 'store'}`,
-        referenceId: `SHOP-${Date.now()}`,
-        localAmount: totals.total,
-        localCurrency: 'UGX',
-        merchantName: selectedSupermarket?.name || 'SupermartKera',
-        counterpartyType: 'business',
-        expenseClassification: paymentPurpose === 'business' ? 'business_expense' : 'personal_expense',
-        businessProfileId: businessProfileId || null,
-      });
+      for (const [storeId, items] of groups) {
+        const store = supermarkets.find(sm => sm.id === storeId)!;
+        const groupTotal = cartTotals(items).total;
 
-      // The wallet transfer above is already complete. The checkout RPC now
-      // records the sale and updates inventory without debiting the wallet a
-      // second time.
-      const { data, error } = await supabase.rpc('customer_self_checkout', {
-        p_cart: cartPayload,
-        p_payment_method: 'ican',
-        p_pay_with_ican: false,
-      });
+        const cartPayload = items.map(i => ({
+          product_id: i.product.product_id,
+          quantity: i.quantity,
+          // The RPC expects a pre-tax unit price and adds the store/product tax.
+          // Convert the tax-inclusive shelf price back to its net price so the
+          // final charged amount remains exactly the displayed price.
+          unit_price: i.product.selling_price / (1 + Number(i.product.tax_rate ?? 18) / 100),
+          tax_rate: Number(i.product.tax_rate ?? 18),
+        }));
 
-      if (error || !data?.success) {
-        throw new Error(error?.message ?? data?.error ?? 'Checkout failed');
+        // The customer wallet is the payer and the store owner is the
+        // recipient. This is the same real wallet send operation used by IcanEra.
+        const transfer = await sendICAN({
+          fromUserId: user.id,
+          toUserId: store.owner_user_id!,
+          amount: ugxToICAN(groupTotal),
+          note: `Store purchase at ${store.name || 'store'}`,
+          referenceId: `SHOP-${Date.now()}-${paidReceipts.length}`,
+          localAmount: groupTotal,
+          localCurrency: 'UGX',
+          merchantName: store.name || 'SupermartKera',
+          counterpartyType: 'business',
+          expenseClassification: paymentPurpose === 'business' ? 'business_expense' : 'personal_expense',
+          businessProfileId: businessProfileId || null,
+        });
+        inFlight = { ownerId: store.owner_user_id!, amountUgx: groupTotal };
+
+        // The wallet transfer above is already complete. The checkout RPC now
+        // records the sale and updates inventory without debiting the wallet a
+        // second time.
+        const { data, error } = await supabase.rpc('customer_self_checkout', {
+          p_cart: cartPayload,
+          p_payment_method: 'ican',
+          p_pay_with_ican: false,
+        });
+
+        if (error || !data?.success) {
+          throw new Error(error?.message ?? data?.error ?? 'Checkout failed');
+        }
+        inFlight = null;
+        if (!firstTransactionId) firstTransactionId = data.transaction_id || transfer?.transaction_id || '';
+        items.forEach(i => paidProductIds.add(i.product.product_id));
+        paidReceipts.push({ data, items });
       }
-      saleFinalized = true;
 
+      const cashback = paidReceipts.reduce((sum, r) => sum + (r.data.ican_cashback?.success ? Number(r.data.ican_cashback.net_credited || 0) : 0), 0);
       setReceipt({
-        transaction_id: data.transaction_id || completedTransfer?.transaction_id,
-        receipt_number: data.receipt_number,
-        total_ugx: data.total_ugx,
-        tax_ugx: data.tax_ugx,
-        items_count: data.items_count,
-        items: data.items?.length ? data.items : cart.map(i => ({
+        transaction_id: firstTransactionId,
+        receipt_number: paidReceipts.map(r => r.data.receipt_number).filter(Boolean).join(', '),
+        total_ugx: paidReceipts.reduce((sum, r) => sum + Number(r.data.total_ugx || 0), 0),
+        tax_ugx: paidReceipts.reduce((sum, r) => sum + Number(r.data.tax_ugx || 0), 0),
+        items_count: paidReceipts.reduce((sum, r) => sum + Number(r.data.items_count || 0), 0),
+        items: paidReceipts.flatMap(r => r.data.items?.length ? r.data.items : r.items.map((i: CartItem) => ({
           product_id: i.product.product_id,
           product_name: i.product.name,
           product_sku: i.product.sku,
@@ -518,8 +515,8 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           unit_price: i.product.selling_price,
           tax_rate: i.product.tax_rate,
           line_total: i.line_total,
-        })),
-        ican_cashback: data.ican_cashback,
+        }))),
+        ican_cashback: cashback > 0 ? { success: true, net_credited: cashback } : paidReceipts[0]?.data.ican_cashback,
       });
 
       // Refresh ICAN balance after the real wallet debit.
@@ -530,15 +527,20 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
       setCart([]);
       setState('complete');
     } catch (error: any) {
-      // If the real wallet transfer succeeded but sale/inventory finalization
-      // failed, return the funds to the customer so payment and stock cannot
+      // Stores already paid and recorded stay paid: drop their lines so a retry
+      // can't charge them twice.
+      if (paidProductIds.size > 0) {
+        setCart(prev => prev.filter(i => !paidProductIds.has(i.product.product_id)));
+      }
+      // If a wallet transfer succeeded but its sale/inventory finalization
+      // failed, return those funds to the customer so payment and stock cannot
       // become inconsistent.
-      if (completedTransfer && !saleFinalized && selectedSupermarket?.owner_user_id) {
+      if (inFlight) {
         try {
           await sendICAN({
-            fromUserId: selectedSupermarket.owner_user_id,
+            fromUserId: inFlight.ownerId,
             toUserId: user.id,
-            amount: ugxToICAN(totals.total),
+            amount: ugxToICAN(inFlight.amountUgx),
             note: 'Automatic refund for failed store checkout',
             referenceId: `REFUND-${Date.now()}`,
           });
@@ -548,7 +550,8 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
           return;
         }
       }
-      setPinError(error?.message || 'Payment failed. No inventory was deducted.');
+      const partial = paidProductIds.size > 0 ? ' Items from other stores in your cart were already paid for.' : '';
+      setPinError(`${error?.message || 'Payment failed. No inventory was deducted.'}${partial}`);
     } finally {
       setSubmitting(false);
     }
@@ -677,7 +680,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
             >
               <Store size={15} className="flex-shrink-0 text-orange-500" />
               <span className="min-w-0 flex-1 truncate">
-                {activeStore ? activeStore.name : 'Choose a store'}
+                {activeStore ? activeStore.name : 'All stores'}
               </span>
               <ChevronDown size={15} className={`flex-shrink-0 text-slate-400 transition-transform ${storePanelOpen ? 'rotate-180' : ''}`} />
             </button>
@@ -724,40 +727,35 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
             )}
           </div>
 
-          {/* Collapsible store chooser — opens itself until a store is picked */}
-          {storePanelOpen && (
-            <div className="space-y-2">
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
-                {BUSINESS_TYPE_FILTERS.map(f => (
+          {/* Simple store list — tap a store to narrow the products to it, tap again for all stores.
+              Scanning needs a store, so the list stays open until one is picked. */}
+          {(storePanelOpen || (shopMode === 'scan' && !selectedSupermarketId)) && (
+            <ul className="divide-y divide-slate-100 text-sm" aria-label="Stores">
+              {shopMode === 'browse' && (
+                <li>
                   <button
-                    key={f.value}
                     type="button"
-                    onClick={() => setTypeFilter(f.value)}
-                    className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                      typeFilter === f.value ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}
+                    onClick={() => { setSelectedSupermarketId(''); setStorePanelOpen(false); }}
+                    className={`w-full py-2 text-left ${!selectedSupermarketId ? 'font-bold text-orange-600' : 'text-slate-700'}`}
                   >
-                    <span>{f.emoji}</span> {f.label}
+                    All stores
                   </button>
-                ))}
-              </div>
-              <select
-                value={selectedSupermarketId}
-                onChange={e => { setSelectedSupermarketId(e.target.value); if (e.target.value) setStorePanelOpen(false); }}
-                aria-label="Store"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-300"
-              >
-                <option value="">Choose your store…</option>
-                {filteredSupermarkets.map(sm => (
-                  <option key={sm.id} value={sm.id}>
-                    {typeEmoji(sm.business_type)} {sm.name}{sm.location ? ` — ${sm.location}` : ''}
-                  </option>
-                ))}
-              </select>
-              {filteredSupermarkets.length === 0 && (
-                <p className="text-xs text-slate-400">No stores of this type yet.</p>
+                </li>
               )}
-            </div>
+              {supermarkets.map(sm => (
+                <li key={sm.id}>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedSupermarketId(sm.id === selectedSupermarketId && shopMode === 'browse' ? '' : sm.id); setStorePanelOpen(false); }}
+                    className={`flex w-full items-baseline justify-between gap-3 py-2 text-left ${sm.id === selectedSupermarketId ? 'font-bold text-orange-600' : 'text-slate-700'}`}
+                  >
+                    <span className="min-w-0 truncate">{sm.name}</span>
+                    {sm.location && <span className="flex-shrink-0 text-xs font-normal text-slate-400">{sm.location}</span>}
+                  </button>
+                </li>
+              ))}
+              {supermarkets.length === 0 && <li className="py-2 text-xs text-slate-400">No stores yet.</li>}
+            </ul>
           )}
 
           {selectedSupermarketId && !storePanelOpen && (
@@ -770,18 +768,16 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
             </button>
           )}
 
-          {/* Browse-a-store — real inventory, full-page, no scanning needed */}
+          {/* Browse — products from every store, optionally narrowed to one */}
           {shopMode === 'browse' && state !== 'scanning' && (
-            selectedSupermarketId ? (
-              <ProductPicker
-                supermarketId={selectedSupermarketId}
-                onCartChange={handleBrowseCartChange}
-                onOpenCart={() => setState('cart')}
-                fullPage
-              />
-            ) : (
-              <p className="text-sm text-slate-400 text-center py-10">Choose a store above to see its products.</p>
-            )
+            <ProductPicker
+              allStores
+              supermarketId={selectedSupermarketId || null}
+              stores={supermarkets}
+              onCartChange={handleBrowseCartChange}
+              onOpenCart={() => setState('cart')}
+              fullPage
+            />
           )}
 
           {/* Camera scanning panel */}
@@ -789,7 +785,7 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
             <div>
               {!selectedSupermarketId && (
                 <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-                  Choose a store above before scanning.
+                  Pick a store from the list above before scanning.
                 </p>
               )}
 
@@ -975,7 +971,13 @@ export default function CustomerSelfCheckout({ user }: { user: any }) {
               <div key={item.product.product_id} className="px-5 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-800 text-sm truncate">{item.product.name}</p>
-                  <p className="text-xs text-slate-400">{formatUGX(item.product.selling_price)} each</p>
+                  <p className="text-xs text-slate-400">
+                    {formatUGX(item.product.selling_price)} each
+                    {(() => {
+                      const storeName = supermarkets.find(sm => sm.id === item.product.supermarket_id)?.name;
+                      return storeName ? ` · ${storeName}` : '';
+                    })()}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
