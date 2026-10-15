@@ -25,10 +25,19 @@ const STATUS_LABEL = { active: 'On sale', depleted: 'Sold out', expired: 'Pulled
 
 const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) => {
   const [dates, setDates] = useState({}); // batchId -> edited expiry date
-  const [draft, setDraft] = useState({ batch_number: '', quantity: '', expiry_date: '', add_to_stock: true });
+  const emptyDraft = { batch_number: '', quality: '', quantity: '', expiry_date: '', add_to_stock: true };
+  const [draft, setDraft] = useState(emptyDraft);
+  const [qualityFilter, setQualityFilter] = useState('all');
   const [busy, setBusy] = useState(null);
 
   const exactStock = batches.some((b) => b.exact);
+  // Qualities already used on this product, offered as quick picks in the form.
+  const qualities = [...new Set(batches.map((b) => (b.quality || '').trim()).filter(Boolean))];
+  const hasUnlabelled = batches.some((b) => !(b.quality || '').trim());
+  const activeFilter = qualityFilter === 'all' || qualities.includes(qualityFilter) || (qualityFilter === '' && hasUnlabelled) ? qualityFilter : 'all';
+  const visibleBatches = activeFilter === 'all'
+    ? batches
+    : batches.filter((b) => (b.quality || '').trim() === activeFilter);
 
   const fail = (error, fallback) => {
     toast.error(isMissingBatchSetup(error)
@@ -66,12 +75,16 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
     if (draft.quantity === '' || Number(draft.quantity) < 0) { toast.error('Enter the quantity received'); return; }
     if (!draft.expiry_date) { toast.error('Pick an expiry date'); return; }
     setBusy('new');
+    const quality = draft.quality.trim();
     const { error } = await supabase.rpc('add_product_batch', {
       p_product_id: product.id,
       p_batch_number: draft.batch_number.trim(),
       p_expiry_date: draft.expiry_date,
       p_quantity: Number(draft.quantity),
       p_add_to_stock: draft.add_to_stock,
+      // Only sent when used, so batches without a quality work before the
+      // ADD_BATCH_QUALITY.sql migration has been run.
+      ...(quality ? { p_quality: quality } : {}),
     });
     setBusy(null);
     if (error) {
@@ -80,7 +93,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
       return;
     }
     toast.success(`Batch ${draft.batch_number.trim()} added`);
-    setDraft({ batch_number: '', quantity: '', expiry_date: '', add_to_stock: true });
+    setDraft(emptyDraft);
     onChanged(product.id);
   };
 
@@ -91,7 +104,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
           <div className="min-w-0">
             <h3 className="text-lg font-bold leading-tight text-gray-800 truncate">Batches · {product.name}</h3>
             <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
-              Track each delivery by batch. The batch sold first sets the product's expiry, which flags it and lets you publish a reduced price.
+              Track each delivery by batch, and set a separate expiry date for each quality of the product. The batch sold first sets the product's expiry, which flags it and lets you publish a reduced price.
             </p>
           </div>
           <button type="button" onClick={onClose} className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">×</button>
@@ -101,8 +114,23 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
           {batches.length === 0 ? (
             <p className="text-center text-sm text-gray-400 py-8">No batches recorded yet — add the first one below.</p>
           ) : (
+            <>
+            {qualities.length > 0 && (
+              <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter batches by quality">
+                {[['all', `All (${batches.length})`],
+                  ...qualities.map((q) => [q, `${q} (${batches.filter((b) => (b.quality || '').trim() === q).length})`]),
+                  ...(hasUnlabelled ? [['', `Standard (${batches.filter((b) => !(b.quality || '').trim()).length})`]] : []),
+                ].map(([value, label]) => (
+                  <button key={value || 'none'} type="button" role="tab" aria-selected={activeFilter === value}
+                    onClick={() => setQualityFilter(value)}
+                    className={`px-3 py-1.5 rounded-full border text-xs font-semibold ${activeFilter === value ? 'oi-btn-primary' : 'text-gray-600 border-gray-200'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <ul className="space-y-4">
-              {batches.map((batch) => {
+              {visibleBatches.map((batch) => {
                 const status = getExpiryStatus(batch.expiry_date);
                 const edited = dates[batch.id];
                 const onSale = batch.status === 'active';
@@ -110,7 +138,12 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                 return (
                   <li key={batch.id} className={`rounded-xl border p-4 ${!onSale ? 'border-gray-200 bg-gray-50' : status.key === 'expired' ? 'border-red-200 bg-red-50/40' : 'border-gray-100'}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-semibold text-sm text-gray-800">Batch {batch.batch_number}</p>
+                      <p className="font-semibold text-sm text-gray-800">
+                        Batch {batch.batch_number}
+                        {(batch.quality || '').trim() && (
+                          <span className="ml-2 align-middle px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">{batch.quality.trim()}</span>
+                        )}
+                      </p>
                       <div className="flex flex-wrap items-center gap-1.5">
                         {onSale && <span className={`${PILL[status.key]} px-2 py-0.5 rounded-full text-[11px] font-bold`}>{status.label}</span>}
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">{STATUS_LABEL[batch.status] || batch.status}</span>
@@ -157,6 +190,7 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
                 );
               })}
             </ul>
+            </>
           )}
 
           {!exactStock && batches.length > 0 && (
@@ -168,6 +202,14 @@ const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) 
           {isAdmin ? (
             <form onSubmit={addBatch} className="rounded-xl border border-dashed border-gray-300 p-4 space-y-4">
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Add a batch</p>
+              <label className="block text-[11px] font-medium text-gray-500">Quality / grade (optional)
+                <input list="batch-quality-options" placeholder="e.g. Grade A, Premium, Standard" value={draft.quality} maxLength={40}
+                  onChange={(e) => setDraft((d) => ({ ...d, quality: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
+                <datalist id="batch-quality-options">
+                  {qualities.map((q) => <option key={q} value={q} />)}
+                </datalist>
+              </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <label className="block text-[11px] font-medium text-gray-500">Batch no. *
                   <input placeholder="e.g. B-001" value={draft.batch_number}
