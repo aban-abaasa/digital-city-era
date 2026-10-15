@@ -4060,14 +4060,14 @@ const AdminPortal = () => {
               { 
                 title: 'Tax Management', 
                 icon: '🧾', 
-                description: 'Handle tax calculations', 
+                description: 'VAT is already included in selling prices', 
                 gradient: 'from-indigo-500 to-blue-500',
                 bg: 'bg-indigo-50/80',
                 border: 'border-indigo-300',
                 bullet: 'text-indigo-500',
                 onClick: () => {
                   toast.info('Tax management system opened');
-                  toast.success('VAT: 18% | Income Tax: 30%');
+                  toast.success('VAT (18%) is already included in every selling price. No additional tax is added.');
                 }
               }
             ].map((tool, index) => (

@@ -204,14 +204,17 @@ const OrderSheet = ({ order, onClose }) => {
               <p className="aom-muted">No itemised products were recorded for this order.</p>
             )}
 
+            {/* Selling prices already include VAT; tax is never added on top.
+                The breakdown below only shows how much of the total is VAT. */}
             <div className="aom-totals">
+              <div className="aom-totals-grand"><span>Total (VAT included)</span><span>{money(order.amount)}</span></div>
               {showBreakdown && (
                 <>
-                  <div><span>Subtotal</span><span>{money(order.subtotal)}</span></div>
-                  <div><span>Tax</span><span>{money(order.tax)}</span></div>
+                  <div className="aom-totals-incl"><span>Price before VAT</span><span>{money(order.subtotal)}</span></div>
+                  <div className="aom-totals-incl"><span>VAT already in price</span><span>{money(order.tax)}</span></div>
                 </>
               )}
-              <div className="aom-totals-grand"><span>Total</span><span>{money(order.amount)}</span></div>
+              <p className="aom-totals-note">Prices include tax. No additional tax is charged.</p>
             </div>
 
             {order.notes && (
