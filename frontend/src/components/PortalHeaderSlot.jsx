@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { HEADER_TABS_SLOT_ID, useHeaderTabsSlot } from './portalHeaderSlotUtils';
+import {
+  registerHeaderTabsSlot,
+  unregisterHeaderTabsSlot,
+  useHeaderTabsSlot
+} from './portalHeaderSlotUtils';
 
 /**
  * Lets a portal's section tabs (Dashboard, Orders, Wallet…) live INSIDE the
@@ -9,15 +13,25 @@ import { HEADER_TABS_SLOT_ID, useHeaderTabsSlot } from './portalHeaderSlotUtils'
  *
  *  - PortalHeader renders <HeaderTabsSlot /> at the bottom of its bar.
  *  - Whoever owns the section tabs wraps them in <InHeaderTabs>{(inHeader) => …}</InHeaderTabs>.
- *    When the slot exists the tabs are portaled into it (inHeader = true, so
- *    use headerTabClass from portalHeaderSlotUtils); otherwise they render in
- *    place as before (inHeader = false).
+ *    When a header is mounted the tabs are portaled into its slot (inHeader =
+ *    true, so use headerTabClass from portalHeaderSlotUtils); otherwise they
+ *    render in place as before (inHeader = false).
  */
 
 // Hidden on phones (they keep the section bar + bottom sheet) and while empty.
-export const HeaderTabsSlot = () => (
-  <div id={HEADER_TABS_SLOT_ID} className="hidden sm:block border-t border-white/10" />
-);
+export const HeaderTabsSlot = () => {
+  const owned = useRef(null);
+  const setRef = useCallback((el) => {
+    if (el) {
+      owned.current = el;
+      registerHeaderTabsSlot(el);
+    } else {
+      unregisterHeaderTabsSlot(owned.current);
+      owned.current = null;
+    }
+  }, []);
+  return <div ref={setRef} className="portal-header-tabs hidden sm:block border-t border-white/10" />;
+};
 
 export const InHeaderTabs = ({ children }) => {
   const slot = useHeaderTabsSlot();

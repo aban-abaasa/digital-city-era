@@ -1,27 +1,39 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
-export const HEADER_TABS_SLOT_ID = 'portal-header-tabs';
+/*
+ * Where the section tabs go: the slot element at the bottom of the shared
+ * PortalHeader. The header REGISTERS its slot here when it mounts and clears
+ * it when it unmounts, and the tabs subscribe.
+ *
+ * A DOM id lookup is not enough: portals are lazy-loaded behind
+ * <PortalPageFallback />, which renders its own PortalHeader. The tabs would
+ * find the placeholder's slot, and vanish when the placeholder unmounts. With
+ * registration, the most recently mounted header wins, and a header that
+ * unmounts only clears the slot if it still owns it.
+ */
+let currentSlot = null;
+const listeners = new Set();
+const emit = () => listeners.forEach((l) => l());
 
-const findSlot = () => (typeof document === 'undefined' ? null : document.getElementById(HEADER_TABS_SLOT_ID));
-
-export const useHeaderTabsSlot = () => {
-  const [slot, setSlot] = useState(findSlot);
-  useLayoutEffect(() => { if (!slot) setSlot(findSlot()); }, [slot]);
-  useEffect(() => {
-    if (slot) return undefined;
-    // The header can mount a frame after its tabs (lazy routes) — look again briefly.
-    let frames = 0;
-    let raf;
-    const look = () => {
-      const el = findSlot();
-      if (el) setSlot(el);
-      else if (frames < 30) { frames += 1; raf = requestAnimationFrame(look); }
-    };
-    raf = requestAnimationFrame(look);
-    return () => cancelAnimationFrame(raf);
-  }, [slot]);
-  return slot;
+export const registerHeaderTabsSlot = (el) => {
+  if (currentSlot === el) return;
+  currentSlot = el;
+  emit();
 };
+
+export const unregisterHeaderTabsSlot = (el) => {
+  if (currentSlot !== el) return; // a newer header already took over
+  currentSlot = null;
+  emit();
+};
+
+const subscribe = (listener) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+const getSnapshot = () => currentSlot;
+
+export const useHeaderTabsSlot = () => useSyncExternalStore(subscribe, getSnapshot, () => null);
 
 // Tab styling for the indigo header: white text, gold underline on the active tab.
 export const headerTabClass = (isActive) =>
