@@ -10,7 +10,7 @@
 --     — guests can never be rewarded, they have no wallet to credit.
 --   • Both paths route through the existing credit_ican_earning() function
 --     (ICAN/backend/ICAN_CROSS_APP_WALLET_MIGRATION.sql) — the same
---     wallet-creation + 10% tithe + ledger logging every other ICAN reward
+--     wallet-creation + ledger logging every other ICAN reward
 --     in this workspace already uses. No new balance/ledger logic here.
 -- ============================================================================
 

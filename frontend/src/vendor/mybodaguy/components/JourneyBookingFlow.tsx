@@ -1642,7 +1642,7 @@ export default function JourneyBookingFlow({
               {quote.local ? `≈ ${formatMoney(quote.local.total, quote.local.currency)}` : `≈ UGX ${quote.totalUgx.toLocaleString()}`}
             </p>
             <p className="relative mt-2 text-[12.5px] leading-relaxed text-white/70">
-              A fixed price in ICAN, paid in full from your wallet with no tithe.
+              A fixed price in ICAN, paid in full from your wallet.
               {quote.local && ` At today's live value: 1 ICAN = ${formatMoney(quote.local.pricePerIcan, quote.local.currency)}.`}
             </p>
           </div>

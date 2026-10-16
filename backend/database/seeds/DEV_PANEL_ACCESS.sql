@@ -167,7 +167,7 @@ GRANT EXECUTE ON FUNCTION public.dev_get_tx_totals(TEXT) TO anon, authenticated;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 6. GRANT ICAN BONUS TO A USER (bypasses auth, auto-deducts 10% tithe)
+-- 6. GRANT ICAN BONUS TO A USER (bypasses auth, credited in full)
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.dev_grant_ican_bonus(
   dev_token      TEXT,
@@ -187,7 +187,7 @@ BEGIN
     RAISE EXCEPTION 'unauthorized';
   END IF;
 
-  tithe := ROUND(bonus_amount * 0.1, 6);
+  tithe := 0;  -- the wallet takes no tithe
   net   := bonus_amount - tithe;
 
   -- Upsert wallet

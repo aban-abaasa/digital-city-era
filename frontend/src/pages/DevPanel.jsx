@@ -537,9 +537,8 @@ const SystemTab = ({ systemTotals, supermarts, smMembersMap, wallets, subs, p })
     balance: acc.balance + Number(r.total_balance || 0),
     earned:  acc.earned  + Number(r.total_earned  || 0),
     spent:   acc.spent   + Number(r.total_spent   || 0),
-    tithe:   acc.tithe   + Number(r.total_tithe   || 0),
     users:   acc.users   + Number(r.user_count    || 0),
-  }), { balance: 0, earned: 0, spent: 0, tithe: 0, users: 0 });
+  }), { balance: 0, earned: 0, spent: 0, users: 0 });
 
   const subsCoverage = (type) => {
     const total  = type === 'supermart' ? supermarts.length
@@ -554,7 +553,7 @@ const SystemTab = ({ systemTotals, supermarts, smMembersMap, wallets, subs, p })
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat icon={FiZap}        label="Total icaneracoin"  value={fmtI(grand.balance)}             sub={fmtUGX(grand.balance)} grad="from-cyan-500 to-sky-600"      p={p} />
         <Stat icon={FiTrendingUp} label="Total ever earned"  value={fmtI(grand.earned)}              sub={fmtUGX(grand.earned)}  grad="from-emerald-500 to-teal-600"  p={p} />
-        <Stat icon={FiDollarSign} label="Total tithe paid"   value={fmtI(grand.tithe)}               sub={fmtUGX(grand.tithe)}   grad="from-violet-500 to-fuchsia-600" p={p} />
+        <Stat icon={FiDollarSign} label="Total spent"       value={fmtI(grand.spent)}               sub={fmtUGX(grand.spent)}   grad="from-violet-500 to-fuchsia-600" p={p} />
         <Stat icon={FiUsers}      label="Total users"        value={fmt(grand.users)}                sub="across all roles"      grad="from-orange-500 to-amber-500"  p={p} />
       </div>
 
@@ -581,7 +580,6 @@ const SystemTab = ({ systemTotals, supermarts, smMembersMap, wallets, subs, p })
               <div className={`mt-1 flex gap-4 text-[10px] ${p.muted}`}>
                 <span>Earned: {fmtI(r.total_earned)}</span>
                 <span>Spent: {fmtI(r.total_spent)}</span>
-                <span>Tithe: {fmtI(r.total_tithe)}</span>
               </div>
             </div>
           );
@@ -647,7 +645,6 @@ const SystemTab = ({ systemTotals, supermarts, smMembersMap, wallets, subs, p })
         <div className="grid gap-3 sm:grid-cols-3 text-sm">
           {[
             { icon: FiZap,     label: 'Floor price', val: '1 ICAN = 5,000 UGX' },
-            { icon: FiAward,   label: 'Tithe rate',  val: '10% auto-deducted on every earning' },
             { icon: FiActivity,label: 'Circulation', val: fmtI(grand.balance) + ' ICAN active' },
           ].map(r => (
             <div key={r.label} className={`rounded-xl border p-4 ${p.soft}`}>

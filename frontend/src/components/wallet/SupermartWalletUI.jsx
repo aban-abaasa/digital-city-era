@@ -274,19 +274,19 @@ const APP_META = {
   ican: { label: 'ICAN', color: '#0d9488' },
 };
 
-export function SpendMix({ transactions, earned, spent, tithe, cashback, hidden, embedded, fmt }) {
+export function SpendMix({ transactions, earned, spent, cashback, hidden, embedded, fmt }) {
   const mix = useMemo(() => {
     const totals = new Map();
     for (const tx of transactions) {
       if (tx.direction !== 'out') continue;
-      const key = tx.transaction_type === 'tithe' ? 'tithe' : tx.source_app;
+      const key = tx.source_app;
       totals.set(key, (totals.get(key) || 0) + Number(tx.ican_amount));
     }
     const sum = [...totals.values()].reduce((a, b) => a + b, 0);
     return {
       sum,
       parts: [...totals.entries()]
-        .map(([key, value]) => ({ key, value, pct: sum ? (value / sum) * 100 : 0, label: key === 'tithe' ? 'Tithe' : APP_META[key]?.label || key, color: key === 'tithe' ? '#a8a29e' : APP_META[key]?.color || '#0d9488' }))
+        .map(([key, value]) => ({ key, value, pct: sum ? (value / sum) * 100 : 0, label: APP_META[key]?.label || key, color: APP_META[key]?.color || '#0d9488' }))
         .sort((a, b) => b.value - a.value),
     };
   }, [transactions]);
@@ -298,8 +298,8 @@ export function SpendMix({ transactions, earned, spent, tithe, cashback, hidden,
 
   return (
     <section aria-label="Wallet activity" className={`rounded-[22px] border p-4 ${shell}`}>
-      <div className={`grid grid-cols-3 divide-x text-center ${line}`}>
-        {[['Earned', earned], ['Spent', spent], ['Tithe', tithe]].map(([k, v]) => (
+      <div className={`grid grid-cols-2 divide-x text-center ${line}`}>
+        {[['Earned', earned], ['Spent', spent]].map(([k, v]) => (
           <div key={k} className="px-2">
             <p className="text-[9.5px] font-semibold uppercase tracking-[0.22em] text-[#a17c28]">{k}</p>
             <p className={`mt-1 truncate font-classic-display text-[13px] font-bold tabular-nums lining-nums min-[380px]:text-[15px] ${head}`}>{hidden ? '••••' : v}</p>
@@ -403,7 +403,7 @@ export function ReceiptRow({ label, sub, amount, local, tone, icon, onClick }) {
 export function FilterTabs({ value, onChange, embedded }) {
   return (
     <div className={`flex gap-1 rounded-full border p-1 ${embedded ? 'border-emerald-800/20 bg-white' : 'border-emerald-300/20 bg-white/[0.04]'}`} role="tablist" aria-label="Filter transactions">
-      {['all', 'in', 'out', 'tithe'].map((tab) => (
+      {['all', 'in', 'out'].map((tab) => (
         <button
           key={tab}
           type="button"
