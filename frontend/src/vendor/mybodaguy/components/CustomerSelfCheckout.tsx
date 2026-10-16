@@ -9,13 +9,13 @@ import { supabase } from '../../services/supabaseClient';
 import { getStoreSiteForCustomer } from '../services/storeWebsite';
 import {
   getBalance,
-  ugxToICAN,
   formatICAN,
   ICAN_TO_UGX,
   sendICAN,
   type ICANBalance,
 } from '../services/icanWalletService';
 import ProductPicker, { CartLine } from './ProductPicker';
+import { formatMoney } from '../services/money';
 import ScanFrameOverlay from './ScanFrameOverlay';
 import { verifyPin } from '../../../services/pinService';
 
@@ -44,6 +44,8 @@ interface CartItem {
 }
 
 interface CheckoutReceipt {
+  /** Currency of every amount on the receipt (the store's own). */
+  currency?: string;
   transaction_id: string;
   receipt_number: string;
   total_ugx: number;
@@ -73,6 +75,7 @@ interface SupermarketRow {
   name: string;
   location: string | null;
   business_type: string;
+  price_currency?: string | null;
   owner_user_id: string | null;
 }
 
@@ -87,6 +90,20 @@ declare global {
 
 function formatUGX(n: number) {
   return `UGX ${n.toLocaleString('en-UG', { maximumFractionDigits: 0 })}`;
+}
+
+const icanPriceCache = new Map<string, number>();
+
+/** What one ICAN is worth in `currency` - the price the database converts with. UGX keeps the fixed rate. */
+async function getIcanPrice(currency: string): Promise<number | null> {
+  if (currency === 'UGX') return ICAN_TO_UGX;
+  const cached = icanPriceCache.get(currency);
+  if (cached) return cached;
+  const { data, error } = await supabase.rpc('ican_get_price_in_currency', { p_currency_code: currency });
+  const price = Number(Array.isArray(data) ? data[0]?.price_local : data?.price_local);
+  if (error || !Number.isFinite(price) || price <= 0) return null;
+  icanPriceCache.set(currency, price);
+  return price;
 }
 
 function cartTotals(cart: CartItem[]) {
@@ -110,6 +127,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
 }) {
   const [state, setState] = useState<ScannerState>('idle');
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [icanPrice, setIcanPrice] = useState<number>(ICAN_TO_UGX);
   const [foundProduct, setFoundProduct] = useState<Product | null>(null);
   const [scanError, setScanError] = useState('');
   const [manualBarcode, setManualBarcode] = useState('');
@@ -200,7 +218,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
   useEffect(() => {
     supabase
       .from('supermarkets')
-       .select('id, name, location, business_type, owner_user_id')
+       .select('id, name, location, business_type, owner_user_id, price_currency')
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setSupermarkets(data || []));
@@ -442,7 +460,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
     const paidProductIds = new Set<string>();
     let firstTransactionId = '';
     // The group currently between "wallet debited" and "sale recorded"
-    let inFlight: { ownerId: string; amountUgx: number } | null = null;
+    let inFlight: { ownerId: string; icanAmount: number } | null = null;
 
     try {
       const pinCheck = await verifyPin(user.id, pinValue);
@@ -463,6 +481,11 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
       for (const [storeId, items] of groups) {
         const store = supermarkets.find(sm => sm.id === storeId)!;
         const groupTotal = cartTotals(items).total;
+        // Each store is paid in ICAN at the price of its own currency.
+        const storeCurrency = (store.price_currency || 'UGX').toUpperCase();
+        const storeIcanPrice = await getIcanPrice(storeCurrency);
+        if (!storeIcanPrice) throw new Error(`Prices in ${storeCurrency} cannot be converted to ICAN right now`);
+        const groupIcan = Math.floor((groupTotal / storeIcanPrice) * 1e8) / 1e8;
 
         const cartPayload = items.map(i => ({
           product_id: i.product.product_id,
@@ -478,17 +501,17 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
         const transfer = await sendICAN({
           fromUserId: user.id,
           toUserId: store.owner_user_id!,
-          amount: ugxToICAN(groupTotal),
+          amount: groupIcan,
           note: `Store purchase at ${store.name || 'store'}`,
           referenceId: `SHOP-${Date.now()}-${paidReceipts.length}`,
           localAmount: groupTotal,
-          localCurrency: 'UGX',
+          localCurrency: storeCurrency,
           merchantName: store.name || 'SupermartKera',
           counterpartyType: 'business',
           expenseClassification: paymentPurpose === 'business' ? 'business_expense' : 'personal_expense',
           businessProfileId: businessProfileId || null,
         });
-        inFlight = { ownerId: store.owner_user_id!, amountUgx: groupTotal };
+        inFlight = { ownerId: store.owner_user_id!, icanAmount: groupIcan };
 
         // The wallet transfer above is already complete. The checkout RPC now
         // records the sale and updates inventory without debiting the wallet a
@@ -510,6 +533,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
 
       const cashback = paidReceipts.reduce((sum, r) => sum + (r.data.ican_cashback?.success ? Number(r.data.ican_cashback.net_credited || 0) : 0), 0);
       setReceipt({
+        currency: paidReceipts[0]?.data.currency,
         transaction_id: firstTransactionId,
         receipt_number: paidReceipts.map(r => r.data.receipt_number).filter(Boolean).join(', '),
         total_ugx: paidReceipts.reduce((sum, r) => sum + Number(r.data.total_ugx || 0), 0),
@@ -548,7 +572,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
           await sendICAN({
             fromUserId: inFlight.ownerId,
             toUserId: user.id,
-            amount: ugxToICAN(inFlight.amountUgx),
+            amount: inFlight.icanAmount,
             note: 'Automatic refund for failed store checkout',
             referenceId: `REFUND-${Date.now()}`,
           });
@@ -602,8 +626,20 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
   }
 
   const totals = cartTotals(cart);
-  const icanNeeded = ugxToICAN(totals.total);
-  const canPayICAN = (icanBalance?.ican ?? 0) >= icanNeeded;
+  // Everything is shown in the store's own currency, and ICAN is converted at that currency's price.
+  const cartStoreId = cart[0]?.product.supermarket_id || selectedSupermarketId;
+  const currency = (supermarkets.find(sm => sm.id === cartStoreId)?.price_currency || 'UGX').toUpperCase();
+  const fmt = (n: number) => formatMoney(n, currency);
+  const fmtReceipt = (n: number) => formatMoney(n, receipt?.currency || currency);
+  const icanNeeded = icanPrice > 0 ? Math.floor((totals.total / icanPrice) * 1e8) / 1e8 : 0;
+  const canPayICAN = icanPrice > 0 && (icanBalance?.ican ?? 0) >= icanNeeded;
+
+  useEffect(() => {
+    let cancelled = false;
+    setIcanPrice(currency === 'UGX' ? ICAN_TO_UGX : 0);
+    getIcanPrice(currency).then(price => { if (!cancelled) setIcanPrice(price ?? 0); });
+    return () => { cancelled = true; };
+  }, [currency]);
   const selectedSupermarket = supermarkets.find(sm => sm.id === selectedSupermarketId) || null;
 
   const activeStore = supermarkets.find(sm => sm.id === selectedSupermarketId) || null;
@@ -641,17 +677,17 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                   {item.product_name || 'Product'} × {item.quantity}
                 </span>
                 <span className="font-semibold text-slate-900 whitespace-nowrap">
-                  {formatUGX(item.line_total)}
+                  {fmtReceipt(item.line_total)}
                 </span>
               </div>
             ))}
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Tax</span>
-              <span className="text-slate-900">{formatUGX(receipt.tax_ugx)}</span>
+              <span className="text-slate-900">{fmtReceipt(receipt.tax_ugx)}</span>
             </div>
             <div className="flex justify-between font-bold text-base border-t pt-2">
               <span>Total Paid</span>
-              <span className="text-orange-600">{formatUGX(receipt.total_ugx)}</span>
+              <span className="text-orange-600">{fmtReceipt(receipt.total_ugx)}</span>
             </div>
           </div>
 
@@ -958,7 +994,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
               )}
               <p className="text-xs text-slate-400 mt-1">{foundProduct.category_name} · SKU: {foundProduct.sku}</p>
               <p className="text-orange-600 font-bold text-xl mt-2">
-                {formatUGX(foundProduct.selling_price)}
+                {fmt(foundProduct.selling_price)}
               </p>
               <p className="text-xs text-slate-400">
                 {foundProduct.available_stock} in stock · {foundProduct.tax_rate}% tax included
@@ -1007,7 +1043,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-800 text-sm truncate">{item.product.name}</p>
                   <p className="text-xs text-slate-400">
-                    {formatUGX(item.product.selling_price)} each
+                    {fmt(item.product.selling_price)} each
                     {(() => {
                       const storeName = supermarkets.find(sm => sm.id === item.product.supermarket_id)?.name;
                       return storeName ? ` · ${storeName}` : '';
@@ -1030,7 +1066,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                   </button>
                 </div>
                 <span className="w-24 text-right font-bold text-slate-800 text-sm">
-                  {formatUGX(item.line_total)}
+                  {fmt(item.line_total)}
                 </span>
               </div>
             ))}
@@ -1039,14 +1075,14 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
           {/* Totals */}
           <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 space-y-1">
             <div className="flex justify-between text-sm text-slate-500">
-              <span>Subtotal</span><span>{formatUGX(totals.subtotal)}</span>
+              <span>Subtotal</span><span>{fmt(totals.subtotal)}</span>
             </div>
               <div className="flex justify-between text-sm text-slate-500">
-                <span>Tax included</span><span>{formatUGX(totals.tax)}</span>
+                <span>Tax included</span><span>{fmt(totals.tax)}</span>
             </div>
             <div className="flex justify-between font-bold text-slate-800 text-base border-t border-slate-200 pt-2">
               <span>Total</span>
-              <span className="text-orange-600">{formatUGX(totals.total)}</span>
+              <span className="text-orange-600">{fmt(totals.total)}</span>
             </div>
           </div>
 
@@ -1097,7 +1133,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
 
             {payment !== 'ican' && (
               <p className="text-xs text-green-600 mt-2 text-center">
-                You'll earn ~₡{formatICAN(ugxToICAN(totals.total * 0.01))} ICAN cashback (1%)
+                You'll earn ~₡{formatICAN(icanPrice > 0 ? Math.floor((totals.total * 0.01 / icanPrice) * 1e8) / 1e8 : 0)} ICAN cashback (1%)
               </p>
             )}
           </div>
@@ -1112,7 +1148,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
               {submitting ? (
                 <><Loader size={20} className="animate-spin" /> Processing...</>
               ) : (
-                <><ReceiptText size={20} /> Pay {formatUGX(totals.total)}</>
+                <><ReceiptText size={20} /> Pay {fmt(totals.total)}</>
               )}
             </button>
           </div>
@@ -1133,7 +1169,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
             <div className="mb-5 text-center">
               <h3 className="text-xl font-bold text-slate-800">Authorize IcanEra Payment</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Enter your wallet PIN to pay {formatUGX(totals.total)}.
+                Enter your wallet PIN to pay {fmt(totals.total)}.
               </p>
             </div>
             <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="checkout-pin">

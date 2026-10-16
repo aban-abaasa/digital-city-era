@@ -12,8 +12,15 @@
 --   subtotal   = line_total - tax                    (net of VAT)
 -- so subtotal + tax = total = the price the customer saw.
 --
--- Only the tax arithmetic changed; stock, ICAN payment/fee and receipt logic
--- are identical to the previous definition. Run in the Supabase SQL Editor.
+-- Global pricing: amounts are in the store's own currency (supermarkets.
+-- price_currency, UGX when unset) and ICAN is converted at that currency's ICAN
+-- price (mbg_ican_price_in_currency) instead of a flat 5000 UGX. UGX stores keep
+-- the existing 5000 rate, so nothing changes for them. The result also returns
+-- 'currency' and 'price_per_ican'; the *_ugx keys are kept for older clients and
+-- hold amounts in that currency.
+--
+-- Stock, ICAN payment/fee and receipt logic are otherwise identical to the
+-- previous definition. Run in the Supabase SQL Editor.
 
 CREATE OR REPLACE FUNCTION public.customer_self_checkout(
   p_cart jsonb,
@@ -54,6 +61,8 @@ DECLARE
   v_customer_charge_ican DECIMAL;
   v_platform_fee_ican   DECIMAL;
   v_customer_balance    DECIMAL;
+  v_currency            TEXT;
+  v_price_per_ican      DECIMAL;
 BEGIN
   IF v_auth_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
@@ -156,7 +165,18 @@ BEGIN
     );
   END LOOP;
 
+  -- The store's own currency and what one ICAN is worth in it.
+  SELECT COALESCE(NULLIF(upper(price_currency), ''), 'UGX') INTO v_currency
+  FROM public.supermarkets WHERE id = v_supermarket_id;
+  v_currency := COALESCE(v_currency, 'UGX');
+  v_price_per_ican := CASE WHEN v_currency = 'UGX' THEN 5000
+                           ELSE public.mbg_ican_price_in_currency(v_currency) END;
+
   IF p_pay_with_ican THEN
+    IF v_price_per_ican IS NULL THEN
+      RAISE EXCEPTION 'Prices in % cannot be converted to ICAN right now', v_currency;
+    END IF;
+
     SELECT owner_user_id, COALESCE(NULLIF(name, ''), NULLIF(location, ''), p_store_location)
     INTO v_store_owner_id, v_merchant_name
     FROM public.supermarkets
@@ -172,7 +192,7 @@ BEGIN
     -- Store is unaffected — full order total, unchanged mechanism.
     -- ICANera's cut is a SEPARATE surcharge on top, not carved out of what
     -- the store receives.
-    v_store_ican           := GREATEST(ROUND(v_net_total / 5000, 8), 0.00000001);
+    v_store_ican           := GREATEST(ROUND(v_net_total / v_price_per_ican, 8), 0.00000001);
     v_customer_charge_ican := ROUND(v_store_ican * (1 + v_platform_fee_pct / 100), 8);
     v_platform_fee_ican    := v_customer_charge_ican - v_store_ican;
 
@@ -185,7 +205,7 @@ BEGIN
       'digital-city-era',
       v_tx_record_id,
       v_net_total,
-      'UGX',
+      v_currency,
       COALESCE(v_merchant_name, 'Supermarket'),
       'business',
       'business_expense'
@@ -218,7 +238,7 @@ BEGIN
          merchant_name, counterparty_type, expense_classification, source_app, reference_id, note)
       VALUES
         (v_auth_id, v_platform_fee_ican, 'transfer_out', 'transfer_out', 'completed',
-         ROUND(v_platform_fee_ican * 5000, 2), 'UGX', 'ICANera platform fee', 'business',
+         ROUND(v_platform_fee_ican * v_price_per_ican, 2), v_currency, 'ICANera platform fee', 'business',
          'business_expense', 'digital-city-era', v_tx_record_id || '_FEE',
          format('ICANera platform fee on supermarket order | receipt %s', v_receipt_no));
 
@@ -302,14 +322,14 @@ BEGIN
   RETURNING id INTO v_receipt_id;
 
   -- ── ICAN cashback (1%, swallowed on failure) ──────────────────────────────
-  IF p_pay_with_ican = FALSE THEN
+  IF p_pay_with_ican = FALSE AND v_price_per_ican IS NOT NULL THEN
     BEGIN
       SELECT credit_ican_earning(
         v_auth_id,
-        GREATEST(ROUND(v_net_total * 0.01 / 5000, 8), 0.0001),
+        GREATEST(ROUND(v_net_total * 0.01 / v_price_per_ican, 8), 0.0001),
         'digital-city-era',
-        format('Self-checkout cashback | UGX %s | receipt %s',
-               v_net_total::TEXT, v_receipt_no),
+        format('Self-checkout cashback | %s %s | receipt %s',
+               v_currency, v_net_total::TEXT, v_receipt_no),
         v_tx_id::TEXT
       ) INTO v_ican_result;
     EXCEPTION WHEN OTHERS THEN
@@ -325,6 +345,8 @@ BEGIN
     'subtotal_ugx',     v_subtotal,
     'tax_ugx',          v_tax_total,
     'total_ugx',        v_net_total,
+    'currency',         v_currency,
+    'price_per_ican',   v_price_per_ican,
     'items_count',      v_items_count,
     'items',             v_snapshot,
     'payment_method',   p_payment_method,

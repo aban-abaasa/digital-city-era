@@ -13,6 +13,7 @@ import ProductCard from '../components/ProductCard';
 import productService from '../services/productService';
 import orderService from '../services/orderService';
 import cartService from '../services/cartService';
+import { formatMoney } from '../utils/money';
 import { supabase } from '../services/supabase';
 
 const CustomerDelivery = () => {
@@ -1118,8 +1119,8 @@ const CustomerDelivery = () => {
                       className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                     />
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>$0</span>
-                      <span className="font-medium">${priceRange[1]}</span>
+                      <span>{formatMoney(0)}</span>
+                      <span className="font-medium">{formatMoney(priceRange[1])}</span>
                     </div>
                   </div>
                 </div>
@@ -1270,9 +1271,9 @@ const CustomerDelivery = () => {
                   {/* Price */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xl font-bold text-gray-900 group-hover:text-green-600 transition-colors duration-300 transform group-hover:scale-110">${product.price}</span>
+                      <span className="text-xl font-bold text-gray-900 group-hover:text-green-600 transition-colors duration-300 transform group-hover:scale-110">{formatMoney(product.price, product.currency || product.price_currency)}</span>
                       {product.originalPrice > product.price && (
-                        <span className="text-sm text-gray-500 line-through group-hover:text-red-500 transition-colors duration-300">${product.originalPrice}</span>
+                        <span className="text-sm text-gray-500 line-through group-hover:text-red-500 transition-colors duration-300">{formatMoney(product.originalPrice, product.currency || product.price_currency)}</span>
                       )}
                       {product.originalPrice > product.price && (
                         <span className="text-xs bg-gradient-to-r from-red-100 to-red-200 text-red-700 px-2 py-1 rounded-full font-bold transform group-hover:scale-105 transition-all duration-300">
@@ -1400,24 +1401,24 @@ const CustomerDelivery = () => {
                   <>
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-gray-600">Subtotal:</span>
-                      <span className="font-medium">${totals.subtotal}</span>
+                      <span className="font-medium">{formatMoney(totals.subtotal, totals.currency)}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">Tax:</span>
-                      <span className="font-medium">${totals.tax}</span>
+                      <span className="text-gray-600">Tax included:</span>
+                      <span className="font-medium">{formatMoney(totals.tax, totals.currency)}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-gray-600">Delivery:</span>
                       <span className={`font-medium ${totals.deliveryFee === 0 ? 'text-green-600' : 'text-gray-900'}`}>
-                        {totals.deliveryFee === 0 ? 'FREE' : `$${totals.deliveryFee}`}
+                        {totals.deliveryFee === 0 ? 'FREE' : formatMoney(totals.deliveryFee, totals.currency)}
                       </span>
                     </div>
                     {totals.deliveryFee === 0 && (
-                      <div className="text-xs text-green-600 mb-2">🎉 You saved $9.99 on delivery!</div>
+                      <div className="text-xs text-green-600 mb-2">🎉 Free delivery on this order!</div>
                     )}
                     <div className="flex justify-between font-bold text-lg border-t pt-2">
                       <span>Total:</span>
-                      <span className="text-green-600">${totals.total}</span>
+                      <span className="text-green-600">{formatMoney(totals.total, totals.currency)}</span>
                     </div>
                   </>
                 );
