@@ -138,6 +138,7 @@ const generateReportContent = (reportData) => {
         <p style="text-align: center; font-size: 0.95em; color: #6b7280; margin-top: 30px; line-height: 1.6;">
           This report was generated automatically by SUPERMARTKERA Analytics.<br>
           <span style="font-weight: bold;">Webale nyo!</span> For questions, contact: reports@supermartkera.ug<br>
+          A product of GODMINDERA ORGANISATION (U) LTD<br>
           <strong>Generated on:</strong> ${formattedDate}
         </p>
       </div>
@@ -403,6 +404,7 @@ const generateReportPDF = (reportData) => {
   doc.setTextColor(107, 114, 128);
   doc.text('SUPERMARTKERA Analytics - Building Data-Driven Decisions', pageWidth / 2, footerY, { align: 'center' });
   doc.text('Contact: reports@supermartkera.ug | +256 700 123 456', pageWidth / 2, footerY + 7, { align: 'center' });
+  doc.text('A product of GODMINDERA ORGANISATION (U) LTD', pageWidth / 2, footerY + 14, { align: 'center' });
 
   return doc;
 };
