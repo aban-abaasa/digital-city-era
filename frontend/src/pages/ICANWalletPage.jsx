@@ -47,7 +47,6 @@ const TX_LABELS = {
   purchase: 'Purchase',
   transfer_in: 'Received',
   transfer_out: 'Sent',
-  tithe: 'Tithe (10%)',
   sale: 'Sale',
   refund: 'Refund',
   buy: 'Bought IcanEra',
@@ -111,14 +110,12 @@ function dayLabel(ts) {
 }
 
 function txTone(tx) {
-  if (tx.transaction_type === 'tithe') return { text: 'text-amber-700', bg: 'bg-amber-100' };
   if (tx.direction === 'in') return { text: 'text-emerald-700', bg: 'bg-emerald-100' };
   return { text: 'text-rose-700', bg: 'bg-rose-100' };
 }
 
 function txIcon(tx) {
   const t = tx.transaction_type;
-  if (t === 'tithe') return <span className="text-[11px] font-bold">10%</span>;
   if (t === 'buy' || t === 'purchase') return <ShoppingCart size={15} />;
   if (t === 'sell' || t === 'sale') return <Banknote size={15} />;
   if (t === 'refund') return <RotateCcw size={15} />;
@@ -639,7 +636,6 @@ export default function ICANWalletPage({
     if (activeTab === 'all') return true;
     if (activeTab === 'in') return tx.direction === 'in';
     if (activeTab === 'out') return tx.direction === 'out';
-    if (activeTab === 'tithe') return tx.transaction_type === 'tithe';
     return true;
   }).filter((tx) => matchesQuery(tx, query)), [transactions, activeTab, query]);
 
@@ -735,7 +731,6 @@ export default function ICANWalletPage({
           transactions={transactions}
           earned={compactNumber(balance.totalEarned ?? 0)}
           spent={compactNumber(balance.totalSpent ?? 0)}
-          tithe={compactNumber(balance.totalTithe ?? 0)}
           cashback={cashback}
           hidden={hidden}
           embedded={embedded}
@@ -743,12 +738,11 @@ export default function ICANWalletPage({
         />
 
         {!embedded && (
-          <Collapsible embedded={embedded} icon={<Leaf size={16} />} title="Earn IcanEra at the Supermarket" subtitle="Cashback, deliveries and tithe">
+          <Collapsible embedded={embedded} icon={<Leaf size={16} />} title="Earn IcanEra at the Supermarket" subtitle="Cashback and deliveries">
             <ul className="space-y-2 text-[13px] leading-snug text-emerald-50/80">
               {[
                 'Pay with IcanEra at checkout — 1% cashback on every purchase.',
                 'Suppliers earn IcanEra on every approved delivery.',
-                'A 10% tithe is deducted automatically from all earnings.',
               ].map((item) => (
                 <li key={item} className="flex gap-2"><span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#c4a052]" />{item}</li>
               ))}

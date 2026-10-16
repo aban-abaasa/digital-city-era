@@ -2,7 +2,7 @@
  * ICAN Wallet Service — digital-city-era (Supermarket POS)
  * Connects to the shared Supabase ICAN coin tables.
  * 1 ICAN = 5,000 UGX floor price.
- * 10% tithe is auto-deducted on all earnings via DB function.
+ * Earnings are credited in full — the wallet takes no tithe.
  */
 
 import { supabase } from './supabase';
@@ -46,7 +46,6 @@ export async function getBalance(userId) {
     address: accountNumber ?? wallet?.wallet_address ?? null,
     totalEarned: wallet?.total_earned ?? 0,
     totalSpent: wallet?.total_spent ?? 0,
-    totalTithe: wallet?.total_tithe_paid ?? 0,
   };
 }
 
@@ -288,7 +287,7 @@ export async function creditSupplierDelivery({ supplierUserId, ugxValue, orderId
 
 /**
  * Buy ICAN coins — user pays UGX (notional), ICAN credited to wallet.
- * 1 ICAN = 5,000 UGX floor price. No tithe on purchases.
+ * 1 ICAN = 5,000 UGX floor price.
  */
 export async function buyICAN({ userId, icanAmount, paymentRef = null }) {
   const { data, error } = await supabase.rpc('buy_ican_coins', {

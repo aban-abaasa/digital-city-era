@@ -1130,11 +1130,10 @@ const CustomerDashboard = () => {
                     {icanLoading ? '…' : (icanBalance?.ican ?? 0).toFixed(4)} <span className="text-2xl">₡</span>
                   </p>
                   <p className="text-violet-200 text-xs mt-1">≈ UGX {icanLoading ? '…' : Number(icanBalance?.ugx ?? 0).toLocaleString()}</p>
-                  <div className="mt-5 grid grid-cols-3 gap-2 text-center sm:gap-3">
+                  <div className="mt-5 grid grid-cols-2 gap-2 text-center sm:gap-3">
                     {[
                       { label: 'Earned', value: icanBalance?.totalEarned },
                       { label: 'Spent',  value: icanBalance?.totalSpent },
-                      { label: 'Tithe',  value: icanBalance?.totalTithe },
                     ].map(s => (
                       <div key={s.label} className="min-w-0 rounded-xl border border-white/10 bg-white/10 px-1.5 py-2.5 sm:px-2">
                         <p className="text-xs text-violet-200">{s.label}</p>

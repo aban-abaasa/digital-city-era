@@ -714,8 +714,8 @@ function WalletTab({ wallet, navigate }) {
           <p className="text-xs text-slate-500 mt-1">Total Earned</p>
         </div>
         <div className="bg-white rounded-2xl shadow-sm p-4 text-center">
-          <p className="text-2xl font-bold text-red-500">{fmtIcan(wallet.total_tithe_paid)}</p>
-          <p className="text-xs text-slate-500 mt-1">Tithe Paid (10%)</p>
+          <p className="text-2xl font-bold text-red-500">{fmtIcan(wallet.total_spent)}</p>
+          <p className="text-xs text-slate-500 mt-1">Total Spent</p>
         </div>
       </div>
       <button onClick={() => navigate('/ican-wallet')}

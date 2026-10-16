@@ -10,5 +10,4 @@ export type ICANBalance = {
   address: string | null;
   totalEarned: number;
   totalSpent: number;
-  totalTithe: number;
 };

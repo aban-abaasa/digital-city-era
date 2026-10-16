@@ -264,7 +264,7 @@ BEGIN
     RAISE EXCEPTION 'unauthorized';
   END IF;
 
-  tithe := ROUND(bonus_amount * 0.1, 6);
+  tithe := 0;  -- the wallet takes no tithe
   net   := bonus_amount - tithe;
 
   INSERT INTO public.ican_user_wallets (user_id, ican_balance, total_earned, total_tithe_paid)

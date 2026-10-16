@@ -44,7 +44,7 @@ export default function RideCommsBar({ rideId, selfUserId, selfName, peerUserId,
         note: `Sent during ride ${rideId}`,
         referenceId: rideId,
       });
-      toast.success(`✅ Sent ${formatICAN(amount)} ICAN to ${peerName} (they received ${formatICAN(result.recipient_received)} after tithe)`);
+      toast.success(`✅ Sent ${formatICAN(amount)} ICAN to ${peerName}`);
       setSendOpen(false);
       setSendAmount('');
     } catch (e: any) {
