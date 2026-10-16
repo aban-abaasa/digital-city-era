@@ -14,10 +14,14 @@
   --app-fg: #0f172a;
 }
 
+/* Every page fills the whole screen (width and height), including on
+   extra-large / ultrawide monitors. */
 html,
 body,
 #root {
-  min-height: 100%;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 body {
@@ -26,6 +30,39 @@ body {
   color: var(--app-fg);
   transition: background-color 200ms ease, color 200ms ease;
 }
+
+/* ── Full-screen layout on extra-large screens ─────────────────────────────
+   Page wrappers across the app were written as `mx-auto max-w-7xl` (1280px),
+   which leaves wide empty bands on 1920px+ displays. Lift that cap for page
+   wrappers only (modals/dialogs don't use `mx-auto`, so they keep their size),
+   and let the side gutters breathe as the screen grows. */
+:root {
+  --page-gutter-xl: clamp(1.5rem, 3vw, 4rem);
+}
+
+.mx-auto.max-w-7xl,
+.mx-auto.max-w-6xl:not(.w-11\/12),
+.container {
+  width: 100%;
+  max-width: none;
+}
+
+/* Roomier side padding once the viewport is large (keeps content off the
+   screen edges without re-introducing a max width). */
+@media (min-width: 1536px) {
+  .mx-auto.max-w-7xl,
+  .mx-auto.max-w-6xl:not(.w-11\/12),
+  .container {
+    padding-left: max(2rem, var(--page-gutter-xl));
+    padding-right: max(2rem, var(--page-gutter-xl));
+  }
+}
+
+/* Scale the whole UI (everything sized in rem — Tailwind spacing, type, grids)
+   proportionally on big monitors, so full-width pages don't look tiny. */
+@media (min-width: 1920px) { html { font-size: 17px; } }
+@media (min-width: 2560px) { html { font-size: 20px; } }
+@media (min-width: 3840px) { html { font-size: 26px; } }
 
 /* Hide scroll indicators (vertical & horizontal) app-wide — scrolling still
    works everywhere, only the visible thumb/track is removed. */

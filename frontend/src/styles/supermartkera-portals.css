@@ -801,7 +801,7 @@
 .classic-receipt-table .text-green-600 { color: #16734a !important; }
 .classic-receipt-table .rounded-lg.border-l-4,
 .classic-receipt-table .border-l-4 { border-left-color: #c4a052 !important; }
-.admin-transactions-page { max-width: 1500px; margin: 0 auto; }
+.admin-transactions-page { width: 100%; max-width: none; margin: 0 auto; }
 .admin-transactions-ledger .classic-receipt-summary { margin-bottom: 0.25rem; }
 .admin-transactions-ledger .classic-receipt-table { overflow: hidden; }
 
