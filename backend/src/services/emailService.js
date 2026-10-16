@@ -110,6 +110,7 @@ class EmailService {
             </div>
             <div class="footer">
               <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
+              <p>A product of GODMINDERA ORGANISATION (U) LTD</p>
               <p>This is an automated message. Please do not reply to this email.</p>
             </div>
           </div>
@@ -170,6 +171,7 @@ class EmailService {
             </div>
             <div class="footer">
               <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
+              <p>A product of GODMINDERA ORGANISATION (U) LTD</p>
               <p>This is an automated security message.</p>
             </div>
           </div>
@@ -263,6 +265,7 @@ class EmailService {
             </div>
             <div class="footer">
               <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
+              <p>A product of GODMINDERA ORGANISATION (U) LTD</p>
             </div>
           </div>
         </body>
@@ -327,6 +330,7 @@ class EmailService {
             </div>
             <div class="footer">
               <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
+              <p>A product of GODMINDERA ORGANISATION (U) LTD</p>
             </div>
           </div>
         </body>
@@ -390,6 +394,7 @@ class EmailService {
             </div>
             <div class="footer">
               <p>&copy; 2025 SUPERMARTKERA Uganda. All rights reserved.</p>
+              <p>A product of GODMINDERA ORGANISATION (U) LTD</p>
             </div>
           </div>
         </body>

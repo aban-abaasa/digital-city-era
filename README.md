@@ -1,5 +1,7 @@
 # Supermartkera
 
+A product of GODMINDERA ORGANISATION (U) LTD.
+
 A creative digital supermarket platform designed to streamline retail operations with multi-role access, fast Google sign-in, and real-time management.
 
 ## What It Does
