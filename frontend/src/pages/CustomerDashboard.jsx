@@ -55,6 +55,8 @@ import AnimatedCounter from '../components/AnimatedCounter';
 import { Greeting } from '../components/customerDashboard/LiveClock';
 import PortalHeader from '../components/PortalHeader';
 import OverflowTabs from '../components/OverflowTabs';
+import { InHeaderTabs } from '../components/PortalHeaderSlot';
+import { headerTabClass } from '../components/portalHeaderSlotUtils';
 import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
 import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
@@ -754,31 +756,43 @@ const CustomerDashboard = () => {
           />
         </div>
 
-        {/* Row 2 — nav tabs (desktop only): ivory bar, ink text, gold underline that slides in */}
-        <div className="hidden border-b border-[#c4a052]/40 bg-[#fdfaf2] sm:block dark:border-slate-700 dark:bg-slate-900">
-          <div className="max-w-7xl mx-auto px-2">
-            {/* Tabs that don't fit the screen fold into a "More" menu */}
-            <OverflowTabs
-              gap={4}
-              navLabel="Sections"
-              activeId={activeTab}
-              items={[
-                ...ALL_TABS.map(tab => ({ id: tab.id, prefix: tab.emoji, label: tab.label, onClick: () => switchTab(tab.id) })),
-                { id: 'ican-wallet', prefix: '₡', label: 'IcanEra Wallet', wallet: true, onClick: () => setActiveTab('ican-wallet') }
-              ]}
-              tabClassName={(isActive, _measuring, item) => `classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap ${
-                isActive
-                  ? 'font-semibold text-[#1e1b4b] dark:text-amber-200'
-                  : item?.wallet
-                    ? 'font-medium text-[#a17c28] hover:text-[#1e1b4b] dark:text-amber-300 dark:hover:text-white'
-                    : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
-              }`}
-              moreClassName={(isActive) => `classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap ${
-                isActive ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
-              }`}
-            />
-          </div>
-        </div>
+        {/* Row 2 — nav tabs (desktop only). They live inside the shared header
+            (one header); tabs that don't fit fold into a "More" menu. Falls back
+            to the ivory bar if the header slot isn't there. */}
+        <InHeaderTabs>
+          {(inHeader) => {
+            const tabsRow = (
+              <OverflowTabs
+                gap={4}
+                navLabel="Sections"
+                activeId={activeTab}
+                items={[
+                  ...ALL_TABS.map(tab => ({ id: tab.id, prefix: tab.emoji, label: tab.label, onClick: () => switchTab(tab.id) })),
+                  { id: 'ican-wallet', prefix: '₡', label: 'IcanEra Wallet', wallet: true, onClick: () => setActiveTab('ican-wallet') }
+                ]}
+                tabClassName={inHeader
+                  ? headerTabClass
+                  : (isActive, _measuring, item) => `classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap ${
+                    isActive
+                      ? 'font-semibold text-[#1e1b4b] dark:text-amber-200'
+                      : item?.wallet
+                        ? 'font-medium text-[#a17c28] hover:text-[#1e1b4b] dark:text-amber-300 dark:hover:text-white'
+                        : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
+                  }`}
+                moreClassName={inHeader
+                  ? headerTabClass
+                  : (isActive) => `classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap ${
+                    isActive ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
+                  }`}
+              />
+            );
+            return inHeader ? tabsRow : (
+              <div className="hidden border-b border-[#c4a052]/40 bg-[#fdfaf2] sm:block dark:border-slate-700 dark:bg-slate-900">
+                <div className="max-w-7xl mx-auto px-2">{tabsRow}</div>
+              </div>
+            );
+          }}
+        </InHeaderTabs>
 
         {/* Phone section bar — current section in serif + the one menu
             trigger (opens the bottom sheet rendered just below the header). */}

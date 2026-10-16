@@ -3,6 +3,8 @@ import { FiGrid } from 'react-icons/fi';
 import MobileMenuSheet from './customerDashboard/MobileMenuSheet';
 import MobileBottomTabs from './MobileBottomTabs';
 import OverflowTabs from './OverflowTabs';
+import { InHeaderTabs } from './PortalHeaderSlot';
+import { headerTabClass, headerTabIconClass } from './portalHeaderSlotUtils';
 
 const tabClass = (isActive) => `classic-tab relative flex items-center gap-1.5 px-3.5 py-3 text-sm whitespace-nowrap ${
   isActive
@@ -45,6 +47,8 @@ const PortalTabNavigator = ({
     setMenuOpen(false);
   };
 
+  const sectionItems = tabs.map((tab) => ({ ...tab, onClick: () => pick(tab.id) }));
+
   const barTabs = (bottomTabs || tabs.slice(0, 4).map((t) => ({ id: t.id })))
     .map(({ id, label }) => {
       const tab = tabs.find((t) => t.id === id);
@@ -54,22 +58,37 @@ const PortalTabNavigator = ({
 
   return (
     <>
-      {/* Row 2 — classic underlined tabs (sm and up): brass line draws under
-          the active tab and previews on hover, like the customer dashboard */}
-      <div className="hidden sm:block bg-white border-b border-[#c4a052]/30">
-        <div className="max-w-7xl mx-auto px-2">
-          {/* Tabs that don't fit the screen fold into a "More" menu instead of scrolling off */}
+      {/* Section tabs (sm and up). They are portaled INTO the shared header so
+          the portal has one sticky header; if no header slot exists they fall
+          back to the classic white bar in place. Tabs that don't fit the screen
+          fold into a "More" menu instead of scrolling off. */}
+      <InHeaderTabs>
+        {(inHeader) => (inHeader ? (
           <OverflowTabs
-            gap={2}
+            gap={4}
             navLabel="Sections"
-            items={tabs.map((tab) => ({ ...tab, onClick: () => pick(tab.id) }))}
+            items={sectionItems}
             activeId={activeTab}
-            tabClassName={tabClass}
-            moreClassName={tabClass}
-            iconClassName={(isActive) => `h-4 w-4 ${isActive ? 'text-[#a17c28]' : ''}`}
+            tabClassName={headerTabClass}
+            moreClassName={headerTabClass}
+            iconClassName={headerTabIconClass}
           />
-        </div>
-      </div>
+        ) : (
+          <div className="hidden sm:block bg-white border-b border-[#c4a052]/30">
+            <div className="max-w-7xl mx-auto px-2">
+              <OverflowTabs
+                gap={2}
+                navLabel="Sections"
+                items={sectionItems}
+                activeId={activeTab}
+                tabClassName={tabClass}
+                moreClassName={tabClass}
+                iconClassName={(isActive) => `h-4 w-4 ${isActive ? 'text-[#a17c28]' : ''}`}
+              />
+            </div>
+          </div>
+        ))}
+      </InHeaderTabs>
 
       {/* Phone section bar — current section in serif + the one Menu trigger */}
       <div className="sm:hidden border-b border-[#c4a052]/25 bg-white">

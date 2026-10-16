@@ -9,6 +9,7 @@ import { usePortalAccess } from '../hooks/usePortalAccess';
 import { prefetchPortal } from '../utils/portalPages';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import OverflowTabs from './OverflowTabs';
+import { HeaderTabsSlot } from './PortalHeaderSlot';
 
 /**
  * The one header every Supermartkera portal shares — same layout as
@@ -311,6 +312,10 @@ const PortalHeader = ({
           </div>
         )}
         </div>
+
+        {/* Section tabs (Dashboard, Orders, Wallet…) are portaled in here by the
+            portal's own navigator, so the whole thing is ONE sticky header. */}
+        <HeaderTabsSlot />
       </div>
       <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
     </header>

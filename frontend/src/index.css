@@ -58,6 +58,9 @@ body {
   }
 }
 
+/* The header's section-tab slot takes no space until a portal fills it. */
+#portal-header-tabs:empty { display: none; }
+
 /* Scale the whole UI (everything sized in rem — Tailwind spacing, type, grids)
    proportionally on big monitors, so full-width pages don't look tiny. */
 @media (min-width: 1920px) { html { font-size: 17px; } }
