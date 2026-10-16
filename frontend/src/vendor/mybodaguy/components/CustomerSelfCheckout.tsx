@@ -467,10 +467,9 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
         const cartPayload = items.map(i => ({
           product_id: i.product.product_id,
           quantity: i.quantity,
-          // The RPC expects a pre-tax unit price and adds the store/product tax.
-          // Convert the tax-inclusive shelf price back to its net price so the
-          // final charged amount remains exactly the displayed price.
-          unit_price: i.product.selling_price / (1 + Number(i.product.tax_rate ?? 18) / 100),
+          // The RPC prices every line from products.selling_price (tax-inclusive)
+          // and derives the tax from it, so the shelf price is sent as-is.
+          unit_price: i.product.selling_price,
           tax_rate: Number(i.product.tax_rate ?? 18),
         }));
 

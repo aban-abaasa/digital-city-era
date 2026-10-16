@@ -769,7 +769,8 @@ const CustomerDelivery = () => {
         items: cart.map(item => ({
           product_id: item.id,
           quantity: Number(item.quantity),
-          unit_price: Number(item.price) / (1 + Number(item.tax_rate ?? 18) / 100),
+          // Tax-inclusive shelf price; checkout derives the tax from it.
+          unit_price: Number(item.price),
           tax_rate: Number(item.tax_rate ?? 18)
         })),
         total_amount: totals.total,
