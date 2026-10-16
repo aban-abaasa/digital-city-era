@@ -165,6 +165,7 @@ export const cartService = {
           name: product.name,
                price: productPrice,
                tax_rate: product.tax_rate ?? 18,
+               currency: String(product.price_currency || product.currency || 'UGX').toUpperCase(),
           image: product.product_images?.[0]?.image_url || null,
           sku: product.sku,
           quantity,
@@ -275,7 +276,7 @@ export const cartService = {
       deliveryFee: Math.round(deliveryFee),
       total: Math.round(total),
       itemCount: cart.reduce((total, item) => total + item.quantity, 0),
-      currency: 'UGX'
+      currency: String(cart[0]?.currency || 'UGX').toUpperCase()
     };
   },
 
