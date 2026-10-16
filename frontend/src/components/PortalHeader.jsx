@@ -8,6 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { usePortalAccess } from '../hooks/usePortalAccess';
 import { prefetchPortal } from '../utils/portalPages';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import OverflowTabs from './OverflowTabs';
 
 /**
  * The one header every Supermartkera portal shares — same layout as
@@ -136,29 +137,68 @@ const PortalHeader = ({
     else navigate(supabaseConfig.localBusinessServer ? '/local-home' : '/profile');
   };
 
-  const tabClass = (isActive) => `flex items-center gap-1 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-    isActive ? 'text-white border-b-2 border-[#f5dfa0]' : 'text-white/70 hover:text-white/90'
+  const tabClass = (isActive) => `flex items-center gap-1 px-3 sm:px-4 py-1.5 sm:py-2 lg:py-0 text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
+    isActive ? 'text-white border-[#f5dfa0]' : 'text-white/70 hover:text-white/90 border-transparent'
   }`;
+
+  // One header: the business's own identity (logo, name, type) lives in this
+  // bar instead of a second banner underneath. Its cover photo, when it has
+  // one, becomes a soft backdrop behind the same indigo gradient.
+  const headerStyle = hasBusiness && business.backgroundUrl
+    ? {
+        backgroundImage: `linear-gradient(135deg, rgba(30,58,138,0.94), rgba(55,48,163,0.92), rgba(109,40,217,0.9)), url(${business.backgroundUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }
+    : undefined;
+  const eyebrow = hasBusiness && business.typeLabel
+    ? `${business.typeEmoji ? `${business.typeEmoji} ` : ''}${business.typeLabel} · ${subtitle}`
+    : subtitle;
+
+  const tabItems = accessiblePortals.map((portal) => ({
+    id: portal.id,
+    label: portal.label,
+    title: portal.subtitle ? `${portal.name} — ${portal.subtitle}` : portal.name,
+    // Start fetching that portal's page before the tap lands
+    onHover: () => prefetchPortal(portal.id),
+    onClick: () => {
+      if (currentPortal?.id === portal.id) onCurrentPortalClick?.();
+      else navigate(portal.route);
+    }
+  }));
 
   return (
     <>
-    <header className="bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white shadow-lg sticky top-0 z-50">
+    <header
+      className="bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white shadow-lg sticky top-0 z-50"
+      style={headerStyle}
+    >
       <div className="container mx-auto px-2 sm:px-4">
-        <div className="flex items-center justify-between h-12 sm:h-14 md:h-16">
-          {/* Left: brand */}
-          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+        {/* Phones/tablets: brand + actions on row 1, portal tabs on row 2.
+            lg and up: brand | portal tabs | actions all on one row. */}
+        <div className="flex flex-wrap items-center gap-x-3 min-h-12 sm:min-h-14 md:min-h-16 lg:flex-nowrap">
+          {/* Left: brand + the business's own identity */}
+          <div className="order-1 flex items-center gap-1.5 sm:gap-3 min-w-0 py-1.5 lg:flex-shrink-0 lg:max-w-[34%]">
             {leftSlot}
-            <span className="grid h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0 place-items-center rounded-full bg-white/15 ring-1 ring-[#f5dfa0]/70 shadow-inner">
-              <ActiveIcon className="h-4 w-4 sm:h-5 sm:w-5 text-[#f5dfa0]" />
+            <span className={`grid h-9 w-9 sm:h-11 sm:w-11 flex-shrink-0 place-items-center overflow-hidden bg-white/15 ring-1 ring-[#f5dfa0]/70 shadow-inner ${hasBusiness ? 'rounded-xl' : 'rounded-full'}`}>
+              {hasBusiness && business.logoUrl ? (
+                <img src={business.logoUrl} alt="" className="h-full w-full object-cover" />
+              ) : hasBusiness ? (
+                <span className="font-classic-display text-lg sm:text-2xl font-bold text-[#f5dfa0]">
+                  {(business.name || '?').charAt(0).toUpperCase()}
+                </span>
+              ) : (
+                <ActiveIcon className="h-4 w-4 sm:h-5 sm:w-5 text-[#f5dfa0]" />
+              )}
             </span>
             <div className="min-w-0">
-              <h1 className="font-classic-display text-base sm:text-xl font-bold leading-none truncate">{hasBusiness ? business.name : brand}</h1>
-              <p className="mt-1 text-[9px] sm:text-[10px] font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] text-[#f3dc9b] hidden min-[400px]:block truncate">{subtitle}</p>
+              <h1 className="font-classic-display text-base sm:text-xl font-bold leading-tight truncate">{hasBusiness ? business.name : brand}</h1>
+              <p className="mt-0.5 text-[9px] sm:text-[10px] font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] text-[#f3dc9b] hidden min-[400px]:block truncate">{eyebrow}</p>
             </div>
           </div>
 
           {/* Right: extras + theme toggle + avatar menu */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <div className="order-2 ml-auto flex items-center gap-1.5 sm:gap-2 flex-shrink-0 lg:order-3">
             {rightSlot}
             <button
               type="button"
@@ -245,74 +285,35 @@ const PortalHeader = ({
               )}
             </div>
           </div>
-        </div>
 
-        {/* Portal tabs — one per portal you can enter; hidden with a single portal */}
+        {/* Portal tabs — one per portal you can enter; hidden with a single
+            portal. Tabs that don't fit fold into a "More" menu. */}
         {showTabs && (
-          <div className="flex gap-1 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {accessiblePortals.map((portal) => {
-              const isCurrent = currentPortal?.id === portal.id;
-              return (
-                <button
-                  key={portal.id}
-                  type="button"
-                  // Start fetching that portal's page before the tap lands
-                  onMouseEnter={() => prefetchPortal(portal.id)}
-                  onFocus={() => prefetchPortal(portal.id)}
-                  onTouchStart={() => prefetchPortal(portal.id)}
-                  onClick={() => {
-                    if (isCurrent) onCurrentPortalClick?.();
-                    else navigate(portal.route);
-                  }}
-                  className={tabClass(isCurrent && !walletActive)}
-                  title={portal.subtitle ? `${portal.name} — ${portal.subtitle}` : portal.name}
-                >
-                  {portal.label}
-                </button>
-              );
-            })}
+          <div className="order-3 flex min-w-0 basis-full items-stretch gap-1 pb-1 lg:order-2 lg:basis-0 lg:flex-1 lg:self-stretch lg:pb-0">
+            <OverflowTabs
+              className="min-w-0 flex-1"
+              gap={4}
+              navLabel="Portals"
+              items={tabItems}
+              activeId={walletActive ? null : currentPortal?.id}
+              tabClassName={(isActive) => tabClass(isActive)}
+              moreClassName={(isActive) => tabClass(isActive)}
+            />
             {onWalletClick && (
               <button
                 type="button"
                 onClick={onWalletClick}
-                className={`${tabClass(walletActive)} ml-auto`}
+                className={`${tabClass(walletActive)} flex-shrink-0`}
               >
                 ₡ Wallet
               </button>
             )}
           </div>
         )}
+        </div>
       </div>
       <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
     </header>
-    {hasBusiness && (
-      <section
-        aria-label="Your business"
-        className="relative overflow-hidden bg-[#0f1b3d] text-white"
-        style={business.backgroundUrl ? { backgroundImage: `linear-gradient(90deg, rgba(15,27,61,0.94), rgba(15,27,61,0.72)), url(${business.backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
-      >
-        <div className="container mx-auto flex items-center gap-3 sm:gap-5 px-3 sm:px-4 py-3 sm:py-5">
-          <span className="grid h-14 w-14 sm:h-20 sm:w-20 flex-shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/10 ring-2 ring-[#f5dfa0]/80 shadow-lg">
-            {business.logoUrl ? (
-              <img src={business.logoUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <span className="font-classic-display text-2xl sm:text-4xl font-bold text-[#f5dfa0]">
-                {(business.name || '?').charAt(0).toUpperCase()}
-              </span>
-            )}
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.22em] text-[#f3dc9b]">
-              {business.typeEmoji} {business.typeLabel}
-            </p>
-            <h2 className="font-classic-display text-2xl sm:text-4xl lg:text-5xl font-bold leading-tight break-words">
-              {business.name}
-            </h2>
-          </div>
-        </div>
-        <div className="h-px bg-gradient-to-r from-transparent via-[#f5dfa0] to-transparent" />
-      </section>
-    )}
     </>
   );
 };

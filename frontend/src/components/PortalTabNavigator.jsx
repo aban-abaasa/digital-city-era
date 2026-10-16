@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { FiGrid } from 'react-icons/fi';
 import MobileMenuSheet from './customerDashboard/MobileMenuSheet';
 import MobileBottomTabs from './MobileBottomTabs';
+import OverflowTabs from './OverflowTabs';
+
+const tabClass = (isActive) => `classic-tab relative flex items-center gap-1.5 px-3.5 py-3 text-sm whitespace-nowrap ${
+  isActive
+    ? 'font-semibold text-indigo-800'
+    : 'font-medium text-slate-600 hover:text-indigo-700'
+}`;
 
 /**
  * The customer dashboard's section navigator, shared by every portal so they
@@ -51,31 +58,16 @@ const PortalTabNavigator = ({
           the active tab and previews on hover, like the customer dashboard */}
       <div className="hidden sm:block bg-white border-b border-[#c4a052]/30">
         <div className="max-w-7xl mx-auto px-2">
-          <nav className="flex overflow-x-auto scrollbar-hide gap-0.5 items-center">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => pick(tab.id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`classic-tab relative flex items-center gap-1.5 px-3.5 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
-                    isActive
-                      ? 'font-semibold text-indigo-800'
-                      : 'font-medium text-slate-600 hover:text-indigo-700'
-                  }`}
-                >
-                  {Icon && <Icon className={`h-4 w-4 ${isActive ? 'text-[#a17c28]' : ''}`} />}
-                  {tab.label}
-                  {tab.badge > 0 && (
-                    <span className="ml-0.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">{tab.badge}</span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+          {/* Tabs that don't fit the screen fold into a "More" menu instead of scrolling off */}
+          <OverflowTabs
+            gap={2}
+            navLabel="Sections"
+            items={tabs.map((tab) => ({ ...tab, onClick: () => pick(tab.id) }))}
+            activeId={activeTab}
+            tabClassName={tabClass}
+            moreClassName={tabClass}
+            iconClassName={(isActive) => `h-4 w-4 ${isActive ? 'text-[#a17c28]' : ''}`}
+          />
         </div>
       </div>
 

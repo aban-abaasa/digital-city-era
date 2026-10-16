@@ -54,6 +54,7 @@ import { supabase } from '../services/supabase';
 import AnimatedCounter from '../components/AnimatedCounter';
 import { Greeting } from '../components/customerDashboard/LiveClock';
 import PortalHeader from '../components/PortalHeader';
+import OverflowTabs from '../components/OverflowTabs';
 import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
 import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
@@ -756,25 +757,26 @@ const CustomerDashboard = () => {
         {/* Row 2 — nav tabs (desktop only): ivory bar, ink text, gold underline that slides in */}
         <div className="hidden border-b border-[#c4a052]/40 bg-[#fdfaf2] sm:block dark:border-slate-700 dark:bg-slate-900">
           <div className="max-w-7xl mx-auto px-2">
-            <nav className="flex overflow-x-auto scrollbar-hide gap-1 items-center">
-              {ALL_TABS.map(tab => (
-                <button key={tab.id} onClick={() => switchTab(tab.id)}
-                  aria-current={activeTab === tab.id ? 'page' : undefined}
-                  className={`classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
-                    activeTab === tab.id ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
-                  }`}>
-                  <span>{tab.emoji}</span>
-                  {tab.label}
-                </button>
-              ))}
-              <button onClick={() => setActiveTab('ican-wallet')}
-                aria-current={activeTab === 'ican-wallet' ? 'page' : undefined}
-                className={`classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap flex-shrink-0 ${
-                  activeTab === 'ican-wallet' ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-[#a17c28] hover:text-[#1e1b4b] dark:text-amber-300 dark:hover:text-white'
-                }`}>
-                <span>₡</span> IcanEra Wallet
-              </button>
-            </nav>
+            {/* Tabs that don't fit the screen fold into a "More" menu */}
+            <OverflowTabs
+              gap={4}
+              navLabel="Sections"
+              activeId={activeTab}
+              items={[
+                ...ALL_TABS.map(tab => ({ id: tab.id, prefix: tab.emoji, label: tab.label, onClick: () => switchTab(tab.id) })),
+                { id: 'ican-wallet', prefix: '₡', label: 'IcanEra Wallet', wallet: true, onClick: () => setActiveTab('ican-wallet') }
+              ]}
+              tabClassName={(isActive, _measuring, item) => `classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap ${
+                isActive
+                  ? 'font-semibold text-[#1e1b4b] dark:text-amber-200'
+                  : item?.wallet
+                    ? 'font-medium text-[#a17c28] hover:text-[#1e1b4b] dark:text-amber-300 dark:hover:text-white'
+                    : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
+              }`}
+              moreClassName={(isActive) => `classic-tab flex items-center gap-1.5 px-3 py-3 text-sm whitespace-nowrap ${
+                isActive ? 'font-semibold text-[#1e1b4b] dark:text-amber-200' : 'font-medium text-slate-500 hover:text-[#1e1b4b] dark:text-slate-400 dark:hover:text-white'
+              }`}
+            />
           </div>
         </div>
 
