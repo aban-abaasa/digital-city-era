@@ -20,11 +20,15 @@ import {
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
-import { barcodeVariants } from '../utils/barcodeHelper';
+import { barcodeVariants, barcodesMatch } from '../utils/barcodeHelper';
+import { impliedDiscountPercent, withDiscountPercent, withSellingPrice, withWholesalePrice } from '../utils/wholesalePricing';
 import { compressImageFile } from '../utils/imageCompression';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
+import ProductFlavorsEditor from './ProductFlavorsEditor';
+import ProductFlavorsModal from './ProductFlavorsModal';
+import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 import BookingsPanel from './booking/BookingsPanel';
 import ExpiryClearancePanel from './ExpiryClearancePanel';
 import ProductBatchManager from './ProductBatchManager';
@@ -274,6 +278,11 @@ const OrderInventoryPOSControl = () => {
   const [newlyRegisteredProductId, setNewlyRegisteredProductId] = useState(null); // Track newly created product for update
   const [registeringBarcode, setRegisteringBarcode] = useState(false); // A scanned code is being checked/registered behind the open form
   const scanRequestRef = useRef(0); // Bumped per scan and on cancel, so a late answer for an abandoned scan is dropped
+  const [flavorRows, setFlavorRows] = useState([]); // Flavors (own barcode each) to create along with the new product
+  const [flavorSharedName, setFlavorSharedName] = useState(null); // null = follow the product's name until the admin edits it
+  const [flavorsFor, setFlavorsFor] = useState(null); // Existing product the "Add flavors" window is open for
+  const [editFlavorRows, setEditFlavorRows] = useState([]); // Flavors to create along with the product being edited
+  const [editFlavorSharedName, setEditFlavorSharedName] = useState(null);
   const [newProduct, setNewProduct] = useState({
     name: '',
     sku: '',
@@ -1015,8 +1024,10 @@ const OrderInventoryPOSControl = () => {
     setEditValues({
       name: product.name,
       sku: product.sku,
+      barcode: product.barcode || '',
       cost_price: product.cost_price,
       wholesale_price: product.wholesale_price || 0,
+      wholesale_discount_percent: impliedDiscountPercent(product), // always filled in from the two prices
       accepted_supplier_price: product.accepted_supplier_price || 0,
       purchasing_price_source: product.purchasing_price_source || 'admin',
       selling_price: product.selling_price,
@@ -1026,6 +1037,8 @@ const OrderInventoryPOSControl = () => {
     });
     setEditImageFile(null);
     setEditImagePreview(product.images?.[0] || null);
+    setEditFlavorRows([]);
+    setEditFlavorSharedName(null);
   };
 
   // Re-reads one product's price, expiry and offer state. The database can
@@ -1067,6 +1080,8 @@ const OrderInventoryPOSControl = () => {
     setEditValues({});
     setEditImageFile(null);
     setEditImagePreview(null);
+    setEditFlavorRows([]);
+    setEditFlavorSharedName(null);
   };
 
   const saveEdit = async (productId) => {
@@ -1078,6 +1093,8 @@ const OrderInventoryPOSControl = () => {
 
     try {
       const { current_stock, expiry_date, ...productUpdates } = editValues;
+      // Only a way to fill the two prices in; it is not a products column
+      delete productUpdates.wholesale_discount_percent;
       if (expiryReady) productUpdates.expiry_date = expiry_date || null;
       // A stable-coin product's shilling price belongs to ICEC-S. The value captured when this edit
       // opened may be stale by now, so never write it back over the current one.
@@ -1085,6 +1102,31 @@ const OrderInventoryPOSControl = () => {
       const parsedStock = Number(current_stock);
       if (!Number.isInteger(parsedStock) || parsedStock < 0) {
         toast.error('Quantity must be a whole number of zero or more.');
+        return;
+      }
+
+      // The barcode is only written when it was changed, and not onto another product's code
+      const editedProduct = products.find(p => p.id === productId);
+      const newBarcode = String(productUpdates.barcode ?? '').trim();
+      if (!newBarcode || newBarcode === String(editedProduct?.barcode ?? '').trim()) {
+        delete productUpdates.barcode;
+      } else {
+        if (newBarcode.length < 3) {
+          toast.error('❌ That barcode is too short');
+          return;
+        }
+        const barcodeOwner = products.find(p => p.id !== productId && barcodesMatch(p.barcode, newBarcode));
+        if (barcodeOwner) {
+          toast.error(`❌ That barcode is already used by ${barcodeOwner.name}`);
+          return;
+        }
+        productUpdates.barcode = newBarcode;
+      }
+
+      // Flavors listed in the form are checked before anything is saved
+      const flavorsToAdd = activeFlavorRows(editFlavorRows);
+      if (flavorsToAdd.length > 0 && hasFlavorIssues(checkFlavorRows(editFlavorRows, { mainBarcode: productUpdates.barcode ?? editedProduct?.barcode, products }))) {
+        toast.error('❌ Fix the flavors marked in red first');
         return;
       }
 
@@ -1136,16 +1178,54 @@ const OrderInventoryPOSControl = () => {
         }
       }));
 
+      // Flavors: each becomes its own product with its own barcode. The product above is saved by
+      // now, so if the flavors fail the form stays open; saving again retries them.
+      let flavorProducts = [];
+      if (flavorsToAdd.length > 0) {
+        try {
+          const onOffer = isOnClearance(editedProduct) && Number(editValues.selling_price) === Number(editedProduct.selling_price);
+          const { products: madeFlavors, stockError } = await registerFlavorProducts({
+            supabase,
+            supermarketId,
+            base: {
+              name: (editFlavorSharedName ?? editValues.name).trim(),
+              cost_price: editValues.cost_price,
+              wholesale_price: editValues.wholesale_price,
+              wholesale_discount_percent: editValues.wholesale_discount_percent,
+              // A product on a reduced-price offer passes on its normal price, not the offer
+              selling_price: onOffer ? editedProduct.clearance_original_price : editValues.selling_price,
+              tax_rate: editValues.tax_rate,
+              category_id: editedProduct?.category_id
+            },
+            rows: editFlavorRows
+          });
+          flavorProducts = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: [] }));
+          if (stockError) {
+            console.warn('⚠️ Could not create inventory records for the flavors:', stockError);
+            toast.warning('Flavors were added, but their stock records could not be created. Press Refresh to retry.');
+          }
+        } catch (flavorError) {
+          console.error('❌ Error saving flavors:', flavorError);
+          setEditImageFile(null);
+          toast.error(`❌ ${flavorError.message || 'Could not save the flavors'}. The product itself was saved: fix the flavors and press Save again.`);
+          return;
+        }
+        setProducts(previous => [...previous, ...flavorProducts]);
+        setFilteredProducts(previous => [...previous, ...flavorProducts]);
+      }
+
       setEditingId(null);
       setEditValues({});
       setEditImageFile(null);
       setEditImagePreview(null);
-      toast.success('✅ Product updated successfully');
-      calculateStats(products.map(applyUpdate));
+      setEditFlavorRows([]);
+      setEditFlavorSharedName(null);
+      toast.success('✅ Product updated successfully' + (flavorProducts.length > 0 ? ` + ${flavorProducts.length} flavor${flavorProducts.length === 1 ? '' : 's'}` : ''));
+      calculateStats([...products.map(applyUpdate), ...flavorProducts]);
       if (expiryReady) refreshProductPricing(productId);
     } catch (error) {
       console.error('❌ Error saving product:', error);
-      toast.error('Failed to update product');
+      toast.error(error?.code === '23505' ? '❌ That barcode is already registered' : 'Failed to update product');
     }
   };
 
@@ -1195,6 +1275,13 @@ const OrderInventoryPOSControl = () => {
 
     if (newProduct.cost_price < 0 || newProduct.selling_price < 0) {
       toast.error('❌ Prices cannot be negative');
+      return;
+    }
+
+    // Flavors listed in the form are checked before anything is saved
+    const flavorsToAdd = activeFlavorRows(flavorRows);
+    if (flavorsToAdd.length > 0 && hasFlavorIssues(checkFlavorRows(flavorRows, { mainBarcode: newProduct.barcode, products }))) {
+      toast.error('❌ Fix the flavors marked in red first');
       return;
     }
 
@@ -1289,9 +1376,44 @@ const OrderInventoryPOSControl = () => {
       const putInList = (list) => list.some(p => p.id === data.id)
         ? list.map(p => p.id === data.id ? data : p)
         : [...list, data];
-      const updatedProducts = putInList(products);
+      let updatedProducts = putInList(products);
+      let updatedFiltered = putInList(filteredProducts);
+
+      // Flavors: each becomes its own product with its own barcode. The product above is saved by
+      // now, so if the flavors fail the form stays open on the saved row; saving again then updates
+      // it (rather than adding it twice) and retries the flavors.
+      let flavorCount = 0;
+      if (flavorsToAdd.length > 0) {
+        try {
+          const flavorStoreId = await inventoryService.getCurrentSupermarketId();
+          if (!flavorStoreId) throw new Error('No supermarket is assigned to this admin account.');
+          const { products: madeFlavors, stockError } = await registerFlavorProducts({
+            supabase,
+            supermarketId: flavorStoreId,
+            base: { ...newProduct, name: (flavorSharedName ?? newProduct.name).trim() },
+            rows: flavorRows
+          });
+          const shapedFlavors = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: [] }));
+          updatedProducts = [...updatedProducts, ...shapedFlavors];
+          updatedFiltered = [...updatedFiltered, ...shapedFlavors];
+          flavorCount = shapedFlavors.length;
+          if (stockError) {
+            console.warn('⚠️ Could not create inventory records for the flavors:', stockError);
+            toast.warning('Flavors were added, but their stock records could not be created. Press Refresh to retry.');
+          }
+        } catch (flavorError) {
+          console.error('❌ Error saving flavors:', flavorError);
+          setProducts(updatedProducts);
+          setFilteredProducts(updatedFiltered);
+          setNewlyRegisteredProductId(data.id);
+          setNewProduct(prev => ({ ...prev, barcode: data.barcode || prev.barcode }));
+          toast.error(`❌ ${flavorError.message || 'Could not save the flavors'}. The product itself was saved: fix the flavors and press Save again.`);
+          return;
+        }
+      }
+
       setProducts(updatedProducts);
-      setFilteredProducts(putInList(filteredProducts));
+      setFilteredProducts(updatedFiltered);
       
       // Reset form and state
       setNewProduct({
@@ -1307,13 +1429,15 @@ const OrderInventoryPOSControl = () => {
       });
       setNewProductImageFile(null);
       setNewProductImagePreview(null);
+      setFlavorRows([]);
+      setFlavorSharedName(null);
 
       setNewlyRegisteredProductId(null);
       setShowAddProductModal(false);
       
-      const successMsg = newlyRegisteredProductId 
+      const successMsg = (newlyRegisteredProductId 
         ? '✅ Product updated successfully!' 
-        : '✅ Product added successfully!';
+        : '✅ Product added successfully!') + (flavorCount > 0 ? ` + ${flavorCount} flavor${flavorCount === 1 ? '' : 's'}` : '');
       toast.success(successMsg);
       
       // Recalculate stats
@@ -1869,17 +1993,25 @@ const OrderInventoryPOSControl = () => {
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">SKU</label>
                       <input type="text" value={editValues.sku} onChange={(e) => setEditValues({ ...editValues, sku: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="SKU" />
                     </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Barcode</label>
+                      <input type="text" inputMode="numeric" value={editValues.barcode} onChange={(e) => setEditValues({ ...editValues, barcode: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono" placeholder="Barcode" />
+                    </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Cost Price</label>
                       <input type="number" value={editValues.cost_price} onChange={(e) => setEditValues({ ...editValues, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-orange-300 rounded-lg focus:outline-none focus:border-orange-500 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Wholesale Price</label>
-                      <input type="number" value={editValues.wholesale_price} onChange={(e) => setEditValues({ ...editValues, wholesale_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm" />
+                      <input type="number" value={editValues.wholesale_price} onChange={(e) => setEditValues({ ...editValues, ...withWholesalePrice(editValues, e.target.value) })} className="w-full px-2 md:px-3 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Wholesale Discount %</label>
+                      <input type="number" min="0" max="100" step="0.01" value={editValues.wholesale_discount_percent} onChange={(e) => setEditValues({ ...editValues, ...withDiscountPercent(editValues, e.target.value) })} className="w-full px-2 md:px-3 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">POS Selling Price</label>
-                      <input type="number" value={editValues.selling_price} disabled={stableMap[product.id] !== undefined} title={stableMap[product.id] !== undefined ? 'Priced on the stable coin — change it in Stable price' : undefined} onChange={(e) => setEditValues({ ...editValues, selling_price: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm disabled:opacity-60 disabled:cursor-not-allowed" />
+                      <input type="number" value={editValues.selling_price} disabled={stableMap[product.id] !== undefined} title={stableMap[product.id] !== undefined ? 'Priced on the stable coin — change it in Stable price' : undefined} onChange={(e) => setEditValues({ ...editValues, ...withSellingPrice(editValues, e.target.value) })} className="w-full px-2 md:px-3 py-2 border-2 border-green-300 rounded-lg focus:outline-none focus:border-green-500 text-sm disabled:opacity-60 disabled:cursor-not-allowed" />
                       {stableMap[product.id] !== undefined && (
                         <p className="mt-1 text-[11px] text-gray-600">On the stable coin ({stableMap[product.id]} ICEC-S) — follows ICEC-S. Change it in Stable price.</p>
                       )}
@@ -1918,6 +2050,17 @@ const OrderInventoryPOSControl = () => {
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Tax Rate %</label>
                       <input type="number" value={editValues.tax_rate} onChange={(e) => setEditValues({ ...editValues, tax_rate: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-yellow-300 rounded-lg focus:outline-none focus:border-yellow-500 text-sm" />
                     </div>
+                  </div>
+                  <div className="mt-3">
+                    <ProductFlavorsEditor
+                      rows={editFlavorRows}
+                      onRowsChange={setEditFlavorRows}
+                      sharedName={editFlavorSharedName ?? editValues.name}
+                      onSharedNameChange={setEditFlavorSharedName}
+                      mainBarcode={editValues.barcode}
+                      products={products}
+                      basePrice={editValues.selling_price}
+                    />
                   </div>
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => saveEdit(product.id)} className="flex-1 bg-green-500 text-white px-3 md:px-4 py-2.5 rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base">
@@ -2001,6 +2144,9 @@ const OrderInventoryPOSControl = () => {
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => startEdit(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 ${ isAdmin ? 'oi-btn oi-btn-ghost border' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
                       <FiEdit className="h-3.5 w-3.5" /> Edit
+                    </button>
+                    <button onClick={() => setFlavorsFor(product)} disabled={!isAdmin} title="Add flavors, each with its own barcode" className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold ${ isAdmin ? 'oi-btn oi-btn-ghost border' : 'bg-gray-100 text-gray-400 cursor-not-allowed' }`}>
+                      🍹 Flavors
                     </button>
                     <button onClick={() => toggleProductStatus(product)} disabled={!isAdmin} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold ${ product.is_active ? isAdmin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-100 text-green-700 opacity-60' : isAdmin ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-100 text-red-700 opacity-60' }`}>
                       {product.is_active ? '✅ Active' : '❌ Inactive'}
@@ -2244,6 +2390,8 @@ const OrderInventoryPOSControl = () => {
                 onClick={() => {
                   scanRequestRef.current++;
                   setRegisteringBarcode(false);
+                  setFlavorRows([]);
+                  setFlavorSharedName(null);
                   setShowAddProductModal(false);
                   setNewlyRegisteredProductId(null);
                   setNewProduct({
@@ -2383,16 +2531,7 @@ const OrderInventoryPOSControl = () => {
                   <input
                     type="number"
                     value={newProduct.selling_price}
-                     onChange={(e) => {
-                       const sellingPrice = Math.max(0, parseFloat(e.target.value) || 0);
-                       setNewProduct({
-                         ...newProduct,
-                         selling_price: sellingPrice,
-                         wholesale_price: newProduct.wholesale_discount_percent > 0
-                           ? Math.round(sellingPrice * (1 - newProduct.wholesale_discount_percent / 100))
-                           : newProduct.wholesale_price
-                       });
-                     }}
+                     onChange={(e) => setNewProduct({ ...newProduct, ...withSellingPrice(newProduct, e.target.value) })}
                     placeholder="0"
                     min="0"
                     step="100"
@@ -2403,19 +2542,16 @@ const OrderInventoryPOSControl = () => {
                  <div>
                    <label className="block text-sm font-semibold text-gray-700 mb-2">Wholesale Price (USh)</label>
                    <input type="number" min="0" step="100" value={newProduct.wholesale_price}
-                     onChange={(e) => setNewProduct({ ...newProduct, wholesale_price: Math.max(0, parseFloat(e.target.value) || 0), wholesale_discount_percent: 0 })}
+                     onChange={(e) => setNewProduct({ ...newProduct, ...withWholesalePrice(newProduct, e.target.value) })}
                      placeholder="Optional bulk price" className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500" />
                  </div>
 
                  <div>
                    <label className="block text-sm font-semibold text-gray-700 mb-2">Wholesale discount (%)</label>
                    <input type="number" min="0" max="100" step="1" value={newProduct.wholesale_discount_percent}
-                     onChange={(e) => {
-                       const percent = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
-                       setNewProduct({ ...newProduct, wholesale_discount_percent: percent, wholesale_price: Math.round((Number(newProduct.selling_price) || 0) * (1 - percent / 100)) });
-                     }}
+                     onChange={(e) => setNewProduct({ ...newProduct, ...withDiscountPercent(newProduct, e.target.value) })}
                      placeholder="e.g. 10" className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500" />
-                   <p className="mt-1 text-[11px] text-gray-500">Calculates wholesale price from the POS selling price.</p>
+                   <p className="mt-1 text-[11px] text-gray-500">Always filled in: type the price and it shows the discount, type the discount and it sets the price.</p>
                  </div>
 
                 <div>
@@ -2477,6 +2613,17 @@ const OrderInventoryPOSControl = () => {
                 </div>
               )}
 
+              {/* Flavors — each gets its own barcode and is saved as its own product */}
+              <ProductFlavorsEditor
+                rows={flavorRows}
+                onRowsChange={setFlavorRows}
+                sharedName={flavorSharedName ?? newProduct.name}
+                onSharedNameChange={setFlavorSharedName}
+                mainBarcode={newProduct.barcode}
+                products={products}
+                basePrice={newProduct.selling_price}
+              />
+
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-2 md:gap-3 mt-4 md:mt-6">
                 <button
@@ -2496,6 +2643,8 @@ const OrderInventoryPOSControl = () => {
                   onClick={() => {
                     scanRequestRef.current++;
                     setRegisteringBarcode(false);
+                    setFlavorRows([]);
+                    setFlavorSharedName(null);
                     setShowAddProductModal(false);
                     setNewlyRegisteredProductId(null);
                     setNewProduct({
@@ -2519,6 +2668,19 @@ const OrderInventoryPOSControl = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Add flavors to an existing product */}
+      {flavorsFor && (
+        <ProductFlavorsModal
+          product={flavorsFor}
+          products={products}
+          onClose={() => setFlavorsFor(null)}
+          onCreated={(created) => {
+            setProducts(previous => [...previous, ...created]);
+            setFilteredProducts(previous => [...previous, ...created]);
+          }}
+        />
       )}
 
       {/* Barcode Scanner Modal */}
