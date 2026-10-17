@@ -570,6 +570,28 @@
 [data-theme="dark"] .sk-portal-themed input::placeholder,
 [data-theme="dark"] .sk-portal-themed textarea::placeholder { color: rgba(209, 250, 229, 0.35) !important; }
 
+/* Typed text and field backgrounds. index.css gives every field a near-black text colour (it assumes
+   fields sit on white), and the repaint above turns `bg-white` fields dark, so what was typed into them
+   came out dark on dark. In the dark theme, text-entry fields get light text, and a field that sets no
+   background of its own gets the deep-green surface instead of the browser's default grey. Fields that
+   choose their own tint (a `bg-blue-50` box, say) are left alone. */
+[data-theme="dark"] .sk-portal-themed :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]):is(:not([class*="bg-"]), .bg-white, [class*="bg-gray-"]) {
+  color: #ecfdf5;
+  caret-color: #ecfdf5;
+}
+[data-theme="dark"] .sk-portal-themed :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([class*="bg-"]) {
+  background-color: #0a1f18;
+}
+[data-theme="dark"] .sk-portal-themed select option { background-color: #0c231b; color: #ecfdf5; }
+/* Browser autofill would otherwise paint a pale box with dark text on a dark field */
+[data-theme="dark"] .sk-portal-themed input:-webkit-autofill,
+[data-theme="dark"] .sk-portal-themed input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ecfdf5;
+  caret-color: #ecfdf5;
+  box-shadow: 0 0 0 1000px #0a1f18 inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
 /* Status badges — keep the hue for meaning, drop the bright light-mode fill */
 [data-theme="dark"] .sk-portal-themed .bg-blue-50 { background-color: rgba(59, 130, 246, 0.15) !important; }
 [data-theme="dark"] .sk-portal-themed .bg-blue-100 { background-color: rgba(59, 130, 246, 0.22) !important; }
@@ -1689,3 +1711,8 @@
 [data-theme="dark"] .ph-menu button:hover { background-color: #143026 !important; }
 [data-theme="dark"] .ph-menu button.text-red-600 { color: #fca5a5 !important; }
 [data-theme="dark"] .ph-menu button.text-red-600:hover { background-color: rgba(190, 18, 60, 0.22) !important; }
+
+/* The business's name in the portal header slides in once, so a change of store or a fresh load is noticed */
+@keyframes ph-brand-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+.ph-brand { animation: ph-brand-in .5s cubic-bezier(.2, .8, .2, 1) both; }
+@media (prefers-reduced-motion: reduce) { .ph-brand { animation: none; } }

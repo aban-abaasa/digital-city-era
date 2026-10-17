@@ -171,7 +171,7 @@ const PortalHeader = ({
   return (
     <>
     <header
-      className="bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white shadow-lg sticky top-0 z-50"
+      className="ph-header bg-gradient-to-br from-[#1e3a8a] via-[#3730a3] to-[#6d28d9] text-white shadow-lg sticky top-0 z-50"
       style={headerStyle}
     >
       <div className="container mx-auto px-2 sm:px-4">
@@ -192,8 +192,8 @@ const PortalHeader = ({
                 <ActiveIcon className="h-4 w-4 sm:h-5 sm:w-5 text-[#f5dfa0]" />
               )}
             </span>
-            <div className="min-w-0">
-              <h1 className="font-classic-display text-base sm:text-xl font-bold leading-tight truncate">{hasBusiness ? business.name : brand}</h1>
+            <div className="ph-brand min-w-0">
+              <h1 className="font-classic-display text-lg sm:text-2xl font-extrabold leading-tight truncate text-white drop-shadow-sm" title={hasBusiness ? business.name : brand}>{hasBusiness ? business.name : brand}</h1>
               <p className="mt-0.5 text-[9px] sm:text-[10px] font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] text-[#f3dc9b] hidden min-[400px]:block truncate">{eyebrow}</p>
             </div>
           </div>

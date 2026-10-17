@@ -90,3 +90,48 @@
 .cl-auth .register-header { background: linear-gradient(135deg, #1e1b4b, #3730a3 70%, #6d28d9); border-bottom: 1px solid #c4a052; }
 .cl-auth .register-header h1 { font-family: "Playfair Display", Georgia, serif; }
 .cl-auth .register-btn { background: linear-gradient(135deg, #1e3a8a, #6d28d9); }
+
+/* ── Dark theme card ────────────────────────────────────────────────────────
+   Pages that put their card in `.cl-auth-dark-card` (the admin sign-in / store setup) go dark with the
+   app theme: the markup carries the surface colours, these rules fit the form controls to it. The other
+   sign-in pages sharing this file keep their white cards and are left alone. */
+.dark .cl-auth .cl-auth-dark-card :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]) {
+  border-color: rgba(148, 163, 184, 0.3);
+}
+.dark .cl-auth .cl-auth-dark-card :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):hover:not(:disabled) {
+  border-color: rgba(196, 160, 82, 0.55);
+}
+.dark .cl-auth .cl-auth-dark-card :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):focus {
+  border-color: #d4b25f;
+  box-shadow: 0 0 0 3px rgba(212, 178, 95, 0.28);
+}
+.dark .cl-auth .cl-auth-dark-card input[type="checkbox"],
+.dark .cl-auth .cl-auth-dark-card input[type="radio"] { accent-color: #34d399; }
+/* Browser autofill would otherwise paint a pale yellow/white box on a dark field */
+.dark .cl-auth .cl-auth-dark-card input:-webkit-autofill,
+.dark .cl-auth .cl-auth-dark-card input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f1f5f9;
+  caret-color: #f1f5f9;
+  box-shadow: 0 0 0 1000px #0b1220 inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────────────
+   Short and quiet: steps slide in, a chosen option pops, a field with a problem shakes once, and the
+   success screen arrives in turn. The reduced-motion rule above switches all of it off. */
+@keyframes cl-step-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes cl-pop { 0% { transform: scale(0); } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
+@keyframes cl-spin-in { from { opacity: 0; transform: rotate(-90deg) scale(0.6); } to { opacity: 1; transform: none; } }
+@keyframes cl-shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+@keyframes cl-ring { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); } 100% { box-shadow: 0 0 0 28px rgba(52, 211, 153, 0); } }
+@keyframes cl-fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes cl-line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.cl-step-in { animation: cl-step-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cl-pop { animation: cl-pop 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cl-spin-in { display: inline-flex; animation: cl-spin-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cl-auth input[aria-invalid="true"], .cl-auth select[aria-invalid="true"], .cl-auth textarea[aria-invalid="true"] { animation: cl-shake 0.4s ease-in-out; }
+.cl-stagger > * { animation: cl-fade-up 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 110ms); }
+.cl-emblem { animation: cl-pop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both, cl-ring 1.6s 0.6s ease-out 2; }
+/* The store's name on the success screen, with a gold rule that draws beneath it */
+.cl-store-hero { position: relative; padding-bottom: 8px; }
+.cl-store-hero::after { content: ''; position: absolute; left: 10%; right: 10%; bottom: 0; height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, #f5dfa0, transparent); transform-origin: center; animation: cl-line 0.9s 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
