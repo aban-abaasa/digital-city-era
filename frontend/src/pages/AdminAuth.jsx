@@ -1,13 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import '../styles/classic-auth.css';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   FiShield, FiBriefcase, FiUsers, FiArrowRight, FiArrowLeft,
   FiLogIn, FiMapPin, FiPhone, FiMail, FiEye, FiEyeOff,
-  FiCheck, FiCopy, FiPackage, FiRefreshCw
+  FiCheck, FiCopy, FiPackage, FiRefreshCw, FiSun, FiMoon
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
+import { useTheme } from '../contexts/ThemeContext';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const STEPS = ['Business type', 'Store details', 'Location', 'Review'];
@@ -98,39 +99,91 @@ const WHOLESALE_CATEGORIES = [
 
 const businessTypeInfo = (value) => BUSINESS_TYPES.find(t => t.value === value) || BUSINESS_TYPES[0];
 
-function Field({ label, icon: Icon, error, ...props }) {
+// One set of colours for the white-card look and the dark-theme look, so every control reads
+// the same way. Secondary text is slate-500 (not 400) on white: 400 is too faint to read.
+const UI = {
+  title: 'text-slate-900 dark:text-white',
+  muted: 'text-slate-500 dark:text-slate-400',
+  label: 'text-slate-600 dark:text-slate-300',
+  control: 'bg-white dark:bg-slate-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500',
+  divider: 'border-slate-100 dark:border-slate-700/60',
+  ghostButton: 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800',
+  link: 'text-emerald-700 dark:text-emerald-400',
+};
+
+const ERROR_TEXT = 'text-xs text-red-600 dark:text-red-400';
+
+// The label is tied to its input (click it, or use a screen reader) and an error is announced
+// and linked to the field it belongs to.
+function Field({ label, icon: Icon, error, id, required, ...props }) {
+  const autoId = useId();
+  const fieldId = id || autoId;
+  const errorId = `${fieldId}-error`;
   return (
     <div className="space-y-1">
-      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</label>
+      <label htmlFor={fieldId} className={`block text-xs font-semibold uppercase tracking-wide ${UI.label}`}>{label}</label>
       <div className="relative">
         {Icon && (
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
             <Icon size={15} />
           </span>
         )}
         <input
-          className={`w-full ${Icon ? 'pl-9' : 'pl-4'} pr-4 py-3 rounded-xl border text-sm bg-white
+          id={fieldId}
+          aria-required={required || undefined}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? errorId : undefined}
+          className={`w-full ${Icon ? 'pl-9' : 'pl-4'} pr-4 py-3 rounded-xl border text-sm ${UI.control}
             outline-none transition-all
             ${error
-              ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-              : 'border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50'
+              ? 'border-red-300 dark:border-red-400/70 focus:border-red-400 focus:ring-2 focus:ring-red-100 dark:focus:ring-red-500/20'
+              : 'border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 dark:focus:ring-emerald-400/20'
             }`}
           {...props}
         />
       </div>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p id={errorId} role="alert" className={ERROR_TEXT}>{error}</p>}
     </div>
+  );
+}
+
+// A heading for one block of the review, with a way back to the step it came from
+function ReviewBlock({ title, onEdit, children }) {
+  return (
+    <section className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className={`font-sans text-xs font-bold uppercase tracking-wide ${UI.muted}`}>{title}</h3>
+        <button type="button" onClick={onEdit} aria-label={`Edit ${title.toLowerCase()}`} className={`text-xs font-semibold hover:underline ${UI.link}`}>Edit</button>
+      </div>
+      <div>{children}</div>
+    </section>
   );
 }
 
 function Row({ label, value }) {
   return (
-    <div className="flex justify-between gap-2 py-1.5 border-b border-slate-100 last:border-0">
-      <span className="text-slate-400 text-sm shrink-0">{label}</span>
-      <span className="text-slate-800 text-sm font-medium text-right">{value || '—'}</span>
+    <div className={`flex justify-between gap-3 py-1.5 border-b ${UI.divider} last:border-0`}>
+      <span className={`${UI.muted} text-sm shrink-0`}>{label}</span>
+      <span className="text-slate-800 dark:text-slate-100 text-sm font-medium text-right break-words min-w-0">{value || '—'}</span>
     </div>
   );
 }
+
+const DRAFT_KEY = 'adminSetupDraft';
+const readDraft = () => {
+  try {
+    const draft = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY));
+    return draft && typeof draft === 'object' ? draft : {};
+  } catch {
+    return {};
+  }
+};
+const writeDraft = (form) => {
+  try { window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch { /* private mode: nothing to keep */ }
+};
+const clearDraft = () => {
+  try { window.sessionStorage.removeItem(DRAFT_KEY); } catch { /* nothing to clear */ }
+};
 
 // ─── main component ──────────────────────────────────────────────────────────
 export default function AdminAuth() {
@@ -148,12 +201,19 @@ export default function AdminAuth() {
   const [selectedBusinessProfileId, setSelectedBusinessProfileId] = useState('');
   const [profilesLoading, setProfilesLoading] = useState(false);
 
-  const [form, setForm] = useState({
+  const { theme, toggleTheme } = useTheme();
+
+  // What has been typed is kept for this browser tab, so leaving to check something (or an accidental
+  // refresh) doesn't mean starting again. It is cleared once the store is created.
+  const [form, setForm] = useState(() => ({
     businessType: 'supermarket',
     storeName: '', description: '', storePhone: '', storeEmail: '',
     address: '', city: '', country: 'Uganda',
     wholesaleCategories: ['Products'], wholesalePricingMode: 'supplier_price',
-  });
+    ...readDraft(),
+  }));
+  const formRef = useRef(null);
+  const headingRef = useRef(null);
   const [signin, setSignin] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
 
@@ -213,7 +273,7 @@ export default function AdminAuth() {
       }
 
       setSession(s);
-      setForm(f => ({ ...f, storeEmail: s.user.email || '' }));
+      setForm(f => ({ ...f, storeEmail: f.storeEmail || s.user.email || '' }));
       loadBusinessProfiles(s);
 
       // If this session already belongs to a fully set-up admin, send them
@@ -263,7 +323,7 @@ export default function AdminAuth() {
       });
       if (error) throw error;
       setSession(data.session);
-      setForm(f => ({ ...f, storeEmail: data.user.email || '' }));
+      setForm(f => ({ ...f, storeEmail: f.storeEmail || data.user.email || '' }));
       loadBusinessProfiles(data.session);
 
       const uid = data.user.id;
@@ -326,6 +386,30 @@ export default function AdminAuth() {
 
   const next = () => { if (validate()) setStep(s => s + 1); };
   const back = () => setStep(s => s - 1);
+
+  // Enter moves on (or launches on the last step); a second Enter while launching does nothing
+  const submitStep = (e) => {
+    e.preventDefault();
+    if (busy) return;
+    if (step < STEPS.length - 1) next();
+    else handleCreate();
+  };
+
+  useEffect(() => { if (view !== 'success') writeDraft(form); }, [form, view]);
+
+  // A step that fails its checks puts the cursor on the first field to fix
+  useEffect(() => {
+    if (Object.values(errors).some(Boolean)) formRef.current?.querySelector('[aria-invalid="true"]')?.focus();
+  }, [errors]);
+
+  // A new step starts at its heading (what a screen reader reads first), and on a computer with the
+  // cursor in its first field. On a phone the keyboard stays down until a field is tapped.
+  useEffect(() => {
+    if (view !== 'create' || step === 0) return;
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.scrollIntoView?.({ block: 'nearest' });
+    if (window.matchMedia?.('(pointer: fine)').matches) formRef.current?.querySelector('input:not([type="radio"]), textarea, select')?.focus();
+  }, [step, view]);
 
   // ── submit / create supermarket ───────────────────────────────────────────
   const handleCreate = async () => {
@@ -436,6 +520,7 @@ export default function AdminAuth() {
         navigate('/admin-portal', { replace: true });
         return;
       }
+      clearDraft();
       setResult(data);
       setView('success');
       toast.success(`${form.storeName} is now live! 🎉`);
@@ -454,41 +539,85 @@ export default function AdminAuth() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── shared left panel ─────────────────────────────────────────────────────
-  const LeftPanel = () => (
-    <div className="space-y-8 text-white">
+  // ── pieces shared by every view ───────────────────────────────────────────
+  const isDark = theme === 'dark';
+
+  // The page keeps its night-sky backdrop in both themes; the card in front of it follows the theme.
+  // (Direct children of the backdrop are positioned by its stylesheet, so this sits inside a wrapper.)
+  const themeToggle = (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Light mode' : 'Dark mode'}
+      className="fixed right-3 top-3 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-slate-900/85 text-white shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-slate-800"
+    >
+      <span key={theme} className="cl-spin-in">{isDark ? <FiSun size={16} /> : <FiMoon size={16} />}</span>
+    </button>
+  );
+
+  const shellClass = 'cl-auth cl-auth-bg-night min-h-screen text-white flex items-center justify-center px-4 py-6 sm:py-10';
+  const cardClass = 'cl-auth-dark-card bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-[2rem] shadow-2xl shadow-black/30';
+
+  // The name being typed is the star of the page: it appears in a card beside the form as soon as there is
+  // one (a placeholder until then), and again on the review and success screens.
+  const trimmedName = form.storeName.trim();
+  const hasName = trimmedName.length > 0;
+  const storePreview = view === 'create' && (
+    <div
+      aria-live="polite"
+      className={`cl-store-card hidden rounded-2xl border px-5 py-4 transition-all duration-500 lg:block ${hasName ? 'border-[#f5dfa0]/60 bg-white/10 shadow-lg shadow-black/20' : 'border-dashed border-white/20 bg-white/[0.03]'}`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-300">Your {typeInfo.label.toLowerCase()}</p>
+      <p className={`font-classic-display mt-1 flex items-center gap-2.5 break-words text-3xl font-extrabold leading-tight transition-colors duration-500 ${hasName ? 'text-white' : 'text-white/35'}`}>
+        <span aria-hidden="true" className="text-3xl">{typeInfo.emoji}</span>
+        <span className="min-w-0">{hasName ? trimmedName : 'Your store name'}</span>
+      </p>
+      <span className={`mt-3 block h-0.5 origin-left rounded bg-gradient-to-r from-[#f5dfa0] to-transparent transition-transform duration-700 ${hasName ? 'scale-x-100' : 'scale-x-0'}`} />
+    </div>
+  );
+
+  // On a phone the form comes first: just the heading, not the long pitch and feature list
+  const leftPanel = (
+    <div className="space-y-4 text-white lg:space-y-8">
       <button
+        type="button"
         onClick={() => navigate('/customer-dashboard')}
-        className="inline-flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors"
+        className="inline-flex items-center gap-2 text-sm text-white/70 transition-colors hover:text-white"
       >
         <FiArrowLeft size={14} /> Back to dashboard
       </button>
 
       <div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-semibold text-emerald-300 mb-4">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-semibold text-emerald-300 lg:mb-4">
           <FiShield size={12} /> Admin setup
         </div>
-        <h1 className="text-4xl md:text-5xl font-black leading-[1.1] mb-4">
-          Your store.<br />Your rules.
+        <h1 className="mb-2 text-3xl font-black leading-[1.1] sm:text-4xl lg:mb-4 lg:text-5xl">
+          Your store.<br className="hidden lg:block" /> Your rules.
         </h1>
-        <p className="text-slate-300 text-base leading-relaxed max-w-sm">
-           Set up a supermarket, pharmacy, hotel, boutique, restaurant/café, hardware store, wholesale business, or factory with POS and CMMS operations in one connected workspace.
+        <p className="max-w-sm text-sm leading-relaxed text-slate-300 lg:hidden">
+          Set up your business in a few quick steps.
+        </p>
+        <p className="hidden max-w-sm text-base leading-relaxed text-slate-300 lg:block">
+          Set up a supermarket, pharmacy, hotel, boutique, restaurant/café, hardware store, wholesale business, or factory with POS and CMMS operations in one connected workspace.
         </p>
       </div>
 
-      <div className="space-y-3">
+      {storePreview}
+
+      <div className="hidden space-y-3 lg:block">
         {[
           { icon: FiBriefcase, title: 'Launch your store', body: 'Go live in minutes. No technical setup needed.' },
           { icon: FiUsers, title: 'Invite managers & cashiers', body: 'Share an invite link — they join instantly.' },
           { icon: FiPackage, title: 'Earn ICAN on every sale', body: '10 ICAN for joining + rewards on every order.' },
         ].map(({ icon, title, body }) => (
           <div key={title} className="flex items-start gap-4 rounded-2xl border border-white/8 bg-white/4 p-4 backdrop-blur">
-            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10">
               {React.createElement(icon, { size: 16, className: 'text-emerald-300' })}
             </div>
             <div>
-              <p className="font-semibold text-sm mb-0.5">{title}</p>
-              <p className="text-xs text-slate-400">{body}</p>
+              <p className="mb-0.5 text-sm font-semibold">{title}</p>
+              <p className="text-xs text-slate-300">{body}</p>
             </div>
           </div>
         ))}
@@ -500,7 +629,7 @@ export default function AdminAuth() {
   if (view === 'loading') {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <div role="status" aria-label="Loading" className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -508,52 +637,61 @@ export default function AdminAuth() {
   // ── success screen ─────────────────────────────────────────────────────────
   if (view === 'success') {
     return (
-      <div className="cl-auth cl-auth-bg-night min-h-screen flex items-center justify-center px-4 py-10">
-        <div className="max-w-md w-full space-y-6 text-center">
-          <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-900/40">
-            <span className="text-4xl">{typeInfo.emoji}</span>
-          </div>
-
-          <div className="text-white">
-            <h1 className="text-3xl font-black mb-2">You're live!</h1>
-            <p className="text-slate-300">
-              <span className="text-white font-semibold">{form.storeName}</span> ({typeInfo.label}) is now on the platform.{' '}
-              You earned{' '}
-              <span className="text-emerald-400 font-bold">10 icaneracoins</span> for joining.
-            </p>
-          </div>
-
-          {result?.onboarding_token && (
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Staff invite link</p>
-              <div className="flex items-center gap-2">
-                <code className="text-xs text-emerald-300 bg-black/30 rounded-lg px-3 py-2 flex-1 truncate">
-                  {window.location.origin}/join/{result.onboarding_token}
-                </code>
-                <button
-                  onClick={copyInvite}
-                  className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
-                >
-                  {copied ? <FiCheck size={15} className="text-emerald-400" /> : <FiCopy size={15} />}
-                </button>
+      <div className={shellClass}>
+        <div className="w-full max-w-md text-center">
+          {themeToggle}
+          <div className="cl-stagger space-y-6">
+            <div style={{ '--i': 0 }}>
+              <div className="cl-emblem mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400 to-cyan-400 shadow-xl shadow-emerald-900/40">
+                <span className="text-4xl">{typeInfo.emoji}</span>
               </div>
-              <p className="text-xs text-slate-500 mt-2">Share with managers and cashiers to let them join instantly.</p>
             </div>
-          )}
 
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => navigate('/admin-portal', { replace: true })}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold text-base shadow-lg shadow-emerald-900/30 hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-            >
-              Open Admin Portal <FiArrowRight />
-            </button>
-            <button
-              onClick={() => navigate('/ican-wallet')}
-              className="w-full py-3 rounded-2xl border border-white/10 text-white/70 text-sm font-semibold hover:bg-white/5 transition-colors"
-            >
-              View IcanEra Wallet
-            </button>
+            <div style={{ '--i': 1 }} className="text-white">
+              <h1 ref={headingRef} tabIndex={-1} className="mb-3 text-3xl font-black outline-none">You're live!</h1>
+              <p className="font-classic-display cl-store-hero mx-auto inline-block max-w-full break-words text-3xl font-extrabold leading-tight sm:text-4xl">{form.storeName}</p>
+              <p className="mt-3 text-slate-300">
+                Your {typeInfo.label.toLowerCase()} is now on the platform. You earned{' '}
+                <span className="text-emerald-400 font-bold">10 icaneracoins</span> for joining.
+              </p>
+            </div>
+
+            {result?.onboarding_token && (
+              <div style={{ '--i': 2 }} className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-300">Staff invite link</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs text-emerald-300 bg-black/30 rounded-lg px-3 py-2 flex-1 truncate">
+                    {window.location.origin}/join/{result.onboarding_token}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={copyInvite}
+                    aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
+                    className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  >
+                    {copied ? <FiCheck size={15} className="cl-pop text-emerald-400" /> : <FiCopy size={15} />}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">Share with managers and cashiers to let them join instantly.</p>
+              </div>
+            )}
+
+            <div style={{ '--i': 3 }} className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/admin-portal', { replace: true })}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold text-base shadow-lg shadow-emerald-900/30 hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              >
+                Open Admin Portal <FiArrowRight />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/ican-wallet')}
+                className="w-full py-3 rounded-2xl border border-white/15 text-white/80 text-sm font-semibold hover:bg-white/5 transition-colors"
+              >
+                View IcanEra Wallet
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -563,37 +701,49 @@ export default function AdminAuth() {
   // ── sign-in view ───────────────────────────────────────────────────────────
   if (view === 'signin') {
     return (
-      <div className="cl-auth cl-auth-bg-night min-h-screen text-white flex items-center justify-center px-4 py-10">
-        <div className="max-w-5xl w-full grid lg:grid-cols-2 gap-10 items-center">
-          <LeftPanel />
+      <div className={shellClass}>
+        <div className="grid w-full max-w-5xl items-center gap-6 lg:grid-cols-2 lg:gap-10">
+          {themeToggle}
+          {leftPanel}
 
-          <div className="bg-white rounded-[2rem] shadow-2xl shadow-black/30 p-7 md:p-9 text-slate-900">
+          <div className={`${cardClass} p-6 sm:p-7 md:p-9`}>
             <div className="mb-7">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center">
-                  <FiLogIn size={18} className="text-white" />
+              <div className="mb-1 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 dark:bg-emerald-500/15 dark:ring-1 dark:ring-emerald-400/30">
+                  <FiLogIn size={18} className="text-white dark:text-emerald-300" />
                 </div>
-                <h2 className="text-2xl font-black">Sign in</h2>
+                <h2 className={`text-2xl font-black ${UI.title}`}>Sign in</h2>
               </div>
-              <p className="text-sm text-slate-400 ml-[52px]">Access your existing business account.</p>
+              <p className={`ml-[52px] text-sm ${UI.muted}`}>Access your existing business account.</p>
             </div>
 
-            <form onSubmit={handleSignIn} className="space-y-4">
+            <form onSubmit={handleSignIn} className="space-y-4" noValidate>
               <Field label="Email" icon={FiMail} type="email" placeholder="you@business.com"
+                autoComplete="email" inputMode="email" required
                 value={signin.email} onChange={e => setSignin(s => ({ ...s, email: e.target.value }))} />
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Password</label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="admin-signin-password" className={`text-xs font-semibold uppercase tracking-wide ${UI.label}`}>Password</label>
+                  <button type="button" onClick={() => navigate('/forgot-password')} className={`text-xs font-semibold hover:underline ${UI.link}`}>
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <input
+                    id="admin-signin-password"
                     type={showPw ? 'text' : 'password'}
                     placeholder="••••••••"
+                    autoComplete="current-password"
+                    aria-required="true"
                     value={signin.password}
                     onChange={e => setSignin(s => ({ ...s, password: e.target.value }))}
-                    className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50"
+                    className={`w-full rounded-xl border border-slate-200 py-3 pl-4 pr-11 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 dark:focus:ring-emerald-400/20 ${UI.control}`}
                   />
                   <button type="button" onClick={() => setShowPw(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    aria-label={showPw ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPw}
+                    className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
                     {showPw ? <FiEyeOff size={16} /> : <FiEye size={16} />}
                   </button>
                 </div>
@@ -602,7 +752,7 @@ export default function AdminAuth() {
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-slate-900 to-emerald-700 text-white font-bold text-sm shadow-lg hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-slate-900 to-emerald-700 dark:from-emerald-600 dark:to-teal-600 text-white font-bold text-sm shadow-lg hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
                 {busy ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : null}
                 {busy ? 'Signing in…' : 'Sign in to portal'}
@@ -610,13 +760,10 @@ export default function AdminAuth() {
               </button>
             </form>
 
-            <div className="mt-5 pt-5 border-t border-slate-100 text-center">
-              <p className="text-sm text-slate-500">
+            <div className={`mt-5 border-t pt-5 text-center ${UI.divider}`}>
+              <p className={`text-sm ${UI.muted}`}>
                 Don't have a business account yet?{' '}
-                <button
-                  onClick={() => setView('create')}
-                  className="text-emerald-600 font-semibold hover:underline"
-                >
+                <button type="button" onClick={() => setView('create')} className={`font-semibold hover:underline ${UI.link}`}>
                   Create one now
                 </button>
               </p>
@@ -628,253 +775,326 @@ export default function AdminAuth() {
   }
 
   // ── create view (multi-step) ───────────────────────────────────────────────
-  return (
-    <div className="cl-auth cl-auth-bg-night min-h-screen text-white flex items-center justify-center px-4 py-10">
-      <div className="max-w-5xl w-full grid lg:grid-cols-2 gap-10 items-start">
-        <LeftPanel />
+  const stepHeading = [
+    'What are you setting up?',
+    `Create your ${typeInfo.label.toLowerCase()}`,
+    'Where is your store?',
+    'Review & launch',
+  ][step];
 
-        <div className="bg-white rounded-[2rem] shadow-2xl shadow-black/30 text-slate-900 overflow-hidden">
+  // Pichin profiles only matter to people who have one: nothing to show (or choose) otherwise
+  const showProfilePanel = profilesLoading || businessProfiles.length > 0;
+
+  const typeKeys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  const moveTypeSelection = (e) => {
+    const delta = typeKeys[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    const group = e.currentTarget;
+    const at = BUSINESS_TYPES.findIndex(t => t.value === form.businessType);
+    set('businessType', BUSINESS_TYPES[(at + delta + BUSINESS_TYPES.length) % BUSINESS_TYPES.length].value);
+    requestAnimationFrame(() => group.querySelector('[aria-checked="true"]')?.focus());
+  };
+
+  return (
+    <div className={shellClass}>
+      <div className="grid w-full max-w-5xl items-start gap-6 lg:grid-cols-2 lg:gap-10">
+        {themeToggle}
+        {leftPanel}
+
+        <div className={cardClass}>
           {/* progress bar */}
-          <div className="h-1 bg-slate-100">
+          <div className="h-1 overflow-hidden rounded-t-[2rem] bg-slate-100 dark:bg-slate-800" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}>
             <div
               className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-500"
               style={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
             />
           </div>
 
-          <div className="p-7 md:p-9">
-            {/* step indicator */}
-            <div className="flex items-center gap-2 mb-6">
-              {STEPS.map((label, i) => (
-                <React.Fragment key={i}>
-                  <div className={`flex items-center gap-1.5 text-xs font-semibold transition-colors
-                    ${i === step ? 'text-emerald-600' : i < step ? 'text-slate-400' : 'text-slate-300'}`}>
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold
-                      ${i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                      {i < step ? <FiCheck size={10} /> : i + 1}
-                    </div>
-                    <span className="hidden sm:block">{label}</span>
+          <div className="p-5 sm:p-7 md:p-9">
+            {hasName && step < STEPS.length - 1 && (
+              <div className="cl-step-in mb-4 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 dark:bg-emerald-500/10 lg:hidden">
+                <span aria-hidden="true">{typeInfo.emoji}</span>
+                <span className="font-classic-display min-w-0 truncate text-base font-extrabold text-emerald-900 dark:text-emerald-200">{trimmedName}</span>
+              </div>
+            )}
+            {/* step indicator: finished steps are buttons back to them */}
+            <nav aria-label="Setup steps" className="mb-6">
+              <ol className="flex items-center gap-2">
+                {STEPS.map((label, i) => {
+                  const done = i < step;
+                  const current = i === step;
+                  return (
+                    <React.Fragment key={label}>
+                      <li className="flex items-center">
+                        <button
+                          type="button"
+                          disabled={!done}
+                          onClick={() => setStep(i)}
+                          aria-current={current ? 'step' : undefined}
+                          aria-label={done ? `${label}, completed. Go back to this step` : label}
+                          className={`flex items-center gap-1.5 rounded-full text-xs font-semibold transition-colors disabled:cursor-default
+                            ${current ? 'text-emerald-700 dark:text-emerald-300' : done ? 'text-slate-600 hover:text-emerald-700 dark:text-slate-300 dark:hover:text-emerald-300' : 'text-slate-400 dark:text-slate-500'}`}
+                        >
+                          <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold
+                            ${done ? 'bg-emerald-500 text-white' : current ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-200' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'}`}>
+                            {done ? <FiCheck size={11} /> : i + 1}
+                          </span>
+                          <span className="hidden sm:block">{label}</span>
+                        </button>
+                      </li>
+                      {i < STEPS.length - 1 && (
+                        <li aria-hidden="true" className={`h-px flex-1 ${i < step ? 'bg-emerald-300 dark:bg-emerald-500/50' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </ol>
+              <p className={`mt-2 text-xs sm:hidden ${UI.muted}`}>Step {step + 1} of {STEPS.length} · {STEPS[step]}</p>
+            </nav>
+
+            <form ref={formRef} onSubmit={submitStep} noValidate>
+              {/* ── step 0: business type ── */}
+              {step === 0 && (
+                <div className="cl-step-in space-y-4">
+                  <div className="mb-2">
+                    <h2 ref={headingRef} tabIndex={-1} className={`text-xl font-black outline-none ${UI.title}`}>{stepHeading}</h2>
+                    <p className={`mt-0.5 text-sm ${UI.muted}`}>Pick the kind of business you're launching.</p>
                   </div>
-                  {i < STEPS.length - 1 && (
-                    <div className={`flex-1 h-px ${i < step ? 'bg-emerald-300' : 'bg-slate-100'}`} />
+
+                  <div role="radiogroup" aria-label="Business type" onKeyDown={moveTypeSelection} className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                    {BUSINESS_TYPES.map(t => {
+                      const on = form.businessType === t.value;
+                      return (
+                        <button
+                          key={t.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          tabIndex={on ? 0 : -1}
+                          onClick={() => set('businessType', t.value)}
+                          className={`relative rounded-2xl border-2 p-3 text-left transition-all sm:p-4 ${
+                            on
+                              ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-400/80 dark:bg-emerald-500/10'
+                              : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-slate-500'
+                          }`}
+                        >
+                          {on && (
+                            <span className="cl-pop absolute right-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                              <FiCheck size={11} />
+                            </span>
+                          )}
+                          <div className="mb-1 text-2xl">{t.emoji}</div>
+                          <p className={`text-sm font-bold ${UI.title}`}>{t.label}</p>
+                          <p className={`mt-0.5 text-xs ${UI.muted}`}>{t.blurb}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {showProfilePanel && (
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-400/20 dark:bg-indigo-500/10">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className={`flex items-center gap-2 text-sm font-bold ${UI.title}`}><FiBriefcase className="text-indigo-600 dark:text-indigo-300" /> Use your business profile</p>
+                          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">Optional: connect a Pichin business profile now and use the same administrator authority, wallet and CMMS workspace for this store.</p>
+                        </div>
+                        <button type="button" onClick={() => loadBusinessProfiles(session)} disabled={profilesLoading} className="rounded-lg p-2 text-indigo-700 hover:bg-white disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-white/10" aria-label="Refresh business profiles"><FiRefreshCw className={profilesLoading ? 'animate-spin' : ''} size={16} /></button>
+                      </div>
+
+                      <label className={`mt-3 flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${!selectedBusinessProfileId ? 'border-indigo-400 bg-white dark:bg-slate-800' : 'border-transparent bg-white/60 dark:bg-slate-800/50'}`}>
+                        <input type="radio" name="setup-business-profile" checked={!selectedBusinessProfileId} onChange={() => setSelectedBusinessProfileId('')} />
+                        <span><span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Create a separate store profile</span><span className={`block text-xs ${UI.muted}`}>Recommended when this store needs its own wallet and records.</span></span>
+                      </label>
+
+                      {businessProfiles.map(profile => (
+                        <label key={profile.id} className={`mt-2 flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${selectedBusinessProfileId === profile.id ? 'border-indigo-400 bg-white dark:bg-slate-800' : 'border-transparent bg-white/60 hover:border-indigo-200 dark:bg-slate-800/50 dark:hover:border-indigo-400/40'}`}>
+                          <input type="radio" name="setup-business-profile" value={profile.id} checked={selectedBusinessProfileId === profile.id} onChange={() => selectBusinessProfile(profile.id)} />
+                          <span><span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{profile.business_name}</span><span className={`block text-xs ${UI.muted}`}>{profile.business_type || 'Business profile'} · Use this profile in Supermarketa, Supplier and CMMS</span></span>
+                        </label>
+                      ))}
+
+                      {selectedBusinessProfileId && <p className="mt-3 rounded-lg bg-white p-3 text-xs leading-relaxed text-indigo-800 dark:bg-slate-800 dark:text-indigo-200">Your business profile is connected. Store contact and location details are optional and can be completed later in the Admin Portal.</p>}
+                    </div>
                   )}
-                </React.Fragment>
-              ))}
-            </div>
-
-            {/* ── step 0: business type ── */}
-            {step === 0 && (
-              <div className="space-y-4">
-                <div className="mb-2">
-                  <h2 className="text-xl font-black text-slate-900">What are you setting up?</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Pick the kind of business you're launching.</p>
                 </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  {BUSINESS_TYPES.map(t => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => set('businessType', t.value)}
-                      className={`text-left rounded-2xl border-2 p-4 transition-all ${
-                        form.businessType === t.value
-                          ? 'border-emerald-400 bg-emerald-50'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="text-2xl mb-1.5">{t.emoji}</div>
-                      <p className="font-bold text-sm text-slate-900">{t.label}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{t.blurb}</p>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="flex items-center gap-2 text-sm font-bold text-slate-900"><FiBriefcase className="text-indigo-600" /> Use your business profile</p>
-                      <p className="mt-1 text-xs leading-relaxed text-slate-600">Optional: connect a Pichin business profile now and use the same administrator authority, wallet and CMMS workspace for this store.</p>
-                    </div>
-                    <button type="button" onClick={() => loadBusinessProfiles(session)} disabled={profilesLoading} className="rounded-lg p-2 text-indigo-700 hover:bg-white disabled:opacity-50" aria-label="Refresh business profiles"><FiRefreshCw className={profilesLoading ? 'animate-spin' : ''} size={16} /></button>
+              {/* ── step 1: store details ── */}
+              {step === 1 && (
+                <div className="cl-step-in space-y-4">
+                  <div className="mb-2">
+                    <h2 ref={headingRef} tabIndex={-1} className={`text-xl font-black outline-none ${UI.title}`}>{stepHeading}</h2>
+                    <p className={`mt-0.5 text-sm ${UI.muted}`}>Tell us about your {typeInfo.label.toLowerCase()}.</p>
                   </div>
 
-                  <label className={`mt-3 flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${!selectedBusinessProfileId ? 'border-indigo-400 bg-white' : 'border-transparent bg-white/60'}`}>
-                    <input type="radio" name="setup-business-profile" checked={!selectedBusinessProfileId} onChange={() => setSelectedBusinessProfileId('')} />
-                    <span><span className="block text-sm font-semibold text-slate-800">Create a separate store profile</span><span className="block text-xs text-slate-500">Recommended when this store needs its own wallet and records.</span></span>
-                  </label>
-
-                  {businessProfiles.map(profile => (
-                    <label key={profile.id} className={`mt-2 flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${selectedBusinessProfileId === profile.id ? 'border-indigo-400 bg-white' : 'border-transparent bg-white/60 hover:border-indigo-200'}`}>
-                      <input type="radio" name="setup-business-profile" value={profile.id} checked={selectedBusinessProfileId === profile.id} onChange={() => selectBusinessProfile(profile.id)} />
-                      <span><span className="block text-sm font-semibold text-slate-800">{profile.business_name}</span><span className="block text-xs text-slate-500">{profile.business_type || 'Business profile'} · Use this profile in Supermarketa, Supplier and CMMS</span></span>
-                    </label>
-                  ))}
-
-                  {!profilesLoading && businessProfiles.length === 0 && <p className="mt-3 text-xs text-slate-500">No eligible Pichin business profile was found. You can continue with a new store profile.</p>}
-                  {selectedBusinessProfileId && <p className="mt-3 rounded-lg bg-white p-3 text-xs leading-relaxed text-indigo-800">Your business profile is connected. Store contact and location details are optional and can be completed later in the Admin Portal.</p>}
-                </div>
-
-              </div>
-            )}
-
-            {/* ── step 1: store details ── */}
-            {step === 1 && (
-              <div className="space-y-4">
-                <div className="mb-2">
-                  <h2 className="text-xl font-black text-slate-900">Create your {typeInfo.label.toLowerCase()}</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Tell us about your {typeInfo.label.toLowerCase()}.</p>
-                </div>
-
-                <Field label={typeInfo.nameLabel} icon={FiBriefcase}
-                  placeholder={typeInfo.namePlaceholder}
-                  value={form.storeName} onChange={e => set('storeName', e.target.value)}
-                  error={errors.storeName} />
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</label>
-                  <textarea
-                    placeholder={typeInfo.descPlaceholder}
-                    value={form.description}
-                    onChange={e => set('description', e.target.value)}
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 resize-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Store phone" icon={FiPhone} type="tel"
-                    placeholder="+256 700 000 000"
-                    value={form.storePhone} onChange={e => set('storePhone', e.target.value)} />
-                  <Field label="Store email" icon={FiMail} type="email"
-                    placeholder="store@business.com"
-                    value={form.storeEmail} onChange={e => set('storeEmail', e.target.value)} />
-                </div>
-
-                {form.businessType === 'wholesale' && (
-                  <div className="space-y-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
-                    <p className="text-sm font-bold text-slate-800">Wholesale ordering setup</p>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Product, service, or material categories</label>
-                      <select multiple value={form.wholesaleCategories} onChange={e => set('wholesaleCategories', Array.from(e.target.selectedOptions, option => option.value))} className="w-full min-h-28 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm">
-                        {WHOLESALE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
-                      </select>
-                      <p className="text-xs text-slate-400">Hold Ctrl/Cmd to select more than one.</p>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Default order price</label>
-                      <select value={form.wholesalePricingMode} onChange={e => set('wholesalePricingMode', e.target.value)} className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-sm">
-                        <option value="supplier_price">Supplier price (recommended for purchasing)</option>
-                        <option value="admin_price">Admin-set price</option>
-                      </select>
-                      <p className="text-xs text-slate-400">Managers can change this choice when creating an order.</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── step 2: location ── */}
-            {step === 2 && (
-              <div className="space-y-4">
-                <div className="mb-2">
-                  <h2 className="text-xl font-black text-slate-900">Where is your store?</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Customers and riders use this for deliveries.</p>
-                </div>
-
-                <Field label="Street address *" icon={FiMapPin}
-                  placeholder="Plot 14, Nakivubo Road"
-                  value={form.address} onChange={e => set('address', e.target.value)}
-                  error={errors.address} />
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="City *" placeholder="Kampala"
-                    value={form.city} onChange={e => set('city', e.target.value)}
-                    error={errors.city} />
+                  <Field label={typeInfo.nameLabel} icon={FiBriefcase} required
+                    placeholder={typeInfo.namePlaceholder} autoComplete="organization"
+                    value={form.storeName} onChange={e => set('storeName', e.target.value)}
+                    error={errors.storeName} />
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Country</label>
-                    <select
-                      value={form.country} onChange={e => set('country', e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 bg-white"
-                    >
-                      {['Uganda','Kenya','Tanzania','Rwanda','Other'].map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                    <label htmlFor="admin-store-description" className={`block text-xs font-semibold uppercase tracking-wide ${UI.label}`}>Description</label>
+                    <textarea
+                      id="admin-store-description"
+                      placeholder={typeInfo.descPlaceholder}
+                      value={form.description}
+                      onChange={e => set('description', e.target.value)}
+                      rows={3}
+                      className={`w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 dark:focus:ring-emerald-400/20 ${UI.control}`}
+                    />
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* ── step 3: review ── */}
-            {step === 3 && (
-              <div className="space-y-4">
-                <div className="mb-2">
-                  <h2 className="text-xl font-black text-slate-900">Review & launch</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Confirm your details before going live.</p>
-                </div>
-
-                <div className="bg-slate-50 rounded-2xl p-4 divide-y divide-slate-100">
-                  <Row label="Business type" value={`${typeInfo.emoji} ${typeInfo.label}`} />
-                  <Row label="Store name"   value={form.storeName} />
-                  <Row label="Description"  value={form.description || '—'} />
-                  <Row label="Phone"        value={form.storePhone || '—'} />
-                  <Row label="Email"        value={form.storeEmail || '—'} />
-                  <Row label="Address"      value={[form.address, form.city, form.country].filter(Boolean).join(', ')} />
-                  {form.businessType === 'wholesale' && <>
-                    <Row label="Wholesale categories" value={form.wholesaleCategories.join(', ')} />
-                    <Row label="Default order price" value={form.wholesalePricingMode === 'admin_price' ? 'Admin-set price' : 'Supplier price'} />
-                  </>}
-                </div>
-
-                {selectedBusinessProfileId && <p className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-800">Your Pichin business profile will be used. You can complete store contact and location details from the Admin Portal after launch.</p>}
-
-                <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-lg shrink-0">₡</div>
-                  <div>
-                    <p className="text-sm font-bold text-emerald-800">Earn 10 icaneracoins on launch</p>
-                    <p className="text-xs text-emerald-600">Plus ongoing rewards for every order processed through your store.</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Store phone" icon={FiPhone} type="tel" inputMode="tel" autoComplete="tel"
+                      placeholder="+256 700 000 000"
+                      value={form.storePhone} onChange={e => set('storePhone', e.target.value)} />
+                    <Field label="Store email" icon={FiMail} type="email" inputMode="email" autoComplete="email"
+                      placeholder="store@business.com"
+                      value={form.storeEmail} onChange={e => set('storeEmail', e.target.value)} />
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* navigation */}
-            <div className="flex gap-3 mt-7">
-              {step > 0 && (
-                <button
-                  onClick={back}
-                  className="flex-1 py-3 rounded-2xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <FiArrowLeft size={14} /> Back
-                </button>
+                  {form.businessType === 'wholesale' && (
+                    <div className="space-y-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-400/20 dark:bg-indigo-500/10">
+                      <p className={`text-sm font-bold ${UI.title}`}>Wholesale ordering setup</p>
+                      <div className="space-y-1">
+                        <label htmlFor="admin-wholesale-categories" className={`block text-xs font-semibold uppercase tracking-wide ${UI.label}`}>Product, service, or material categories</label>
+                        <select id="admin-wholesale-categories" multiple value={form.wholesaleCategories} onChange={e => set('wholesaleCategories', Array.from(e.target.selectedOptions, option => option.value))} className={`min-h-28 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm ${UI.control}`}>
+                          {WHOLESALE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                        </select>
+                        <p className={`text-xs ${UI.muted}`}>Hold Ctrl/Cmd to select more than one.</p>
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor="admin-wholesale-pricing" className={`block text-xs font-semibold uppercase tracking-wide ${UI.label}`}>Default order price</label>
+                        <select id="admin-wholesale-pricing" value={form.wholesalePricingMode} onChange={e => set('wholesalePricingMode', e.target.value)} className={`w-full rounded-xl border border-slate-200 px-3 py-3 text-sm ${UI.control}`}>
+                          <option value="supplier_price">Supplier price (recommended for purchasing)</option>
+                          <option value="admin_price">Admin-set price</option>
+                        </select>
+                        <p className={`text-xs ${UI.muted}`}>Managers can change this choice when creating an order.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
-              {step < STEPS.length - 1 ? (
-                <button
-                  onClick={next}
-                  className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white text-sm font-bold shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
-                >
-                  Continue <FiArrowRight size={14} />
-                </button>
-              ) : (
-                <button
-                  onClick={handleCreate}
-                  disabled={busy}
-                  className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-slate-900 to-emerald-700 text-white text-sm font-bold shadow-md hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                >
-                  {busy
-                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Launching…</>
-                    : <>{selectedBusinessProfileId ? 'Continue to Admin Portal' : 'Launch my store'} <FiArrowRight size={14} /></>
-                  }
-                </button>
+              {/* ── step 2: location ── */}
+              {step === 2 && (
+                <div className="cl-step-in space-y-4">
+                  <div className="mb-2">
+                    <h2 ref={headingRef} tabIndex={-1} className={`text-xl font-black outline-none ${UI.title}`}>{stepHeading}</h2>
+                    <p className={`mt-0.5 text-sm ${UI.muted}`}>Customers and riders use this for deliveries.</p>
+                  </div>
+
+                  <Field label="Street address *" icon={FiMapPin} required autoComplete="street-address"
+                    placeholder="Plot 14, Nakivubo Road"
+                    value={form.address} onChange={e => set('address', e.target.value)}
+                    error={errors.address} />
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="City *" required autoComplete="address-level2" placeholder="Kampala"
+                      value={form.city} onChange={e => set('city', e.target.value)}
+                      error={errors.city} />
+
+                    <div className="space-y-1">
+                      <label htmlFor="admin-store-country" className={`block text-xs font-semibold uppercase tracking-wide ${UI.label}`}>Country</label>
+                      <select
+                        id="admin-store-country"
+                        autoComplete="country-name"
+                        value={form.country} onChange={e => set('country', e.target.value)}
+                        className={`w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 dark:focus:ring-emerald-400/20 ${UI.control}`}
+                      >
+                        {['Uganda','Kenya','Tanzania','Rwanda','Other'].map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
               )}
-            </div>
+
+              {/* ── step 3: review ── */}
+              {step === 3 && (
+                <div className="cl-step-in space-y-4">
+                  <div className="mb-2">
+                    <h2 ref={headingRef} tabIndex={-1} className={`text-xl font-black outline-none ${UI.title}`}>{stepHeading}</h2>
+                    <p className={`mt-0.5 text-sm ${UI.muted}`}>Confirm your details before going live.</p>
+                  </div>
+
+                  <div className="rounded-2xl bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 p-4 text-center ring-1 ring-emerald-400/30">
+                    <div className="text-4xl" aria-hidden="true">{typeInfo.emoji}</div>
+                    <p className={`font-classic-display mt-1 break-words text-2xl font-extrabold leading-tight ${UI.title}`}>{trimmedName}</p>
+                    <p className={`mt-0.5 text-xs font-semibold uppercase tracking-wide ${UI.muted}`}>{typeInfo.label}</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <ReviewBlock title="Business type" onEdit={() => setStep(0)}>
+                      <Row label="Type" value={`${typeInfo.emoji} ${typeInfo.label}`} />
+                    </ReviewBlock>
+                    <ReviewBlock title="Store details" onEdit={() => setStep(1)}>
+                      <Row label="Store name"   value={form.storeName} />
+                      <Row label="Description"  value={form.description} />
+                      <Row label="Phone"        value={form.storePhone} />
+                      <Row label="Email"        value={form.storeEmail} />
+                      {form.businessType === 'wholesale' && <>
+                        <Row label="Wholesale categories" value={form.wholesaleCategories.join(', ')} />
+                        <Row label="Default order price" value={form.wholesalePricingMode === 'admin_price' ? 'Admin-set price' : 'Supplier price'} />
+                      </>}
+                    </ReviewBlock>
+                    <ReviewBlock title="Location" onEdit={() => setStep(2)}>
+                      <Row label="Address" value={[form.address, form.city, form.country].filter(Boolean).join(', ')} />
+                    </ReviewBlock>
+                  </div>
+
+                  {selectedBusinessProfileId && <p className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-800 dark:border-indigo-400/20 dark:bg-indigo-500/10 dark:text-indigo-200">Your Pichin business profile will be used. You can complete store contact and location details from the Admin Portal after launch.</p>}
+
+                  <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50 p-4 dark:border-emerald-400/20 dark:from-emerald-500/10 dark:to-cyan-500/10">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-lg text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-200">₡</div>
+                    <div>
+                      <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Earn 10 icaneracoins on launch</p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300/80">Plus ongoing rewards for every order processed through your store.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* navigation: pinned to the bottom of a phone screen so Continue is never scrolled away */}
+              <div className="sticky bottom-0 z-10 -mx-5 mt-6 flex gap-3 rounded-b-[2rem] border-t border-slate-100 bg-white/95 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/95 sm:static sm:mx-0 sm:mt-7 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none sm:dark:bg-transparent">
+                {step > 0 && (
+                  <button
+                    type="button"
+                    onClick={back}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-3 text-sm font-semibold transition-colors ${UI.ghostButton}`}
+                  >
+                    <FiArrowLeft size={14} /> Back
+                  </button>
+                )}
+
+                {step < STEPS.length - 1 ? (
+                  <button
+                    type="submit"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 py-3 text-sm font-bold text-white shadow-md transition-opacity hover:opacity-90"
+                  >
+                    Continue <FiArrowRight size={14} />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-slate-900 to-emerald-700 py-3 text-sm font-bold text-white shadow-md transition-all hover:opacity-90 disabled:opacity-50 dark:from-emerald-600 dark:to-teal-600"
+                  >
+                    {busy
+                      ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Launching…</>
+                      : <>{selectedBusinessProfileId ? 'Continue to Admin Portal' : 'Launch my store'} <FiArrowRight size={14} /></>
+                    }
+                  </button>
+                )}
+              </div>
+            </form>
 
             {/* switch to sign-in */}
-            <p className="text-center text-xs text-slate-400 mt-5">
+            <p className={`mt-5 text-center text-xs ${UI.muted}`}>
               Already have a business account?{' '}
-              <button onClick={() => setView('signin')} className="text-emerald-600 font-semibold hover:underline">
+              <button type="button" onClick={() => setView('signin')} className={`font-semibold hover:underline ${UI.link}`}>
                 Sign in
               </button>
             </p>

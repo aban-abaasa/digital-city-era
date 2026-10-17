@@ -34,7 +34,7 @@ const ProductFamiliesPanel = ({ products, isAdmin, formatCurrency, onPickPhoto, 
       </button>
 
       {open && (
-        <div className="space-y-3 border-t border-gray-200/60 p-2.5 sm:p-3">
+        <div className="oi-row-in space-y-3 border-t border-gray-200/60 p-2.5 sm:p-3">
           <p className="text-xs text-gray-500">
             Same name, different barcodes. Give each flavor its own photo so customers pick the right one at checkout.
           </p>
@@ -49,7 +49,7 @@ const ProductFamiliesPanel = ({ products, isAdmin, formatCurrency, onPickPhoto, 
                   <button
                     type="button"
                     onClick={() => onAddFlavors(family.members[0])}
-                    className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
                   >
                     <FiPlus className="h-3.5 w-3.5" /> Add flavor
                   </button>
@@ -85,14 +85,14 @@ const ProductFamiliesPanel = ({ products, isAdmin, formatCurrency, onPickPhoto, 
                             type="button"
                             onClick={() => onPickPhoto(member.id)}
                             disabled={uploading}
-                            className="mt-0.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                            className="mt-0.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 dark:text-sky-300 dark:hover:text-sky-200"
                           >
                             {uploading ? 'Uploading…' : photo ? 'Change photo' : 'Add photo'}
                           </button>
                         )}
                       </div>
                       <div className="flex-shrink-0 text-right">
-                        <p className="text-sm font-bold text-green-700">{formatCurrency(member.selling_price)}</p>
+                        <p className="text-sm font-bold text-green-700 dark:text-green-400">{formatCurrency(member.selling_price)}</p>
                         <p className="text-xs text-gray-500">{Number(member.current_stock) || 0} in stock</p>
                       </div>
                     </li>

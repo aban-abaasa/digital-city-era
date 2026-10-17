@@ -97,12 +97,17 @@ const BarcodeLabelsModal = ({ products, categories, supermarketId, storeName, is
   const labelWord = (n) => `${n} label${n === 1 ? '' : 's'}`;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 md:p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="oi-modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 md:p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="barcodes-title" className="oi-modal-panel bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[92dvh] overflow-y-auto">
         <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-3 md:p-5 flex items-center justify-between sticky top-0">
           <div className="min-w-0">
-            <h2 className="text-lg md:text-xl font-bold">🏷️ Barcodes</h2>
-            <p className="text-green-100 text-xs md:text-sm mt-0.5">Make barcodes for items that have none, and print them as a sheet</p>
+            <h2 id="barcodes-title" className="text-lg md:text-xl font-bold">🏷️ Barcodes</h2>
+            {storeName && (
+              <p className="oi-store-chip mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-0.5 text-xs md:text-sm font-semibold text-white">
+                <span aria-hidden="true">🏪</span><span className="truncate">{storeName}</span>
+              </p>
+            )}
+            <p className="text-green-100 text-xs md:text-sm mt-1">Make barcodes for items that have none, and print them as a sheet</p>
           </div>
           <button onClick={onClose} className="text-white hover:bg-white hover:bg-opacity-20 p-1 md:p-2 rounded-lg transition" disabled={generating}>
             <FiX className="h-5 w-5 md:h-6 md:w-6" />
@@ -110,7 +115,7 @@ const BarcodeLabelsModal = ({ products, categories, supermarketId, storeName, is
         </div>
 
         <div className="p-3 md:p-5 space-y-4">
-          <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
+          <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/60 p-3 space-y-2 dark:border-emerald-400/25 dark:bg-emerald-500/10">
             {needing.length > 0 ? (
               <>
                 <p className="text-sm font-semibold text-gray-800">
@@ -128,7 +133,7 @@ const BarcodeLabelsModal = ({ products, categories, supermarketId, storeName, is
                 </button>
               </>
             ) : (
-              <p className="text-sm font-semibold text-emerald-800">✅ Every product has a barcode.</p>
+              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">✅ Every product has a barcode.</p>
             )}
             <p className="text-xs text-gray-600">
               {storeMade.length} store-made barcode{storeMade.length === 1 ? '' : 's'} ready to print.

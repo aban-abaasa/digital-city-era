@@ -61,7 +61,10 @@ html:not([data-theme="dark"]) .sk-portal-themed {
   letter-spacing: -0.005em;
 }
 .sk-portal-themed h2 { font-weight: 700; }
-html:not([data-theme="dark"]) .sk-portal-themed :is(h1, h2):not([class*="text-white"]):not([class*="text-[#"]) {
+/* Dark ink for titles on the ivory page. Not for titles that sit on a coloured surface: the shared
+   portal header bar, the dashboard hero, or anything inside a `text-white` block. They keep the light
+   colour they are given, which this rule used to override (a store name in navy on an indigo bar). */
+html:not([data-theme="dark"]) .sk-portal-themed :is(h1, h2):not([class*="text-white"]):not([class*="text-[#"]):not(.ph-header *, .adh-hero *, .text-white *) {
   color: var(--cl-ink);
 }
 

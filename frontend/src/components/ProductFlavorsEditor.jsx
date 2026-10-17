@@ -20,7 +20,7 @@ import {
   splitScannedCodes
 } from '../utils/productFlavors';
 
-const fieldClass = 'px-3 py-1.5 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500 text-sm bg-white';
+const fieldClass = 'px-3 py-1.5 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500 text-sm bg-white dark:bg-slate-950/60 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500';
 const inputClass = `w-full ${fieldClass}`;
 
 const ProductFlavorsEditor = ({
@@ -109,7 +109,7 @@ const ProductFlavorsEditor = ({
           setOpen(true);
           setTimeout(() => quickRef.current?.focus(), 0);
         }}
-        className="w-full rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50 px-3 py-2.5 text-left text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+        className="w-full rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50 px-3 py-2.5 text-left text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
       >
         🍹 Comes in flavors? Add each flavor with its own barcode
       </button>
@@ -117,9 +117,9 @@ const ProductFlavorsEditor = ({
   }
 
   return (
-    <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
+    <div data-no-enter-save className="oi-row-in rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3 space-y-3 dark:border-emerald-400/25 dark:bg-emerald-500/10">
       <div>
-        <h3 className="text-sm md:text-base font-bold text-emerald-900">🍹 Flavors</h3>
+        <h3 className="text-sm md:text-base font-bold text-emerald-900 dark:text-emerald-200">🍹 Flavors</h3>
         <p className="text-xs text-gray-600 mt-0.5">
           Each flavor is saved as its own product with its own barcode, price and stock. Scan or type as many as you need.
         </p>
@@ -189,7 +189,7 @@ const ProductFlavorsEditor = ({
           {rows.map((row, index) => {
             const rowIssues = issues[row.id] || {};
             return (
-              <div key={row.id} className="rounded-lg border border-emerald-200 bg-white p-2">
+              <div key={row.id} className="oi-row-in rounded-lg border border-emerald-200 bg-white p-2 dark:border-emerald-400/20 dark:bg-slate-900/50">
                 <div className="flex flex-wrap items-start gap-2">
                   <div className="flex-1 min-w-[8rem]">
                     <input
@@ -266,7 +266,7 @@ const ProductFlavorsEditor = ({
                   </button>
                 </div>
                 {(rowIssues.flavor || rowIssues.barcode) ? (
-                  <p className="mt-1 text-xs text-red-600">{[rowIssues.flavor, rowIssues.barcode].filter(Boolean).join(' · ')}</p>
+                  <p className="mt-1 text-xs text-red-600 dark:text-red-300">{[rowIssues.flavor, rowIssues.barcode].filter(Boolean).join(' · ')}</p>
                 ) : row.flavor.trim() ? (
                   <p className="mt-1 text-xs text-gray-500">→ {flavorProductName(sharedName, row.flavor)}</p>
                 ) : null}
@@ -280,7 +280,7 @@ const ProductFlavorsEditor = ({
         <button
           type="button"
           onClick={() => onRowsChange((prev) => [...prev, newFlavorRow()])}
-          className="px-2.5 py-1 rounded-full bg-white border border-emerald-300 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 flex items-center gap-1"
+          className="px-2.5 py-1 rounded-full bg-white border border-emerald-300 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 flex items-center gap-1 transition-colors dark:bg-transparent dark:border-emerald-400/40 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
         >
           <FiPlus className="h-3 w-3" /> Another flavor
         </button>
@@ -299,7 +299,7 @@ const ProductFlavorsEditor = ({
             key={flavor}
             type="button"
             onClick={() => onRowsChange((prev) => addFlavorNameToRows(prev, flavor))}
-            className="px-2.5 py-1 rounded-full bg-white border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+            className="px-2.5 py-1 rounded-full bg-white border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 transition-colors dark:bg-transparent dark:border-slate-600 dark:text-slate-300 dark:hover:bg-white/5"
           >
             {flavor}
           </button>

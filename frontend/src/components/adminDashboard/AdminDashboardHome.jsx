@@ -267,8 +267,14 @@ function AdminDashboardHome({ adminName, storeName, supermarketId, businessProfi
       <section className="adh-hero">
         <div className="adh-hero-main">
           <p className="adh-eyebrow">Admin dashboard</p>
+          {storeName && (
+            <p className="adh-hero-store" title={storeName}>
+              <span aria-hidden="true">🏪</span>
+              <span className="adh-hero-store-name">{storeName}</span>
+            </p>
+          )}
           <h2 className="adh-hero-title">{greeting()}, {adminName?.split(' ')[0] || 'Admin'}</h2>
-          <p className="adh-hero-sub">{storeName ? `${storeName} — ` : ''}every part of your business, one tap away.</p>
+          <p className="adh-hero-sub">Every part of your business, one tap away.</p>
           <div className="adh-hero-meta">
             <span className="adh-live"><i /> Live</span>
             <span className="adh-updated">

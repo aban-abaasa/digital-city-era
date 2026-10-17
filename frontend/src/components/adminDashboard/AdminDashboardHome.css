@@ -50,6 +50,12 @@
   background: radial-gradient(circle, rgba(245, 223, 160, 0.28), transparent 70%); pointer-events: none;
 }
 .adh-hero .adh-eyebrow { color: #f5dfa0; }
+/* The store's name is the headline of the page: large, bright, with a gold rule that draws in beneath it */
+.adh-hero-store { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; max-width: 100%; font-family: var(--serif); font-size: clamp(1.6rem, 7vw, 2.2rem); font-weight: 800; line-height: 1.1; color: #fff; text-shadow: 0 2px 14px rgba(15, 10, 60, 0.45); animation: adh-store-in .6s cubic-bezier(.2, .8, .2, 1) both; }
+.adh-hero-store-name { position: relative; min-width: 0; padding-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adh-hero-store-name::after { content: ""; position: absolute; left: 0; bottom: 0; width: 100%; height: 3px; border-radius: 2px; background: linear-gradient(90deg, #f5dfa0, rgba(245, 223, 160, 0)); transform-origin: left; animation: adh-store-line .9s .3s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes adh-store-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes adh-store-line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .adh-hero-title { margin: 6px 0 4px; font-family: var(--serif); font-size: 1.6rem; line-height: 1.15; font-weight: 700; color: #fff; }
 .adh-hero-sub { margin: 0; font-size: 14px; color: rgba(224, 231, 255, 0.92); }
 .adh-hero-meta { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
