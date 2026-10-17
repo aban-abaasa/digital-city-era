@@ -7,7 +7,7 @@ import { supabase } from '../services/supabase';
 import geminiAIService from '../services/geminiAIService';
 import { findProductByBarcode } from '../utils/barcodeHelper';
 
-const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0 }) => {
+const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0, keepOpen = false }) => {
   const [scanMode, setScanMode] = useState('camera'); // 'smart', 'camera', 'gun' - CAMERA ACTIVE BY DEFAULT
   const [cameraActive, setCameraActive] = useState(false);
   const [gunListening, setGunListening] = useState(true); // GUN SCANNER LISTENING BY DEFAULT
@@ -52,6 +52,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const stopDetectionRef = useRef(null); // Stops the running barcode detection loop
   const cameraRequestRef = useRef(0); // Bumped to discard an in-flight camera request
   const scanFlashTimeoutRef = useRef(null);
+  const adminCloseTimeoutRef = useRef(null); // pending auto-close after an admin scan
   const handleScannedBarcodeRef = useRef(() => {}); // always points at the latest handleScannedBarcode
 
   //  Initialize Camera Scanner
@@ -76,6 +77,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
     return () => {
       if (scanFlashTimeoutRef.current) clearTimeout(scanFlashTimeoutRef.current);
+      // A parent that closed us itself must not get a second onClose 1.5s later
+      // (it would shut a scanner reopened in the meantime)
+      if (adminCloseTimeoutRef.current) clearTimeout(adminCloseTimeoutRef.current);
       // Close the shared AudioContext when the scanner unmounts entirely
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(() => {});
@@ -1078,7 +1082,8 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       flashScan('ok');
       toast.success(`📦 Barcode captured: ${barcode}`, { autoClose: 1500, pauseOnHover: false });
       onBarcodeScanned(barcode);
-      setTimeout(() => onClose(), autoCloseDelay || 1500);
+      // keepOpen: the caller is collecting several codes in a row and the person closes the scanner
+      if (!keepOpen) adminCloseTimeoutRef.current = setTimeout(() => onClose(), autoCloseDelay || 1500);
       return;
     }
 
@@ -1344,7 +1349,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const VIEWS = {
     admin: {
       title: 'Scan a product',
-      subtitle: 'Add a new item or find an existing one',
+      subtitle: keepOpen ? 'Scan one barcode after another, then close' : 'Add a new item or find an existing one',
       accent: 'bg-blue-600',
       button: 'bg-blue-600 hover:bg-blue-700',
       panelTitle: 'LAST SCANNED',
