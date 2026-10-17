@@ -799,7 +799,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
       // Complete scan on Enter (standard barcode gun behavior)
       if (char === 'Enter') {
-        const barcode = newBuffer.slice(0, -1).trim();
+        // `prev` is everything typed before Enter. (newBuffer ends in the key's name, "Enter",
+        // so slicing a single character off it left "Ente" stuck on the end of every code.)
+        const barcode = prev.trim();
         if (barcode) {
           console.log(`✅ BARCODE COMPLETE: "${barcode}" - Processing...`);
           handleScannedBarcode(barcode, 'gun');
