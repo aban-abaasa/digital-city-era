@@ -5,7 +5,7 @@
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FiCamera, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiCamera, FiImage, FiPlus, FiTrash2 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import DualScannerInterface from './DualScannerInterface';
 import { barcodesMatch } from '../utils/barcodeHelper';
@@ -47,7 +47,23 @@ const ProductFlavorsEditor = ({
 
   const updateRow = (id, patch) =>
     onRowsChange((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
-  const removeRow = (id) => onRowsChange((prev) => prev.filter((row) => row.id !== id));
+  const removeRow = (id) => {
+    const gone = rows.find((row) => row.id === id);
+    if (gone?.photoPreview) URL.revokeObjectURL(gone.photoPreview);
+    onRowsChange((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  // Each flavor can have a photo of its own; it is uploaded when the flavors are saved
+  const selectPhoto = (id, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    const previous = rows.find((row) => row.id === id)?.photoPreview;
+    if (previous) URL.revokeObjectURL(previous);
+    updateRow(id, { photo: file, photoPreview: URL.createObjectURL(file) });
+  };
 
   const addCodes = (codes) => {
     const alreadyListed = codes.filter((code) => rows.some((row) => barcodesMatch(row.barcode, code))).length;
@@ -190,6 +206,23 @@ const ProductFlavorsEditor = ({
                     >
                       <FiCamera className="h-4 w-4" />
                     </button>
+                    <label
+                      className="flex w-10 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-gray-300 bg-white text-gray-500 hover:border-emerald-400"
+                      title={row.photoPreview ? "Change this flavor's photo" : 'Add a photo for this flavor'}
+                    >
+                      {row.photoPreview
+                        ? <img src={row.photoPreview} alt="" className="h-full w-full object-cover" />
+                        : <FiImage className="h-4 w-4" />}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          selectPhoto(row.id, e.target.files?.[0]);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
                   </div>
                   <input
                     type="number"

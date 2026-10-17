@@ -8,11 +8,13 @@ import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import inventoryService from '../services/inventorySupabaseService';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
+import { familyName } from '../utils/productFamilies';
 import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 
-const ProductFlavorsModal = ({ product, products, onClose, onCreated }) => {
+const ProductFlavorsModal = ({ product, products, uploadPhoto, onClose, onCreated }) => {
   const [rows, setRows] = useState([]);
-  const [sharedName, setSharedName] = useState(product.name || '');
+  // The product may itself be a flavor ("Fanta - Orange"); the new ones share its family name ("Fanta")
+  const [sharedName, setSharedName] = useState(familyName(product.name));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -30,7 +32,7 @@ const ProductFlavorsModal = ({ product, products, onClose, onCreated }) => {
       const supermarketId = await inventoryService.getCurrentSupermarketId();
       if (!supermarketId) throw new Error('No supermarket is assigned to this admin account.');
 
-      const { products: created, stockError } = await registerFlavorProducts({
+      const { products: created, stockError, photoFailures } = await registerFlavorProducts({
         supabase,
         supermarketId,
         base: {
@@ -43,14 +45,18 @@ const ProductFlavorsModal = ({ product, products, onClose, onCreated }) => {
           tax_rate: product.tax_rate,
           category_id: product.category_id
         },
-        rows
+        rows,
+        uploadPhoto
       });
 
+      if (photoFailures > 0) {
+        toast.warning(`${photoFailures} flavor photo${photoFailures === 1 ? '' : 's'} could not be uploaded. Add them from Flavor families.`);
+      }
       if (stockError) {
         toast.warning('Flavors were added, but their stock records could not be created. Press Refresh to retry.');
       }
       toast.success(`✅ Added ${created.length} flavor${created.length === 1 ? '' : 's'}`);
-      onCreated(created.map((flavor) => ({ ...flavor, current_stock: 0, images: [] })));
+      onCreated(created.map((flavor) => ({ ...flavor, current_stock: 0, images: Array.isArray(flavor.images) ? flavor.images : [] })));
       onClose();
     } catch (error) {
       console.error('❌ Error adding flavors:', error);

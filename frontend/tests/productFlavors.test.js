@@ -184,10 +184,37 @@ test('a failed stock record is reported, not thrown', async () => {
   assert.equal(stockError.message, 'boom');
 });
 
+test('each flavor photo is uploaded to its own product, and a failed upload is counted, not thrown', async () => {
+  const supabase = fakeSupabase();
+  const uploads = [];
+  const uploadPhoto = async (productId, file) => {
+    uploads.push([productId, file]);
+    if (file === 'bad.jpg') throw new Error('upload failed');
+    return `http://img/${productId}.jpg`;
+  };
+  const rows = [
+    newFlavorRow({ flavor: 'Orange', barcode: '600111', photo: 'orange.jpg' }),
+    newFlavorRow({ flavor: 'Mango', barcode: '600222' }),
+    newFlavorRow({ flavor: 'Lime', barcode: '600333', photo: 'bad.jpg' })
+  ];
+  const { products, photoFailures } = await registerFlavorProducts({ supabase, supermarketId: 's1', base, rows, uploadPhoto });
+  assert.deepEqual(uploads, [['id-0', 'orange.jpg'], ['id-2', 'bad.jpg']]);
+  assert.deepEqual(products.map((p) => p.images ?? null), [['http://img/id-0.jpg'], null, null]);
+  assert.equal(photoFailures, 1);
+});
+
+test('photos are optional: without an upload function nothing is uploaded', async () => {
+  const supabase = fakeSupabase();
+  const { photoFailures } = await registerFlavorProducts({
+    supabase, supermarketId: 's1', base, rows: [newFlavorRow({ flavor: 'Orange', barcode: '600111', photo: 'orange.jpg' })]
+  });
+  assert.equal(photoFailures, 0);
+});
+
 test('no complete rows means nothing is written', async () => {
   const supabase = fakeSupabase();
   const result = await registerFlavorProducts({ supabase, supermarketId: 's1', base, rows: [row('', '')] });
-  assert.deepEqual(result, { products: [], stockError: null });
+  assert.deepEqual(result, { products: [], stockError: null, photoFailures: 0 });
   assert.equal(supabase.calls.length, 0);
 });
 

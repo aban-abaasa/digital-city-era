@@ -18,6 +18,8 @@ export const newFlavorRow = (fields = {}) => ({
   flavor: '',
   barcode: '',
   selling_price: '', // blank = same price as the main product
+  photo: null, // optional image file, uploaded once the flavor's product exists
+  photoPreview: '',
   ...fields
 });
 
@@ -146,12 +148,13 @@ export const buildFlavorProducts = ({ supermarketId, base, rows }) =>
   });
 
 // Writes the flavors: one check that none of the barcodes is taken, one insert for the
-// products (all or nothing), one insert for their stock records. Throws with a message
-// the admin can act on. Returns { products, stockError } — a stock record that fails
-// to save is reported rather than thrown, since the products themselves exist by then.
-export const registerFlavorProducts = async ({ supabase, supermarketId, base, rows }) => {
+// products (all or nothing), one insert for their stock records, then each flavor's photo
+// (`uploadPhoto(productId, file)` saves it and returns its url). Throws with a message the
+// admin can act on. Returns { products, stockError, photoFailures } — a stock record or a
+// photo that fails is reported rather than thrown, since the products themselves exist by then.
+export const registerFlavorProducts = async ({ supabase, supermarketId, base, rows, uploadPhoto }) => {
   const payloads = buildFlavorProducts({ supermarketId, base, rows });
-  if (payloads.length === 0) return { products: [], stockError: null };
+  if (payloads.length === 0) return { products: [], stockError: null, photoFailures: 0 };
 
   const { data: taken, error: lookupError } = await supabase
     .from('products')
@@ -190,5 +193,19 @@ export const registerFlavorProducts = async ({ supabase, supermarketId, base, ro
       reorder_quantity: 100
     })));
 
-  return { products: created, stockError: stockError || null };
+  // One at a time: several full-size phone photos compressing at once can exhaust a phone's memory
+  let photoFailures = 0;
+  if (uploadPhoto) {
+    for (const row of activeFlavorRows(rows).filter((r) => r.photo)) {
+      const product = created.find((p) => barcodesMatch(p.barcode, row.barcode));
+      if (!product) continue;
+      try {
+        product.images = [await uploadPhoto(product.id, row.photo)];
+      } catch {
+        photoFailures += 1;
+      }
+    }
+  }
+
+  return { products: created, stockError: stockError || null, photoFailures };
 };

@@ -28,6 +28,8 @@ import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import ProductFlavorsModal from './ProductFlavorsModal';
+import ProductFamiliesPanel from './ProductFamiliesPanel';
+import { familyName } from '../utils/productFamilies';
 import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 import BookingsPanel from './booking/BookingsPanel';
 import ExpiryClearancePanel from './ExpiryClearancePanel';
@@ -1184,11 +1186,12 @@ const OrderInventoryPOSControl = () => {
       if (flavorsToAdd.length > 0) {
         try {
           const onOffer = isOnClearance(editedProduct) && Number(editValues.selling_price) === Number(editedProduct.selling_price);
-          const { products: madeFlavors, stockError } = await registerFlavorProducts({
+          const { products: madeFlavors, stockError, photoFailures } = await registerFlavorProducts({
             supabase,
             supermarketId,
+            uploadPhoto: uploadProductPhoto,
             base: {
-              name: (editFlavorSharedName ?? editValues.name).trim(),
+              name: (editFlavorSharedName ?? familyName(editValues.name)).trim(),
               cost_price: editValues.cost_price,
               wholesale_price: editValues.wholesale_price,
               wholesale_discount_percent: editValues.wholesale_discount_percent,
@@ -1199,7 +1202,8 @@ const OrderInventoryPOSControl = () => {
             },
             rows: editFlavorRows
           });
-          flavorProducts = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: [] }));
+          flavorProducts = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: Array.isArray(flavor.images) ? flavor.images : [] }));
+          if (photoFailures > 0) toast.warning(`${photoFailures} flavor photo${photoFailures === 1 ? '' : 's'} could not be uploaded. Add them from Flavor families.`);
           if (stockError) {
             console.warn('⚠️ Could not create inventory records for the flavors:', stockError);
             toast.warning('Flavors were added, but their stock records could not be created. Press Refresh to retry.');
@@ -1387,13 +1391,15 @@ const OrderInventoryPOSControl = () => {
         try {
           const flavorStoreId = await inventoryService.getCurrentSupermarketId();
           if (!flavorStoreId) throw new Error('No supermarket is assigned to this admin account.');
-          const { products: madeFlavors, stockError } = await registerFlavorProducts({
+          const { products: madeFlavors, stockError, photoFailures } = await registerFlavorProducts({
             supabase,
             supermarketId: flavorStoreId,
             base: { ...newProduct, name: (flavorSharedName ?? newProduct.name).trim() },
-            rows: flavorRows
+            rows: flavorRows,
+            uploadPhoto: uploadProductPhoto
           });
-          const shapedFlavors = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: [] }));
+          if (photoFailures > 0) toast.warning(`${photoFailures} flavor photo${photoFailures === 1 ? '' : 's'} could not be uploaded. Add them from Flavor families.`);
+          const shapedFlavors = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: Array.isArray(flavor.images) ? flavor.images : [] }));
           updatedProducts = [...updatedProducts, ...shapedFlavors];
           updatedFiltered = [...updatedFiltered, ...shapedFlavors];
           flavorCount = shapedFlavors.length;
@@ -1914,6 +1920,16 @@ const OrderInventoryPOSControl = () => {
         onOpenBatches={(product) => setBatchProductId(product.id)}
       />
 
+      {/* Products with the same name and different barcodes, listed automatically, each with its own photo */}
+      <ProductFamiliesPanel
+        products={products}
+        isAdmin={isAdmin}
+        formatCurrency={formatCurrency}
+        onPickPhoto={openQuickPhotoPicker}
+        uploadingPhotoId={uploadingQuickPhotoId}
+        onAddFlavors={setFlavorsFor}
+      />
+
       {showBatchOverview && (
         <BatchOverviewModal
           products={products}
@@ -2055,7 +2071,7 @@ const OrderInventoryPOSControl = () => {
                     <ProductFlavorsEditor
                       rows={editFlavorRows}
                       onRowsChange={setEditFlavorRows}
-                      sharedName={editFlavorSharedName ?? editValues.name}
+                      sharedName={editFlavorSharedName ?? familyName(editValues.name)}
                       onSharedNameChange={setEditFlavorSharedName}
                       mainBarcode={editValues.barcode}
                       products={products}
@@ -2675,6 +2691,7 @@ const OrderInventoryPOSControl = () => {
         <ProductFlavorsModal
           product={flavorsFor}
           products={products}
+          uploadPhoto={uploadProductPhoto}
           onClose={() => setFlavorsFor(null)}
           onCreated={(created) => {
             setProducts(previous => [...previous, ...created]);
