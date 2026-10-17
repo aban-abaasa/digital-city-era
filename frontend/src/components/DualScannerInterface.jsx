@@ -70,7 +70,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
   // � Load products from Supabase on mount
   useEffect(() => {
-    loadProductsFromSupabase();
+    // Admin scans only capture the code (see handleScannedBarcode) — pulling every
+    // active product down first would just delay and compete with the scan.
+    if (context !== 'admin') loadProductsFromSupabase();
 
     return () => {
       if (scanFlashTimeoutRef.current) clearTimeout(scanFlashTimeoutRef.current);
