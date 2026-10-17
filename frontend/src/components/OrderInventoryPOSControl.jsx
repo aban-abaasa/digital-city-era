@@ -272,6 +272,8 @@ const OrderInventoryPOSControl = () => {
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [newlyRegisteredProductId, setNewlyRegisteredProductId] = useState(null); // Track newly created product for update
+  const [registeringBarcode, setRegisteringBarcode] = useState(false); // A scanned code is being checked/registered behind the open form
+  const scanRequestRef = useRef(0); // Bumped per scan and on cancel, so a late answer for an abandoned scan is dropped
   const [newProduct, setNewProduct] = useState({
     name: '',
     sku: '',
@@ -428,19 +430,53 @@ const OrderInventoryPOSControl = () => {
   const handleBarcodeScanned = async (barcode) => {
     // ✅ IMMEDIATELY close scanner (no waiting)
     setShowBarcodeScanner(false);
-    
+
     // Validate barcode
-    if (!barcode || barcode.trim().length < 3) {
+    const trimmedBarcode = (barcode || '').trim();
+    if (trimmedBarcode.length < 3) {
       toast.warning('⚠️ Invalid barcode - too short');
       return;
     }
 
+    // Already in the loaded catalog (any UPC-A / EAN-13 form)? Answer from memory, no round trip.
+    const variants = barcodeVariants(trimmedBarcode);
+    const loadedProduct = products.find((p) => variants.includes(String(p.barcode ?? '').trim()));
+    if (loadedProduct) {
+      toast.success(`✅ Found: ${loadedProduct.name}`, {
+        autoClose: 1500
+      });
+      return;
+    }
+
+    // New code: show it in the form at once and check/register it behind the form.
+    // Save stays disabled until the registration lands, so nothing waits on the network.
+    const requestId = ++scanRequestRef.current;
+    const isCurrent = () => scanRequestRef.current === requestId;
+    const formWasOpen = showAddProductModal;
+    const productBeforeScan = newProduct;
+    // Full barcode, not a prefix: SKU is unique and barcodes from one maker share their first digits
+    const generatedSKU = `SKU-${trimmedBarcode}`;
+
+    setNewlyRegisteredProductId(null);
+    setNewProduct({ ...newProduct, sku: generatedSKU, barcode: trimmedBarcode });
+    setRegisteringBarcode(true);
+    setShowAddProductModal(true);
+
+    // Nothing to register after all: put the form back the way it was before the scan.
+    const abandonScan = () => {
+      if (!isCurrent()) return;
+      setRegisteringBarcode(false);
+      setNewProduct(productBeforeScan);
+      setShowAddProductModal(formWasOpen);
+    };
+
     try {
-      console.log('⚡ Fast barcode processing:', barcode);
-      const trimmedBarcode = barcode.trim();
-      
+      console.log('⚡ Fast barcode processing:', trimmedBarcode);
+
       const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (!isCurrent()) return;
       if (!supermarketId) {
+        abandonScan();
         setProducts([]);
         setFilteredProducts([]);
         toast.error('No supermarket is assigned to this admin account.');
@@ -451,19 +487,22 @@ const OrderInventoryPOSControl = () => {
       const { data: existingRows, error: searchError } = await supabase
         .from('products')
         .select('id, name, barcode, sku, selling_price')
-        .in('barcode', barcodeVariants(trimmedBarcode))
+        .in('barcode', variants)
         .eq('supermarket_id', supermarketId)
         .limit(1);
+      if (!isCurrent()) return;
       const existingProduct = existingRows?.[0] || null;
 
       if (searchError && searchError.code !== 'PGRST116') {
         console.error('❌ Error searching for product:', searchError);
+        abandonScan();
         toast.error('❌ Error checking inventory');
         return;
       }
 
       if (existingProduct) {
         // Product already exists - show notification only
+        abandonScan();
         toast.success(`✅ Found: ${existingProduct.name}`, {
           autoClose: 1500
         });
@@ -471,23 +510,26 @@ const OrderInventoryPOSControl = () => {
         return;
       }
 
-      // Product doesn't exist - AUTO REGISTER IT FAST
-      console.log('⚡ Auto-registering new product...');
-      
-      const generatedName = `Product - ${trimmedBarcode}`;
-      // Full barcode, not a prefix: SKU is unique and barcodes from one maker share their first digits
-      const generatedSKU = `SKU-${trimmedBarcode}`;
-      const { data: storeProfile } = await supabase
+      // Only the form's wholesale fields depend on this, so it must not hold up the insert
+      supabase
         .from('supermarkets')
         .select('business_type')
         .eq('id', supermarketId)
-        .maybeSingle();
-      setBusinessType(storeProfile?.business_type || 'supermarket');
+        .maybeSingle()
+        .then(({ data: storeProfile }) => {
+          setBusinessType(storeProfile?.business_type || 'supermarket');
+        })
+        .catch(err => {
+          console.warn('⚠️ Could not load business type:', err);
+        });
 
-      const { data: newProduct, error: createError } = await supabase
+      // Product doesn't exist - AUTO REGISTER IT FAST
+      console.log('⚡ Auto-registering new product...');
+
+      const { data: registeredProduct, error: createError } = await supabase
         .from('products')
         .insert([{
-          name: generatedName,
+          name: `Product - ${trimmedBarcode}`,
           barcode: trimmedBarcode,
           sku: generatedSKU,
           cost_price: 0,
@@ -502,6 +544,7 @@ const OrderInventoryPOSControl = () => {
 
       if (createError) {
         console.error('❌ Error creating product:', createError);
+        abandonScan();
         // products.barcode is unique across every store, so a code another store registered can't be reused
         toast.error(createError.code === '23505'
           ? '❌ This barcode is already registered to another store'
@@ -512,11 +555,11 @@ const OrderInventoryPOSControl = () => {
       console.log('⚡ Product created. Creating inventory in parallel...');
 
       // ✅ CREATE INVENTORY RECORD IN PARALLEL (not waiting for this to finish)
-      // This makes the UI responsive immediately
+      // Runs even if the form was cancelled meanwhile, so the new row still shows up in the list.
       supabase
         .from('inventory')
         .insert({
-          product_id: newProduct.id,
+          product_id: registeredProduct.id,
           supermarket_id: supermarketId || undefined,
           current_stock: 0,
           reserved_stock: 0,
@@ -530,32 +573,16 @@ const OrderInventoryPOSControl = () => {
         .catch(err => {
           console.warn('⚠️ Inventory creation failed:', err);
         });
-      
-      // ⚡ IMMEDIATELY proceed - don't wait for inventory insert
-      // Store the newly created product ID for later update
-      setNewlyRegisteredProductId(newProduct.id);
-      
-      // Pre-fill form with the scanned barcode for admin to complete details
-      setNewProduct({
-        name: '', // ✅ Admin MUST fill in product name
-        sku: generatedSKU,
-        barcode: trimmedBarcode, // Barcode locked in
-        cost_price: 0,
-        selling_price: 0,
-        tax_rate: 18,
-        category_id: null
-      });
-      
-      // ✅ IMMEDIATELY open form modal for admin to complete details
-      setShowAddProductModal(true);
-      
-      // Reload products list in background (silent, non-blocking)
-      setTimeout(() => {
-        loadData();
-      }, 100);
 
+      if (!isCurrent()) return;
+
+      // Lock the barcode to the registered row and let Save update it.
+      // No list reload here: saving puts the finished product into the list.
+      setNewlyRegisteredProductId(registeredProduct.id);
+      setRegisteringBarcode(false);
     } catch (error) {
       console.error('❌ Error handling barcode:', error);
+      abandonScan();
       toast.error('❌ Error: ' + (error.message || 'Unknown error'));
     }
   };
@@ -632,7 +659,9 @@ const OrderInventoryPOSControl = () => {
 
   const loadData = async () => {
     try {
-      setLoading(true);
+      // `loading` starts true, so the full-page loader covers the first load only.
+      // Later reloads run behind the page (the Refresh button shows `refreshing`)
+      // instead of blanking it with "Verifying authorization...".
       setRefreshing(true);
 
       // Each supermarket's catalog is private — only show products that
@@ -1155,6 +1184,9 @@ const OrderInventoryPOSControl = () => {
     //   return;
     // }
 
+    // The scanned barcode is still being registered; Save is disabled for that moment
+    if (registeringBarcode) return;
+
     // Validation
     if (!newProduct.name.trim()) {
       toast.error('❌ Product name is required');
@@ -1252,16 +1284,14 @@ const OrderInventoryPOSControl = () => {
         }
       }
 
-      // Update products list
-      if (newlyRegisteredProductId) {
-        // Update existing product in list
-        setProducts(products.map(p => p.id === newlyRegisteredProductId ? data : p));
-        setFilteredProducts(filteredProducts.map(p => p.id === newlyRegisteredProductId ? data : p));
-      } else {
-        // Add new product to list
-        setProducts([...products, data]);
-        setFilteredProducts([...filteredProducts, data]);
-      }
+      // Update products list. A product registered by a scan isn't in the list yet
+      // (the scan doesn't reload it), so it is added the first time it is saved.
+      const putInList = (list) => list.some(p => p.id === data.id)
+        ? list.map(p => p.id === data.id ? data : p)
+        : [...list, data];
+      const updatedProducts = putInList(products);
+      setProducts(updatedProducts);
+      setFilteredProducts(putInList(filteredProducts));
       
       // Reset form and state
       setNewProduct({
@@ -1287,7 +1317,7 @@ const OrderInventoryPOSControl = () => {
       toast.success(successMsg);
       
       // Recalculate stats
-      calculateStats([...products, data]);
+      calculateStats(updatedProducts);
     } catch (error) {
       console.error('❌ Error saving product:', error);
       toast.error('❌ Failed to save product: ' + (error.message || 'Unknown error'));
@@ -2212,6 +2242,8 @@ const OrderInventoryPOSControl = () => {
               </div>
               <button
                 onClick={() => {
+                  scanRequestRef.current++;
+                  setRegisteringBarcode(false);
                   setShowAddProductModal(false);
                   setNewlyRegisteredProductId(null);
                   setNewProduct({
@@ -2449,18 +2481,21 @@ const OrderInventoryPOSControl = () => {
               <div className="flex flex-col sm:flex-row gap-2 md:gap-3 mt-4 md:mt-6">
                 <button
                   onClick={saveNewProduct}
-                  className="flex-1 bg-green-500 text-white px-3 md:px-4 py-2 md:py-3 rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base"
+                  disabled={registeringBarcode}
+                  className="flex-1 bg-green-500 text-white px-3 md:px-4 py-2 md:py-3 rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base disabled:opacity-60 disabled:cursor-wait"
                 >
                   <FiPlus className="h-4 w-4" />
                   <span className="hidden sm:inline">
-                    {newlyRegisteredProductId ? 'Save Product' : 'Add Product'}
+                    {registeringBarcode ? 'Registering barcode…' : newlyRegisteredProductId ? 'Save Product' : 'Add Product'}
                   </span>
                   <span className="sm:hidden">
-                    {newlyRegisteredProductId ? 'Save' : 'Add'}
+                    {registeringBarcode ? 'Wait…' : newlyRegisteredProductId ? 'Save' : 'Add'}
                   </span>
                 </button>
                 <button
                   onClick={() => {
+                    scanRequestRef.current++;
+                    setRegisteringBarcode(false);
                     setShowAddProductModal(false);
                     setNewlyRegisteredProductId(null);
                     setNewProduct({
