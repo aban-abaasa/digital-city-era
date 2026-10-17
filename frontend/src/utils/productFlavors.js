@@ -90,7 +90,7 @@ export const checkFlavorRows = (rows, { mainBarcode = '', products = [] } = {}) 
     }
 
     if (!barcode) {
-      flag(row, 'barcode', 'Scan or type its barcode');
+      flag(row, 'barcode', 'Scan, type or generate its barcode');
       return;
     }
     if (barcode.length < 3) {

@@ -43,7 +43,7 @@ test('a complete, unique set of rows has no issues', () => {
 test('rows missing a name or a barcode are flagged', () => {
   const [a, b] = [row('Orange', ''), row('', '600222')];
   const issues = checkFlavorRows([a, b]);
-  assert.equal(issues[a.id].barcode, 'Scan or type its barcode');
+  assert.equal(issues[a.id].barcode, 'Scan, type or generate its barcode');
   assert.equal(issues[b.id].flavor, 'Name this flavor');
   assert.equal(issues[a.id].flavor, undefined);
 });

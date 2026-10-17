@@ -11,7 +11,7 @@ import BookingTypePicker from './booking/BookingTypePicker';
 import {
   FiSearch, FiEdit, FiSave, FiX, FiTrendingUp, FiTrendingDown,
   FiBox, FiAlertTriangle, FiCheckCircle, FiDownload, FiRefreshCw,
-  FiPlus, FiTrash2, FiDollarSign, FiBarChart2, FiLock, FiAlertCircle, FiCamera, FiHash, FiUpload, FiImage
+  FiPlus, FiTrash2, FiDollarSign, FiBarChart2, FiLock, FiAlertCircle, FiCamera, FiHash, FiUpload, FiImage, FiZap
 } from 'react-icons/fi';
 
 // Same bucket the MyBodaGuy app uploads product photos to — one shared
@@ -29,6 +29,8 @@ import AddProductModal from './AddProductModal';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import ProductFlavorsModal from './ProductFlavorsModal';
 import ProductFamiliesPanel from './ProductFamiliesPanel';
+import BarcodeLabelsModal from './BarcodeLabelsModal';
+import { generateStoreBarcode, isPlaceholderBarcode } from '../utils/storeBarcodes';
 import { familyName } from '../utils/productFamilies';
 import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 import BookingsPanel from './booking/BookingsPanel';
@@ -261,6 +263,8 @@ const OrderInventoryPOSControl = () => {
   const [batchRows, setBatchRows] = useState([]);
   const [batchProductId, setBatchProductId] = useState(null);
   const [showBatchOverview, setShowBatchOverview] = useState(false);
+  const [showBarcodes, setShowBarcodes] = useState(false);
+  const [storeName, setStoreName] = useState('');
   const [categories, setCategories] = useState([]);
   const [businessType, setBusinessType] = useState('supermarket');
   const offersWholesale = ['wholesale', 'factory', 'hardware'].includes(businessType);
@@ -435,6 +439,17 @@ const OrderInventoryPOSControl = () => {
       setUploadingProducts(false);
       e.target.value = '';
     }
+  };
+
+  // A new store barcode: scannable, unique, and clear of every code already on the page
+  const generateBarcodeFor = (alsoTaken = []) =>
+    generateStoreBarcode({ supermarketId, taken: [...products.map(p => p.barcode), ...alsoTaken] });
+
+  // Generated barcodes saved by the Barcodes window go into the list as they are
+  const applyAssignedBarcodes = (assigned) => {
+    const apply = (p) => (assigned[p.id] ? { ...p, barcode: assigned[p.id] } : p);
+    setProducts(previous => previous.map(apply));
+    setFilteredProducts(previous => previous.map(apply));
   };
 
   // Handle barcode scanned from scanner
@@ -685,10 +700,11 @@ const OrderInventoryPOSControl = () => {
       if (supermarketId) {
         const { data: offersRow } = await supabase
           .from('supermarkets')
-          .select('offers_products, offers_services')
+          .select('name, offers_products, offers_services')
           .eq('id', supermarketId)
           .maybeSingle();
         if (offersRow) {
+          setStoreName(offersRow.name || '');
           setOffersProducts(offersRow.offers_products !== false);
           setOffersServices(offersRow.offers_services === true);
         }
@@ -1291,6 +1307,7 @@ const OrderInventoryPOSControl = () => {
 
     try {
       let data, error;
+      let generatedBarcode = null;
       
       // If product was auto-registered from barcode scan, UPDATE it
       if (newlyRegisteredProductId) {
@@ -1319,6 +1336,8 @@ const OrderInventoryPOSControl = () => {
         console.log('➕ Creating new product from form');
 
         const supermarketId = await inventoryService.getCurrentSupermarketId();
+        // No barcode typed or scanned: make a real one the scanner can read, to print from Barcodes
+        if (!newProduct.barcode) generatedBarcode = generateBarcodeFor();
 
         const { data: created, error: createError } = await supabase
           .from('products')
@@ -1331,7 +1350,7 @@ const OrderInventoryPOSControl = () => {
             tax_rate: newProduct.tax_rate,
             category_id: newProduct.category_id,
             is_active: true,
-            barcode: newProduct.barcode || `AUTO-${Date.now()}`, // ✅ Use scanned barcode if available
+            barcode: newProduct.barcode || generatedBarcode, // ✅ Use scanned barcode if available
             supermarket_id: supermarketId || undefined
           })
           .select('*')
@@ -1342,6 +1361,7 @@ const OrderInventoryPOSControl = () => {
       }
 
       if (error) throw error;
+      if (generatedBarcode) toast.info(`Barcode ${generatedBarcode} generated. Print it from 🏷️ Barcodes.`);
 
       if (newProductImageFile && data?.id) {
         try {
@@ -1713,6 +1733,14 @@ const OrderInventoryPOSControl = () => {
             )}
             <span>{uploadingProducts ? 'Importing...' : 'Import'}</span>
           </button>
+          <button
+            onClick={() => setShowBarcodes(true)}
+            title="Make barcodes for items that have none, and print them as a sheet"
+            className={`${toolBtn} ${toolBtnOn}`}
+          >
+            <span aria-hidden="true">🏷️</span>
+            <span>Barcodes</span>
+          </button>
           {expiryReady && (
             <button
               onClick={() => setShowBatchOverview(true)}
@@ -2011,7 +2039,14 @@ const OrderInventoryPOSControl = () => {
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Barcode</label>
-                      <input type="text" inputMode="numeric" value={editValues.barcode} onChange={(e) => setEditValues({ ...editValues, barcode: e.target.value })} className="w-full px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono" placeholder="Barcode" />
+                      <div className="flex gap-1">
+                        <input type="text" inputMode="numeric" value={editValues.barcode} onChange={(e) => setEditValues({ ...editValues, barcode: e.target.value })} className="w-full min-w-0 px-2 md:px-3 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono" placeholder="Barcode" />
+                        {isPlaceholderBarcode(editValues.barcode) && (
+                          <button type="button" onClick={() => setEditValues({ ...editValues, barcode: generateBarcodeFor() })} title="No readable barcode: make one, then print it from Barcodes" className="px-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">
+                            <FiZap className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Cost Price</label>
@@ -2076,6 +2111,7 @@ const OrderInventoryPOSControl = () => {
                       mainBarcode={editValues.barcode}
                       products={products}
                       basePrice={editValues.selling_price}
+                      generateBarcode={generateBarcodeFor}
                     />
                   </div>
                   <div className="flex gap-2 mt-3">
@@ -2522,6 +2558,16 @@ const OrderInventoryPOSControl = () => {
                       <FiCamera className="h-4 w-4" />
                       <span className="hidden sm:inline">Scan</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewProduct({ ...newProduct, barcode: generateBarcodeFor() })}
+                      disabled={newlyRegisteredProductId || registeringBarcode}
+                      className="px-3 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-400 disabled:text-gray-200 disabled:cursor-not-allowed"
+                      title="No barcode on the item? Make one, then print it from Barcodes"
+                    >
+                      <FiZap className="h-4 w-4" />
+                      <span className="hidden sm:inline">Generate</span>
+                    </button>
                   </div>
                 </div>
 
@@ -2638,6 +2684,7 @@ const OrderInventoryPOSControl = () => {
                 mainBarcode={newProduct.barcode}
                 products={products}
                 basePrice={newProduct.selling_price}
+                generateBarcode={generateBarcodeFor}
               />
 
               {/* Action Buttons */}
@@ -2686,12 +2733,27 @@ const OrderInventoryPOSControl = () => {
         </div>
       )}
 
+      {/* Barcodes: generate for items that have none, and print the sheet */}
+      {showBarcodes && (
+        <BarcodeLabelsModal
+          products={products}
+          categories={categories}
+          supermarketId={supermarketId}
+          storeName={storeName}
+          isAdmin={isAdmin}
+          formatCurrency={formatCurrency}
+          onClose={() => setShowBarcodes(false)}
+          onBarcodesAssigned={applyAssignedBarcodes}
+        />
+      )}
+
       {/* Add flavors to an existing product */}
       {flavorsFor && (
         <ProductFlavorsModal
           product={flavorsFor}
           products={products}
           uploadPhoto={uploadProductPhoto}
+          generateBarcode={generateBarcodeFor}
           onClose={() => setFlavorsFor(null)}
           onCreated={(created) => {
             setProducts(previous => [...previous, ...created]);

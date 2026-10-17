@@ -11,7 +11,7 @@ import ProductFlavorsEditor from './ProductFlavorsEditor';
 import { familyName } from '../utils/productFamilies';
 import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 
-const ProductFlavorsModal = ({ product, products, uploadPhoto, onClose, onCreated }) => {
+const ProductFlavorsModal = ({ product, products, uploadPhoto, generateBarcode, onClose, onCreated }) => {
   const [rows, setRows] = useState([]);
   // The product may itself be a flavor ("Fanta - Orange"); the new ones share its family name ("Fanta")
   const [sharedName, setSharedName] = useState(familyName(product.name));
@@ -93,6 +93,7 @@ const ProductFlavorsModal = ({ product, products, uploadPhoto, onClose, onCreate
             products={products}
             basePrice={product.clearance_original_price ?? product.selling_price}
             startOpen
+            generateBarcode={generateBarcode}
           />
           <div className="flex flex-col sm:flex-row gap-2 md:gap-3 pt-1">
             <button

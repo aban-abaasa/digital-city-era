@@ -11,6 +11,7 @@
  */
 
 import { supabase, supabaseConfig, utils } from './supabase';
+import { generateStoreBarcode } from '../utils/storeBarcodes';
 import { toast } from 'react-toastify';
 
 /**
@@ -432,6 +433,11 @@ class InventorySupabaseService {
       // rejected by RLS unless supermarket_id matches the signed-in user's.
       const supermarketId = await this.getCurrentSupermarketId();
 
+      // No barcode given: make a real one the scanner can read (it can be printed from the Barcodes
+      // window) rather than a placeholder nobody can scan. Without a store, the placeholder stays.
+      const hadBarcode = Boolean(barcode && String(barcode).trim());
+      if (!hadBarcode && supermarketId) uniqueBarcode = generateStoreBarcode({ supermarketId });
+
       let businessType = 'supermarket';
       if (supermarketId) {
         const { data: store } = await supabase
@@ -483,13 +489,22 @@ class InventorySupabaseService {
       productInsert.booking_type = productInsert.is_bookable ? (booking_type || 'slot') : 'slot';
       if (expiry_date) productInsert.expiry_date = expiry_date;
 
-      const { data: product, error: productError } = await supabase
-        .from('products')
-        .insert(productInsert)
-        .select()
-        .single();
-
-      if (productError) throw productError;
+      // A barcode made here can, very rarely, match one the page can't see: draw another and retry
+      let product;
+      for (let attempt = 0; ; attempt += 1) {
+        const { data, error: productError } = await supabase
+          .from('products')
+          .insert(productInsert)
+          .select()
+          .single();
+        if (productError?.code === '23505' && !hadBarcode && supermarketId && attempt < 3) {
+          productInsert.barcode = generateStoreBarcode({ supermarketId });
+          continue;
+        }
+        if (productError) throw productError;
+        product = data;
+        break;
+      }
 
       // Listing-only and service products deliberately have no POS inventory
       // row. Their availability is controlled by products.is_active.

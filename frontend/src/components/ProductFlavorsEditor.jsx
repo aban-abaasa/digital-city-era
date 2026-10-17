@@ -5,7 +5,7 @@
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FiCamera, FiImage, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiCamera, FiImage, FiPlus, FiTrash2, FiZap } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import DualScannerInterface from './DualScannerInterface';
 import { barcodesMatch } from '../utils/barcodeHelper';
@@ -31,7 +31,8 @@ const ProductFlavorsEditor = ({
   mainBarcode = '',
   products = [],
   basePrice = 0,
-  startOpen = false
+  startOpen = false,
+  generateBarcode
 }) => {
   const [open, setOpen] = useState(startOpen || rows.length > 0);
   const [quick, setQuick] = useState('');
@@ -63,6 +64,17 @@ const ProductFlavorsEditor = ({
     const previous = rows.find((row) => row.id === id)?.photoPreview;
     if (previous) URL.revokeObjectURL(previous);
     updateRow(id, { photo: file, photoPreview: URL.createObjectURL(file) });
+  };
+
+  // Items with no barcode of their own get a store-made one; `generateBarcode(taken)` is supplied by the page
+  const missingBarcodes = generateBarcode ? activeFlavorRows(rows).filter((row) => !row.barcode.trim()) : [];
+  const generateFor = (targets) => {
+    const taken = rows.map((row) => row.barcode);
+    const made = {};
+    targets.forEach((row) => {
+      made[row.id] = generateBarcode([...taken, ...Object.values(made)]);
+    });
+    onRowsChange((prev) => prev.map((row) => (made[row.id] ? { ...row, barcode: made[row.id] } : row)));
   };
 
   const addCodes = (codes) => {
@@ -206,6 +218,16 @@ const ProductFlavorsEditor = ({
                     >
                       <FiCamera className="h-4 w-4" />
                     </button>
+                    {generateBarcode && !row.barcode.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => generateFor([row])}
+                        className="px-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                        title="This flavor has no barcode: make one, then print it from Barcodes"
+                      >
+                        <FiZap className="h-4 w-4" />
+                      </button>
+                    )}
                     <label
                       className="flex w-10 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-gray-300 bg-white text-gray-500 hover:border-emerald-400"
                       title={row.photoPreview ? "Change this flavor's photo" : 'Add a photo for this flavor'}
@@ -262,6 +284,16 @@ const ProductFlavorsEditor = ({
         >
           <FiPlus className="h-3 w-3" /> Another flavor
         </button>
+        {missingBarcodes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => generateFor(missingBarcodes)}
+            className="px-2.5 py-1 rounded-full bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700 flex items-center gap-1"
+            title="Make a barcode for every flavor that has none"
+          >
+            <FiZap className="h-3 w-3" /> Generate {missingBarcodes.length === 1 ? 'missing barcode' : `${missingBarcodes.length} missing barcodes`}
+          </button>
+        )}
         {unusedSuggestions.map((flavor) => (
           <button
             key={flavor}
