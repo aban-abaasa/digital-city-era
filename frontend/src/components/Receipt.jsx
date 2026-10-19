@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { formatPaymentMethod } from '../utils/paymentMethod';
 import './Receipt.css';
 // The same stylesheet, as a string, for the print window.
 import receiptCss from './Receipt.css?inline';
@@ -47,6 +48,8 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const storeAddress = receiptData?.receipt?.address || branding?.address;
   const storePhone = receiptData?.receipt?.phone || branding?.phone;
   const supportEmail = receiptData?.receipt?.supportEmail || branding?.email;
+  // 'ican' / 'cash_ugx' ids and display names alike, as one readable label ('' if none was recorded).
+  const paymentLabel = formatPaymentMethod(receiptData?.paymentMethod);
 
   // Invoice vs. receipt: a fully paid sale is a RECEIPT; anything with a
   // balance still owed (unpaid/partial service drop-off, etc.) is an INVOICE.
@@ -177,7 +180,9 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         subtotal: receiptData.receipt.subtotal,
         tax: receiptData.receipt.tax,
         total: receiptData.receipt.total,
-        paymentMethod: receiptData.paymentMethod,
+        // The PDF service falls back to 'cash' for a missing method, which
+        // would mislabel a wallet sale; say so honestly instead.
+        paymentMethod: paymentLabel || 'Not recorded',
         cashier: receiptData.receipt.cashier,
         paymentStatus: receiptData.paymentStatus,
         amountPaid: receiptData.amountPaid,
@@ -214,7 +219,7 @@ Subtotal: ${formatCurrency(receiptData.receipt.subtotal)}
 VAT (18%): ${formatCurrency(receiptData.receipt.tax)}
 Total: ${formatCurrency(receiptData.receipt.total)}
 
-Payment Method: ${receiptData.paymentMethod}
+${paymentLabel ? `Payment Method: ${paymentLabel}` : ''}
 ${isInvoice ? `\nAmount Paid: ${formatCurrency(receiptData.amountPaid)}\nBalance Due: ${formatCurrency(receiptData.balanceDue)}\n` : ''}
 Webale nyo! (Thank you!)
 Visit us again at ${storeName}
@@ -247,7 +252,7 @@ Visit us again at ${storeName}
   const handleWhatsApp = () => {
     const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - ${docLabel.toUpperCase()}*\n\n📄 *${docLabel}:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item =>
       `• ${item.name} x${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
-    ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *VAT (18%):* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}\n\n💳 *Payment:* ${receiptData.paymentMethod}${isInvoice ? `\n⚠️ *Balance Due:* ${formatCurrency(receiptData.balanceDue)}` : ''}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
+    ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *VAT (18%):* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}${paymentLabel ? `\n\n💳 *Payment:* ${paymentLabel}` : ''}${isInvoice ? `\n⚠️ *Balance Due:* ${formatCurrency(receiptData.balanceDue)}` : ''}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
     
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
     window.open(whatsappUrl, '_blank');
@@ -286,7 +291,7 @@ ${isInvoice ? `
 Amount Paid:     ${formatCurrency(receiptData.amountPaid)}
 BALANCE DUE:     ${formatCurrency(receiptData.balanceDue)}
 ` : ''}
-Payment Method: ${receiptData.paymentMethod}
+${paymentLabel ? `Payment Method: ${paymentLabel}` : ''}
 Transaction ID: ${receiptData.transactionId}
 ${receiptProofUrl ? `Verify / track: ${receiptProofUrl}\n` : ''}
 
@@ -493,10 +498,12 @@ ${branding?.publicWebsiteUrl || ''}
 
             {/* Payment */}
             <div>
-              <div className="rc-row">
-                <span className="rc-label">Payment Method:</span>
-                <span className="rc-value">{receiptData.paymentMethod}</span>
-              </div>
+              {paymentLabel && (
+                <div className="rc-row">
+                  <span className="rc-label">Payment Method:</span>
+                  <span className="rc-value">{paymentLabel}</span>
+                </div>
+              )}
               {receiptData.amountPaid != null && (
                 <>
                   <div className="rc-row">

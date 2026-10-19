@@ -11,6 +11,13 @@ import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
 import Receipt from './Receipt';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { formatPaymentMethod, paymentMethodKind } from '../utils/paymentMethod';
+
+const PAYMENT_BADGE = {
+  cash: 'bg-green-100 text-green-800',
+  mtn: 'bg-yellow-100 text-yellow-800',
+  airtel: 'bg-red-100 text-red-800'
+};
 
 const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId = null, viewMode = 'cashier', savedReceipts = [], classicLayout = false }) => {
   const branding = useSupermarketBranding();
@@ -33,6 +40,9 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
     totalItems: 0
   });
   const [localReceiptsOnly, setLocalReceiptsOnly] = useState(false);
+  // Self-checkout and delivery sales store only the payment_method id, so read
+  // the display name first and fall back to the id (as the PDF download does).
+  const paymentOf = (item) => (localReceiptsOnly ? item.paymentMethod : item.payment_provider || item.payment_method);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [collectingFor, setCollectingFor] = useState(null); // transaction being paid off
   const [collectAmount, setCollectAmount] = useState('');
@@ -254,7 +264,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
           transactionId: transaction.transaction_id,
           timestamp: transaction.transaction_date || transaction.created_at,
           amount: transaction.total_amount,
-          paymentMethod: transaction.payment_provider,
+          paymentMethod: transaction.payment_provider || transaction.payment_method,
           // Invoice vs. receipt — see Receipt.jsx's isInvoice. Without these
           // every past bill-later sale re-opened here rendered as a plain
           // paid receipt, hiding that money is still owed.
@@ -311,7 +321,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
         subtotal: isLocal ? receipt.subtotal : receipt.subtotal,
         tax: isLocal ? receipt.tax : receipt.tax_amount,
         total: isLocal ? receipt.total : receipt.total_amount,
-        paymentMethod: isLocal ? receipt.paymentMethod : receipt.payment_provider || receipt.payment_method,
+        paymentMethod: formatPaymentMethod(isLocal ? receipt.paymentMethod : receipt.payment_provider || receipt.payment_method) || 'Not recorded',
         cashier: isLocal ? receipt.cashier : receipt.cashier_name,
         paymentStatus: isLocal ? 'paid' : receipt.payment_status,
         amountPaid: isLocal ? receipt.total : receipt.amount_paid_ugx,
@@ -721,7 +731,7 @@ ${branding?.publicWebsiteUrl || ''}
                   <div className="grid grid-cols-3 gap-2 text-xs mb-3 pb-3 border-b border-gray-200">
                     <div>
                       <p className="text-gray-500">Payment</p>
-                      <p className="font-semibold text-gray-900 text-xs truncate">{localReceiptsOnly ? item.paymentMethod : item.payment_provider}</p>
+                      <p className="font-semibold text-gray-900 text-xs truncate">{formatPaymentMethod(paymentOf(item)) || '—'}</p>
                     </div>
                     <div>
                       <p className="text-gray-500">Items</p>
@@ -888,12 +898,9 @@ ${branding?.publicWebsiteUrl || ''}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        (localReceiptsOnly ? item.paymentMethod : item.payment_method) === 'cash' || (localReceiptsOnly ? item.paymentMethod : item.payment_method) === 'Cash' ? 'bg-green-100 text-green-800' :
-                        (localReceiptsOnly ? item.paymentMethod : item.payment_method) === 'momo' || (localReceiptsOnly ? item.paymentMethod : item.payment_method) === 'MTN Mobile Money' ? 'bg-yellow-100 text-yellow-800' :
-                        (localReceiptsOnly ? item.paymentMethod : item.payment_method) === 'airtel' || (localReceiptsOnly ? item.paymentMethod : item.payment_method) === 'Airtel Money' ? 'bg-red-100 text-red-800' :
-                        'bg-blue-100 text-blue-800'
+                        PAYMENT_BADGE[paymentMethodKind(paymentOf(item))] || 'bg-blue-100 text-blue-800'
                       }`}>
-                        {localReceiptsOnly ? item.paymentMethod : item.payment_provider}
+                        {formatPaymentMethod(paymentOf(item)) || '—'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
