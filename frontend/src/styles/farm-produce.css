@@ -1,0 +1,58 @@
+/* Farm Produce board (supplier portal). Built on the .spc tokens from
+   supplier-classic.css, so light and dark themes both work without a second
+   palette. Phone first: 44px tap targets, 16px inputs, one column. */
+
+/* ---------- Market strip ---------- */
+.spc-fp-markets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.spc-fp-market {
+  display: flex; flex-direction: column; gap: 2px; min-height: 64px; padding: 10px 12px; text-align: left;
+  background: var(--paper-2); border: 1px solid var(--line); border-radius: 14px; color: var(--ink);
+}
+.spc-fp-market:active { transform: scale(0.98); }
+.spc-fp-market.on { border-color: var(--indigo); box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.18); background: var(--info-bg); }
+.spc-fp-market b { font-family: var(--serif); font-size: 0.98rem; line-height: 1.2; overflow-wrap: anywhere; }
+.spc-fp-market span { font-size: 12px; color: var(--muted); }
+.spc-fp-market em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--ink-2); }
+
+/* ---------- Filters ---------- */
+.spc-fp-toolbar { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.spc-fp-search { position: relative; }
+.spc-fp-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.spc-fp-search .spc-input { padding-left: 38px; }
+.spc-fp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.spc-fp-chip {
+  min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: var(--paper); border: 1px solid var(--line); color: var(--ink-2);
+}
+.spc-fp-chip.on { background: var(--ink-2); border-color: var(--ink-2); color: #fff; }
+[data-theme="dark"] .spc-fp-chip.on { background: #4338ca; border-color: #4338ca; }
+.spc-fp-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------- Offer rows ---------- */
+.spc-fp-item.is-new { border-color: var(--indigo); }
+.spc-fp-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.spc-fp-mini { font-size: 12px; color: var(--muted); }
+
+/* where this price sits between the cheapest and dearest offer */
+.spc-fp-bar { position: relative; height: 8px; margin: 12px 7px 4px; border-radius: 999px; background: var(--mute-bg); border: 1px solid var(--mute-line); }
+.spc-fp-bar .median { position: absolute; top: -4px; width: 2px; height: 14px; background: var(--gold-deep); transform: translateX(-50%); }
+.spc-fp-bar .you {
+  position: absolute; top: -5px; width: 16px; height: 16px; border-radius: 50%; transform: translateX(-50%);
+  background: var(--indigo); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--indigo);
+}
+.spc-fp-bar-legend { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+
+.spc-fp-cat { padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; background: var(--info-bg); color: var(--info-fg); border: 1px solid var(--info-line); }
+.spc-fp-cat.restock { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-line); }
+
+.spc-fp-interest { display: flex; flex-direction: column; gap: 8px; }
+.spc-fp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.spc-fp-actions .spc-btn { flex: 1 1 130px; }
+
+@media (min-width: 640px) {
+  .spc-fp-markets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .spc-fp-toolbar { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .spc-fp-actions .spc-btn { flex: 0 0 auto; }
+  .spc-fp-interest { flex-direction: row; align-items: center; }
+  .spc-fp-interest .spc-input { flex: 1; }
+}
