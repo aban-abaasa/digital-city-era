@@ -3,7 +3,9 @@ import {
   Camera, CameraOff, ScanLine, X, Plus, Minus, Trash2,
   ShoppingCart, CheckCircle, Loader, AlertCircle, Coins,
   ReceiptText, QrCode, Store, ChevronDown, ExternalLink, Search,
+  Download, Clock, ShieldCheck,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { supabase } from '../../services/supabaseClient';
 import { getStoreSiteForCustomer } from '../services/storeWebsite';
@@ -18,6 +20,7 @@ import ProductPicker, { CartLine } from './ProductPicker';
 import { formatMoney } from '../services/money';
 import ScanFrameOverlay from './ScanFrameOverlay';
 import { verifyPin } from '../../../services/pinService';
+import { buildApprovalUrl, downloadReceiptPdf, type StoreReceipt } from '../services/receiptPdf';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -64,6 +67,8 @@ interface CheckoutReceipt {
     success: boolean;
     net_credited?: number;
   } | null;
+  /** One receipt per store paid: store name, its products, approval QR and who approved it. */
+  stores: StoreReceipt[];
 }
 
 type ScannerState = 'idle' | 'scanning' | 'product_found' | 'cart' | 'checkout' | 'complete';
@@ -142,6 +147,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
   const [pinValue, setPinValue] = useState('');
   const [pinError, setPinError] = useState('');
   const [receipt, setReceipt] = useState<CheckoutReceipt | null>(null);
+  const [downloadingId, setDownloadingId] = useState('');
   const [icanBalance, setIcanBalance] = useState<ICANBalance | null>(null);
   const [detectorSupported, setDetectorSupported] = useState(false);
 
@@ -528,11 +534,64 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
         inFlight = null;
         if (!firstTransactionId) firstTransactionId = data.transaction_id || transfer?.transaction_id || '';
         items.forEach(i => paidProductIds.add(i.product.product_id));
-        paidReceipts.push({ data, items });
+
+        // Payment is final here. Stamp the store name on the receipt, issue the
+        // QR token staff scan to approve it, and copy the receipt onto the ICAN
+        // transactions. Best effort: a failure must never undo or hide the sale.
+        let approvalToken: string | null = null;
+        if (data.receipt_id) {
+          try {
+            const { data: reg, error: regError } = await supabase.rpc('register_receipt_approval', {
+              p_receipt_id: data.receipt_id,
+              p_supermarket_id: storeId,
+              p_ican_tx_ids: [transfer?.out_tx_id, transfer?.in_tx_id].filter(Boolean),
+            });
+            if (regError || !reg?.success) {
+              console.warn('Receipt approval was not registered:', regError?.message ?? reg?.error);
+            } else {
+              approvalToken = reg.approval_token ?? null;
+            }
+          } catch (regErr) {
+            console.warn('Receipt approval was not registered:', regErr);
+          }
+        }
+        paidReceipts.push({ data, items, store, storeId, storeCurrency, approvalToken });
       }
 
       const cashback = paidReceipts.reduce((sum, r) => sum + (r.data.ican_cashback?.success ? Number(r.data.ican_cashback.net_credited || 0) : 0), 0);
+      const purchasedAt = new Date().toISOString();
+      const storeReceipts: StoreReceipt[] = paidReceipts.map(r => ({
+        receipt_id: r.data.receipt_id || '',
+        receipt_number: r.data.receipt_number || '',
+        store_id: r.storeId,
+        store_name: r.store.name || 'Store',
+        store_location: r.store.location,
+        currency: String(r.data.currency || r.storeCurrency || 'UGX').toUpperCase(),
+        purchased_at: purchasedAt,
+        customer_name: user?.full_name ?? user?.name ?? null,
+        items: (r.data.items?.length ? r.data.items : r.items.map((i: CartItem) => ({
+          product_id: i.product.product_id,
+          product_name: i.product.name,
+          quantity: i.quantity,
+          unit_price: i.product.selling_price,
+          line_total: i.line_total,
+        }))).map((i: any) => ({
+          product_id: i.product_id,
+          product_name: i.product_name || i.name || 'Product',
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          line_total: Number(i.line_total),
+        })),
+        subtotal: Number(r.data.subtotal_ugx ?? r.data.total_ugx ?? 0),
+        tax: Number(r.data.tax_ugx || 0),
+        total: Number(r.data.total_ugx || 0),
+        approval_token: r.approvalToken,
+        approval_status: 'pending' as const,
+        approved_by_name: null,
+        approved_at: null,
+      }));
       setReceipt({
+        stores: storeReceipts,
         currency: paidReceipts[0]?.data.currency,
         transaction_id: firstTransactionId,
         receipt_number: paidReceipts.map(r => r.data.receipt_number).filter(Boolean).join(', '),
@@ -640,6 +699,57 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
     getIcanPrice(currency).then(price => { if (!cancelled) setIcanPrice(price ?? 0); });
     return () => { cancelled = true; };
   }, [currency]);
+  // While a receipt waits for staff, check every few seconds whether it has been
+  // approved, so "Approved by <staff name>" appears on the customer's screen.
+  const pendingReceiptIds = (receipt?.stores ?? [])
+    .filter(s => s.receipt_id && s.approval_token && s.approval_status === 'pending')
+    .map(s => s.receipt_id)
+    .join(',');
+  useEffect(() => {
+    if (state !== 'complete' || !pendingReceiptIds) return undefined;
+    let cancelled = false;
+    const check = async () => {
+      const { data, error } = await supabase.rpc('get_my_receipt_approvals', {
+        p_receipt_ids: pendingReceiptIds.split(','),
+      });
+      if (cancelled || error || !Array.isArray(data)) return;
+      const approved = new Map<string, any>(
+        data.filter((row: any) => row.approval_status === 'approved').map((row: any) => [row.receipt_id, row]),
+      );
+      if (approved.size === 0) return;
+      setReceipt(prev => prev && {
+        ...prev,
+        stores: prev.stores.map(s => {
+          const hit = approved.get(s.receipt_id);
+          return hit
+            ? { ...s, approval_status: 'approved' as const, approved_by_name: hit.approved_by_name ?? null, approved_at: hit.approved_at ?? null }
+            : s;
+        }),
+      });
+      toast.success('Your receipt was approved by staff');
+    };
+    const timer = setInterval(check, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [state, pendingReceiptIds]);
+
+  async function handleDownloadReceipt(storeReceipt: StoreReceipt) {
+    setDownloadingId(storeReceipt.receipt_id || storeReceipt.receipt_number);
+    try {
+      await downloadReceiptPdf(storeReceipt);
+    } catch (error) {
+      console.error('Receipt PDF failed:', error);
+      toast.error('Could not create the receipt PDF. Please try again.');
+    } finally {
+      setDownloadingId('');
+    }
+  }
+
+  async function handleDownloadAll() {
+    for (const s of receipt?.stores ?? []) {
+      await handleDownloadReceipt(s);
+    }
+  }
+
   const selectedSupermarket = supermarkets.find(sm => sm.id === selectedSupermarketId) || null;
 
   const activeStore = supermarkets.find(sm => sm.id === selectedSupermarketId) || null;
@@ -664,32 +774,120 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
               <span className="font-mono font-semibold text-xs text-slate-900">{receipt.transaction_id?.slice(-12)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Receipt #</span>
-              <span className="font-mono font-semibold text-slate-900">{receipt.receipt_number}</span>
-            </div>
-            <div className="flex justify-between text-sm">
               <span className="text-slate-500">Items</span>
               <span className="font-semibold text-slate-900">{receipt.items_count}</span>
             </div>
-            {receipt.items?.map((item, index) => (
-              <div key={`${item.product_id}-${index}`} className="flex justify-between gap-3 text-sm border-t border-slate-200 pt-2">
-                <span className="text-slate-900">
-                  {item.product_name || 'Product'} × {item.quantity}
-                </span>
-                <span className="font-semibold text-slate-900 whitespace-nowrap">
-                  {fmtReceipt(item.line_total)}
-                </span>
+            {receipt.stores.length > 1 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Stores</span>
+                <span className="font-semibold text-slate-900">{receipt.stores.length}</span>
               </div>
-            ))}
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Tax</span>
-              <span className="text-slate-900">{fmtReceipt(receipt.tax_ugx)}</span>
-            </div>
+            )}
             <div className="flex justify-between font-bold text-base border-t pt-2">
               <span>Total Paid</span>
               <span className="text-orange-600">{fmtReceipt(receipt.total_ugx)}</span>
             </div>
           </div>
+
+          {/* One receipt per store: its name, the products bought there, a QR code
+              for staff to approve it, and who approved it. Each has its own PDF. */}
+          {receipt.stores.map(storeReceipt => {
+            const approved = storeReceipt.approval_status === 'approved';
+            const downloading = downloadingId === (storeReceipt.receipt_id || storeReceipt.receipt_number);
+            const money = (n: number) => formatMoney(n, storeReceipt.currency);
+            return (
+              <div key={storeReceipt.receipt_id || storeReceipt.receipt_number} className="bg-slate-50 rounded-xl p-4 text-left space-y-2 mb-4">
+                <div className="flex items-center gap-2 pb-1">
+                  <Store size={18} className="flex-shrink-0 text-orange-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base font-bold text-slate-900">{storeReceipt.store_name}</p>
+                    {storeReceipt.store_location && (
+                      <p className="truncate text-xs text-slate-500">{storeReceipt.store_location}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Receipt #</span>
+                  <span className="font-mono font-semibold text-slate-900">{storeReceipt.receipt_number}</span>
+                </div>
+                {storeReceipt.items.map((item, index) => (
+                  <div key={`${item.product_id}-${index}`} className="flex justify-between gap-3 text-sm border-t border-slate-200 pt-2">
+                    <span className="text-slate-900">
+                      {item.product_name} × {item.quantity}
+                    </span>
+                    <span className="font-semibold text-slate-900 whitespace-nowrap">
+                      {money(item.line_total)}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Tax</span>
+                  <span className="text-slate-900">{money(storeReceipt.tax)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-base border-t pt-2">
+                  <span>Total Paid</span>
+                  <span className="text-orange-600">{money(storeReceipt.total)}</span>
+                </div>
+
+                {/* Staff approval */}
+                <div className={`flex items-center gap-3 rounded-lg border p-3 ${approved ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
+                  {storeReceipt.approval_token && (
+                    <div className="flex-shrink-0 rounded-md bg-white p-1.5">
+                      <QRCodeSVG value={buildApprovalUrl(storeReceipt.approval_token)} size={96} level="M" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1 text-sm">
+                    {approved ? (
+                      <>
+                        <p className="flex items-center gap-1.5 font-bold text-green-700">
+                          <ShieldCheck size={16} /> Approved
+                        </p>
+                        <p className="text-xs text-slate-600">Approved by</p>
+                        <p className="truncate font-semibold text-slate-900">{storeReceipt.approved_by_name || 'Store staff'}</p>
+                        {storeReceipt.approved_at && (
+                          <p className="text-xs text-slate-500">{new Date(storeReceipt.approved_at).toLocaleString()}</p>
+                        )}
+                      </>
+                    ) : storeReceipt.approval_token ? (
+                      <>
+                        <p className="flex items-center gap-1.5 font-bold text-amber-700">
+                          <Clock size={16} /> Awaiting staff approval
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          Show this QR code to a {storeReceipt.store_name} staff member. Their name appears here once they approve.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-600">
+                        Your payment is complete. The approval code could not be created for this receipt; ask {storeReceipt.store_name} staff to confirm it with receipt # {storeReceipt.receipt_number}.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleDownloadReceipt(storeReceipt)}
+                  disabled={downloading}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-orange-300 bg-white py-2.5 text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50 disabled:opacity-60"
+                >
+                  {downloading ? <Loader size={16} className="animate-spin" /> : <Download size={16} />}
+                  {downloading ? 'Preparing PDF…' : 'Download receipt (PDF)'}
+                </button>
+              </div>
+            );
+          })}
+
+          {receipt.stores.length > 1 && (
+            <button
+              type="button"
+              onClick={handleDownloadAll}
+              disabled={!!downloadingId}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-orange-300 bg-white py-2.5 text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50 disabled:opacity-60"
+            >
+              <Download size={16} /> Download all receipts
+            </button>
+          )}
 
           {receipt.ican_cashback?.success && receipt.ican_cashback.net_credited && (
             <div className="flex items-center gap-2 justify-center bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 mb-4">
