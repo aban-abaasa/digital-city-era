@@ -1,15 +1,39 @@
 // ===================================================
 // 🧾 RECEIPT COMPONENT
-// Professional receipt with print, email, SMS, and PDF export
+// Classic paper receipt with print, email, SMS, and PDF export.
+// Actions are one slim row (Print / Download / Share); the rest of the
+// sharing options and the secondary sections fold away to keep the paper
+// front and centre on a phone.
 // ===================================================
 
-import React, { useRef } from 'react';
-import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy } from 'react-icons/fi';
+import React, { useRef, useState } from 'react';
+import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy, FiChevronDown } from 'react-icons/fi';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-toastify';
 import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import './Receipt.css';
+// The same stylesheet, as a string, for the print window.
+import receiptCss from './Receipt.css?inline';
+
+const ACTION_BTN = 'flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c] focus-visible:ring-offset-1';
+const SHARE_TILE = 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border border-[#ddd2b6] bg-white px-1 py-2 text-[11px] font-semibold text-[#173d32] transition hover:bg-[#f3ecd8] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c]';
+
+// A paper-receipt section whose body folds away. The body stays in the DOM
+// (hidden by CSS only) so printing can always show it in full.
+const Section = ({ id, title, meta, open, onToggle, children }) => (
+  <section className={`rc-section${open ? '' : ' is-collapsed'}`}>
+    <button type="button" className="rc-section-head" onClick={onToggle} aria-expanded={open} aria-controls={id}>
+      <span className="rc-section-title">{title}</span>
+      {meta && <span className="rc-section-meta">{meta}</span>}
+      <FiChevronDown className="rc-chev" aria-hidden="true" data-no-print />
+    </button>
+    <div className="rc-section-body" id={id}>
+      <div className="rc-section-inner">{children}</div>
+    </div>
+  </section>
+);
 
 const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => {
   const receiptRef = useRef();
@@ -20,6 +44,9 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const storeName = branding?.name || 'Your Supermarket';
   const storeLocation = receiptData?.receipt?.location || '';
   const storeType = branding?.typeLabel || 'Store';
+  const storeAddress = receiptData?.receipt?.address || branding?.address;
+  const storePhone = receiptData?.receipt?.phone || branding?.phone;
+  const supportEmail = receiptData?.receipt?.supportEmail || branding?.email;
 
   // Invoice vs. receipt: a fully paid sale is a RECEIPT; anything with a
   // balance still owed (unpaid/partial service drop-off, etc.) is an INVOICE.
@@ -29,6 +56,14 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const receiptProofUrl = receiptData?.id && !receiptData?.pendingSync
     ? `${window.location.origin}/invoice/${encodeURIComponent(receiptData.id)}`
     : null;
+
+  // Everything people need is visible up front; the QR codes and transaction
+  // id fold away, except on an invoice where the QR is how the job is tracked.
+  const [shareOpen, setShareOpen] = useState(false);
+  const [openSections, setOpenSections] = useState({ items: true, verify: Boolean(isInvoice) });
+  const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  const items = receiptData?.receipt?.items || [];
+  const canNativeShare = Boolean(receiptData?.id && navigator.share);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-UG', {
@@ -61,81 +96,49 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         'thermal'
       );
 
-      // Get receipt content
-      const printContent = receiptRef.current;
+      // Print a copy of the paper rather than the live node: every section
+      // expanded, no on-screen toggles, and QR canvases swapped for images
+      // (a canvas is blank once serialized to HTML).
+      const livePaper = receiptRef.current;
+      const paper = livePaper.cloneNode(true);
+      const liveCanvases = livePaper.querySelectorAll('canvas');
+      paper.querySelectorAll('canvas').forEach((canvas, index) => {
+        const img = document.createElement('img');
+        img.src = liveCanvases[index].toDataURL('image/png');
+        img.alt = 'QR code';
+        canvas.replaceWith(img);
+      });
+      paper.querySelectorAll('.is-collapsed').forEach((el) => el.classList.remove('is-collapsed'));
+      paper.querySelectorAll('[data-no-print]').forEach((el) => el.remove());
+
       const printWindow = window.open('', '_blank', 'width=800,height=600');
-      
+
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
           <title>${docLabel} - ${receiptData.receiptNumber}</title>
           <style>
-            @media print {
-              @page { 
-                size: 80mm 297mm; /* Thermal printer size */
-                margin: 0;
-              }
-              body { margin: 10mm; }
+            ${receiptCss}
+            @page {
+              size: 80mm 297mm; /* Thermal printer size */
+              margin: 0;
             }
-            body {
-              font-family: Georgia, 'Times New Roman', serif;
-              font-size: 12px;
-              line-height: 1.45;
-              color: #283044;
-              background: #f5f2e9;
+            html, body {
+              margin: 0;
+              background: #fff;
               -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
             }
-            body > div { max-width: 70mm; margin: 0 auto; padding: 8mm 6mm; background: #fffdf8; }
-            .receipt-header {
-              color: #fffdf8;
-              background: #312e81;
-              border: 0;
-              border-bottom: 3px solid #c4a052;
-              padding: 12px 8px;
-              margin: -8mm -6mm 8mm;
-            }
-            .receipt-header .text-gray-600 { color: #e7e5d5 !important; }
-            .receipt-header .text-2xl, .receipt-header .text-3xl { color: #fffdf8; font-family: Georgia, 'Times New Roman', serif; }
-            .receipt-store-logo { border: 2px solid #e0c476; border-radius: 50%; }
-            .receipt-row { border-bottom: 1px dotted #d6c79f; }
-            .receipt-item { border-color: #e8e1d0; padding: 5px 4px; }
-            .receipt-item:nth-child(even) { background: #faf8f1; }
-            .receipt-qr-block { border: 1px solid #c4a052; background: #faf8f1; padding: 8px; break-inside: avoid; }
-            .receipt-qr-caption { color: #312e81 !important; font-weight: bold; }
-            .receipt-total {
-              color: #fffdf8;
-              background: #312e81;
-              border: 0;
-              border-radius: 4px;
-              padding: 9px 7px;
-              margin-top: 8px;
-            }
-            .receipt-total span { color: #fffdf8 !important; }
-            .receipt-footer {
-              color: #312e81;
-              border-top: 2px solid #c4a052;
-              background: #faf8f1;
-              padding: 10px 5px;
-            }
-            .receipt-logo {
-              font-size: 24px;
-              font-weight: bold;
-            }
-            .receipt-store-logo {
-              max-width: 60px;
-              max-height: 60px;
-              display: block;
-              margin: 0 auto 8px auto;
-              object-fit: cover;
-            }
-            .receipt-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
-            .receipt-header, .receipt-footer { text-align: center; }
+            body { padding: 4mm 0; }
+            .rc-paper { max-width: 76mm; padding: 2mm 5mm; font-size: 11px; filter: none; }
+            .rc-paper::before, .rc-paper::after { display: none; }
+            .rc-section-head { cursor: default; }
+            .rc-section-body, .rc-chev { transition: none; }
           </style>
         </head>
         <body>
-          ${printContent.innerHTML}
+          ${paper.outerHTML}
           <script>
             window.onload = function() {
               window.print();
@@ -159,7 +162,6 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // ===================================================
   const handleDownloadPDF = async () => {
     try {
-      const items = receiptData.receipt.items || [];
       await receiptGeneratorService.downloadPDFReceipt({
         id: receiptData.id,
         saleNumber: receiptData.receiptNumber,
@@ -299,257 +301,271 @@ ${branding?.publicWebsiteUrl || ''}
     toast.success('📋 Receipt copied to clipboard!');
   };
 
+  // ===================================================
+  // NATIVE SHARE SHEET
+  // ===================================================
+  const handleNativeShare = async () => {
+    try {
+      await navigator.share({
+        title: `${docLabel} ${receiptData.receiptNumber}`,
+        text: `${docLabel} ${receiptData.receiptNumber} — Total ${formatCurrency(receiptData.receipt.total)}`,
+        url: `${window.location.origin}/invoice/${receiptData.id}`
+      });
+    } catch {
+      // User cancelled the native share sheet — nothing to report.
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#10251f]/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div role="dialog" aria-modal="true" aria-label={`${docLabel} ${receiptData.receiptNumber}`} className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[#e8dfcc] bg-[#fbfaf6] shadow-[0_24px_80px_rgba(12,30,25,0.35)] sm:rounded-[1.75rem]">
-        
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[#10251f]/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label={`${docLabel} ${receiptData.receiptNumber}`} className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[1.75rem] border border-[#e8dfcc] bg-[#fbfaf6] shadow-[0_24px_80px_rgba(12,30,25,0.35)] sm:rounded-[1.75rem]">
+
         {/* Header */}
-        <div className={`relative flex items-center justify-between border-t-[5px] ${isInvoice ? 'border-[#c88636] bg-[#293b34]' : 'border-[#d9b66e] bg-[#173d32]'} px-5 py-4 text-white sm:px-7 sm:py-5`}>
-          <div className="flex-1">
-            <h2 className="flex items-center font-serif text-xl font-bold tracking-tight sm:text-3xl">
-              🧾 {docLabel}{isInvoice ? ` (${receiptData.paymentStatus === 'partial' ? 'Partially Paid' : 'Unpaid'})` : ''}
+        <div className={`flex items-center justify-between gap-3 border-t-[5px] ${isInvoice ? 'border-[#c88636] bg-[#293b34]' : 'border-[#d9b66e] bg-[#173d32]'} px-4 py-3 text-white sm:px-6`}>
+          <div className="min-w-0">
+            <h2 className="font-serif text-lg font-bold leading-tight sm:text-2xl">
+              {docLabel}
+              {isInvoice && (
+                <span className="ml-2 rounded-full bg-white/15 px-2 py-0.5 align-middle font-sans text-[11px] font-semibold">
+                  {receiptData.paymentStatus === 'partial' ? 'Partially paid' : 'Unpaid'}
+                </span>
+              )}
             </h2>
-            <p className="mt-1 font-mono text-xs tracking-wide text-[#e7e1d4] sm:text-sm">
+            <p className="truncate font-mono text-xs tracking-wide text-[#e7e1d4]">
               #{receiptData.receiptNumber}
             </p>
-            {receiptData.pendingSync && (
-              <p className="mt-1 text-xs md:text-sm font-semibold text-amber-100">
-                📴 Recorded offline — a real receipt number is assigned once this syncs automatically.
-              </p>
-            )}
           </div>
           <button
             onClick={onClose}
-            className="text-white hover:bg-white/20 rounded-full p-2 transition-colors flex-shrink-0"
+            aria-label="Close"
+            className="flex-shrink-0 rounded-full p-2 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d9b66e]"
           >
             <FiX className="h-5 w-5 md:h-6 md:w-6" />
           </button>
         </div>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-2 border-b border-[#e9e3d7] bg-[#f3f0e8] p-3 sm:grid-cols-4 sm:gap-2.5 sm:p-4">
-          <button
-            onClick={handlePrint}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#244b3d] bg-[#244b3d] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#193a30] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
-          >
-            <FiPrinter className="h-4 w-4" />
-            <span>Print</span>
-          </button>
-          
-          <button
-            onClick={handleDownloadPDF}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#8b6d35] bg-[#8b6d35] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#73582b] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
-          >
-            <FiDownload className="h-4 w-4" />
-            <span>Download</span>
-          </button>
-          
-          <button
-            onClick={handleEmail}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#9b493e] bg-[#9b493e] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#823c33] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
-          >
-            <FiMail className="h-4 w-4" />
-            <span>Email</span>
-          </button>
-          
-          <button
-            onClick={handleWhatsApp}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#42734c] bg-[#42734c] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#345d3d] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
-          >
-            <FiShare2 className="h-4 w-4" />
-            <span>WhatsApp</span>
-          </button>
-          
-          <button
-            onClick={handleSMS}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#ad7920] bg-[#ad7920] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#926619] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
-          >
-            <FiMessageSquare className="h-4 w-4" />
-            <span>SMS</span>
-          </button>
-          
-          <button
-            onClick={handleCopyText}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#56615f] bg-[#56615f] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#424c4a] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
-          >
-            <FiCopy className="h-4 w-4" />
-            <span>Copy</span>
-          </button>
+        {receiptData.pendingSync && (
+          <p className="bg-amber-100 px-4 py-1.5 text-xs font-semibold text-amber-900 sm:px-6">
+            📴 Recorded offline — a real receipt number is assigned once this syncs automatically.
+          </p>
+        )}
 
-          {receiptData.id && navigator.share && (
+        {/* Actions: three buttons, the rest of the sharing options fold under Share */}
+        <div className="border-b border-[#e3dac3] bg-[#f6f2e8]">
+          <div className="flex items-center gap-2 px-3 py-2 sm:px-5">
             <button
-              onClick={async () => {
-                try {
-                  await navigator.share({
-                    title: `${docLabel} ${receiptData.receiptNumber}`,
-                    text: `${docLabel} ${receiptData.receiptNumber} — Total ${formatCurrency(receiptData.receipt.total)}`,
-                    url: `${window.location.origin}/invoice/${receiptData.id}`
-                  });
-                } catch (err) {
-                  // User cancelled the native share sheet — nothing to report.
-                }
-              }}
-              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#454d83] bg-[#454d83] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#383f70] focus:outline-none focus:ring-2 focus:ring-[#c8a85c] focus:ring-offset-2"
+              onClick={handlePrint}
+              className={`${ACTION_BTN} border-[#173d32] bg-[#173d32] text-white hover:bg-[#10291f]`}
+            >
+              <FiPrinter className="h-4 w-4" />
+              <span>Print</span>
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              className={`${ACTION_BTN} border-[#d2c5a3] bg-white text-[#173d32] hover:bg-[#f3ecd8]`}
+            >
+              <FiDownload className="h-4 w-4" />
+              <span>Download</span>
+            </button>
+            <button
+              onClick={() => setShareOpen((open) => !open)}
+              aria-expanded={shareOpen}
+              aria-controls="receipt-share-options"
+              className={`${ACTION_BTN} border-[#d2c5a3] bg-white text-[#173d32] hover:bg-[#f3ecd8]`}
             >
               <FiShare2 className="h-4 w-4" />
               <span>Share</span>
+              <FiChevronDown className={`h-3.5 w-3.5 transition-transform ${shareOpen ? 'rotate-180' : ''}`} />
             </button>
+          </div>
+
+          {shareOpen && (
+            <div id="receipt-share-options" className={`grid gap-1.5 px-3 pb-2.5 sm:px-5 ${canNativeShare ? 'grid-cols-5' : 'grid-cols-4'}`}>
+              <button onClick={() => { handleWhatsApp(); setShareOpen(false); }} className={SHARE_TILE}>
+                <FiShare2 className="h-4 w-4 text-[#42734c]" />
+                <span>WhatsApp</span>
+              </button>
+              <button onClick={() => { handleEmail(); setShareOpen(false); }} className={SHARE_TILE}>
+                <FiMail className="h-4 w-4 text-[#9b493e]" />
+                <span>Email</span>
+              </button>
+              <button onClick={() => { handleSMS(); setShareOpen(false); }} className={SHARE_TILE}>
+                <FiMessageSquare className="h-4 w-4 text-[#ad7920]" />
+                <span>SMS</span>
+              </button>
+              <button onClick={() => { handleCopyText(); setShareOpen(false); }} className={SHARE_TILE}>
+                <FiCopy className="h-4 w-4 text-[#56615f]" />
+                <span>Copy</span>
+              </button>
+              {canNativeShare && (
+                <button onClick={() => { handleNativeShare(); setShareOpen(false); }} className={SHARE_TILE}>
+                  <FiShare2 className="h-4 w-4 text-[#454d83]" />
+                  <span>More…</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Receipt Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,_#f5f0e4,_#f8f7f2_58%)] p-3 sm:p-6">
-          <div ref={receiptRef} className="mx-auto max-w-lg rounded-2xl border border-[#e8dfcc] bg-[#fffefa] px-4 py-5 text-xs text-[#34413b] shadow-[0_8px_30px_rgba(56,47,28,0.08)] sm:px-8 sm:py-7 sm:text-sm">
-            {/* Receipt Header */}
-            <div className="receipt-header mb-4 border-b border-dashed border-[#cfc4ab] pb-4 text-center sm:mb-5 sm:pb-5">
-              {branding?.logoUrl && (
-                <img
-                  src={branding.logoUrl}
-                  alt={storeName}
-                  className="receipt-store-logo w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl mx-auto mb-2 shadow-md"
-                />
-              )}
-              <div className="mb-1 font-serif text-2xl font-bold tracking-tight text-[#173d32] sm:text-3xl">{storeName}</div>
-              <div className="text-xs md:text-sm text-gray-600 mt-2 space-y-1">
-                {storeLocation && <p>{storeLocation}</p>}
-                {(receiptData?.receipt?.address || branding?.address) && <p>{receiptData?.receipt?.address || branding?.address}</p>}
-                {(receiptData?.receipt?.phone || branding?.phone) && <p>Tel: {receiptData?.receipt?.phone || branding?.phone}</p>}
+        {/* Receipt paper */}
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#ece6d6] px-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-6">
+          <div ref={receiptRef} className="rc-paper">
+            {/* Store header */}
+            <header className="rc-head">
+              {branding?.logoUrl && <img src={branding.logoUrl} alt={storeName} className="rc-logo" />}
+              <h3 className="rc-store">{storeName}</h3>
+              {storeLocation && <p className="rc-sub">{storeLocation}</p>}
+              {storeAddress && <p className="rc-sub">{storeAddress}</p>}
+              {storePhone && <p className="rc-sub">Tel: {storePhone}</p>}
+              <p className="rc-doc">— {docLabel} —</p>
+            </header>
+
+            <hr className="rc-rule" />
+
+            {/* Transaction details */}
+            <div>
+              <div className="rc-row">
+                <span className="rc-label">{docLabel} No:</span>
+                <span className="rc-value">{receiptData.receiptNumber}</span>
+              </div>
+              <div className="rc-row">
+                <span className="rc-label">Date:</span>
+                <span className="rc-value">{new Date(receiptData.timestamp).toLocaleDateString('en-UG')}</span>
+              </div>
+              <div className="rc-row">
+                <span className="rc-label">Time:</span>
+                <span className="rc-value">{new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}</span>
+              </div>
+              <div className="rc-row">
+                <span className="rc-label">Cashier:</span>
+                <span className="rc-value">{receiptData.receipt.cashier}</span>
+              </div>
+              <div className="rc-row">
+                <span className="rc-label">Register:</span>
+                <span className="rc-value">{receiptData.receipt.register}</span>
               </div>
             </div>
 
-            {/* Transaction Details */}
-            <div className="mb-3 md:mb-4 text-xs md:text-sm space-y-1">
-              <div className="receipt-row flex justify-between">
-                <span className="font-semibold">Receipt No:</span>
-                <span className="text-right">{receiptData.receiptNumber}</span>
-              </div>
-              <div className="receipt-row flex justify-between">
-                <span className="font-semibold">Date:</span>
-                <span className="text-right">{new Date(receiptData.timestamp).toLocaleDateString('en-UG')}</span>
-              </div>
-              <div className="receipt-row flex justify-between">
-                <span className="font-semibold">Time:</span>
-                <span className="text-right">{new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}</span>
-              </div>
-              <div className="receipt-row flex justify-between">
-                <span className="font-semibold">Cashier:</span>
-                <span className="text-right">{receiptData.receipt.cashier}</span>
-              </div>
-              <div className="receipt-row flex justify-between">
-                <span className="font-semibold">Register:</span>
-                <span className="text-right">{receiptData.receipt.register}</span>
-              </div>
-            </div>
+            <hr className="rc-rule" />
 
             {/* Items */}
-            <div className="border-t-2 border-dashed border-gray-300 pt-3 md:pt-4 mb-3 md:mb-4">
-              <div className="font-bold mb-2 text-center text-xs md:text-sm">ITEMS PURCHASED</div>
-              {receiptData.receipt.items.map((item, index) => {
+            <Section
+              id="receipt-items"
+              title="Items Purchased"
+              meta={`${items.length} ${items.length === 1 ? 'item' : 'items'}`}
+              open={openSections.items}
+              onToggle={() => toggleSection('items')}
+            >
+              {items.map((item, index) => {
                 const itemPrice = item.selling_price || item.price;
                 const lineTotal = item.quantity * itemPrice;
                 return (
-                  <div key={index} className="receipt-item mb-2 md:mb-3 pb-2 border-b border-dashed border-gray-200">
-                    <div className="font-semibold text-xs md:text-sm line-clamp-2">{item.name}</div>
-                    <div className="receipt-row flex justify-between text-xs md:text-sm text-gray-600">
+                  <div key={index} className="rc-item">
+                    <div className="rc-item-name">{item.name}</div>
+                    <div className="rc-item-line">
                       <span>{item.quantity} x {formatCurrency(itemPrice)}</span>
-                      <span className="font-semibold text-gray-900">{formatCurrency(lineTotal)}</span>
+                      <strong>{formatCurrency(lineTotal)}</strong>
                     </div>
                   </div>
                 );
               })}
-            </div>
+            </Section>
+
+            <hr className="rc-rule" />
 
             {/* Totals */}
-            <div className="border-t-2 border-gray-300 pt-3 md:pt-4 space-y-1 md:space-y-2">
-              <div className="receipt-row flex justify-between text-xs md:text-sm">
-                <span>Subtotal:</span>
-                <span>{formatCurrency(receiptData.receipt.subtotal)}</span>
+            <div>
+              <div className="rc-row">
+                <span className="rc-label">Subtotal:</span>
+                <span className="rc-value">{formatCurrency(receiptData.receipt.subtotal)}</span>
               </div>
-              <div className="receipt-row flex justify-between text-xs md:text-sm">
-                <span>VAT (18%):</span>
-                <span>{formatCurrency(receiptData.receipt.tax)}</span>
+              <div className="rc-row">
+                <span className="rc-label">VAT (18%):</span>
+                <span className="rc-value">{formatCurrency(receiptData.receipt.tax)}</span>
               </div>
-              <div className="receipt-total flex justify-between text-base md:text-lg font-bold border-t-2 border-gray-800 pt-2">
-                <span>TOTAL:</span>
+              <div className="rc-total">
+                <span>TOTAL</span>
                 <span>{formatCurrency(receiptData.receipt.total)}</span>
               </div>
             </div>
 
-            {/* Payment Info */}
-            <div className="mt-3 md:mt-4 border-t border-dashed border-gray-300 pt-2 md:pt-3 space-y-1 text-xs md:text-sm">
-              <div className="receipt-row flex justify-between">
-                <span className="font-semibold">Payment Method:</span>
-                <span className="text-right">{receiptData.paymentMethod}</span>
+            <hr className="rc-rule" />
+
+            {/* Payment */}
+            <div>
+              <div className="rc-row">
+                <span className="rc-label">Payment Method:</span>
+                <span className="rc-value">{receiptData.paymentMethod}</span>
               </div>
               {receiptData.amountPaid != null && (
                 <>
-                  <div className="receipt-row flex justify-between">
-                    <span>Amount Paid:</span>
-                    <span className="text-right">{formatCurrency(receiptData.amountPaid)}</span>
+                  <div className="rc-row">
+                    <span className="rc-label">Amount Paid:</span>
+                    <span className="rc-value">{formatCurrency(receiptData.amountPaid)}</span>
                   </div>
                   {receiptData.changeGiven > 0 && (
-                    <div className="receipt-row flex justify-between font-semibold">
-                      <span>Change:</span>
-                      <span className="text-right">{formatCurrency(receiptData.changeGiven)}</span>
+                    <div className="rc-row">
+                      <span className="rc-label">Change:</span>
+                      <span className="rc-value">{formatCurrency(receiptData.changeGiven)}</span>
                     </div>
                   )}
                 </>
               )}
               {isInvoice && (
-                <div className="mt-2 p-2 rounded-lg bg-amber-50 border-2 border-amber-300">
-                  <div className="receipt-row flex justify-between font-bold text-amber-900">
-                    <span>⚠️ Balance Due:</span>
-                    <span className="text-right">{formatCurrency(receiptData.balanceDue)}</span>
-                  </div>
+                <div className="rc-due">
+                  <span>⚠️ Balance Due:</span>
+                  <span>{formatCurrency(receiptData.balanceDue)}</span>
                 </div>
               )}
-              <div className={`receipt-qr-block mt-4 grid gap-3 rounded-2xl border border-[#ddcfaa] bg-[#f8f4e9] p-3 text-center ${receiptProofUrl ? 'sm:grid-cols-2 sm:p-4' : ''}`}>
-                {receiptProofUrl && (
-                  <div className="flex flex-col items-center gap-2 rounded-xl border border-[#e5d9ba] bg-[#fffefa] p-3">
-                    <QRCodeCanvas value={receiptProofUrl} size={132} level="M" includeMargin />
-                    <p className="receipt-qr-caption text-xs font-semibold text-[#354840]">
-                      Verify receipt or track service
-                    </p>
-                  </div>
-                )}
-                <div className="flex flex-col items-center gap-2 rounded-xl border border-[#e5d9ba] bg-[#fffefa] p-3">
-                  <QRCodeCanvas value={receiptQrValue} size={132} level="M" includeMargin />
-                  <p className="receipt-qr-caption text-xs font-semibold text-[#354840]">
-                    Visit {storeName}
-                  </p>
-                </div>
-              </div>
               {receiptData.jobStatus && (
-                <div className="receipt-row flex justify-between">
-                  <span className="font-semibold">Job Status:</span>
-                <span className="rounded-full bg-[#f3ead2] px-2.5 py-1 text-right text-[11px] font-bold capitalize text-[#755b22]">{receiptData.jobStatus.replace(/_/g, ' ')}</span>
+                <div className="rc-row">
+                  <span className="rc-label">Job Status:</span>
+                  <span className="rc-chip">{receiptData.jobStatus.replace(/_/g, ' ')}</span>
                 </div>
               )}
-              <div className="receipt-row flex justify-between text-xs text-gray-500">
-                <span>Transaction ID:</span>
-                <span className="max-w-[65%] break-all text-right font-mono text-[10px] text-gray-500 sm:text-xs">{receiptData.transactionId}</span>
-              </div>
             </div>
 
+            <hr className="rc-rule" />
+
+            {/* Verification */}
+            <Section
+              id="receipt-verify"
+              title="Verify"
+              meta="QR · Transaction ID"
+              open={openSections.verify}
+              onToggle={() => toggleSection('verify')}
+            >
+              <div className="rc-qr-grid">
+                {receiptProofUrl && (
+                  <div className="rc-qr">
+                    <QRCodeCanvas value={receiptProofUrl} size={132} level="M" includeMargin />
+                    <p className="rc-qr-caption">Verify receipt or track service</p>
+                  </div>
+                )}
+                <div className="rc-qr">
+                  <QRCodeCanvas value={receiptQrValue} size={132} level="M" includeMargin />
+                  <p className="rc-qr-caption">Visit {storeName}</p>
+                </div>
+              </div>
+              <div className="rc-row rc-tx">
+                <span className="rc-label">Transaction ID:</span>
+                <span className="rc-value">{receiptData.transactionId}</span>
+              </div>
+            </Section>
+
+            <hr className="rc-rule" />
+
             {/* Footer */}
-            <div className="receipt-footer text-center border-t-2 border-dashed border-gray-300 pt-3 md:pt-4 mt-4 md:mt-6 text-xs md:text-sm">
-              <p className="font-bold text-base md:text-lg mb-1 md:mb-2">Webale nyo! 🙏</p>
-              <p className="text-gray-600 text-xs md:text-sm">Thank you for shopping with us!</p>
-              <p className="text-gray-600 text-xs md:text-sm mt-2">Visit us again at {storeName}</p>
-              <p className="text-xs text-gray-500 mt-2 md:mt-3">
-                VAT Inclusive • All prices in UGX
-              </p>
-              <p className="text-xs text-gray-500">
-                Exchange & Return within 7 days with receipt
-              </p>
-              <div className="mt-3 md:mt-4 text-xs text-gray-400 space-y-1">
-                {branding?.website && <p>{branding.website}</p>}
-                {(receiptData?.receipt?.supportEmail || branding?.email) && <p>{receiptData?.receipt?.supportEmail || branding.email}</p>}
-              </div>
-              <div className="mt-3 md:mt-4 text-xl md:text-2xl">
-                🇺🇬
-              </div>
-            </div>
+            <footer className="rc-foot">
+              <p className="rc-thanks">Webale nyo! 🙏</p>
+              <p className="rc-fine">Thank you for shopping with us!</p>
+              <p className="rc-fine">Visit us again at {storeName}</p>
+              <p className="rc-fine">VAT Inclusive • All prices in UGX</p>
+              <p className="rc-fine">Exchange &amp; Return within 7 days with receipt</p>
+              {branding?.website && <p className="rc-fine">{branding.website}</p>}
+              {supportEmail && <p className="rc-fine">{supportEmail}</p>}
+              <p className="rc-fine">🇺🇬</p>
+            </footer>
           </div>
         </div>
       </div>

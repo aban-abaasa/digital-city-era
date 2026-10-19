@@ -1,0 +1,219 @@
+/* ===================================================
+   Classic receipt paper
+   Used twice from Receipt.jsx: imported for the on-screen modal, and read
+   as a string (?inline) and written into the print window — so the paper
+   looks the same on screen and on the printer. Everything inside .rc-paper
+   is styled here and not with Tailwind, which keeps the portal's dark-theme
+   `.text-gray-*` / `.bg-white` overrides from washing out the paper.
+   =================================================== */
+
+.rc-paper {
+  --rc-paper: #fffdf8;
+  --rc-ink: #2b2a26;
+  --rc-muted: #6f6a5c;
+  --rc-rule: #b9ae93;
+  --rc-dot: #ddd3ba;
+  --rc-gold: #a8842f;
+  --rc-green: #173d32;
+
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 26rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 1.25rem;
+  background: var(--rc-paper);
+  color: var(--rc-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  filter: drop-shadow(0 2px 8px rgba(56, 47, 28, 0.16));
+}
+
+.rc-paper *,
+.rc-paper *::before,
+.rc-paper *::after { box-sizing: border-box; }
+
+/* Torn-paper zig-zag along the top and bottom edge */
+.rc-paper::before,
+.rc-paper::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background:
+    linear-gradient(135deg, var(--rc-paper) 50%, transparent 50%) 0 0 / 12px 8px repeat-x,
+    linear-gradient(225deg, var(--rc-paper) 50%, transparent 50%) 0 0 / 12px 8px repeat-x;
+}
+.rc-paper::after { bottom: -7px; }
+.rc-paper::before { top: -7px; transform: scaleY(-1); }
+
+/* ---------- Store header ---------- */
+.rc-head { padding-bottom: 0.25rem; text-align: center; }
+.rc-logo {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto 0.5rem;
+  object-fit: cover;
+  border: 2px solid #e0c476;
+  border-radius: 50%;
+}
+.rc-store {
+  margin: 0;
+  color: var(--rc-green);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.rc-sub { margin: 0.2rem 0 0; color: var(--rc-muted); font-size: 0.75rem; }
+.rc-doc {
+  margin: 0.7rem 0 0;
+  color: var(--rc-gold);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+/* ---------- Rules and rows ---------- */
+.rc-rule { height: 0; margin: 0.75rem 0; border: 0; border-top: 1px dashed var(--rc-rule); }
+
+.rc-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.1rem 0;
+}
+.rc-label { flex: none; color: var(--rc-muted); }
+.rc-value { min-width: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+
+/* ---------- Collapsible sections ---------- */
+.rc-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.rc-section-head:focus-visible { outline: 2px solid var(--rc-gold); outline-offset: 2px; }
+.rc-section-title {
+  flex: 1;
+  color: var(--rc-green);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.rc-section-meta { color: var(--rc-muted); font-size: 0.72rem; }
+.rc-chev {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  color: var(--rc-gold);
+  transition: transform 0.2s ease;
+}
+.rc-section.is-collapsed .rc-chev { transform: rotate(-90deg); }
+
+.rc-section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.22s ease;
+}
+.rc-section-inner { min-height: 0; overflow: hidden; }
+.rc-section.is-collapsed .rc-section-body { grid-template-rows: 0fr; }
+.rc-section.is-collapsed .rc-section-inner { visibility: hidden; transition: visibility 0s 0.22s; }
+
+/* ---------- Items ---------- */
+.rc-item { padding: 0.4rem 0; border-bottom: 1px dotted var(--rc-dot); }
+.rc-item:last-child { border-bottom: 0; }
+.rc-item-name { font-weight: 700; overflow-wrap: anywhere; }
+.rc-item-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--rc-muted);
+}
+.rc-item-line strong { color: var(--rc-ink); font-weight: 700; }
+
+/* ---------- Totals ---------- */
+.rc-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 3px double var(--rc-ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.rc-due {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  background: #fdf3e0;
+  border: 1px dashed #c88636;
+  color: #7a4a0c;
+  font-weight: 700;
+}
+.rc-chip {
+  padding: 0 0.55rem;
+  background: #f3ead2;
+  border-radius: 999px;
+  color: #755b22;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+/* ---------- Verification (QR + transaction id) ---------- */
+.rc-qr-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.5rem 0 0.25rem;
+}
+.rc-qr { max-width: 8.5rem; text-align: center; }
+.rc-qr canvas,
+.rc-qr img { display: block; width: 7.5rem !important; height: 7.5rem !important; margin: 0 auto; }
+.rc-qr-caption { margin: 0.2rem 0 0; color: var(--rc-muted); font-size: 0.68rem; }
+.rc-tx { margin-top: 0.4rem; color: var(--rc-muted); font-size: 0.68rem; }
+.rc-tx .rc-value { font-weight: 400; }
+
+/* ---------- Footer ---------- */
+.rc-foot { text-align: center; }
+.rc-thanks {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.rc-fine { margin: 0.2rem 0 0; color: var(--rc-muted); font-size: 0.7rem; }
+
+@media (min-width: 640px) {
+  .rc-paper { padding: 1.75rem 1.75rem 1.5rem; font-size: 0.875rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-chev,
+  .rc-section-body { transition: none; }
+}
