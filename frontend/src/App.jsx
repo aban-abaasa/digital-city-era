@@ -65,6 +65,7 @@ import ICANWalletPage from '@/pages/ICANWalletPage';
 import UnifiedProfilePage from '@/pages/UnifiedProfilePage';
 import DevPanel from '@/pages/DevPanel';
 import InvoicePublicPage from '@/pages/InvoicePublicPage';
+import ReceiptApprovePage from '@/pages/ReceiptApprovePage';
 import PayRequestPublicPage from '@/pages/PayRequestPublicPage';
 import BusinessLocalServerSetup from '@/pages/BusinessLocalServerSetup';
 import LocalStaffLogin from '@/pages/LocalStaffLogin';
@@ -284,6 +285,11 @@ function App() {
                   payment from it (enforced server-side, see
                   collect_invoice_payment() in ADD_PUBLIC_INVOICE_QR_ACCESS.sql). */}
               <Route path="/invoice/:transactionId" element={<InvoicePublicPage />} />
+
+              {/* Staff receipt approval — opened by the QR code on a customer's shop
+                  receipt. Staff sign in; only that store's staff can approve
+                  (enforced server-side in approve_receipt()). */}
+              <Route path="/receipt-approve/:token" element={<ReceiptApprovePage />} />
 
               {/* Public IcanEra Wallet payment-request page — opened by a
                   "Receive Money" QR code or shared link. Viewable by anyone;

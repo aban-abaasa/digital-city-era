@@ -523,6 +523,14 @@ export default function ICANWalletPage({
       return;
     }
 
+    // A customer's shop receipt QR: staff scan it here to approve the receipt.
+    // Opens the approval page - never a payment, so no PIN prompt.
+    const receiptApproveMatch = String(scannedValue || '').match(/\/receipt-approve\/([A-Za-z0-9]{20,})/);
+    if (receiptApproveMatch) {
+      navigate(`/receipt-approve/${receiptApproveMatch[1]}`);
+      return;
+    }
+
     // Smart about which of the two QR/link shapes this is — a merchant's
     // "Receive Money" request (payment_requests), or a POS invoice/receipt
     // (transactions, via the /invoice/:id public page's QR code) — so the
@@ -826,6 +834,31 @@ export default function ICANWalletPage({
                   </div>
                 ))}
               </div>
+              {tx.receipt_details && (
+                <div className="mt-3 rounded-2xl border border-emerald-800/20 bg-white/80 p-4 text-[12.5px]">
+                  <p className="font-bold text-stone-800">{tx.receipt_details.store_name || 'Store'}</p>
+                  <p className="font-mono text-[11px] text-stone-500">Receipt {tx.receipt_details.receipt_number}</p>
+                  <div className="mt-2 space-y-1">
+                    {(tx.receipt_details.items || []).map((item, index) => (
+                      <div key={`${item.product_id || index}-${index}`} className="flex justify-between gap-3">
+                        <span className="min-w-0 truncate text-stone-700">{item.product_name || item.name || 'Product'} × {item.quantity}</span>
+                        <span className="whitespace-nowrap font-mono font-bold text-stone-800">
+                          {Number(item.line_total || 0).toLocaleString()} {tx.receipt_details.currency}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex justify-between border-t border-emerald-900/15 pt-2 font-bold text-stone-800">
+                    <span>Total</span>
+                    <span className="font-mono">{Number(tx.receipt_details.total || 0).toLocaleString()} {tx.receipt_details.currency}</span>
+                  </div>
+                  <p className={`mt-2 font-semibold ${tx.receipt_details.approval_status === 'approved' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {tx.receipt_details.approval_status === 'approved'
+                      ? `Approved by ${tx.receipt_details.approved_by_name || 'store staff'}`
+                      : 'Awaiting staff approval'}
+                  </p>
+                </div>
+              )}
               {tx.id && (
                 <div className="mt-4 space-y-3">
                   <Barcode value={tx.id} color="#052e22" height={30} className="opacity-70" />
