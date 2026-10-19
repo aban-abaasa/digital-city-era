@@ -282,6 +282,11 @@ BEGIN
   )
   RETURNING id INTO v_tx_id;
 
+  -- Attach the store AFTER the insert (not in it): the revenue-ledger trigger
+  -- only runs on INSERT, so this cannot double-count an ICAN-paid sale. Without
+  -- it admin/manager transaction history (filtered by store) never saw these sales.
+  UPDATE public.transactions SET supermarket_id = v_supermarket_id WHERE id = v_tx_id;
+
   -- ── Insert line items (matches sales_transaction_items columns) ───────────
   INSERT INTO public.sales_transaction_items (
     transaction_id, product_id, product_name, product_sku,
@@ -321,21 +326,23 @@ BEGIN
   )
   RETURNING id INTO v_receipt_id;
 
-  -- ── ICAN cashback (1%, swallowed on failure) ──────────────────────────────
-  IF p_pay_with_ican = FALSE AND v_price_per_ican IS NOT NULL THEN
-    BEGIN
-      SELECT credit_ican_earning(
-        v_auth_id,
-        GREATEST(ROUND(v_net_total * 0.01 / v_price_per_ican, 8), 0.0001),
-        'digital-city-era',
-        format('Self-checkout cashback | %s %s | receipt %s',
-               v_currency, v_net_total::TEXT, v_receipt_no),
-        v_tx_id::TEXT
-      ) INTO v_ican_result;
-    EXCEPTION WHEN OTHERS THEN
-      v_ican_result := jsonb_build_object('success', false, 'error', SQLERRM);
-    END;
-  END IF;
+  UPDATE public.receipts r
+     SET supermarket_id = v_supermarket_id,
+         store_name     = (SELECT sm.name FROM public.supermarkets sm WHERE sm.id = v_supermarket_id)
+   WHERE r.id = v_receipt_id;
+
+  -- ── Shop points (replaces the old ICAN cashback) ──────────────────────────
+  -- Silent: the customer sees nothing; the developer monitors points through
+  -- dev_get_shop_points(). Defined in FIX_SELF_CHECKOUT_POINTS_AND_ADMIN_HISTORY.sql.
+  BEGIN
+    PERFORM public.dce_award_shop_points(
+      v_auth_id,
+      CASE WHEN v_price_per_ican IS NOT NULL AND v_price_per_ican > 0
+           THEN v_net_total / v_price_per_ican * 5000 ELSE v_net_total END,
+      v_receipt_no, v_supermarket_id, v_tx_id);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'dce_award_shop_points failed for receipt %: %', v_receipt_no, SQLERRM;
+  END;
 
   RETURN jsonb_build_object(
     'success',          true,
@@ -349,8 +356,7 @@ BEGIN
     'price_per_ican',   v_price_per_ican,
     'items_count',      v_items_count,
     'items',             v_snapshot,
-    'payment_method',   p_payment_method,
-    'ican_cashback',    v_ican_result
+    'payment_method',   p_payment_method
   );
 
 EXCEPTION WHEN OTHERS THEN

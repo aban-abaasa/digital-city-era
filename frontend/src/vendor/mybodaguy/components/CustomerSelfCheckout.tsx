@@ -63,10 +63,6 @@ interface CheckoutReceipt {
     tax_rate: number;
     line_total: number;
   }>;
-  ican_cashback: {
-    success: boolean;
-    net_credited?: number;
-  } | null;
   /** One receipt per store paid: store name, its products, approval QR and who approved it. */
   stores: StoreReceipt[];
 }
@@ -558,7 +554,6 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
         paidReceipts.push({ data, items, store, storeId, storeCurrency, approvalToken });
       }
 
-      const cashback = paidReceipts.reduce((sum, r) => sum + (r.data.ican_cashback?.success ? Number(r.data.ican_cashback.net_credited || 0) : 0), 0);
       const purchasedAt = new Date().toISOString();
       const storeReceipts: StoreReceipt[] = paidReceipts.map(r => ({
         receipt_id: r.data.receipt_id || '',
@@ -607,7 +602,6 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
           tax_rate: i.product.tax_rate,
           line_total: i.line_total,
         }))),
-        ican_cashback: cashback > 0 ? { success: true, net_credited: cashback } : paidReceipts[0]?.data.ican_cashback,
       });
 
       // Refresh ICAN balance after the real wallet debit.
@@ -887,15 +881,6 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
             >
               <Download size={16} /> Download all receipts
             </button>
-          )}
-
-          {receipt.ican_cashback?.success && receipt.ican_cashback.net_credited && (
-            <div className="flex items-center gap-2 justify-center bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 mb-4">
-              <Coins className="text-orange-500" size={16} />
-              <span className="text-sm font-semibold text-orange-700">
-                +₡ {formatICAN(receipt.ican_cashback.net_credited)} ICAN cashback earned!
-              </span>
-            </div>
           )}
 
           <button
@@ -1328,12 +1313,6 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                 </button>
               )}
             </div>
-
-            {payment !== 'ican' && (
-              <p className="text-xs text-green-600 mt-2 text-center">
-                You'll earn ~₡{formatICAN(icanPrice > 0 ? Math.floor((totals.total * 0.01 / icanPrice) * 1e8) / 1e8 : 0)} ICAN cashback (1%)
-              </p>
-            )}
           </div>
 
           {/* Checkout button */}
