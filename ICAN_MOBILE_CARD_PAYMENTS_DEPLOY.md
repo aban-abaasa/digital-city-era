@@ -8,7 +8,7 @@ live icaneracoin value, so the store receives the **full sale amount**. The cust
 
 ## How the cashier uses it
 
-POS → **Process Payment** → **📲 IcanEra Mobile / Card**. One screen, three ways, whichever happens first settles the sale.
+POS → **Process Payment** → **📲 IcanEra Mobile / Card** (the chooser is classic too: the total in serif type and one slim row per way to pay; its Cancel and the payment screens sit above the phone's bottom tab bar, which used to cover them). One screen, three ways, whichever happens first settles the sale.
 The screen opens on **Send to phone**, because the person at the counter is often not the person who is paying (the account
 holder is at home and sent someone). Flutterwave's own checkout asks for a one-time code (OTP) that goes to the **account
 holder's phone**, so it is a deliberate choice (**Pay here**) rather than something that opens by itself:

@@ -342,7 +342,7 @@ const CashierIcanMobileCardModal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
       <div className="classic-card bg-white p-4 sm:p-6 max-w-lg max-h-[95vh] overflow-y-auto w-full mx-3 sm:mx-4 shadow-2xl">
         {/* Eyebrow, the sale in serif type, a brass rule - and the one line about fees */}
         <div className="flex justify-between items-start gap-3">

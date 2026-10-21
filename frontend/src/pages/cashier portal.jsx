@@ -185,7 +185,7 @@ const CashierPortal = () => {
       name: 'IcanEra Wallet',
       icon: '💎',
       color: 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700',
-      description: 'Receive Payment - Customer Scans QR Code',
+      description: 'Customer scans a QR code - no fee',
       fee: 0,
       limit: Infinity,
       features: ['receive'],
@@ -199,7 +199,7 @@ const CashierPortal = () => {
       name: MOBILE_CARD_METHOD_NAME,
       icon: '📲',
       color: 'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600',
-      description: 'No IcanEra account needed - Mobile Money or card, request it or scan',
+      description: 'Mobile Money or card',
       fee: 0,
       limit: Infinity,
       features: ['receive'],
@@ -210,7 +210,7 @@ const CashierPortal = () => {
       name: 'Cash (UGX)',
       icon: '💵',
       color: 'bg-green-600 hover:bg-green-700',
-      description: 'Physical Cash Payment',
+      description: 'Physical cash',
       fee: 0,
       limit: Infinity,
       features: ['receive'],
@@ -4073,38 +4073,39 @@ const CashierPortal = () => {
         )}
       </div>
 
-      {/* Payment Modal */}
+      {/* Payment Modal - classic: the total in serif type, one slim row per way to pay. z-[70]: above the phone's bottom
+          tab bar (z-[60]), which used to cover the Cancel button. */}
       {paymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
-            <div className="text-center mb-6">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">💳 Choose Payment Method</h3>
-              <p className="text-gray-600">Total: {formatUGX(currentTransaction.total)}</p>
-            </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-3">
+          <div className="classic-card bg-white p-5 sm:p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl">
+            <p className="classic-eyebrow">Take payment</p>
+            <p className="font-classic-display text-4xl font-bold text-gray-900 leading-tight tabular-nums">{formatUGX(currentTransaction.total)}</p>
+            <div className="gold-rule my-4" />
 
             {!paymentProcessing && !paymentResult && (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {paymentMethods.map((method) => (
                   <button
                     key={method.id}
                     onClick={() => processPayment(method.id)}
-                    className={`w-full p-4 rounded-lg text-white font-semibold transition-all duration-300 transform hover:scale-105 ${method.color}`}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-shadow ${
+                      method.primary
+                        ? 'text-white bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] ring-1 ring-[#e6c980]/50 hover:shadow-[0_10px_22px_-12px_rgba(30,27,75,0.7)]'
+                        : 'text-gray-900 bg-white border border-[#c4a052]/40 hover:border-[#c4a052] hover:bg-gray-50'
+                    }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">{method.icon}</span>
-                        <div className="text-left">
-                          <div className="font-semibold">{method.name}</div>
-                          <div className="text-sm opacity-90">{method.description}</div>
-                        </div>
-                      </div>
-                      {method.fee > 0 && (
-                        <div className="text-right text-sm">
-                          <div>Fee: {(method.fee * 100).toFixed(1)}%</div>
-                          <div>{formatUGX(currentTransaction.total * method.fee)}</div>
-                        </div>
-                      )}
-                    </div>
+                    <span className="text-2xl shrink-0" aria-hidden="true">{method.icon}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-semibold">{method.name}</span>
+                      <span className={`block text-xs ${method.primary ? 'text-white/75' : 'text-gray-500'}`}>{method.description}</span>
+                    </span>
+                    {method.fee > 0 && (
+                      <span className="shrink-0 text-right text-xs">
+                        <span className="block">Fee {(method.fee * 100).toFixed(1)}%</span>
+                        <span className="block">{formatUGX(currentTransaction.total * method.fee)}</span>
+                      </span>
+                    )}
+                    <FiChevronRight className="shrink-0 opacity-60" aria-hidden="true" />
                   </button>
                 ))}
               </div>
@@ -4112,23 +4113,23 @@ const CashierPortal = () => {
 
             {paymentProcessing && (
               <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-yellow-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Processing payment...</p>
-                <p className="text-sm text-gray-500 mt-2">Please wait while we process your transaction</p>
+                <div className="animate-spin rounded-full h-14 w-14 border-b-2 border-[#c4a052] mx-auto mb-4"></div>
+                <p className="text-gray-700">Processing payment...</p>
+                <p className="text-sm text-gray-500 mt-1">Please wait</p>
               </div>
             )}
 
             {paymentResult && (
-              <div className="text-center py-8">
+              <div className="text-center py-6">
                 {paymentResult.success ? (
                   <div>
-                    <div className="text-6xl mb-4">✅</div>
-                    <h3 className="text-xl font-bold text-green-600 mb-2">Payment Successful!</h3>
-                    <p className="text-gray-600 mb-4">Transaction ID: {paymentResult.transactionId}</p>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <p className="text-sm text-green-800">
+                    <div className="text-5xl mb-3">✅</div>
+                    <h3 className="font-classic-display text-xl font-bold text-gray-900 mb-1">Payment successful</h3>
+                    <p className="text-xs text-gray-500 mb-4 break-all">Transaction ID: {paymentResult.transactionId}</p>
+                    <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
+                      <p className="text-sm text-emerald-800">
                         Amount: {formatUGX(paymentResult.amount)}<br/>
-                        {paymentResult.fee > 0 && `Fee: ${formatUGX(paymentResult.fee)}`}<br/>
+                        {paymentResult.fee > 0 && <>Fee: {formatUGX(paymentResult.fee)}<br/></>}
                         Method: {paymentResult.paymentMethod}<br/>
                         Time: {new Date(paymentResult.timestamp).toLocaleTimeString()}
                       </p>
@@ -4136,17 +4137,17 @@ const CashierPortal = () => {
                   </div>
                 ) : (
                   <div>
-                    <div className="text-6xl mb-4">❌</div>
-                    <h3 className="text-xl font-bold text-red-600 mb-2">Payment Failed</h3>
-                    <p className="text-gray-600 mb-4">{paymentResult.error}</p>
+                    <div className="text-5xl mb-3">❌</div>
+                    <h3 className="font-classic-display text-xl font-bold text-gray-900 mb-1">Payment failed</h3>
+                    <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3 mb-4">{paymentResult.error}</p>
                     <button
                       onClick={() => {
                         setPaymentResult(null);
                         setPaymentProcessing(false);
                       }}
-                      className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all duration-300"
+                      className="w-full px-4 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] ring-1 ring-[#e6c980]/50"
                     >
-                      Try Again
+                      Try again
                     </button>
                   </div>
                 )}
@@ -4156,7 +4157,7 @@ const CashierPortal = () => {
             {!paymentProcessing && !paymentResult && (
               <button
                 onClick={() => setPaymentModal(false)}
-                className="w-full mt-4 bg-gray-500 text-white py-3 rounded-lg hover:bg-gray-600 transition-all duration-300"
+                className="w-full mt-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
               >
                 Cancel
               </button>

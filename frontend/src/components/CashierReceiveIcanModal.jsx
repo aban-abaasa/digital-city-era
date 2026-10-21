@@ -135,7 +135,7 @@ const CashierReceiveIcanModal = ({
   console.log('🎨 Rendering CashierReceiveIcanModal:', { isOpen, loading, paymentReceived, qrData: !!qrData });
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
       <div className="bg-white rounded-xl p-4 sm:p-6 lg:p-10 max-w-md sm:max-w-xl lg:max-w-2xl max-h-[95vh] overflow-y-auto w-full mx-3 sm:mx-4 shadow-2xl">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
