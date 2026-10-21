@@ -8,15 +8,16 @@ live icaneracoin value, so the store receives the **full sale amount**. The cust
 
 ## How the cashier uses it
 
-POS → **Process Payment** → **📲 IcanEra Mobile / Card**. **Flutterwave's payment page opens straight away**, as it does for a
-wallet top-up (Mobile Money number or card, on the till). If the customer closes it, the screen stays with a button to open it
-again, and two other ways. One screen, three ways, whichever happens first settles the sale:
+POS → **Process Payment** → **📲 IcanEra Mobile / Card**. One screen, three ways, whichever happens first settles the sale.
+The screen opens on **Send to phone**, because the person at the counter is often not the person who is paying (the account
+holder is at home and sent someone). Flutterwave's own checkout asks for a one-time code (OTP) that goes to the **account
+holder's phone**, so it is a deliberate choice (**Pay here**) rather than something that opens by itself:
 
 | Tab | What happens |
 | --- | --- |
-| **Pay now** | Flutterwave's checkout on the till (Mobile Money number or card). Opens by itself for a new sale. |
-| **Ask them to pay** | Type the customer's **phone number or 16-digit IcanEra wallet number**. A number that belongs to an IcanEra account gets a request in their wallet inbox (no fee). Any other phone number gets a **Mobile Money approval prompt** (MTN / Airtel detected from the number). The customer can be anywhere. |
-| **Scan or send link** | QR / link / WhatsApp / SMS to the customer's own phone → `/mobile-pay/<ref>`: **Flutterwave's page with every way to pay it has enabled** (Mobile Money, card, bank transfer, USSD …) with no account, or their IcanEra wallet when signed in. |
+| **Send to phone** (opens first) | Type the payer's **phone number or 16-digit IcanEra wallet number**. A number that belongs to an IcanEra account gets a request in their wallet inbox (no fee). Any other phone number gets a **Mobile Money approval prompt** (MTN / Airtel detected from the number), approved with the PIN on that phone — nothing is typed or read out at the till. The payer can be anywhere. |
+| **Send link** | QR / link / WhatsApp / SMS to the payer's own phone → `/mobile-pay/<ref>`: **Flutterwave's page with every way to pay it has enabled** (Mobile Money, card, bank transfer, USSD …) with no account, or their IcanEra wallet when signed in. Any OTP (e.g. a card's) lands on, and is typed into, the payer's own phone — use this for card payments when the cardholder is not at the till. |
+| **Pay here** | Flutterwave's checkout on the till (Mobile Money number or card), opened with a button. Only for a payer who is at the till with their phone, since they must read out / type the OTP. The tab says so. |
 
 The till's own page offers Mobile Money + card only (bank transfer is too slow at a counter); the customer's QR/link page asks
 Flutterwave for everything enabled on the account (Flutterwave Dashboard → Settings → Payment methods), so enable or disable

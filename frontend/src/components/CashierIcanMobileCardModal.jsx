@@ -1,16 +1,18 @@
 /**
  * Cashier IcanEra Mobile / Card modal - for a customer who may have NO IcanEra account.
  * The sale becomes one charge on the server (amount + processing fee fixed there), and the cashier
- * chooses how it gets paid - whichever happens first settles the sale. A new sale opens Flutterwave's checkout
- * straight away (like a wallet top-up does); closing it leaves the other ways below:
+ * chooses how it gets paid - whichever happens first settles the sale. The screen opens on the ways that need
+ * nothing typed at the till, because the person at the counter is often not the one whose phone or card is
+ * paying (Flutterwave's own checkout asks for a one-time code that goes to the account holder's phone):
  *
- *   Pay now           Flutterwave's checkout opens here (Mobile Money number or card)
- *   Ask them to pay   one box: a phone number gets a Mobile Money approval prompt, an IcanEra wallet
- *                     number (or a phone/email that belongs to an account) gets a request in the
- *                     customer's wallet inbox - so the customer can be anywhere
- *   Scan or send link a QR / link / WhatsApp / SMS to the customer's own phone: Flutterwave's page with every
- *                     way to pay (Mobile Money, card, bank transfer ...) with no account, or from their IcanEra
- *                     wallet with no fee
+ *   Send to phone     one box: a phone number gets a Mobile Money approval prompt (approved with the PIN on that
+ *                     phone, no code), an IcanEra wallet number (or a phone/email that belongs to an account)
+ *                     gets a request in the customer's wallet inbox - so the customer can be anywhere
+ *   Send link         a QR / link / WhatsApp / SMS to the payer's own phone: Flutterwave's page with every way
+ *                     to pay (Mobile Money, card, bank transfer ...) with no account, or from their IcanEra
+ *                     wallet with no fee - any one-time code lands on, and is typed into, their own phone
+ *   Pay here          Flutterwave's checkout on this device (Mobile Money number or card) - only for a payer who
+ *                     is at the till with their phone, because they have to read out / type the one-time code
  *
  * The till polls the charge, so a payment made on another phone, or approved a moment late, still
  * completes the sale. "Serve next customer" parks the sale (see hooks/usePendingMobileCardSales.js): the screen
@@ -54,9 +56,9 @@ const formatClock = (ms) => {
 };
 
 const TABS = [
-  { id: 'till', label: 'Pay now', icon: '💳' },
-  { id: 'request', label: 'Ask them to pay', icon: '📨' },
-  { id: 'link', label: 'Scan or send link', icon: '🔗' },
+  { id: 'request', label: 'Send to phone', icon: '📲' },
+  { id: 'link', label: 'Send link', icon: '🔗' },
+  { id: 'till', label: 'Pay here', icon: '💳' },
 ];
 
 const CashierIcanMobileCardModal = ({
@@ -77,7 +79,7 @@ const CashierIcanMobileCardModal = ({
   const [charge, setCharge] = useState(resumeCharge);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [tab, setTab] = useState(resumeCharge ? 'request' : 'till');
+  const [tab, setTab] = useState('request');
   const [contact, setContact] = useState(initialContact);
   const [customer, setCustomer] = useState(null); // the IcanEra account behind what was typed, if any
   const [lookingUp, setLookingUp] = useState(false);
@@ -89,7 +91,6 @@ const CashierIcanMobileCardModal = ({
   const [checkoutShown, setCheckoutShown] = useState(false); // Flutterwave's checkout has been shown for this charge
 
   const startedRef = useRef(!!resumeCharge);
-  const autoOpenedRef = useRef(!!resumeCharge); // a new sale opens the checkout once; a reopened one does not
   const reportedRef = useRef(false);
   const chargeRef = useRef(null);
   const onPaidRef = useRef(onPaymentReceived);
@@ -260,14 +261,6 @@ const CashierIcanMobileCardModal = ({
     }
   };
 
-  // A new sale goes straight to Flutterwave's checkout, as a wallet top-up does; the cashier does not have to find it.
-  useEffect(() => {
-    if (phase !== 'ready' || !charge || autoOpenedRef.current) return;
-    autoOpenedRef.current = true;
-    payOnTill();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, charge]);
-
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(payUrl);
@@ -350,9 +343,8 @@ const CashierIcanMobileCardModal = ({
               <button
                 onClick={() => {
                   startedRef.current = true;
-                  autoOpenedRef.current = false;
                   setCheckoutShown(false);
-                  setTab('till');
+                  setTab('request');
                   setCharge(null);
                   setContact('');
                   createCharge();
@@ -405,8 +397,11 @@ const CashierIcanMobileCardModal = ({
 
             {tab === 'request' && (
               <div className="space-y-3">
+                <p className="text-sm text-gray-700">
+                  Customer at home, or sent someone else? Type the number of the phone that will pay. They approve on <strong>their own phone</strong> with their PIN - nothing is typed or read out at the till.
+                </p>
                 <label className="block text-sm font-medium text-gray-700" htmlFor="imc-contact">
-                  Customer's phone number or IcanEra wallet number
+                  Payer's phone number or IcanEra wallet number
                 </label>
                 <input
                   id="imc-contact"
@@ -466,6 +461,7 @@ const CashierIcanMobileCardModal = ({
                     </button>
                     <p className="text-xs text-gray-500">
                       The customer gets a prompt on their phone and approves it with their Mobile Money PIN - no account, no scanning.
+                      Paying by card instead? Use <strong>Send link</strong>: the card's one-time code goes to the cardholder, who types it on their own phone.
                     </p>
                   </div>
                 )}
@@ -484,8 +480,11 @@ const CashierIcanMobileCardModal = ({
             {tab === 'till' && (
               <div className="space-y-3">
                 <p className="text-sm text-gray-700">
-                  Flutterwave's payment page opens on this screen: the customer enters their Mobile Money number or card. Hand them the device, or type it for them.
+                  Flutterwave's payment page opens on this screen: the payer enters their Mobile Money number or card. Hand them the device, or type it for them.
                   {checkoutShown && !busy ? ' It was closed - open it again, or use another way below.' : ''}
+                </p>
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  Flutterwave may ask for a one-time code (OTP). It is sent to the <strong>account holder's phone</strong>, so use this only when they are at the till with that phone. If they are at home or sent someone else, choose <strong>Send to phone</strong> or <strong>Send link</strong> instead.
                 </p>
                 <button
                   onClick={payOnTill}
