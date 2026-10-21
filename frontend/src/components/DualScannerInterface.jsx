@@ -777,7 +777,6 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
       setSupabaseProducts(productsData || []);
       console.log(`✅ Loaded ${(productsData || []).length} products from Supabase`);
-      toast.info(`📦 Scanner ready with ${(productsData || []).length} products`);
     } catch (error) {
       console.error('❌ Error loading products:', error);
       toast.error('Failed to load products from database');
@@ -1146,10 +1145,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     // Play success sound
     playSound('success');
     flashScan('ok');
-    toast.success(`✅ ${product.name} added!`, {
-      autoClose: 2000, // 2 second notification
-      pauseOnHover: false
-    });
+    // (no "added!" pop-up: the green flash and the beep confirm the scan, and the basket shows the item)
 
     // Callback to parent with full context
     onBarcodeScanned(barcode);

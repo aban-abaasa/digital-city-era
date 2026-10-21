@@ -1346,36 +1346,9 @@ const CashierPortal = () => {
       }
 
 
-      // If no data from table or table doesn't exist, use system-generated notifications
+      // Nothing from the table (or no table): show an empty list, never made-up "System Status" messages.
       if (!notificationsData || notificationsData.length === 0) {
-        const systemNotifications = [
-          {
-            id: 1,
-            title: `Welcome to ${branding.name}`,
-            message: 'Your cashier portal is ready to use',
-            time: new Date().toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-            read: false,
-            type: 'info'
-          },
-          {
-            id: 2,
-            title: 'System Status',
-            message: 'All payment systems operational',
-            time: new Date(Date.now() - 30 * 60000).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-            read: false,
-            type: 'info'
-          },
-          {
-            id: 3,
-            title: 'Performance Update',
-            message: 'Check your daily performance metrics',
-            time: new Date(Date.now() - 60 * 60000).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-            read: true,
-            type: 'info'
-          }
-        ];
-        
-        setNotifications(systemNotifications);
+        setNotifications([]);
         return;
       }
 
@@ -1396,17 +1369,7 @@ const CashierPortal = () => {
       console.log('✅ Loaded notifications:', formatted.length);
     } catch (error) {
       console.error('Error loading notifications:', error);
-      // Fallback notifications
-      setNotifications([
-        {
-          id: 1,
-          title: 'System Ready',
-          message: 'Cashier portal loaded successfully',
-          time: new Date().toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-          read: false,
-          type: 'info'
-        }
-      ]);
+      setNotifications([]);
     }
   };
 

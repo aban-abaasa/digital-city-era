@@ -20,6 +20,27 @@ The till keeps checking, so a payment made on another phone — or approved a mo
 Cancelling voids the charge; pressing Cancel just after a customer paid completes the sale instead of losing it.
 A sale paid from the customer's wallet through the link is booked as **IcanEra Wallet**, not Mobile / Card.
 
+### Serving other customers while a payment is pending
+**Serve next customer** puts the sale on hold: the till is cleared for the next customer and the waiting sale appears in a
+**Waiting for payment** list in the POS sidebar (up to 5 at once). It is kept on the device, so a refresh does not lose it,
+and it **records itself — receipt, stock, sale — the moment its payment lands**, exactly once, even while another customer is
+being served (their basket, cash and screen are never touched). **Open** brings a waiting sale's payment screen back to change
+how it is paid; **Cancel** voids it (or completes it, if the customer paid a moment ago). A sale that times out is listed as
+ended. Each cashier only ever sees and completes their own waiting sales, even on a shared device. Stock is deducted when the
+payment is confirmed, not while waiting. If the page is closed mid-recording, that payment is flagged "check My Receipts"
+rather than recorded twice.
+
+### Notifications: only pushed ones
+The cashier portal no longer shows routine pop-ups ("Loaded 2 products", "Added Milk to cart", "scanned and added", "Scanner
+ready", "saved successfully", …) — the screen itself shows the outcome. Real problems (errors, warnings, "no products found")
+still appear. The **Notifications** tab now lists only the signed-in user's real wallet-inbox notifications — the same rows the
+ICANera push relay delivers to their phone/PC — and its badge is their real unread count. The made-up placeholders ("Welcome",
+"System Status: all payment systems operational", "Performance Update") and the dashboard quick-action messages that claimed
+to have sent a restock request / opened issue reporting (they did neither) are gone.
+
+A paid Mobile / Card sale **pushes a "Payment received" notification** to the cashier who rang it up and to the store owner;
+tapping the cashier's push opens the till (`/cashier-portal`).
+
 The POS also has a **Products | Scan** switch in the catalogue header. **Scan** hides the product grid and gives
 scanning the large catalogue area beside the basket (remembered per device). It pauses while a payment is open.
 
@@ -36,8 +57,12 @@ scanning the large catalogue area beside the basket (remembered per device). It 
 3. **Configuration** — the migration seeds `guest_checkout_config.pos_pay_base_url = https://supermartkera.icanera.space`
    (the link put in a customer's wallet inbox). Change it if the store app lives elsewhere:
    `UPDATE public.guest_checkout_config SET value = 'https://your-domain' WHERE key = 'pos_pay_base_url';`
-4. **Frontend** — nothing new: `VITE_FLUTTERWAVE_PUBLIC_KEY` and the Flutterwave script in `index.html` are already used.
+4. **Push relay** — from the **ICAN** repo, redeploy the relay so a cashier's payment push opens the till:
+   `cd backend && npx supabase functions deploy wallet-push --no-verify-jwt`. (Without this the push still arrives, but
+   tapping it opens the admin page.)
+5. **Frontend** — nothing new: `VITE_FLUTTERWAVE_PUBLIC_KEY` and the Flutterwave script in `index.html` are already used.
    The ICAN app's wallet inbox (separate PR in the ICAN repo) opens the pay link when a customer taps the request.
+   For the cashier to receive the payment push, they must have turned on device alerts once (the existing prompt).
 
 ## Check before relying on it
 
@@ -56,6 +81,6 @@ reference. A `charge.completed` webhook calling the same function would close th
 ## Tests
 
 * Database (needs a throwaway Postgres + `psql`, touches no real project):
-  `backend/database/tests/imc_payments/run.sh` — 77 checks, including money amounts, double-credit protection,
-  refunds, grants and the wallet-inbox link rules.
-* Frontend helpers: `node --test frontend/tests/mobileCardPayment.test.js`.
+  `backend/database/tests/imc_payments/run.sh` — 88 checks, including money amounts, double-credit protection,
+  refunds, grants, the wallet-inbox link rules and the payment push.
+* Frontend helpers: `node --test frontend/tests/mobileCardPayment.test.js frontend/tests/pendingSales.test.js`.

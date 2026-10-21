@@ -13,6 +13,7 @@ import {
   mobileCardShareText,
   whatsappShareUrl,
   smsShareUrl,
+  mobileCardPaymentData,
 } from '../src/utils/mobileCardPayment.js';
 import { formatPaymentMethod } from '../src/utils/paymentMethod.js';
 
@@ -104,4 +105,21 @@ test('the new method reads well wherever receipts and history show it', () => {
   assert.equal(formatPaymentMethod('icanera_mobile_card'), 'IcanEra Mobile / Card');
   assert.equal(formatPaymentMethod({ id: 'icanera_mobile_card', name: 'IcanEra Mobile / Card' }), 'IcanEra Mobile / Card');
   assert.equal(formatPaymentMethod('IcanEra Mobile / Card'), 'IcanEra Mobile / Card');
+});
+
+test('mobileCardPaymentData: a settled charge in the shape the till\'s handler wants', () => {
+  const data = mobileCardPaymentData({ tx_ref: 'IMC-X', ican_tx_id: 'u', ican_amount: '1.6', amount_ugx: 8000, processing_fee_ugx: 300, charged_ugx: 8300, channel: 'card', payer_name: 'Jane Kato', payer_phone: '0772123456' });
+  assert.deepEqual(data, { paymentCode: 'IMC-X', transactionId: 'u', icanAmount: 1.6, amountUGX: 8000, processingFeeUGX: 300, chargedUGX: 8300, channel: 'card', payerName: 'Jane Kato', payerPhone: '0772123456' });
+});
+
+test('mobileCardPaymentData: gaps are filled from what the till already knows, never NaN', () => {
+  const data = mobileCardPaymentData({}, { txRef: 'IMC-Y', amountUGX: 5000 });
+  assert.equal(data.paymentCode, 'IMC-Y');
+  assert.equal(data.amountUGX, 5000);
+  assert.equal(data.transactionId, null);
+  assert.equal(data.icanAmount, 0);
+  assert.equal(data.processingFeeUGX, 0);
+  assert.equal(data.chargedUGX, null);
+  assert.equal(data.channel, null);
+  assert.equal(mobileCardPaymentData(null).amountUGX, 0);
 });

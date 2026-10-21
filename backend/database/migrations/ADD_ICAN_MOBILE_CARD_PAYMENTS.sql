@@ -122,6 +122,41 @@ RETURNS JSONB LANGUAGE sql STABLE AS $$
 $$;
 REVOKE ALL ON FUNCTION public._imc_pay_json(public.icanera_mobile_card_payments) FROM PUBLIC, anon, authenticated;
 
+-- "Payment received" as a real, PUSHED notification: a row in the wallet inbox, which the ican_wallet_push_webhook trigger
+-- hands to the wallet-push relay, which delivers it to the recipient's phone / PC. The cashier who rang the sale up (they
+-- may be busy with the next customer) and the store owner each get one. This is the ONLY notification a paid sale causes —
+-- the till shows no pop-up. It must never block a payment, so any failure here is swallowed.
+CREATE OR REPLACE FUNCTION public._imc_pay_notify(p public.icanera_mobile_card_payments)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_who UUID;
+  v_how TEXT := CASE lower(COALESCE(p.channel, ''))
+                  WHEN 'wallet' THEN 'their IcanEra wallet'
+                  WHEN 'card' THEN 'card'
+                  WHEN 'mobilemoneyuganda' THEN 'Mobile Money'
+                  ELSE 'Mobile Money / card' END;
+  v_title TEXT := 'Payment received: UGX ' || to_char(p.amount_ugx, 'FM999,999,999,990');
+  v_msg TEXT := COALESCE(NULLIF(btrim(p.payer_name), ''), NULLIF(btrim(p.customer_phone), ''), 'A customer')
+                || ' paid UGX ' || to_char(p.amount_ugx, 'FM999,999,999,990') || ' by ' || v_how
+                || ' at ' || COALESCE(p.merchant_name, 'the store') || '. Reference ' || p.tx_ref;
+BEGIN
+  FOR v_who IN SELECT DISTINCT u FROM unnest(ARRAY[p.created_by, p.recipient_user_id]) AS u WHERE u IS NOT NULL LOOP
+    BEGIN
+      INSERT INTO public.ican_wallet_inbox_notifications
+        (recipient_user_id, source_app, notification_type, title, message, reference_id, metadata)
+      VALUES
+        (v_who, 'ican', 'qr_pos_payment_received', left(v_title, 200), left(v_msg, 500), p.tx_ref,
+         -- push_path: where tapping the push opens in the SupermartKera app (the cashier's till, not the admin page)
+         jsonb_build_object('tx_ref', p.tx_ref, 'amount_ugx', p.amount_ugx, 'merchant_name', p.merchant_name)
+         || CASE WHEN v_who = p.created_by THEN jsonb_build_object('push_path', '/cashier-portal') ELSE '{}'::JSONB END);
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
+  END LOOP;
+END;
+$$;
+REVOKE ALL ON FUNCTION public._imc_pay_notify(public.icanera_mobile_card_payments) FROM PUBLIC, anon, authenticated;
+
 -- ----------------------------------------------------------------------------
 -- 2. Open a charge (cashier, signed in)
 -- ----------------------------------------------------------------------------
@@ -407,6 +442,7 @@ BEGIN
            error = NULL, paid_at = now(), updated_at = now()
      WHERE id = p.id
      RETURNING * INTO p;
+    PERFORM public._imc_pay_notify(p);
   EXCEPTION WHEN OTHERS THEN
     -- the whole block rolls back: no half-moved money
     RETURN jsonb_build_object('success', FALSE, 'error', SQLERRM);
@@ -507,6 +543,8 @@ BEGIN
          error = NULL, paid_at = now(), updated_at = now()
    WHERE id = p.id
    RETURNING * INTO p;
+
+  PERFORM public._imc_pay_notify(p);
 
   RETURN jsonb_build_object('success', TRUE, 'status', 'paid') || public._imc_pay_json(p);
 END;

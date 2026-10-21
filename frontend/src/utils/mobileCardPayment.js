@@ -96,3 +96,17 @@ export const smsShareUrl = (phone, text) => {
   const variants = ugandaPhoneVariants(phone);
   return `sms:${variants.length ? variants[2] : ''}?body=${encodeURIComponent(text)}`;
 };
+
+// A settled charge as the till's "payment received" handler wants it. Used by the payment screen and by the
+// background watcher for sales waiting while the cashier serves someone else, so both describe it identically.
+export const mobileCardPaymentData = (result, { txRef = null, amountUGX = null } = {}) => ({
+  paymentCode: result?.tx_ref || txRef,
+  transactionId: result?.ican_tx_id || null,
+  icanAmount: Number(result?.ican_amount) || 0,
+  amountUGX: Number(result?.amount_ugx) || Number(amountUGX) || 0,
+  processingFeeUGX: Number(result?.processing_fee_ugx) || 0,
+  chargedUGX: Number(result?.charged_ugx) || null,
+  channel: result?.channel || null,
+  payerName: result?.payer_name || null,
+  payerPhone: result?.payer_phone || null,
+});

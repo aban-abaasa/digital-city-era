@@ -333,3 +333,61 @@ BEGIN
   r := public.imc_pay_create('00000000-0000-0000-0000-0000000000b1', 1000);
   PERFORM t.check('cap: one cashier''s cap does not lock the store for others', (r ->> 'success')::BOOLEAN, r::TEXT);
 END $$;
+
+-- ── 11. a paid sale is announced by ONE pushed notification, never by anything else ─────────────────
+DO $$
+DECLARE ref TEXT; r JSONB; n INT; m JSONB; ttl TEXT; msg TEXT;
+BEGIN
+  DELETE FROM public.ican_wallet_inbox_notifications;
+  DELETE FROM public.icanera_mobile_card_payments WHERE status = 'awaiting_payment'; -- the cap section above filled a2's quota
+
+  ref := t.charge(10000);
+  PERFORM public.imc_pay_fulfil(ref, 'FLWN1', 10400, 'mobilemoneyuganda', 'Jane Kato', '0772123456');
+  SELECT count(*) INTO n FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref AND notification_type = 'qr_pos_payment_received';
+  PERFORM t.check('push: a paid sale writes one inbox row (the push relay delivers it) for the cashier AND the store owner', n = 2, n::TEXT);
+  SELECT title, message, metadata INTO ttl, msg, m FROM public.ican_wallet_inbox_notifications
+   WHERE reference_id = ref AND recipient_user_id = '00000000-0000-0000-0000-0000000000a2';
+  PERFORM t.check('push: the cashier is told who paid, how much, how and where', ttl = 'Payment received: UGX 10,000' AND msg LIKE 'Jane Kato paid UGX 10,000 by Mobile Money at Kampala Fresh.%' AND msg LIKE '%' || ref, ttl || ' | ' || msg);
+  PERFORM t.check('push: tapping the cashier''s push opens the till, not the admin page', m ->> 'push_path' = '/cashier-portal', m::TEXT);
+  SELECT metadata INTO m FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref AND recipient_user_id = '00000000-0000-0000-0000-0000000000a1';
+  PERFORM t.check('push: the owner''s push has no path override (the relay''s default applies)', NOT (m ? 'push_path'), m::TEXT);
+  PERFORM t.check('push: the row is deliverable as a push (type qr_*, satisfies the inbox constraint)',
+    (SELECT count(*) FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref AND notification_type LIKE 'qr\_%') = 2);
+
+  PERFORM public.imc_pay_fulfil(ref, 'FLWN1', 10400, 'mobilemoneyuganda');
+  SELECT count(*) INTO n FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref;
+  PERFORM t.check('push: a repeated confirmation does not push again', n = 2, n::TEXT);
+
+  -- a wallet payment announces itself the same way
+  ref := t.charge(10000);
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a3');
+  r := public.imc_pay_wallet(ref);
+  PERFORM t.check('push: (the wallet payment itself still works)', (r ->> 'success')::BOOLEAN, r::TEXT);
+  SELECT message INTO msg FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref AND recipient_user_id = '00000000-0000-0000-0000-0000000000a2';
+  PERFORM t.check('push: a wallet payment is announced as paid from the wallet', msg LIKE 'Jane Kato paid UGX 10,000 by their IcanEra wallet at Kampala Fresh.%', msg);
+
+  -- the owner ringing up their own sale gets exactly one, and it opens the till
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a1');
+  r := public.imc_pay_create('00000000-0000-0000-0000-0000000000b1', 5000, 'Owner sale');
+  ref := r ->> 'tx_ref';
+  PERFORM public.imc_pay_fulfil(ref, 'FLWN2', 5200, 'card', 'Walk In');
+  SELECT count(*) INTO n FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref;
+  SELECT metadata INTO m FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref;
+  PERFORM t.check('push: when the owner is also the cashier there is one push, to the till', n = 1 AND m ->> 'push_path' = '/cashier-portal', n || ' ' || m::TEXT);
+
+  -- nothing is pushed for a payment that was refused or refunded
+  DELETE FROM public.ican_wallet_inbox_notifications;
+  ref := t.charge(10000);
+  PERFORM public.imc_pay_fulfil(ref, 'FLWN3', 9000, 'card');
+  PERFORM public.imc_pay_cancel(ref);
+  PERFORM public.imc_pay_fulfil(ref, 'FLWN3', 10400, 'card');
+  SELECT count(*) INTO n FROM public.ican_wallet_inbox_notifications;
+  PERFORM t.check('push: no announcement for an underpayment or a refunded payment', n = 0, n::TEXT);
+
+  -- the inbox being unavailable must never block money
+  ALTER TABLE public.ican_wallet_inbox_notifications RENAME TO ican_wallet_inbox_notifications_off;
+  ref := t.charge(10000);
+  r := public.imc_pay_fulfil(ref, 'FLWN4', 10400, 'card', 'Jane Kato');
+  PERFORM t.check('push: with the inbox missing, the payment is still credited', (r ->> 'success')::BOOLEAN AND (SELECT status FROM public.icanera_mobile_card_payments WHERE tx_ref = ref) = 'paid', r::TEXT);
+  ALTER TABLE public.ican_wallet_inbox_notifications_off RENAME TO ican_wallet_inbox_notifications;
+END $$;

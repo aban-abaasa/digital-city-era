@@ -11,7 +11,9 @@
  *                     card with no account, or from their IcanEra wallet with no fee
  *
  * The till polls the charge, so a payment made on another phone, or approved a moment late, still
- * completes the sale. The wallet-QR flow (CashierReceiveIcanModal) is untouched.
+ * completes the sale. "Serve next customer" parks the sale (see hooks/usePendingMobileCardSales.js): the screen
+ * closes, the till is free for someone else, and the sale is completed in the background when it is paid; Open on
+ * the waiting list brings it back here (resumeCharge). The wallet-QR flow (CashierReceiveIcanModal) is untouched.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +35,7 @@ import {
   classifyCustomerInput,
   mobileCardPayUrl,
   mobileCardShareText,
+  mobileCardPaymentData,
   whatsappShareUrl,
   smsShareUrl,
 } from '../utils/mobileCardPayment';
@@ -63,13 +66,17 @@ const CashierIcanMobileCardModal = ({
   orderDescription = '',
   onPaymentReceived = null,
   onUseWallet = null,
+  resumeCharge = null,       // a charge already open for this sale (reopened from the waiting list)
+  initialContact = '',
+  onPark = null,             // ({ charge, contact }) => leave this sale waiting and free the till
+  parkDisabledReason = null, // why another sale cannot wait right now
 }) => {
-  const [phase, setPhase] = useState('creating'); // creating | ready | paid | dead
-  const [charge, setCharge] = useState(null);
+  const [phase, setPhase] = useState(resumeCharge ? 'ready' : 'creating'); // creating | ready | paid | dead
+  const [charge, setCharge] = useState(resumeCharge);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [tab, setTab] = useState('request');
-  const [contact, setContact] = useState('');
+  const [contact, setContact] = useState(initialContact);
   const [customer, setCustomer] = useState(null); // the IcanEra account behind what was typed, if any
   const [lookingUp, setLookingUp] = useState(false);
   const [pickedNetwork, setPickedNetwork] = useState('');
@@ -78,12 +85,13 @@ const CashierIcanMobileCardModal = ({
   const [now, setNow] = useState(() => Date.now());
   const [copied, setCopied] = useState(false);
 
-  const startedRef = useRef(false);
+  const startedRef = useRef(!!resumeCharge);
   const reportedRef = useRef(false);
   const chargeRef = useRef(null);
   const onPaidRef = useRef(onPaymentReceived);
   onPaidRef.current = onPaymentReceived;
   chargeRef.current = charge;
+  const resumed = !!resumeCharge;
 
   const kind = classifyCustomerInput(contact);
   const detectedNetwork = kind.type === 'phone' ? detectUgandaMobileNetwork(kind.value) : null;
@@ -119,17 +127,7 @@ const CashierIcanMobileCardModal = ({
     if (reportedRef.current) return;
     reportedRef.current = true;
     setPhase('paid');
-    onPaidRef.current?.({
-      paymentCode: result.tx_ref || chargeRef.current?.tx_ref,
-      transactionId: result.ican_tx_id || null,
-      icanAmount: Number(result.ican_amount) || 0,
-      amountUGX: Number(result.amount_ugx) || Number(amountUGX),
-      processingFeeUGX: Number(result.processing_fee_ugx) || 0,
-      chargedUGX: Number(result.charged_ugx) || null,
-      channel: result.channel || null,
-      payerName: result.payer_name || null,
-      payerPhone: result.payer_phone || null,
-    });
+    onPaidRef.current?.(mobileCardPaymentData(result, { txRef: chargeRef.current?.tx_ref, amountUGX }));
   }, [amountUGX]);
 
   // The sale can no longer be paid: void it so a late approval is refunded rather than credited to a sale nobody is serving.
@@ -210,7 +208,6 @@ const CashierIcanMobileCardModal = ({
     try {
       await requestWalletPayment(charge.tx_ref, customer.userId);
       setNotice(`Request sent to ${customer.name}'s IcanEra wallet. They can approve it from the notification - waiting for them...`);
-      toast.success(`📨 Request sent to ${customer.name}'s IcanEra wallet`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -226,7 +223,6 @@ const CashierIcanMobileCardModal = ({
     try {
       const result = await requestMobileMoneyPrompt(charge.tx_ref, { phone: kind.value, network: network || null });
       setNotice(`${result.message || 'Request sent.'} Waiting for the customer...`);
-      toast.success(`📲 Mobile Money request sent to ${formatPhone(kind.value)}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -301,7 +297,10 @@ const CashierIcanMobileCardModal = ({
     if (!completed) then();
   };
 
-  const handleClose = () => leave(onClose);
+  // A sale reopened from the waiting list keeps waiting when its window is closed; only Cancel voids it.
+  const park = () => onPark?.({ charge, contact });
+  const handleClose = () => (resumed && onPark && phase === 'ready' ? park() : leave(onClose));
+  const handleCancel = () => leave(onClose);
   const useWalletInstead = () => leave(onUseWallet);
 
   if (!isOpen) return null;
@@ -529,14 +528,29 @@ const CashierIcanMobileCardModal = ({
                 <Loader className="w-4 h-4 animate-spin" />
                 <span>Waiting for payment{timeLeft > 0 ? ` - ${formatClock(timeLeft)} left` : ''}</span>
               </div>
-              <button
-                onClick={handleClose}
-                disabled={busy || closing}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
-              >
-                {closing ? 'Checking...' : 'Cancel'}
-              </button>
+              <div className="flex items-center gap-2">
+                {onPark && (
+                  <button
+                    onClick={park}
+                    disabled={busy || closing || (!resumed && !!parkDisabledReason)}
+                    title={!resumed && parkDisabledReason ? parkDisabledReason : 'Keep this sale waiting and serve the next customer'}
+                    className={`px-3 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 ${notice ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-100 hover:bg-orange-200 text-orange-800'}`}
+                  >
+                    {resumed ? 'Back to my till' : 'Serve next customer'}
+                  </button>
+                )}
+                <button
+                  onClick={handleCancel}
+                  disabled={busy || closing}
+                  className="px-3 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+                >
+                  {closing ? 'Checking...' : resumed ? 'Cancel sale' : 'Cancel'}
+                </button>
+              </div>
             </div>
+            {onPark && !resumed && parkDisabledReason && (
+              <p className="text-xs text-amber-700 text-right -mt-2">{parkDisabledReason}</p>
+            )}
           </div>
         )}
       </div>

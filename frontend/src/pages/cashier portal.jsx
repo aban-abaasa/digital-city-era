@@ -46,6 +46,9 @@ import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
 import CashierIcanMobileCardModal from '../components/CashierIcanMobileCardModal';
+import PendingSalesPanel from '../components/PendingSalesPanel';
+import usePendingMobileCardSales from '../hooks/usePendingMobileCardSales';
+import { pendingSaleLabel } from '../utils/pendingSales';
 import { MOBILE_CARD_METHOD_ID, MOBILE_CARD_METHOD_NAME, mobileCardAmountProblem, mobileCardChannelLabel } from '../utils/mobileCardPayment';
 import '../styles/supermartkera-portals.css';
 
@@ -244,6 +247,19 @@ const CashierPortal = () => {
     }
   });
 
+  // Sales waiting for a Mobile Money / card payment while the cashier serves the next customer. Each is a saved
+  // basket plus its server charge; they live on this device, are watched in the background, and record themselves
+  // (receipt, stock) the moment they are paid. mobileCardResume is the one reopened on the payment screen.
+  const [mobileCardResume, setMobileCardResume] = useState(null);
+  const pending = usePendingMobileCardSales({
+    ownerKey: cashierProfile?.user_id || cashierProfile?.id || null,
+    supermarketId: cashierProfile?.supermarket_id || null,
+    onPaid: (entry, paymentData) => handleIcanPaymentReceived(paymentData, MOBILE_CARD_PAYMENT_METHOD, {
+      sale: entry.sale,
+      label: pendingSaleLabel(entry),
+    }),
+  });
+
   // Profile Picture Upload States
   const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
   const [profilePicUrl, setProfilePicUrl] = useState(null);
@@ -333,7 +349,6 @@ const CashierPortal = () => {
       if (state.status === 'synced' || state.status === 'sync-error') {
         getPendingSalesCount().then(setPendingSalesCount).catch(() => {});
         if (state.synced > 0) {
-          toast.success(`🔄 Synced ${state.synced} offline sale${state.synced !== 1 ? 's' : ''}.`);
           loadersRef.current.loadProducts?.();
         }
         if (state.failed > 0) {
@@ -540,9 +555,7 @@ const CashierPortal = () => {
 
       if (allProducts.length > 0) {
         setProducts(allProducts);
-        const inStock = allProducts.filter(p => p.stock > 0).length;
-        const supermarketInfo = cashierProfile?.supermarket_id ? ` for supermarket ${cashierProfile.supermarket_id}` : '';
-        toast.success(`✅ Loaded ${allProducts.length} products (${inStock} in stock)${supermarketInfo}`);
+        // (no "Loaded N products" pop-up: the grid filling in is the confirmation)
       } else {
         setProducts([]);
         const msg = cashierProfile?.supermarket_id 
@@ -930,7 +943,6 @@ const CashierPortal = () => {
           await loadCashierProfile();
           
           console.log('✅ Profile picture display updated!');
-          toast.success('✅ Profile picture updated successfully!');
           
         } catch (error) {
           console.error('❌ Error in upload process:', error);
@@ -1007,7 +1019,6 @@ const CashierPortal = () => {
       // Reload profile from database to ensure sync
       await loadCashierProfile();
 
-      toast.success('✅ Profile updated successfully!');
       setShowEditProfileModal(false);
     } catch (error) {
       console.error('Error saving profile:', error);
@@ -1058,7 +1069,6 @@ const CashierPortal = () => {
           .eq('auth_id', user.id);
       }
 
-      toast.success('⚙️ Settings saved successfully!');
       setShowSettingsModal(false);
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -1113,7 +1123,6 @@ const CashierPortal = () => {
     try {
       await supabase.auth.signOut();
       localStorage.clear();
-      toast.success('👋 Logged out successfully');
       navigate('/login');
     } catch (error) {
       console.error('Error logging out:', error);
@@ -1429,95 +1438,50 @@ const CashierPortal = () => {
     setAchievements(achievementsList);
   };
 
-  // Load Notifications from Supabase
+  // Notifications are the PUSHED ones only: the signed-in user's wallet-inbox rows, which the ICANera push relay
+  // also delivers to their phone / PC (payments received, approvals, requests ...). Nothing is invented here: the old
+  // "Welcome" / "System Status: all payment systems operational" placeholders are gone, and so are the pop-ups for
+  // routine actions. Errors and warnings that need action still appear as they happen.
   const loadNotifications = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Silently skip notifications - table may not exist
-      console.log('📝 Notifications: Using system-generated notifications (table may not exist)');
-      
-      const systemNotifications = [
-        {
-          id: 1,
-          title: `Welcome to ${branding.name}`,
-          message: 'Your cashier portal is ready to use',
-          time: new Date().toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-          read: false,
-          type: 'info'
-        },
-        {
-          id: 2,
-          title: 'System Status',
-          message: 'All payment systems operational',
-          time: new Date(Date.now() - 30 * 60000).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-          read: false,
-          type: 'info'
-        },
-        {
-          id: 3,
-          title: 'Performance Update',
-          message: 'Check your daily performance metrics',
-          time: new Date(Date.now() - 60 * 60000).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-          read: true,
-          type: 'info'
-        }
-      ];
-      
-      setNotifications(systemNotifications);
-      console.log('✅ Notifications loaded:', systemNotifications.length);
-      return;
-      
-      /* DISABLED: Notifications table doesn't exist in production
-      // Attempt to load from Supabase if table exists
-      const { data: notificationsData, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .or(`user_id.eq.${user.id},user_id.is.null`)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) {
-        // Silently use system notifications
-        setNotifications(systemNotifications);
-        return;
-      }
-
-      if (notificationsData && notificationsData.length > 0) {
-        const formatted = notificationsData.map(n => ({
-          id: n.id,
-          title: n.title || 'Notification',
-          message: n.message || '',
-          time: new Date(n.created_at).toLocaleTimeString('en-UG', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          }),
-          read: n.read || false,
-          type: n.type || 'info'
-        }));
-        
-        setNotifications(formatted);
-        console.log('✅ Loaded notifications from database:', formatted.length);
-      } else {
-        setNotifications(systemNotifications);
-      }
-      */
+      const { data, error } = await supabase.rpc('ican_get_wallet_inbox', { p_unread_only: false });
+      if (error) throw error;
+      setNotifications((data || []).slice(0, 30).map((n) => ({
+        id: n.id,
+        title: n.title || 'Notification',
+        message: n.message || '',
+        time: new Date(n.created_at).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
+        read: Boolean(n.read_at),
+        type: 'info'
+      })));
     } catch (error) {
-      console.log('ℹ️ Notifications: Using fallback system notifications');
-      // Fallback to system notifications on any error
-      setNotifications([
-        {
-          id: 1,
-          title: 'Welcome!',
-          message: 'You\'re all set up and ready to go',
-          time: new Date().toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }),
-          read: false,
-          type: 'info'
-        }
-      ]);
+      // keep whatever is already listed; never make something up
+      console.warn('Could not load notifications:', error?.message || error);
     }
   };
+
+  useEffect(() => {
+    const refresh = () => { if (!document.hidden) loadNotifications(); };
+    const onWorkerMessage = (event) => { if (event.data?.type === 'PUSH_RECEIVED') loadNotifications(); };
+    navigator.serviceWorker?.addEventListener('message', onWorkerMessage);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = setInterval(refresh, 60000);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onWorkerMessage);
+      document.removeEventListener('visibilitychange', refresh);
+      clearInterval(timer);
+    };
+  }, []);
+
+  // Opening the Notifications tab reads them (the badge clears, here and on every device).
+  useEffect(() => {
+    if (activeTab !== 'notifications') return;
+    const unread = notifications.filter((n) => !n.read);
+    if (!unread.length) return;
+    setNotifications((current) => current.map((n) => ({ ...n, read: true })));
+    // (a Supabase call only goes out once something waits on it, hence the .then)
+    unread.forEach((n) => supabase.rpc('ican_mark_wallet_inbox_read', { p_notification_id: n.id }).then(() => undefined, () => undefined));
+  }, [activeTab, notifications]);
 
   // Generate Daily Tasks based on current time and shift
   const loadDailyTasks = () => {
@@ -1728,8 +1692,6 @@ const CashierPortal = () => {
 
     // Clear cash received when cart changes
     setCashReceived('');
-
-    toast.success(`✅ Added ${product.name}${variant ? ` (${variant.variant_value})` : batch ? ` (${batchLabel(batch)})` : ''} to cart`);
   };
 
   // Variants and batches are chosen before adding. A product with several
@@ -1752,7 +1714,6 @@ const CashierPortal = () => {
   // 🔥 Handle new product added - refresh products list
   const handleProductAdded = async (newProduct) => {
     console.log('✅ New product added:', newProduct);
-    toast.success(`🎉 Product "${newProduct.name}" added successfully!`);
     
     // Reload products to include the new one
     await loadProductsFromSupabase();
@@ -1792,7 +1753,6 @@ const CashierPortal = () => {
       chooseProductToAdd(product);
       // ⚡ DON'T close scanner in cashier mode - keep open for continuous scanning
       // setShowBarcodeScanner(false);  // REMOVED FOR CASHIER MODE
-      toast.success(`✅ ${product.name} (${product.barcode}) scanned and added!`);
       console.log(`✅ Product ${product.name} scanned and added to transaction!`);
     } else {
       // Product NOT found - store barcode and show notification
@@ -1938,7 +1898,6 @@ const CashierPortal = () => {
       setPaymentModal(false);
       setShowIcanReceiveModal(true);
       
-      toast.info('💎 Opening IcanEra Wallet Receive...');
       return;
     }
 
@@ -2088,7 +2047,6 @@ const CashierPortal = () => {
         });
 
         setTimeout(() => setShowReceiptModal(true), 500);
-        toast.success('📴 Sale recorded on this device — will sync automatically when the connection is back.');
       };
 
       // Set when the sale went to the queue (which also covers its stock update).
@@ -2199,12 +2157,6 @@ const CashierPortal = () => {
           setTimeout(() => {
             setShowReceiptModal(true);
           }, 500);
-          
-          toast.success(
-            saveResult.paymentStatus === 'paid' || !saveResult.paymentStatus
-              ? `✅ Payment successful! Receipt: ${savedReceiptNumber}`
-              : `🧾 Invoice created: ${savedReceiptNumber} — balance due ${formatUGX(saveResult.balanceDue)}`
-          );
         } else if (isNetworkFailure(saveResult?.error)) {
           // Browser says online but the backend didn't answer: queue it.
           console.warn('⚠️ Backend unreachable, queueing sale:', saveResult?.error);
@@ -2355,8 +2307,44 @@ const CashierPortal = () => {
     }
   };
 
+  const emptyTransaction = { items: [], subtotal: 0, tax: 0, total: 0, paymentMethod: null, customer: null };
+
+  // Leave the payment screen, keeping its sale waiting (or putting a new sale on hold so the till is free).
+  const closeMobileCardScreen = () => {
+    setShowMobileCardModal(false);
+    setMobileCardResume(null);
+    pending.setForegroundId(null);
+  };
+
+  const parkMobileCardSale = ({ charge, contact }) => {
+    if (mobileCardResume) { closeMobileCardScreen(); return; } // already on the list: just go back to the till
+    const id = pending.park({ charge, sale: currentTransaction, contact });
+    if (!id) { toast.error('Too many sales are already waiting - finish or cancel one first.'); return; }
+    closeMobileCardScreen();
+    setCurrentTransaction(emptyTransaction);
+    setCashReceived('');
+    setBillLater(false);
+    setJobStatus('pending');
+  };
+
+  const openPendingSale = (entry) => {
+    pending.setForegroundId(entry.id);
+    setMobileCardResume(entry);
+    setShowMobileCardModal(true);
+  };
+
+  // A waiting sale's receipt, opened on request. It never touches the basket on screen.
+  const openParkedReceipt = (receipt) => {
+    if (showReceiptModal) { toast.info('Close the receipt on screen first.'); return; }
+    setReceiptData({ ...receipt, parked: true });
+    setShowReceiptModal(true);
+  };
+
   // A confirmed IcanEra payment (wallet QR, or Mobile Money / card): record the sale, receipt and stock.
-  const handleIcanPaymentReceived = async (paymentData, method) => {
+  // `parked` is set for a sale that was waiting for its payment while the cashier served someone else: it is recorded
+  // from its own saved basket (never the one on screen), no screen is closed, and the receipt is handed to
+  // parked.onReceipt instead of opening over whatever the cashier is doing. Resolves the receipt data (or null).
+  const handleIcanPaymentReceived = async (paymentData, method, parked = null) => {
     // Payment received successfully!
     // A customer who was sent the Mobile / Card link may still have chosen to pay from their IcanEra
     // wallet (no fee): book the sale under the way it was really paid.
@@ -2364,14 +2352,27 @@ const CashierPortal = () => {
       ? WALLET_PAYMENT_METHOD
       : method;
     const isMobileCard = paidMethod.id === MOBILE_CARD_METHOD_ID;
+    const sale = parked?.sale || currentTransaction;
+    let presentedReceipt = null;
+    const presentReceipt = (data) => {
+      presentedReceipt = parked ? { ...data, parked: true } : data;
+      if (parked) {
+        parked.onReceipt?.(presentedReceipt);
+      } else {
+        setReceiptData(data);
+        setTimeout(() => setShowReceiptModal(true), 500);
+      }
+    };
     console.log(`💎 ${paidMethod.name} payment received:`, paymentData);
 
-    // Close whichever receive modal collected it
-    setShowIcanReceiveModal(false);
-    setShowMobileCardModal(false);
+    // Close whichever receive modal collected it (a parked sale has none open: the cashier is elsewhere)
+    if (!parked) {
+      setShowIcanReceiveModal(false);
+      setShowMobileCardModal(false);
+    }
 
-    const customerName = currentTransaction.customer?.name || paymentData.payerName || 'Walk-in Customer';
-    const customer = currentTransaction.customer || { name: customerName };
+    const customerName = sale.customer?.name || paymentData.payerName || 'Walk-in Customer';
+    const customer = sale.customer || { name: customerName };
     const receiptNote = isMobileCard
       ? `Mobile Money / card via Flutterwave (${mobileCardChannelLabel(paymentData.channel)}) | ref ${paymentData.paymentCode}`
         + (paymentData.processingFeeUGX > 0 ? ` | customer also paid a UGX ${Number(paymentData.processingFeeUGX).toLocaleString()} processing fee` : '')
@@ -2383,16 +2384,16 @@ const CashierPortal = () => {
     const result = {
       success: true,
       transactionId: paymentData.transactionId || (isMobileCard ? paymentData.paymentCode : `ICAN_${Date.now()}`),
-      amount: currentTransaction.total,
+      amount: sale.total,
       fee: 0,
-      finalAmount: currentTransaction.total,
+      finalAmount: sale.total,
       paymentMethod: paidMethod.name,
       timestamp: new Date().toISOString(),
       receipt: {
-        items: currentTransaction.items,
-        subtotal: currentTransaction.subtotal,
-        tax: currentTransaction.tax,
-        total: currentTransaction.total,
+        items: sale.items,
+        subtotal: sale.subtotal,
+        tax: sale.tax,
+        total: sale.total,
         cashier: cashierProfile.name,
         register: cashierProfile.register
       }
@@ -2413,26 +2414,25 @@ const CashierPortal = () => {
         cashierId: cashierProfile?.user_id || cashierProfile?.id,
         cashierName: cashierProfile.name,
         customerName,
-        totalAmount: currentTransaction.total,
+        totalAmount: sale.total,
         paymentMethod: paidMethod.name,
         paymentReference,
-        itemsJson: currentTransaction.items,
-        subtotal: currentTransaction.subtotal,
-        taxAmount: currentTransaction.tax,
-        amountPaid: currentTransaction.total,
+        itemsJson: sale.items,
+        subtotal: sale.subtotal,
+        taxAmount: sale.tax,
+        amountPaid: sale.total,
         changeGiven: 0,
         registerNumber: cashierProfile.register || 'POS-001',
         storeLocation: cashierProfile.location || 'Kampala Main Branch',
         notes: receiptNote
       });
-      setReceiptData({
+      presentReceipt({
         ...result,
         receiptNumber,
         transactionId,
-        amountPaid: currentTransaction.total,
+        amountPaid: sale.total,
         changeGiven: 0
       });
-      setTimeout(() => setShowReceiptModal(true), 500);
       return receiptNumber;
     };
 
@@ -2441,14 +2441,14 @@ const CashierPortal = () => {
     let inventoryUpdated = false;
     try {
       const saveResult = await transactionService.saveTransaction({
-        items: currentTransaction.items,
-        subtotal: currentTransaction.subtotal,
-        tax: currentTransaction.tax,
-        total: currentTransaction.total,
+        items: sale.items,
+        subtotal: sale.subtotal,
+        tax: sale.tax,
+        total: sale.total,
         paymentMethod: { id: paidMethod.id, name: paidMethod.name },
         paymentReference,
         paymentFee: 0,
-        amountPaid: currentTransaction.total,
+        amountPaid: sale.total,
         changeGiven: 0,
         customer,
         cashier: cashierProfile,
@@ -2459,7 +2459,8 @@ const CashierPortal = () => {
         merchantName: 'SupermartKera',
         walletTransactionId: paymentData.transactionId,
         expenditureType: 'business',
-        expenditureCategory: 'business_expense'
+        expenditureCategory: 'business_expense',
+        clientTransactionId: isMobileCard ? `TXN_${paymentData.paymentCode}` : null
       });
 
       if (saveResult.success) {
@@ -2472,13 +2473,13 @@ const CashierPortal = () => {
           cashierId: cashierProfile?.user_id || cashierProfile?.id,
           cashierName: cashierProfile.name,
           customerName,
-          totalAmount: currentTransaction.total,
+          totalAmount: sale.total,
           paymentMethod: paidMethod.name,
           paymentReference,
-          itemsJson: currentTransaction.items,
-          subtotal: currentTransaction.subtotal,
-          taxAmount: currentTransaction.tax,
-          amountPaid: currentTransaction.total,
+          itemsJson: sale.items,
+          subtotal: sale.subtotal,
+          taxAmount: sale.tax,
+          amountPaid: sale.total,
           changeGiven: 0,
           registerNumber: cashierProfile.register || 'POS-001',
           storeLocation: cashierProfile.location || 'Kampala Main Branch',
@@ -2489,11 +2490,11 @@ const CashierPortal = () => {
         }
 
         // Set receipt data for display
-        setReceiptData({
+        presentReceipt({
           ...result,
           receiptNumber: saveResult.receiptNumber,
           transactionId: saveResult.transactionId,
-          amountPaid: currentTransaction.total,
+          amountPaid: sale.total,
           changeGiven: 0
         });
         
@@ -2504,7 +2505,7 @@ const CashierPortal = () => {
           inventoryUpdated = true;
         } else {
           // Services / listing-only items have no stock row and variants are deducted by the DB trigger.
-          const itemsToDeduct = currentTransaction.items
+          const itemsToDeduct = sale.items
             .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
             .map(item => ({
               product_id: item.id,
@@ -2520,13 +2521,6 @@ const CashierPortal = () => {
         if (inventoryUpdated) {
           await loadProductsFromSupabase();
         }
-        
-        // Show receipt modal
-        setTimeout(() => {
-          setShowReceiptModal(true);
-        }, 500);
-        
-        toast.success(`✅ ${paidMethod.name} payment received! Receipt: ${saveResult.receiptNumber}`);
       } else {
         console.error('❌ Failed to save transaction:', saveResult.error);
         const fallbackReceipt = await saveWalletFallbackReceipt();
@@ -2542,6 +2536,7 @@ const CashierPortal = () => {
       toast.error('Payment received but the stock could not be deducted. Please reconcile this sale.');
     }
     if (!isMobileCard) setIcanInventoryPrepared(false);
+    return presentedReceipt;
   };
 
   const formatUGX = (amount) => {
@@ -2591,7 +2586,6 @@ const CashierPortal = () => {
       const result = await cashierOrdersService.createOrder(orderData);
 
       if (result.success) {
-        toast.success(`✅ Order ${result.orderNumber} submitted successfully!`);
         setShowOrderModal(false);
         
         // Reload order stats
@@ -2886,6 +2880,17 @@ const CashierPortal = () => {
 
         {/* Transaction Summary */}
         <aside className="cashier-pos-checkout" aria-labelledby="cashier-pos-checkout-title">
+          {/* Customers whose payment is still on its way — serve the next one meanwhile */}
+          <PendingSalesPanel
+            sales={pending.entries}
+            formatUGX={formatUGX}
+            onOpen={openPendingSale}
+            onCancel={async (entry) => {
+              await pending.cancel(entry.id);
+            }}
+            onReceipt={(entry) => openParkedReceipt(entry.receipt)}
+            onDismiss={(entry) => pending.remove(entry.id)}
+          />
           <div className="cashier-pos-checkout-heading">
             <div>
               <p className="classic-eyebrow">Customer basket</p>
@@ -3828,7 +3833,6 @@ const CashierPortal = () => {
               iconBg: 'bg-blue-500',
               color: 'bg-blue-600 hover:bg-blue-700', 
               action: () => {
-                toast.info('🏷️ Price check scanner activated');
                 setShowBarcodeScanner(true);
               }
             },
@@ -3841,8 +3845,6 @@ const CashierPortal = () => {
                 const lowStockItems = products.filter(p => p.stock <= p.minStock);
                 if (lowStockItems.length > 0) {
                   toast.warning(`⚠️ ${lowStockItems.length} items are low on stock`);
-                } else {
-                  toast.success('✅ All items are well stocked');
                 }
               }
             },
@@ -3852,8 +3854,7 @@ const CashierPortal = () => {
               iconBg: 'bg-green-500',
               color: 'bg-green-600 hover:bg-green-700', 
               action: () => {
-                toast.success('📞 Restock request sent to manager');
-                // Could open a modal or send notification
+                // Not wired to anything yet: it used to claim "Restock request sent to manager" without sending one.
               }
             },
             { 
@@ -3862,8 +3863,7 @@ const CashierPortal = () => {
               iconBg: 'bg-red-500',
               color: 'bg-red-600 hover:bg-red-700', 
               action: () => {
-                toast.info('🚨 Issue reporting system opened');
-                // Could open issue reporting modal
+                // Not wired to anything yet: it used to claim "Issue reporting system opened" without opening anything.
               }
             }
           ].map((action, index) => {
@@ -3894,7 +3894,10 @@ const CashierPortal = () => {
       idPrefix="cashier-notification"
       storageKey={`cashier-notification-dismissals:${cashierProfile.user_id || cashierProfile.id || 'default'}`}
       className="animate-slideInRight"
-      onDelete={(notification) => setNotifications((current) => current.filter((item) => item.id !== notification.id))}
+      onDelete={(notification) => {
+        setNotifications((current) => current.filter((item) => item.id !== notification.id));
+        supabase.rpc('ican_delete_wallet_inbox_notification', { p_notification_id: notification.id }).then(() => undefined, () => undefined);
+      }}
     />
   );
 
@@ -4236,6 +4239,11 @@ const CashierPortal = () => {
           supermarketBranding={branding}
           onClose={() => {
             setShowReceiptModal(false);
+            // A waiting sale's receipt: leave the customer being served (basket, cash, payment screen) alone.
+            if (receiptData?.parked) {
+              setReceiptData(null);
+              return;
+            }
             setReceiptData(null);
             
             // Clear current transaction
@@ -4254,8 +4262,6 @@ const CashierPortal = () => {
             // Close payment modal
             setPaymentModal(false);
             setPaymentResult(null);
-            
-            toast.success('🎉 Transaction completed! Ready for next customer.');
           }}
         />
       )}
@@ -4277,17 +4283,33 @@ const CashierPortal = () => {
       {/* 📲 IcanEra Mobile / Card - customer pays by Mobile Money or card, no IcanEra account needed */}
       {showMobileCardModal && (
         <CashierIcanMobileCardModal
+          key={mobileCardResume?.id || 'new-sale'}
           isOpen={showMobileCardModal}
-          onClose={() => setShowMobileCardModal(false)}
+          onClose={closeMobileCardScreen}
           supermarketId={cashierProfile?.supermarket_id}
           merchantName={branding?.name || 'SupermartKera'}
-          amountUGX={currentTransaction.total}
-          orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
-          onUseWallet={() => {
+          amountUGX={mobileCardResume ? mobileCardResume.charge.amount_ugx : currentTransaction.total}
+          orderDescription={`Supermarket purchase - ${(mobileCardResume ? mobileCardResume.sale : currentTransaction).items.length} items`}
+          resumeCharge={mobileCardResume?.charge || null}
+          initialContact={mobileCardResume?.contact || ''}
+          onPark={parkMobileCardSale}
+          parkDisabledReason={pending.canPark ? null : 'Five sales are already waiting - finish or cancel one first.'}
+          // The wallet QR bills the basket on screen, so it is only offered for the sale being rung up now.
+          onUseWallet={mobileCardResume ? null : () => {
             setShowMobileCardModal(false);
             processPayment('icanera_wallet');
           }}
-          onPaymentReceived={(paymentData) => handleIcanPaymentReceived(paymentData, MOBILE_CARD_PAYMENT_METHOD)}
+          onPaymentReceived={async (paymentData) => {
+            if (!mobileCardResume) {
+              handleIcanPaymentReceived(paymentData, MOBILE_CARD_PAYMENT_METHOD);
+              return;
+            }
+            // Paid while reopened from the waiting list: record THAT sale, then show its receipt.
+            const entry = mobileCardResume;
+            closeMobileCardScreen();
+            const receipt = await pending.complete(entry, paymentData);
+            if (receipt) openParkedReceipt(receipt);
+          }}
         />
       )}
 
