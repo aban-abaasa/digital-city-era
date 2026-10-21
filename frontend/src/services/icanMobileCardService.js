@@ -99,16 +99,17 @@ export async function cancelMobileCardCharge(txRef) {
 }
 
 /**
- * Show Flutterwave's checkout (Mobile Money + card only — the bank-debit option is too slow for a till)
- * for an already-created charge. Resolves { status: 'successful'|'cancelled'|'failed', transaction_id, tx_ref };
- * the caller then confirms with confirmMobileCardPayment().
+ * Show Flutterwave's checkout for an already-created charge. At the till it offers Mobile Money + card only
+ * (the bank-debit option is too slow there); on the customer's own pay page `allMethods` lets Flutterwave offer
+ * every way to pay it has enabled (bank transfer, USSD, ...). Resolves { status: 'successful'|'cancelled'|'failed',
+ * transaction_id, tx_ref, raw_status }; the caller then confirms with confirmMobileCardPayment().
  */
-export function takeMobileCardPayment(charge, { customerName, customerPhone, storeName = 'SupermartKera' } = {}) {
+export function takeMobileCardPayment(charge, { customerName, customerPhone, storeName = 'SupermartKera', allMethods = false } = {}) {
   return payWithFlutterwave({
     amount: Number(charge.charge_ugx),
     currency: 'UGX',
     txRef: charge.tx_ref,
-    paymentOptions: 'card,mobilemoneyuganda',
+    ...(allMethods ? { allPaymentOptions: true } : { paymentOptions: 'card,mobilemoneyuganda' }),
     customerName: customerName || undefined,
     customerPhone: customerPhone || undefined,
     title: storeName,

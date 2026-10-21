@@ -1,14 +1,16 @@
 /**
  * Cashier IcanEra Mobile / Card modal - for a customer who may have NO IcanEra account.
  * The sale becomes one charge on the server (amount + processing fee fixed there), and the cashier
- * chooses how it gets paid - whichever happens first settles the sale:
+ * chooses how it gets paid - whichever happens first settles the sale. A new sale opens Flutterwave's checkout
+ * straight away (like a wallet top-up does); closing it leaves the other ways below:
  *
+ *   Pay now           Flutterwave's checkout opens here (Mobile Money number or card)
  *   Ask them to pay   one box: a phone number gets a Mobile Money approval prompt, an IcanEra wallet
  *                     number (or a phone/email that belongs to an account) gets a request in the
  *                     customer's wallet inbox - so the customer can be anywhere
- *   On this till      Flutterwave's checkout opens here (Mobile Money number or card)
- *   Scan or send link a QR / link / WhatsApp / SMS to the customer's own phone: pay with Mobile Money or
- *                     card with no account, or from their IcanEra wallet with no fee
+ *   Scan or send link a QR / link / WhatsApp / SMS to the customer's own phone: Flutterwave's page with every
+ *                     way to pay (Mobile Money, card, bank transfer ...) with no account, or from their IcanEra
+ *                     wallet with no fee
  *
  * The till polls the charge, so a payment made on another phone, or approved a moment late, still
  * completes the sale. "Serve next customer" parks the sale (see hooks/usePendingMobileCardSales.js): the screen
@@ -52,8 +54,8 @@ const formatClock = (ms) => {
 };
 
 const TABS = [
+  { id: 'till', label: 'Pay now', icon: '💳' },
   { id: 'request', label: 'Ask them to pay', icon: '📨' },
-  { id: 'till', label: 'On this till', icon: '💳' },
   { id: 'link', label: 'Scan or send link', icon: '🔗' },
 ];
 
@@ -75,7 +77,7 @@ const CashierIcanMobileCardModal = ({
   const [charge, setCharge] = useState(resumeCharge);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [tab, setTab] = useState('request');
+  const [tab, setTab] = useState(resumeCharge ? 'request' : 'till');
   const [contact, setContact] = useState(initialContact);
   const [customer, setCustomer] = useState(null); // the IcanEra account behind what was typed, if any
   const [lookingUp, setLookingUp] = useState(false);
@@ -84,8 +86,10 @@ const CashierIcanMobileCardModal = ({
   const [closing, setClosing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [copied, setCopied] = useState(false);
+  const [checkoutShown, setCheckoutShown] = useState(false); // Flutterwave's checkout has been shown for this charge
 
   const startedRef = useRef(!!resumeCharge);
+  const autoOpenedRef = useRef(!!resumeCharge); // a new sale opens the checkout once; a reopened one does not
   const reportedRef = useRef(false);
   const chargeRef = useRef(null);
   const onPaidRef = useRef(onPaymentReceived);
@@ -232,6 +236,7 @@ const CashierIcanMobileCardModal = ({
 
   const payOnTill = async () => {
     if (!charge) return;
+    setCheckoutShown(true);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -254,6 +259,14 @@ const CashierIcanMobileCardModal = ({
       setBusy(false);
     }
   };
+
+  // A new sale goes straight to Flutterwave's checkout, as a wallet top-up does; the cashier does not have to find it.
+  useEffect(() => {
+    if (phase !== 'ready' || !charge || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    payOnTill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, charge]);
 
   const copyLink = async () => {
     try {
@@ -335,7 +348,15 @@ const CashierIcanMobileCardModal = ({
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">❌ {error || 'This payment cannot continue.'}</p>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => { startedRef.current = true; setCharge(null); setContact(''); createCharge(); }}
+                onClick={() => {
+                  startedRef.current = true;
+                  autoOpenedRef.current = false;
+                  setCheckoutShown(false);
+                  setTab('till');
+                  setCharge(null);
+                  setContact('');
+                  createCharge();
+                }}
                 className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-semibold"
               >
                 Start again
@@ -463,14 +484,15 @@ const CashierIcanMobileCardModal = ({
             {tab === 'till' && (
               <div className="space-y-3">
                 <p className="text-sm text-gray-700">
-                  The customer enters their Mobile Money number or card on this screen. Hand them the device, or type it for them.
+                  Flutterwave's payment page opens on this screen: the customer enters their Mobile Money number or card. Hand them the device, or type it for them.
+                  {checkoutShown && !busy ? ' It was closed - open it again, or use another way below.' : ''}
                 </p>
                 <button
                   onClick={payOnTill}
                   disabled={busy}
                   className="w-full px-4 py-3 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-lg font-semibold"
                 >
-                  {busy ? 'Payment screen open...' : `💳 Take ${formatUGX(charge.charge_ugx)} by Mobile Money or card`}
+                  {busy ? 'Payment screen open...' : `💳 ${checkoutShown ? 'Open the payment page again' : 'Open the payment page'} - ${formatUGX(charge.charge_ugx)}`}
                 </button>
               </div>
             )}
@@ -481,7 +503,7 @@ const CashierIcanMobileCardModal = ({
                   <QRCode value={payUrl} size={200} level="H" includeMargin />
                 </div>
                 <p className="text-xs text-gray-600 text-center">
-                  The customer scans this with any camera, or opens the link. They pay by Mobile Money or card with no account, or from their IcanEra wallet with no fee.
+                  The customer scans this with any camera, or opens the link. They pay on Flutterwave's page - Mobile Money, card, bank transfer or any other way it offers, no account needed - or from their IcanEra wallet with no fee.
                 </p>
                 <div className="flex gap-2">
                   <input readOnly value={payUrl} className="flex-1 min-w-0 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-700" />

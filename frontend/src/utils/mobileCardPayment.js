@@ -51,6 +51,9 @@ export const mobileCardChannelLabel = (channel) => {
   if (!key) return 'Mobile Money / Card';
   if (key === 'card') return 'Card';
   if (key.startsWith('mobilemoney') || key === 'mobile_money') return 'Mobile Money';
+  if (key === 'ussd') return 'USSD';
+  if (key === 'applepay') return 'Apple Pay';
+  if (key === 'googlepay') return 'Google Pay';
   if (key.includes('bank') || key === 'account') return 'Bank';
   return 'Mobile Money / Card';
 };

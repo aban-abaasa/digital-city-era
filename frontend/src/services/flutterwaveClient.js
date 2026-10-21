@@ -11,10 +11,15 @@ export function generateTxRef(prefix) {
 }
 
 /**
+ * `allPaymentOptions: true` sends no payment_options at all, so Flutterwave offers every way to pay that is
+ * enabled on the account for the currency (card, Mobile Money, bank transfer, USSD, ...). The server confirms
+ * the payment whichever way it was made, so nothing else depends on the channel.
+ * `raw_status` is what Flutterwave itself reported ('pending' for a bank transfer that has not landed yet).
+ *
  * @param {{amount:number, currency?:string, customerEmail?:string, customerName?:string,
  *   customerPhone?:string, title?:string, description?:string, txRef:string,
- *   paymentOptions?:string}} params
- * @returns {Promise<{status:'successful'|'cancelled'|'failed', transaction_id?:string, tx_ref:string}>}
+ *   paymentOptions?:string, allPaymentOptions?:boolean}} params
+ * @returns {Promise<{status:'successful'|'cancelled'|'failed', transaction_id?:string, tx_ref:string, raw_status?:string}>}
  */
 export function payWithFlutterwave(params) {
   return new Promise((resolve, reject) => {
@@ -39,7 +44,7 @@ export function payWithFlutterwave(params) {
       // aren't valid Flutterwave option strings and were silently ignored.
       // Callers can narrow this (e.g. just 'card' or just 'mobilemoneyuganda')
       // via paymentOptions when the user already picked a method in-app.
-      payment_options: params.paymentOptions || 'card,mobilemoneyuganda,account',
+      ...(params.allPaymentOptions ? {} : { payment_options: params.paymentOptions || 'card,mobilemoneyuganda,account' }),
       customer: {
         email: params.customerEmail || 'customer@supermartkera.app',
         phone_number: params.customerPhone || '',
@@ -54,6 +59,7 @@ export function payWithFlutterwave(params) {
           status: response.status === 'successful' ? 'successful' : 'failed',
           transaction_id: response.transaction_id ? String(response.transaction_id) : undefined,
           tx_ref: params.txRef,
+          raw_status: response.status,
         });
       },
       onclose: () => {

@@ -8,13 +8,19 @@ live icaneracoin value, so the store receives the **full sale amount**. The cust
 
 ## How the cashier uses it
 
-POS → **Process Payment** → **📲 IcanEra Mobile / Card**. One screen, three ways, whichever happens first settles the sale:
+POS → **Process Payment** → **📲 IcanEra Mobile / Card**. **Flutterwave's payment page opens straight away**, as it does for a
+wallet top-up (Mobile Money number or card, on the till). If the customer closes it, the screen stays with a button to open it
+again, and two other ways. One screen, three ways, whichever happens first settles the sale:
 
 | Tab | What happens |
 | --- | --- |
+| **Pay now** | Flutterwave's checkout on the till (Mobile Money number or card). Opens by itself for a new sale. |
 | **Ask them to pay** | Type the customer's **phone number or 16-digit IcanEra wallet number**. A number that belongs to an IcanEra account gets a request in their wallet inbox (no fee). Any other phone number gets a **Mobile Money approval prompt** (MTN / Airtel detected from the number). The customer can be anywhere. |
-| **On this till** | Flutterwave's checkout opens on the till (Mobile Money number or card). |
-| **Scan or send link** | QR / link / WhatsApp / SMS to the customer's own phone → `/mobile-pay/<ref>`: Mobile Money or card with no account, or their IcanEra wallet when signed in. |
+| **Scan or send link** | QR / link / WhatsApp / SMS to the customer's own phone → `/mobile-pay/<ref>`: **Flutterwave's page with every way to pay it has enabled** (Mobile Money, card, bank transfer, USSD …) with no account, or their IcanEra wallet when signed in. |
+
+The till's own page offers Mobile Money + card only (bank transfer is too slow at a counter); the customer's QR/link page asks
+Flutterwave for everything enabled on the account (Flutterwave Dashboard → Settings → Payment methods), so enable or disable
+methods there. Whatever the method, the server confirms it with Flutterwave before the store is credited.
 
 The till keeps checking, so a payment made on another phone — or approved a moment late — still completes the sale.
 Cancelling voids the charge; pressing Cancel just after a customer paid completes the sale instead of losing it.
