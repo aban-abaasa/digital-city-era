@@ -62,9 +62,13 @@ test('mobileCardChannelLabel: reads Flutterwave payment types', () => {
   assert.equal(mobileCardChannelLabel('MobileMoneyUganda'), 'Mobile Money');
   assert.equal(mobileCardChannelLabel('account'), 'Bank');
   assert.equal(mobileCardChannelLabel('banktransfer'), 'Bank');
+  assert.equal(mobileCardChannelLabel('bank_transfer'), 'Bank');
+  assert.equal(mobileCardChannelLabel('ussd'), 'USSD');
+  assert.equal(mobileCardChannelLabel('applepay'), 'Apple Pay');
+  assert.equal(mobileCardChannelLabel('googlepay'), 'Google Pay');
   assert.equal(mobileCardChannelLabel(''), 'Mobile Money / Card');
   assert.equal(mobileCardChannelLabel(null), 'Mobile Money / Card');
-  assert.equal(mobileCardChannelLabel('ussd'), 'Mobile Money / Card');
+  assert.equal(mobileCardChannelLabel('paypal'), 'Mobile Money / Card'); // anything unknown keeps the generic label
 });
 
 test('classifyCustomerInput: one box for a phone number, a wallet number or an email', () => {

@@ -2,7 +2,8 @@
 // 📲 PUBLIC "PAY THIS SALE" PAGE
 // Opened from the till's QR code, a WhatsApp/SMS link, or a request in the customer's IcanEra wallet
 // inbox (see CashierIcanMobileCardModal.jsx). No account is needed to pay:
-//   - Mobile Money or card through Flutterwave (the customer adds a small processing fee), or
+//   - Flutterwave's own page, with every way to pay it has enabled (Mobile Money, card, bank transfer, USSD ...),
+//     exactly as for a wallet top-up (the customer adds a small processing fee), or
 //   - from their IcanEra wallet when signed in (no fee).
 // The amount, the fee and who is paid are all fixed server-side (imc_pay_create); this page only shows
 // them and starts the payment. Money reaches the store's IcanEra wallet once Flutterwave confirms it
@@ -121,8 +122,10 @@ const MobileCardPayPage = () => {
         customerName: name.trim(),
         customerPhone: phone.trim(),
         storeName: charge.merchant_name || 'SupermartKera',
+        allMethods: true,
       });
-      if (payment.status === 'successful') {
+      // 'pending': a bank transfer / USSD payment that has not landed yet - the server decides when it has.
+      if (payment.status === 'successful' || payment.raw_status === 'pending') {
         await confirmUntilDone(payment.transaction_id);
       } else {
         writePending(null);
@@ -213,7 +216,7 @@ const MobileCardPayPage = () => {
             <>
               {/* No account needed */}
               <div className="bg-white/5 rounded-xl p-4 space-y-3">
-                <p className="text-white font-semibold">Pay with Mobile Money or card</p>
+                <p className="text-white font-semibold">Pay with Mobile Money, card or bank</p>
                 <p className="text-xs text-gray-400">
                   No account needed. You pay {formatUGX(charge.charge_ugx)} - the sale plus a {formatUGX(charge.processing_fee_ugx)} processing fee.
                 </p>
