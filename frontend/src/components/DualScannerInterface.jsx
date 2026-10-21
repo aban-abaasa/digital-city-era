@@ -7,7 +7,10 @@ import { supabase } from '../services/supabase';
 import geminiAIService from '../services/geminiAIService';
 import { findProductByBarcode } from '../utils/barcodeHelper';
 
-const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0, keepOpen = false }) => {
+// embedded: render inline, filling whatever box the parent gives it, instead of as a full-screen modal — the POS
+// "scan mode" uses this so scanning gets the big catalogue area next to the cashier's own basket (which replaces the
+// scanner's private receipt panel). paused: ignore scans (a payment is in progress and must not gain items).
+const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0, keepOpen = false, embedded = false, paused = false }) => {
   const [scanMode, setScanMode] = useState('camera'); // 'smart', 'camera', 'gun' - CAMERA ACTIVE BY DEFAULT
   const [cameraActive, setCameraActive] = useState(false);
   const [gunListening, setGunListening] = useState(true); // GUN SCANNER LISTENING BY DEFAULT
@@ -774,7 +777,6 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
       setSupabaseProducts(productsData || []);
       console.log(`✅ Loaded ${(productsData || []).length} products from Supabase`);
-      toast.info(`📦 Scanner ready with ${(productsData || []).length} products`);
     } catch (error) {
       console.error('❌ Error loading products:', error);
       toast.error('Failed to load products from database');
@@ -1041,6 +1043,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
   const handleScannedBarcode = (barcode, source = 'unknown') => {
     if (!barcode || barcode.length < 3) return;
+    if (paused) return;
 
     // 🔒 DUPLICATE DETECTION COOLDOWN (1-second window)
     // Prevent the same barcode from being processed twice in rapid succession
@@ -1142,10 +1145,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
     // Play success sound
     playSound('success');
     flashScan('ok');
-    toast.success(`✅ ${product.name} added!`, {
-      autoClose: 2000, // 2 second notification
-      pauseOnHover: false
-    });
+    // (no "added!" pop-up: the green flash and the beep confirm the scan, and the basket shows the item)
 
     // Callback to parent with full context
     onBarcodeScanned(barcode);
@@ -1409,10 +1409,12 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
 
   // Root z-index sits above the floating chat widget (z-[999]) and "Install app" button (z-[100])
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 sm:p-4">
+    <div className={embedded ? 'h-full w-full' : 'fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 sm:p-4'}>
       <style>{`@keyframes ican-scan-line { from { top: 4%; } to { top: 96%; } }`}</style>
 
-      <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-[640px] sm:max-h-[92vh] sm:rounded-2xl">
+      <div className={embedded
+        ? 'flex h-full w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white'
+        : 'flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-[640px] sm:max-h-[92vh] sm:rounded-2xl'}>
         {/* Header — role accent bar, title, mode switch, close. On phones the switch gets its own
             full-width row so the title is never cut off and the close button always fits. */}
         <div className={`h-1 flex-shrink-0 ${view.accent}`} />
@@ -1422,13 +1424,15 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             <div className="text-xs leading-tight text-gray-500">{view.subtitle}</div>
           </div>
 
-          <button
-            onClick={onClose}
-            aria-label="Close scanner"
-            className="order-2 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-90 sm:order-3"
-          >
-            <FiX className="h-5 w-5" />
-          </button>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              aria-label="Close scanner"
+              className="order-2 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-90 sm:order-3"
+            >
+              <FiX className="h-5 w-5" />
+            </button>
+          )}
 
           <div className="order-3 flex w-full rounded-lg bg-gray-100 p-0.5 text-sm font-semibold sm:order-2 sm:w-auto sm:flex-shrink-0 sm:p-1">
             <button
@@ -1452,9 +1456,9 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className={`flex min-h-0 flex-1 flex-col ${embedded ? '' : 'lg:flex-row'}`}>
           {/* Viewfinder */}
-          <div className="relative h-[38vh] flex-shrink-0 overflow-hidden bg-black lg:h-auto lg:flex-1">
+          <div className={`relative overflow-hidden bg-black ${embedded ? 'min-h-0 flex-1' : 'h-[38vh] flex-shrink-0 lg:h-auto lg:flex-1'}`}>
             {isCameraMode ? (
               <>
                 <video
@@ -1586,7 +1590,21 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
             )}
           </div>
 
+          {/* Embedded: the cashier's own basket is the receipt, so only the typed-entry bar goes under the viewfinder */}
+          {embedded && (
+            <div className="flex-shrink-0 border-t border-gray-200 bg-[#fffdf5] px-3 py-3 sm:px-4">
+              <div className="mb-2 flex items-baseline justify-between text-xs text-gray-600">
+                <span className="font-semibold tracking-wide text-gray-700">
+                  {recentScans.length > 0 ? `LAST SCAN · ${recentScans[0].barcode}` : view.emptyText || 'Scan an item to add it to the sale'}
+                </span>
+                <span>{scanStats.total} scanned</span>
+              </div>
+              {manualEntryForm}
+            </div>
+          )}
+
           {/* Side container — a classic till receipt */}
+          {!embedded && (
           <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 bg-[#fffdf5] font-mono pb-[env(safe-area-inset-bottom)] lg:w-96 lg:flex-none lg:border-l lg:border-t-0 lg:pb-0">
             {context !== 'admin' ? (
               <>
@@ -1716,6 +1734,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
               </>
             )}
           </div>
+          )}
         </div>
       </div>
 

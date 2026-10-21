@@ -11,6 +11,7 @@ const LABELS = {
   icanera: 'IcanEra Wallet',
   icanera_wallet: 'IcanEra Wallet',
   ican_wallet: 'IcanEra Wallet',
+  icanera_mobile_card: 'IcanEra Mobile / Card',
   wallet: 'Wallet',
   cash: 'Cash',
   cash_ugx: 'Cash (UGX)',
