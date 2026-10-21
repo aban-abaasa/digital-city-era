@@ -44,6 +44,7 @@ import {
 } from '../services/landingMessagesService';
 import { getShowcaseProducts } from '../services/showcaseProductsService';
 import { Linkify } from '../utils/linkify';
+import ProductOfLink from '../components/ProductOfLink';
 
 const SHOWCASE_VISIBLE_COUNT = 6;
 const SHOWCASE_ROTATE_MS = 4500;
@@ -1200,7 +1201,7 @@ const SupermartkeraLanding = () => {
 
       <footer className={`relative z-10 border-t px-4 py-5 text-center text-[11px] sm:px-6 sm:py-6 sm:text-xs ${palette.muted} ${palette.header}`}>
         <p>© {new Date().getFullYear()} Supermartkera · Built on the ICAN ecosystem</p>
-        <p className="mt-1">A product of GODMINDERA ORGANISATION (U) LTD</p>
+        <p className="mt-1"><ProductOfLink /></p>
       </footer>
     </div>
   );

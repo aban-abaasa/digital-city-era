@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { drawProductOf } from '../utils/pdfCredit';
 import DataAggregator from './dataAggregator';
 import { supabase } from './supabase';
 import inventoryService from './inventorySupabaseService';
@@ -738,7 +739,7 @@ class AdvancedReportService {
     doc.setTextColor(107, 114, 128);
     doc.text(`Contact: ${companyInfo.email} | ${companyInfo.phone}`, pageWidth / 2, footerY + 8, { align: 'center' });
     doc.text('Webale nyo! 🌟', pageWidth / 2, footerY + 16, { align: 'center' });
-    doc.text('A product of GODMINDERA ORGANISATION (U) LTD', pageWidth / 2, footerY + 22, { align: 'center' });
+    drawProductOf(doc, pageWidth / 2, footerY + 22, { align: 'center' });
 
     return doc;
   }
