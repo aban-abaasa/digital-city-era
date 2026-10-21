@@ -14,6 +14,9 @@
  *   Pay here          Flutterwave's checkout on this device (Mobile Money number or card) - only for a payer who
  *                     is at the till with their phone, because they have to read out / type the one-time code
  *
+ * Laid out in the app's classic style (ivory card, serif amount, brass rule, underline tabs): one amount, three tabs,
+ * one box and one main button, with the explanations folded into "How this works".
+ *
  * The till polls the charge, so a payment made on another phone, or approved a moment late, still
  * completes the sale. "Serve next customer" parks the sale (see hooks/usePendingMobileCardSales.js): the screen
  * closes, the till is free for someone else, and the sale is completed in the background when it is paid; Open on
@@ -21,7 +24,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Loader, Copy, CheckCircle } from 'lucide-react';
+import { X, Loader, Copy, CheckCircle, Smartphone, Link2, CreditCard } from 'lucide-react';
 import { QRCodeCanvas as QRCode } from 'qrcode.react';
 import { toast } from 'react-toastify';
 import {
@@ -56,10 +59,15 @@ const formatClock = (ms) => {
 };
 
 const TABS = [
-  { id: 'request', label: 'Send to phone', icon: '📲' },
-  { id: 'link', label: 'Send link', icon: '🔗' },
-  { id: 'till', label: 'Pay here', icon: '💳' },
+  { id: 'request', label: 'Send to phone', Icon: Smartphone },
+  { id: 'link', label: 'Send link', Icon: Link2 },
+  { id: 'till', label: 'Pay here', Icon: CreditCard },
 ];
+
+// Classic buttons: ink-indigo primary with a brass ring, ivory secondary with a brass hairline.
+const PRIMARY_BTN = 'w-full px-4 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] ring-1 ring-[#e6c980]/50 hover:shadow-[0_10px_22px_-12px_rgba(30,27,75,0.7)] disabled:opacity-60 transition-shadow';
+const SECONDARY_BTN = 'px-3 py-2 rounded-xl text-sm font-semibold text-gray-800 bg-white border border-[#c4a052]/50 hover:border-[#c4a052] hover:bg-gray-50 disabled:opacity-50 transition-colors';
+const FIELD = 'w-full px-3 py-3 rounded-xl border border-[#c4a052]/50 bg-white text-lg text-gray-900 focus:outline-none focus:border-[#c4a052] focus:ring-2 focus:ring-[#c4a052]/30';
 
 const CashierIcanMobileCardModal = ({
   isOpen,
@@ -89,7 +97,9 @@ const CashierIcanMobileCardModal = ({
   const [now, setNow] = useState(() => Date.now());
   const [copied, setCopied] = useState(false);
   const [checkoutShown, setCheckoutShown] = useState(false); // Flutterwave's checkout has been shown for this charge
+  const [sent, setSent] = useState(null);             // 'wallet' | 'momo': a request for what is typed is out, so the button offers "Send again"
 
+  const contactRef = useRef(null);
   const startedRef = useRef(!!resumeCharge);
   const reportedRef = useRef(false);
   const chargeRef = useRef(null);
@@ -193,6 +203,7 @@ const CashierIcanMobileCardModal = ({
   // ── who is behind what was typed? ──────────────────────────────────────────
   useEffect(() => {
     setCustomer(null);
+    setSent(null);
     if (!kind.type || kind.type === 'business') return undefined;
     let cancelled = false;
     setLookingUp(true);
@@ -204,15 +215,22 @@ const CashierIcanMobileCardModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contact]);
 
+  // The box is the first thing a cashier needs: put the cursor there (not when a waiting sale is reopened).
+  useEffect(() => {
+    if (phase === 'ready' && tab === 'request' && !resumed) contactRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, tab]);
+
   // ── actions ────────────────────────────────────────────────────────────────
   const sendWalletRequest = async () => {
-    if (!customer || !charge) return;
+    if (!customer || !charge || busy) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       await requestWalletPayment(charge.tx_ref, customer.userId);
-      setNotice(`Request sent to ${customer.name}'s IcanEra wallet. They can approve it from the notification - waiting for them...`);
+      setSent('wallet');
+      setNotice(`Request sent to ${customer.name} - it is on their phone and in their app now. They pay from home, no fee. Waiting...`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -221,12 +239,13 @@ const CashierIcanMobileCardModal = ({
   };
 
   const sendMobileMoneyRequest = async () => {
-    if (kind.type !== 'phone' || !charge) return;
+    if (kind.type !== 'phone' || !charge || busy) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const result = await requestMobileMoneyPrompt(charge.tx_ref, { phone: kind.value, network: network || null });
+      setSent('momo');
       setNotice(`${result.message || 'Request sent.'} Waiting for the customer...`);
     } catch (err) {
       setError(err.message);
@@ -313,32 +332,52 @@ const CashierIcanMobileCardModal = ({
 
   const timeLeft = charge ? new Date(charge.expires_at).getTime() - now : 0;
   const hasAccount = !!customer;
+  const canMomo = kind.type === 'phone' && !!network && !lookingUp && !busy;
+  // Enter in the box does the obvious thing: ask the wallet if there is one, else send the Mobile Money prompt.
+  const onContactKey = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (customer) sendWalletRequest();
+    else if (canMomo) sendMobileMoneyRequest();
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl p-4 sm:p-6 max-w-lg max-h-[95vh] overflow-y-auto w-full mx-3 sm:mx-4 shadow-2xl">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl sm:text-2xl font-bold text-gray-900">📲 IcanEra Mobile / Card</h3>
+      <div className="classic-card bg-white p-4 sm:p-6 max-w-lg max-h-[95vh] overflow-y-auto w-full mx-3 sm:mx-4 shadow-2xl">
+        {/* Eyebrow, the sale in serif type, a brass rule - and the one line about fees */}
+        <div className="flex justify-between items-start gap-3">
+          <div className="min-w-0">
+            <p className="classic-eyebrow">IcanEra Mobile / Card</p>
+            <p className="font-classic-display text-3xl sm:text-4xl font-bold text-gray-900 leading-tight tabular-nums">
+              {formatUGX(charge ? charge.amount_ugx : amountUGX)}
+            </p>
+            {phase === 'ready' && charge && (
+              <p className="text-xs text-gray-500 mt-1">
+                Wallet: no fee &middot; Mobile Money / card: {formatUGX(charge.charge_ugx)}
+              </p>
+            )}
+          </div>
           <button
             onClick={handleClose}
             disabled={busy || closing}
             aria-label="Close"
-            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
+            className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
+        <div className="gold-rule my-4" />
 
         {phase === 'creating' && (
-          <div className="text-center py-10">
-            <Loader className="w-10 h-10 animate-spin text-orange-500 mx-auto mb-3" />
+          <div className="text-center py-8">
+            <Loader className="w-9 h-9 animate-spin text-[#c4a052] mx-auto mb-3" />
             <p className="text-gray-600">Starting the payment...</p>
           </div>
         )}
 
         {phase === 'dead' && (
-          <div className="text-center py-6 space-y-4">
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">❌ {error || 'This payment cannot continue.'}</p>
+          <div className="text-center py-4 space-y-4">
+            <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{error || 'This payment cannot continue.'}</p>
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => {
@@ -349,11 +388,11 @@ const CashierIcanMobileCardModal = ({
                   setContact('');
                   createCharge();
                 }}
-                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-semibold"
+                className={PRIMARY_BTN}
               >
                 Start again
               </button>
-              <button onClick={onClose} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold">
+              <button onClick={onClose} className={SECONDARY_BTN}>
                 Close
               </button>
             </div>
@@ -361,77 +400,70 @@ const CashierIcanMobileCardModal = ({
         )}
 
         {phase === 'paid' && (
-          <div className="text-center py-8">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-3" />
-            <h4 className="text-2xl font-bold text-green-600 mb-1">Payment received!</h4>
+          <div className="text-center py-6">
+            <CheckCircle className="w-14 h-14 text-emerald-500 mx-auto mb-3" />
+            <h4 className="font-classic-display text-2xl font-bold text-gray-900 mb-1">Payment received</h4>
             <p className="text-gray-600">Finishing the sale...</p>
           </div>
         )}
 
         {phase === 'ready' && charge && (
           <div className="space-y-4">
-            {/* What the sale is and what the customer pays */}
-            <div className="bg-gradient-to-r from-orange-50 to-rose-50 rounded-lg p-4 text-center">
-              <p className="text-sm text-gray-600">Sale total - the store receives all of it</p>
-              <p className="text-3xl font-bold text-orange-600">{formatUGX(charge.amount_ugx)}</p>
-              <p className="text-xs text-gray-600 mt-2">
-                Mobile Money / card: customer pays <strong>{formatUGX(charge.charge_ugx)}</strong> (includes a {formatUGX(charge.processing_fee_ugx)} processing fee).
-                IcanEra wallet: <strong>{formatUGX(charge.amount_ugx)}</strong>, no fee.
-              </p>
-            </div>
-
             {/* How */}
-            <div className="grid grid-cols-3 gap-1 bg-gray-100 rounded-lg p-1" role="tablist">
-              {TABS.map((t) => (
+            <div className="flex border-b border-[#c4a052]/30" role="tablist">
+              {TABS.map((t) => {
+                const { id, label } = t;
+                const TabIcon = t.Icon;
+                return (
                 <button
-                  key={t.id}
+                  key={id}
                   role="tab"
-                  aria-selected={tab === t.id}
-                  onClick={() => setTab(t.id)}
-                  className={`rounded-md px-2 py-2 text-xs sm:text-sm font-semibold transition-colors ${tab === t.id ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-800'}`}
+                  aria-selected={tab === id}
+                  aria-current={tab === id ? 'page' : undefined}
+                  onClick={() => setTab(id)}
+                  className={`classic-tab flex-1 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap ${tab === id ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
                 >
-                  <span aria-hidden="true">{t.icon} </span>{t.label}
+                  <TabIcon className="w-4 h-4" aria-hidden="true" />{label}
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             {tab === 'request' && (
               <div className="space-y-3">
-                <p className="text-sm text-gray-700">
-                  Customer at home, or sent someone else? Type the number of the phone that will pay. They approve on <strong>their own phone</strong> with their PIN - nothing is typed or read out at the till.
-                </p>
                 <label className="block text-sm font-medium text-gray-700" htmlFor="imc-contact">
                   Payer's phone number or IcanEra wallet number
                 </label>
                 <input
                   id="imc-contact"
+                  ref={contactRef}
                   type="text"
                   inputMode="tel"
                   autoComplete="off"
                   value={contact}
                   onChange={(e) => setContact(e.target.value)}
+                  onKeyDown={onContactKey}
                   placeholder="0772 123 456  or  16-digit wallet number"
-                  className="w-full px-3 py-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                  className={FIELD}
                 />
+                <p className="text-xs text-gray-500">
+                  The payer approves on their own phone, wherever they are - nothing to read out here.
+                </p>
 
                 {kind.type === 'business' && (
-                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    That is a business wallet number - a payment cannot be requested from it here. Use the customer's own number.
+                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    That is a business wallet number - a payment cannot be requested from it. Use the customer's own number.
                   </p>
                 )}
                 {lookingUp && <p className="text-xs text-gray-500">Checking for an IcanEra account...</p>}
 
                 {customer && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
-                    <p className="text-sm text-blue-900">
-                      💎 <strong>{customer.name}</strong> has an IcanEra account. Ask their wallet - they pay <strong>{formatUGX(charge.amount_ugx)}</strong> with no processing fee.
+                  <div className="rounded-xl border border-[#c4a052]/40 bg-gray-50 p-3 space-y-2">
+                    <p className="text-sm text-gray-800">
+                      💎 <strong>{customer.name}</strong> is an IcanEra member: the request reaches their phone and app, and they pay from home with no fee.
                     </p>
-                    <button
-                      onClick={sendWalletRequest}
-                      disabled={busy}
-                      className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg font-semibold"
-                    >
-                      {busy ? 'Sending...' : '💎 Request from IcanEra wallet'}
+                    <button onClick={sendWalletRequest} disabled={busy} className={PRIMARY_BTN}>
+                      {busy ? 'Sending...' : sent === 'wallet' ? `Send ${customer.name} the request again` : `Send request to ${customer.name}`}
                     </button>
                   </div>
                 )}
@@ -445,7 +477,7 @@ const CashierIcanMobileCardModal = ({
                           <button
                             key={n}
                             onClick={() => setPickedNetwork(n)}
-                            className={`px-3 py-1 rounded-full border text-xs font-semibold ${pickedNetwork === n ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-300 text-gray-700'}`}
+                            className={`px-3 py-1 rounded-full border text-xs font-semibold ${pickedNetwork === n ? 'bg-[#1e1b4b] border-[#1e1b4b] text-white' : 'border-[#c4a052]/50 text-gray-700'}`}
                           >
                             {n === 'MTN' ? 'MTN' : 'Airtel'}
                           </button>
@@ -454,59 +486,64 @@ const CashierIcanMobileCardModal = ({
                     )}
                     <button
                       onClick={sendMobileMoneyRequest}
-                      disabled={busy || !network || lookingUp}
-                      className={`w-full px-4 py-3 rounded-lg font-semibold disabled:opacity-60 ${hasAccount ? 'bg-gray-100 hover:bg-gray-200 text-gray-800' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
+                      disabled={!canMomo}
+                      className={hasAccount ? `${SECONDARY_BTN} w-full` : PRIMARY_BTN}
                     >
-                      {busy ? 'Sending...' : `📲 ${hasAccount ? 'Send a Mobile Money prompt instead' : 'Send Mobile Money request'} to ${formatPhone(kind.value)}${network ? ` (${network === 'MTN' ? 'MTN' : 'Airtel'})` : ''}`}
+                      {busy
+                        ? 'Sending...'
+                        : `${hasAccount ? 'Or send a Mobile Money prompt' : sent === 'momo' ? 'Send the Mobile Money request again' : 'Send Mobile Money request'}${network ? ` (${network === 'MTN' ? 'MTN' : 'Airtel'})` : ''}`}
                     </button>
-                    <p className="text-xs text-gray-500">
-                      The customer gets a prompt on their phone and approves it with their Mobile Money PIN - no account, no scanning.
-                      Paying by card instead? Use <strong>Send link</strong>: the card's one-time code goes to the cardholder, who types it on their own phone.
-                    </p>
                   </div>
                 )}
 
                 {(kind.type === 'account' || kind.type === 'email') && !customer && !lookingUp && (
-                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-xl p-3">
                     No IcanEra account found for that. Ask for their phone number to send a Mobile Money request, or use the link.
                   </p>
                 )}
                 {!kind.type && contact.trim() && (
                   <p className="text-xs text-gray-500">Type a Ugandan mobile number, a 16-digit wallet number or an email.</p>
                 )}
+
+                <details className="group text-sm text-gray-600">
+                  <summary className="cursor-pointer select-none text-[#8a6a1f] font-medium">How this works</summary>
+                  <ul className="mt-2 space-y-1.5 list-disc pl-5 text-xs text-gray-600">
+                    <li>An IcanEra member gets the request on their phone and in the app, and pays from their wallet - no processing fee.</li>
+                    <li>Any other Ugandan number gets a Mobile Money prompt (MTN / Airtel) and approves it with their PIN.</li>
+                    <li>Paying by card instead? Use <strong>Send link</strong>: the card's one-time code goes to the cardholder, who types it on their own phone.</li>
+                  </ul>
+                </details>
               </div>
             )}
 
             {tab === 'till' && (
               <div className="space-y-3">
                 <p className="text-sm text-gray-700">
-                  Flutterwave's payment page opens on this screen: the payer enters their Mobile Money number or card. Hand them the device, or type it for them.
-                  {checkoutShown && !busy ? ' It was closed - open it again, or use another way below.' : ''}
+                  Flutterwave's payment page opens on this screen: the payer enters their Mobile Money number or card.
+                  {checkoutShown && !busy ? ' It was closed - open it again, or use another way.' : ''}
                 </p>
-                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  Flutterwave may ask for a one-time code (OTP). It is sent to the <strong>account holder's phone</strong>, so use this only when they are at the till with that phone. If they are at home or sent someone else, choose <strong>Send to phone</strong> or <strong>Send link</strong> instead.
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  It may ask for a one-time code that goes to the <strong>account holder's phone</strong>. Use this only when they are here with that phone - otherwise choose <strong>Send to phone</strong> or <strong>Send link</strong>.
                 </p>
-                <button
-                  onClick={payOnTill}
-                  disabled={busy}
-                  className="w-full px-4 py-3 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-lg font-semibold"
-                >
-                  {busy ? 'Payment screen open...' : `💳 ${checkoutShown ? 'Open the payment page again' : 'Open the payment page'} - ${formatUGX(charge.charge_ugx)}`}
+                <button onClick={payOnTill} disabled={busy} className={PRIMARY_BTN}>
+                  {busy ? 'Payment screen open...' : `${checkoutShown ? 'Open the payment page again' : 'Open the payment page'} - ${formatUGX(charge.charge_ugx)}`}
                 </button>
               </div>
             )}
 
             {tab === 'link' && (
               <div className="space-y-3">
-                <div className="flex justify-center p-3 bg-gray-50 rounded-lg">
-                  <QRCode value={payUrl} size={200} level="H" includeMargin />
+                <div className="flex justify-center">
+                  <div className="p-2 rounded-xl border border-[#c4a052]/40 bg-white">
+                    <QRCode value={payUrl} size={168} level="H" includeMargin />
+                  </div>
                 </div>
                 <p className="text-xs text-gray-600 text-center">
-                  The customer scans this with any camera, or opens the link. They pay on Flutterwave's page - Mobile Money, card, bank transfer or any other way it offers, no account needed - or from their IcanEra wallet with no fee.
+                  Scan or open the link: pay from an IcanEra wallet (no fee), or with Mobile Money, card or bank - no account needed.
                 </p>
                 <div className="flex gap-2">
-                  <input readOnly value={payUrl} className="flex-1 min-w-0 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-700" />
-                  <button onClick={copyLink} title="Copy link" className="px-3 py-2 bg-orange-100 hover:bg-orange-200 border border-orange-300 rounded-lg text-orange-700">
+                  <input readOnly value={payUrl} aria-label="Payment link" className="flex-1 min-w-0 px-3 py-2 bg-gray-50 border border-[#c4a052]/40 rounded-xl text-xs text-gray-700" />
+                  <button onClick={copyLink} title="Copy link" aria-label="Copy link" className="px-3 py-2 rounded-xl border border-[#c4a052]/50 text-[#8a6a1f] hover:bg-gray-50">
                     {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
@@ -515,17 +552,17 @@ const CashierIcanMobileCardModal = ({
                     href={whatsappShareUrl(kind.type === 'phone' ? kind.value : '', shareText)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-center px-2 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold"
+                    className={`${SECONDARY_BTN} text-center`}
                   >
                     WhatsApp
                   </a>
                   <a
                     href={smsShareUrl(kind.type === 'phone' ? kind.value : '', shareText)}
-                    className="text-center px-2 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded-lg text-sm font-semibold"
+                    className={`${SECONDARY_BTN} text-center`}
                   >
                     SMS
                   </a>
-                  <button onClick={shareLink} className="px-2 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-semibold">
+                  <button onClick={shareLink} className={SECONDARY_BTN}>
                     Share...
                   </button>
                 </div>
@@ -535,19 +572,13 @@ const CashierIcanMobileCardModal = ({
               </div>
             )}
 
-            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">❌ {error}</p>}
-            {notice && <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">✅ {notice}</p>}
+            {error && <p role="alert" className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{error}</p>}
+            {notice && <p role="status" className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3">{notice}</p>}
 
-            {onUseWallet && (
-              <button onClick={useWalletInstead} disabled={busy || closing} className="w-full text-sm text-blue-600 hover:underline disabled:opacity-50">
-                Customer is here with the IcanEra app? Use the wallet QR instead
-              </button>
-            )}
-
-            <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-200">
+            <div className="pt-3 border-t border-[#c4a052]/30 space-y-3">
               <div className="flex items-center gap-2 text-gray-500 text-sm">
-                <Loader className="w-4 h-4 animate-spin" />
-                <span>Waiting for payment{timeLeft > 0 ? ` - ${formatClock(timeLeft)} left` : ''}</span>
+                <Loader className="w-4 h-4 animate-spin shrink-0" />
+                <span className="whitespace-nowrap">Waiting for payment{timeLeft > 0 ? ` - ${formatClock(timeLeft)} left` : ''}</span>
               </div>
               <div className="flex items-center gap-2">
                 {onPark && (
@@ -555,7 +586,7 @@ const CashierIcanMobileCardModal = ({
                     onClick={park}
                     disabled={busy || closing || (!resumed && !!parkDisabledReason)}
                     title={!resumed && parkDisabledReason ? parkDisabledReason : 'Keep this sale waiting and serve the next customer'}
-                    className={`px-3 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 ${notice ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-100 hover:bg-orange-200 text-orange-800'}`}
+                    className={`flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 ${notice ? 'text-white bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] ring-1 ring-[#e6c980]/50' : 'text-gray-800 bg-white border border-[#c4a052]/50 hover:border-[#c4a052] hover:bg-gray-50'}`}
                   >
                     {resumed ? 'Back to my till' : 'Serve next customer'}
                   </button>
@@ -563,7 +594,7 @@ const CashierIcanMobileCardModal = ({
                 <button
                   onClick={handleCancel}
                   disabled={busy || closing}
-                  className="px-3 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 disabled:opacity-50"
                 >
                   {closing ? 'Checking...' : resumed ? 'Cancel sale' : 'Cancel'}
                 </button>
@@ -571,6 +602,11 @@ const CashierIcanMobileCardModal = ({
             </div>
             {onPark && !resumed && parkDisabledReason && (
               <p className="text-xs text-amber-700 text-right -mt-2">{parkDisabledReason}</p>
+            )}
+            {onUseWallet && (
+              <button onClick={useWalletInstead} disabled={busy || closing} className="w-full text-xs text-[#8a6a1f] hover:underline disabled:opacity-50">
+                Customer here with the IcanEra app? Use the wallet QR
+              </button>
             )}
           </div>
         )}

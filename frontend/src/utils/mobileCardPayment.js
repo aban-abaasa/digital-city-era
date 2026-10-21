@@ -31,6 +31,20 @@ export const isMobileCardTxRef = (value) => /^IMC-[A-Z0-9]{20}$/.test(String(val
 // The link a customer opens (by scanning the till's QR) to pay on their own phone.
 export const mobileCardPayUrl = (origin, txRef) => `${String(origin || '').replace(/\/+$/, '')}/mobile-pay/${txRef}`;
 
+// Where a customer pays a store's request inside the app (the same page the QR / link opens).
+export const mobileCardPayPath = (txRef) => `/mobile-pay/${txRef}`;
+
+// How long a customer still has to pay a store's request, as they read it: '24 min left', 'under a minute left';
+// null once the time has run out (or the date is not usable), so the caller can stop offering it.
+export const paymentRequestTimeLeft = (expiresAt, now = Date.now()) => {
+  const end = new Date(expiresAt).getTime();
+  if (!Number.isFinite(end)) return null;
+  if (end <= now) return null;
+  const minutes = Math.ceil((end - now) / 60000);
+  if (minutes <= 1) return 'under a minute left';
+  return `${minutes} min left`;
+};
+
 // Every way a Ugandan mobile number might be stored or typed, so the cashier can
 // check whether a typed number already belongs to an IcanEra account.
 // '0772 123 456', '+256772123456', '256772123456' and '772123456' are all the

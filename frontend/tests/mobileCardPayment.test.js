@@ -6,6 +6,8 @@ import {
   mobileCardAmountProblem,
   isMobileCardTxRef,
   mobileCardPayUrl,
+  mobileCardPayPath,
+  paymentRequestTimeLeft,
   ugandaPhoneVariants,
   mobileCardChannelLabel,
   classifyCustomerInput,
@@ -126,4 +128,24 @@ test('mobileCardPaymentData: gaps are filled from what the till already knows, n
   assert.equal(data.chargedUGX, null);
   assert.equal(data.channel, null);
   assert.equal(mobileCardPaymentData(null).amountUGX, 0);
+});
+
+test('mobileCardPayPath: the in-app page a customer pays a store request on', () => {
+  assert.equal(mobileCardPayPath('IMC-ABCDEFGHIJ0123456789'), '/mobile-pay/IMC-ABCDEFGHIJ0123456789');
+  // the push relay only accepts letters, digits, - _ / in a path, so a reference must always fit
+  assert.match(mobileCardPayPath('IMC-ABCDEFGHIJ0123456789'), /^\/(?![/\\])[A-Za-z0-9_/-]*$/);
+});
+
+test('paymentRequestTimeLeft: how long a customer still has, and null once it is over', () => {
+  const now = Date.parse('2026-10-21T12:00:00Z');
+  const at = (ms) => new Date(now + ms).toISOString();
+  assert.equal(paymentRequestTimeLeft(at(24 * 60000), now), '24 min left');
+  assert.equal(paymentRequestTimeLeft(at(24 * 60000 - 1000), now), '24 min left');   // rounds up: 23 min 59 s is still "24"
+  assert.equal(paymentRequestTimeLeft(at(60000), now), 'under a minute left');
+  assert.equal(paymentRequestTimeLeft(at(5000), now), 'under a minute left');
+  assert.equal(paymentRequestTimeLeft(at(0), now), null);
+  assert.equal(paymentRequestTimeLeft(at(-60000), now), null);
+  assert.equal(paymentRequestTimeLeft('not a date', now), null);
+  assert.equal(paymentRequestTimeLeft(undefined, now), null);
+  assert.equal(paymentRequestTimeLeft(null, now), null);
 });
