@@ -62,6 +62,7 @@ import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import DesktopOverview from '../components/customerDashboard/DesktopOverview';
 import InstallmentsHub from '../components/installments/InstallmentsHub';
+import StorePaymentRequests from '../components/StorePaymentRequests';
 import { countPlansNeedingAttention, getMyInstallmentPlans } from '../services/installmentService';
 import { orderService } from '../services/orderService';
 import { loyaltyService } from '../services/loyaltyService';
@@ -887,6 +888,10 @@ const CustomerDashboard = () => {
       {/* Shop runs edge-to-edge (no max-width container, gutters or sidebar) so the
           product grid gets the whole screen; every other tab keeps the container. */}
       <div className={fullBleed ? 'w-full px-2 sm:px-4 pt-2 pb-28 sm:pb-8' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8'}>
+        {/* A store's till is waiting for this customer to pay (they sent someone to
+            buy and are at home): shown on every tab, so it is never missed. */}
+        <StorePaymentRequests userId={user?.id} />
+
         {/* Phone Overview — loyalty card, live counts, service shortcuts and
             next steps as one scroll (used to be three tabs hiding each other,
             and used to render above EVERY tab, not just Overview). */}

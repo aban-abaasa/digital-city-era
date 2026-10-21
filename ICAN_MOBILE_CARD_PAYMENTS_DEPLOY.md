@@ -15,7 +15,7 @@ holder's phone**, so it is a deliberate choice (**Pay here**) rather than someth
 
 | Tab | What happens |
 | --- | --- |
-| **Send to phone** (opens first) | Type the payer's **phone number or 16-digit IcanEra wallet number**. A number that belongs to an IcanEra account gets a request in their wallet inbox (no fee). Any other phone number gets a **Mobile Money approval prompt** (MTN / Airtel detected from the number), approved with the PIN on that phone — nothing is typed or read out at the till. The payer can be anywhere. |
+| **Send to phone** (opens first) | Type the payer's **phone number or 16-digit IcanEra wallet number** (Enter sends). A number that belongs to an IcanEra account gets the request **in the app and as a phone alert** (no fee) - see "The customer at home" below. Any other phone number gets a **Mobile Money approval prompt** (MTN / Airtel detected from the number), approved with the PIN on that phone — nothing is typed or read out at the till. The payer can be anywhere. |
 | **Send link** | QR / link / WhatsApp / SMS to the payer's own phone → `/mobile-pay/<ref>`: **Flutterwave's page with every way to pay it has enabled** (Mobile Money, card, bank transfer, USSD …) with no account, or their IcanEra wallet when signed in. Any OTP (e.g. a card's) lands on, and is typed into, the payer's own phone — use this for card payments when the cardholder is not at the till. |
 | **Pay here** | Flutterwave's checkout on the till (Mobile Money number or card), opened with a button. Only for a payer who is at the till with their phone, since they must read out / type the OTP. The tab says so. |
 
@@ -26,6 +26,28 @@ methods there. Whatever the method, the server confirms it with Flutterwave befo
 The till keeps checking, so a payment made on another phone — or approved a moment late — still completes the sale.
 Cancelling voids the charge; pressing Cancel just after a customer paid completes the sale instead of losing it.
 A sale paid from the customer's wallet through the link is booked as **IcanEra Wallet**, not Mobile / Card.
+
+The screen is in the app's classic style (ivory card, serif amount, brass rule, underline tabs) and shows only what the
+moment needs: the sale amount with one fee line, three tabs, one box and one main button. The explanations (how an
+IcanEra member, a plain phone number and a card each pay) are folded into **How this works**. After a request is sent the
+button offers "send again" and **Serve next customer** becomes the main button.
+
+### The customer at home (sent someone to buy)
+
+The person at the till is often not the one paying: the account holder is at home and sent someone to the shop. Flutterwave's
+own checkout (one-time code to the account holder's phone) is never opened for them. Instead:
+
+1. The cashier chooses **IcanEra Mobile / Card**, types the account holder's phone number and presses **Send request**.
+2. The account holder gets a **phone alert** (if device alerts are on) and, inside the app, a **"Waiting for your payment"**
+   card at the top of their dashboard, on every tab (`StorePaymentRequests`; it refreshes on its own and disappears once the
+   sale is paid, cancelled or out of time). Tapping the alert or the card opens `/mobile-pay/<ref>`.
+3. The pay page shows the store, the amount and **Pay from your IcanEra wallet** (no fee) first; **Mobile Money, card or bank**
+   is the second, collapsed option with its price (fee included) in the heading. Not enough in the wallet? The other option
+   opens by itself. A customer who is not signed in taps **Sign in to pay** and comes straight back to the sale
+   (`/login?redirect=/mobile-pay/<ref>`; only a path on this site is honoured, for email, wallet and Google sign-in).
+4. The till sees the payment within seconds, and the sale completes.
+
+A phone number with no IcanEra account gets a Mobile Money approval prompt, or the cashier uses **Send link**.
 
 ### Serving other customers while a payment is pending
 **Serve next customer** puts the sale on hold: the till is cleared for the next customer and the waiting sale appears in a
@@ -53,7 +75,9 @@ scanning the large catalogue area beside the basket (remembered per device). It 
 
 ## Deploy order (shared Supabase project)
 
-1. **SQL** — run `backend/database/migrations/ADD_ICAN_MOBILE_CARD_PAYMENTS.sql` in the Supabase SQL editor.
+1. **SQL** — run `backend/database/migrations/ADD_ICAN_MOBILE_CARD_PAYMENTS.sql` in the Supabase SQL editor
+   (**run it again if you ran an earlier version**: it adds `imc_pay_my_requests()`, which the dashboard card needs, and makes
+   a wallet request's phone alert open the pay page inside the app instead of the admin page).
    It refuses to run (with a clear message) unless these already exist: `ADD_PUBLIC_TRANSACTION_QR.sql`,
    `ICAN_BUY_SELL_COINS_ADDENDUM.sql` + `CLOSE_BUY_ICAN_DIRECT_CALL_HOLE.sql`, the 12-parameter `transfer_ican`
    (`ICAN_TRANSACTION_CONTEXT_MIGRATION.sql`). Safe to run twice.
@@ -64,7 +88,8 @@ scanning the large catalogue area beside the basket (remembered per device). It 
 3. **Configuration** — the migration seeds `guest_checkout_config.pos_pay_base_url = https://supermartkera.icanera.space`
    (the link put in a customer's wallet inbox). Change it if the store app lives elsewhere:
    `UPDATE public.guest_checkout_config SET value = 'https://your-domain' WHERE key = 'pos_pay_base_url';`
-4. **Push relay** — from the **ICAN** repo, redeploy the relay so a cashier's payment push opens the till:
+4. **Push relay** — from the **ICAN** repo, redeploy the relay so a cashier's payment push opens the till (it also lets a
+   customer's "please pay" alert open `/mobile-pay/<ref>`, from the `push_path` the SQL now sets; no relay change beyond this):
    `cd backend && npx supabase functions deploy wallet-push --no-verify-jwt`. (Without this the push still arrives, but
    tapping it opens the admin page.)
 5. **Frontend** — nothing new: `VITE_FLUTTERWAVE_PUBLIC_KEY` and the Flutterwave script in `index.html` are already used.
@@ -88,6 +113,6 @@ reference. A `charge.completed` webhook calling the same function would close th
 ## Tests
 
 * Database (needs a throwaway Postgres + `psql`, touches no real project):
-  `backend/database/tests/imc_payments/run.sh` — 88 checks, including money amounts, double-credit protection,
+  `backend/database/tests/imc_payments/run.sh` — 102 checks, including money amounts, double-credit protection,
   refunds, grants, the wallet-inbox link rules and the payment push.
 * Frontend helpers: `node --test frontend/tests/mobileCardPayment.test.js frontend/tests/pendingSales.test.js`.

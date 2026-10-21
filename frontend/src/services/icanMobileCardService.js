@@ -157,6 +157,17 @@ export async function requestWalletPayment(txRef, customerUserId) {
   );
 }
 
+/**
+ * Customer (signed in): the store requests the cashier sent to THEM that are still waiting to be paid, newest first -
+ * { tx_ref, merchant_name, description, amount_ugx, requested_at, expires_at }. This is how someone who sent another
+ * person to the shop sees, at home inside the app, that the till is waiting for them. [] when nothing is waiting.
+ */
+export async function getMyPaymentRequests() {
+  const { data, error } = await supabase.rpc('imc_pay_my_requests');
+  if (error) throw new Error(error.message || 'Could not load your payment requests');
+  return Array.isArray(data) ? data : [];
+}
+
 /** Customer (signed in): pay the sale from their IcanEra wallet — the store gets the full amount, no fee. */
 export async function payMobileCardFromWallet(txRef) {
   return unwrap(await supabase.rpc('imc_pay_wallet', { p_tx_ref: txRef }), 'The wallet payment could not be completed');

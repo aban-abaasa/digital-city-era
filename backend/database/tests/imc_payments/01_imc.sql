@@ -275,6 +275,85 @@ BEGIN
   PERFORM t.check('request: a cancelled sale cannot be requested', NOT (r ->> 'success')::BOOLEAN, r::TEXT);
 END $$;
 
+-- ── 7b. paying from home inside Digital City Era: the push opens the pay page, and the app lists what is waiting ──
+DO $$
+DECLARE ref TEXT; ref2 TEXT; r JSONB; m JSONB; mine JSONB; n INT; item JSONB;
+BEGIN
+  ref := t.charge(10000);
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a2');
+  PERFORM public.imc_pay_request_wallet(ref, '00000000-0000-0000-0000-0000000000a3');
+  SELECT metadata INTO m FROM public.ican_wallet_inbox_notifications
+   WHERE recipient_user_id = '00000000-0000-0000-0000-0000000000a3' AND reference_id = ref;
+  PERFORM t.check('push: tapping the customer''s phone alert opens the pay page inside the app',
+    m ->> 'push_path' = '/mobile-pay/' || ref, m::TEXT);
+  -- the relay only accepts a plain relative path (letters, digits, - _ /) and never a query string or another origin
+  PERFORM t.check('push: that path is one the push relay accepts',
+    (m ->> 'push_path') ~ '^/(?![/\\])[A-Za-z0-9_/-]*$', m::TEXT);
+
+  -- the customer sees the open request; asking twice still lists the sale once
+  PERFORM public.imc_pay_request_wallet(ref, '00000000-0000-0000-0000-0000000000a3');
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a3');
+  mine := public.imc_pay_my_requests();
+  SELECT count(*) INTO n FROM jsonb_array_elements(mine) e WHERE e ->> 'tx_ref' = ref;
+  PERFORM t.check('my requests: the customer sees the open request, once however often it was sent', n = 1, mine::TEXT);
+  SELECT e INTO item FROM jsonb_array_elements(mine) e WHERE e ->> 'tx_ref' = ref;
+  PERFORM t.check('my requests: it names the store, the sale amount (not the fee-inclusive charge) and a deadline',
+    item ->> 'merchant_name' = 'Kampala Fresh' AND (item ->> 'amount_ugx')::NUMERIC = 10000
+    AND item ->> 'description' = 'Basket' AND (item ->> 'expires_at') IS NOT NULL, item::TEXT);
+  PERFORM t.check('my requests: nothing is exposed beyond what the pay page shows',
+    NOT (item ? 'recipient_user_id' OR item ? 'created_by' OR item ? 'payer_phone' OR item ? 'customer_phone'), item::TEXT);
+
+  -- somebody else's inbox is not theirs to read
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a4');
+  PERFORM t.check('my requests: another customer sees none of it',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.imc_pay_my_requests()) e WHERE e ->> 'tx_ref' = ref), NULL);
+  PERFORM t.as_user(NULL);
+  PERFORM t.check('my requests: not signed in gets an empty list', public.imc_pay_my_requests() = '[]'::JSONB, NULL);
+
+  -- the cashier asked a customer, then the sale was settled some other way: the request goes away
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a3');
+  r := public.imc_pay_wallet(ref);
+  PERFORM t.check('my requests: paying from the wallet works', (r ->> 'success')::BOOLEAN, r::TEXT);
+  PERFORM t.check('my requests: a paid sale is no longer listed',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.imc_pay_my_requests()) e WHERE e ->> 'tx_ref' = ref), NULL);
+
+  ref := t.charge(10000);
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a2');
+  PERFORM public.imc_pay_request_wallet(ref, '00000000-0000-0000-0000-0000000000a3');
+  PERFORM public.imc_pay_cancel(ref);
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a3');
+  PERFORM t.check('my requests: a cancelled sale is no longer listed',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.imc_pay_my_requests()) e WHERE e ->> 'tx_ref' = ref), NULL);
+
+  ref := t.charge(10000);
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a2');
+  PERFORM public.imc_pay_request_wallet(ref, '00000000-0000-0000-0000-0000000000a3');
+  UPDATE public.icanera_mobile_card_payments SET expires_at = now() - INTERVAL '1 minute' WHERE tx_ref = ref;
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a3');
+  PERFORM t.check('my requests: an expired sale is no longer listed',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.imc_pay_my_requests()) e WHERE e ->> 'tx_ref' = ref), NULL);
+
+  -- newest first, and a request the customer deleted from their inbox is not nagged about again
+  ref := t.charge(10000);
+  ref2 := t.charge(12000);
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a2');
+  PERFORM public.imc_pay_request_wallet(ref, '00000000-0000-0000-0000-0000000000a3');
+  PERFORM public.imc_pay_request_wallet(ref2, '00000000-0000-0000-0000-0000000000a3');
+  UPDATE public.ican_wallet_inbox_notifications SET created_at = now() - INTERVAL '5 minutes' WHERE reference_id = ref;
+  PERFORM t.as_user('00000000-0000-0000-0000-0000000000a3');
+  mine := public.imc_pay_my_requests();
+  PERFORM t.check('my requests: the newest request comes first',
+    (SELECT e ->> 'tx_ref' FROM jsonb_array_elements(mine) WITH ORDINALITY x(e, i) ORDER BY i LIMIT 1) = ref2, mine::TEXT);
+  DELETE FROM public.ican_wallet_inbox_notifications WHERE reference_id = ref2;
+  PERFORM t.check('my requests: one deleted from the inbox is not listed again',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.imc_pay_my_requests()) e WHERE e ->> 'tx_ref' = ref2)
+    AND EXISTS (SELECT 1 FROM jsonb_array_elements(public.imc_pay_my_requests()) e WHERE e ->> 'tx_ref' = ref), NULL);
+
+  PERFORM t.check('grants: the list is for signed-in users only',
+    has_function_privilege('authenticated', 'public.imc_pay_my_requests()', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.imc_pay_my_requests()', 'EXECUTE'), NULL);
+END $$;
+
 -- ── 8. the Mobile Money prompt gate ─────────────────────────────────────────
 DO $$
 DECLARE ref TEXT := t.charge(); r JSONB; i INT;

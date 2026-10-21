@@ -63,8 +63,17 @@ const themeStyles = {
   }
 };
 
+// A page that asks someone to sign in can bring them straight back to it: /login?redirect=/mobile-pay/IMC-...
+// (a customer at home paying a store's request from their wallet). Only a plain path on this site is honoured -
+// never another address.
+const requestedRedirect = () => {
+  const value = new URLSearchParams(window.location.search).get('redirect');
+  return value && /^\/(?![/\\])/.test(value) ? value : null;
+};
+
 const CustomerLogin = () => {
   const navigate = useNavigate();
+  const safeRedirect = requestedRedirect();
   const { login, user, loading: authLoading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const palette = themeStyles[theme];
@@ -126,9 +135,9 @@ const CustomerLogin = () => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
-      navigate(await getSignedInRoute(user), { replace: true });
+      navigate(safeRedirect || await getSignedInRoute(user), { replace: true });
     })();
-  }, [authLoading, navigate, user]);
+  }, [authLoading, navigate, safeRedirect, user]);
 
   useEffect(() => {
     const handleOAuthCallback = async () => {
@@ -174,7 +183,7 @@ const CustomerLogin = () => {
           const displayName = session.user.user_metadata?.full_name || session.user.email || 'guest';
           const signedInUser = await login(session.user.email || 'guest');
           toast.success(`Welcome, ${displayName}.`);
-          navigate(await getSignedInRoute(signedInUser), { replace: true });
+          navigate(safeRedirect || await getSignedInRoute(signedInUser), { replace: true });
           return;
         }
 
@@ -187,7 +196,7 @@ const CustomerLogin = () => {
     };
 
     handleOAuthCallback();
-  }, [login, navigate]);
+  }, [login, navigate, safeRedirect]);
 
   const handleInputChange = (e) => {
     setLoginData({
@@ -199,7 +208,7 @@ const CustomerLogin = () => {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
-      const redirectTo = `${window.location.origin}/auth/callback`;
+      const redirectTo = `${window.location.origin}/auth/callback${safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -276,7 +285,7 @@ const CustomerLogin = () => {
         autoClose: 2000
       });
 
-      navigate(await getSignedInRoute(signedInUser), { replace: true });
+      navigate(safeRedirect || await getSignedInRoute(signedInUser), { replace: true });
 
     } catch (error) {
       console.error('Login error:', error);
@@ -327,7 +336,7 @@ const CustomerLogin = () => {
 
       const signedInUser = await login(data.email);
       toast.success('🎉 Welcome back!', { position: 'top-right', autoClose: 2000 });
-      navigate(await getSignedInRoute(signedInUser), { replace: true });
+      navigate(safeRedirect || await getSignedInRoute(signedInUser), { replace: true });
     } catch (error) {
       console.error('Wallet login error:', error);
       setWalletError(error.message || 'Wallet sign-in failed');

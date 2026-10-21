@@ -21,6 +21,8 @@
 --   (cashier)  Edge Function icanera-mobile-card-pay { action: request_momo } -> Mobile Money prompt to a phone
 --   imc_pay_request_wallet(tx_ref, user)   cashier -> in-app request in the customer's IcanEra wallet inbox
 --   imc_pay_wallet(tx_ref)                 the customer (signed in) -> pays from their wallet, no fee
+--   imc_pay_my_requests()                  the customer (signed in) -> the store requests still waiting on THEM, so
+--                                          they can pay from home inside Digital City Era
 --   Edge Function icanera-mobile-card-pay  -> asks Flutterwave itself whether it was paid, then
 --   imc_pay_fulfil(tx_ref, ...)            service_role ONLY -> credits the store wallet, or the function refunds
 --   imc_pay_cancel(tx_ref)                 cashier -> voids a charge nobody has paid yet
@@ -364,8 +366,10 @@ BEGIN
             || '. Pay from your IcanEra wallet with no fee, or with Mobile Money / card.'
             || COALESCE(' ' || v_url, ' Reference ' || p.tx_ref), 500),
        p.tx_ref,
+       -- push_path: tapping the phone alert on a Digital City Era device opens this sale's pay page there (where a
+       -- signed-in customer pays from their wallet), not the admin page the relay would otherwise default to
        jsonb_build_object('tx_ref', p.tx_ref, 'pay_url', v_url, 'amount_ugx', p.amount_ugx,
-                          'merchant_name', p.merchant_name));
+                          'merchant_name', p.merchant_name, 'push_path', '/mobile-pay/' || p.tx_ref));
   EXCEPTION WHEN OTHERS THEN
     RETURN jsonb_build_object('success', FALSE, 'error', 'The customer''s IcanEra inbox is not available right now');
   END;
@@ -449,6 +453,45 @@ BEGIN
   END;
 
   RETURN jsonb_build_object('success', TRUE, 'status', 'paid') || public._imc_pay_json(p);
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 7b. What is waiting on the signed-in customer: the store requests the cashier put in THEIR inbox that are still
+--     open (not paid, cancelled or expired), newest first. This is what lets a customer who sent someone to the
+--     shop pay from home inside Digital City Era. Only the caller's own inbox rows are ever looked at, and a request
+--     they deleted from the inbox is not listed. Only what the pay page already shows is returned.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.imc_pay_my_requests()
+RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_uid  UUID := auth.uid();
+  v_rows JSONB;
+BEGIN
+  IF v_uid IS NULL THEN
+    RETURN '[]'::JSONB;
+  END IF;
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'tx_ref', q.tx_ref,
+           'merchant_name', q.merchant_name,
+           'description', q.description,
+           'amount_ugx', q.amount_ugx,
+           'requested_at', q.requested_at,
+           'expires_at', q.expires_at) ORDER BY q.requested_at DESC), '[]'::JSONB)
+    INTO v_rows
+    FROM (
+      SELECT p.tx_ref, p.merchant_name, p.description, p.amount_ugx, p.expires_at, max(n.created_at) AS requested_at
+        FROM public.ican_wallet_inbox_notifications n
+        JOIN public.icanera_mobile_card_payments p ON p.tx_ref = n.reference_id
+       WHERE n.recipient_user_id = v_uid
+         AND n.notification_type = 'qr_pos_payment_request'
+         AND p.status = 'awaiting_payment'
+         AND p.expires_at > now()
+       GROUP BY p.tx_ref, p.merchant_name, p.description, p.amount_ugx, p.expires_at
+       ORDER BY max(n.created_at) DESC
+       LIMIT 10
+    ) q;
+  RETURN v_rows;
 END;
 $$;
 
@@ -593,6 +636,7 @@ REVOKE ALL ON FUNCTION public.imc_pay_status(TEXT)                              
 REVOKE ALL ON FUNCTION public.imc_pay_cancel(TEXT)                                            FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.imc_pay_request_wallet(TEXT, UUID)                              FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.imc_pay_wallet(TEXT)                                            FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.imc_pay_my_requests()                                           FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.imc_pay_fulfil(TEXT, TEXT, NUMERIC, TEXT, TEXT, TEXT)           FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.imc_pay_mark_refunded(TEXT, TEXT)                               FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.imc_pay_begin_momo(TEXT, UUID)                                  FROM PUBLIC, anon, authenticated;
@@ -603,6 +647,7 @@ GRANT EXECUTE ON FUNCTION public.imc_pay_status(TEXT)                           
 GRANT EXECUTE ON FUNCTION public.imc_pay_cancel(TEXT)                                         TO authenticated;
 GRANT EXECUTE ON FUNCTION public.imc_pay_request_wallet(TEXT, UUID)                           TO authenticated;
 GRANT EXECUTE ON FUNCTION public.imc_pay_wallet(TEXT)                                         TO authenticated;
+GRANT EXECUTE ON FUNCTION public.imc_pay_my_requests()                                        TO authenticated;
 GRANT EXECUTE ON FUNCTION public.imc_pay_fulfil(TEXT, TEXT, NUMERIC, TEXT, TEXT, TEXT)        TO service_role;
 GRANT EXECUTE ON FUNCTION public.imc_pay_mark_refunded(TEXT, TEXT)                            TO service_role;
 GRANT EXECUTE ON FUNCTION public.imc_pay_begin_momo(TEXT, UUID)                               TO service_role;
