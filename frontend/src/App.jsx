@@ -67,6 +67,7 @@ import DevPanel from '@/pages/DevPanel';
 import InvoicePublicPage from '@/pages/InvoicePublicPage';
 import ReceiptApprovePage from '@/pages/ReceiptApprovePage';
 import PayRequestPublicPage from '@/pages/PayRequestPublicPage';
+import MobileCardPayPage from '@/pages/MobileCardPayPage';
 import BusinessLocalServerSetup from '@/pages/BusinessLocalServerSetup';
 import LocalStaffLogin from '@/pages/LocalStaffLogin';
 import LocalBusinessStaffPage from '@/pages/LocalBusinessStaffPage';
@@ -296,6 +297,11 @@ function App() {
                   paying still requires a signed-in wallet (see
                   PayRequestPublicPage.jsx). */}
               <Route path="/pay/:paymentCode" element={<PayRequestPublicPage />} />
+
+              {/* Public "pay this sale" page for IcanEra Mobile / Card — opened from the till's QR, a WhatsApp/SMS
+                  link or a wallet-inbox request. Mobile Money / card need no account; a signed-in IcanEra
+                  wallet pays with no fee (see MobileCardPayPage.jsx). */}
+              <Route path="/mobile-pay/:txRef" element={<MobileCardPayPage />} />
               
               {/* Admin routes - protected, require authentication */}
               <Route 

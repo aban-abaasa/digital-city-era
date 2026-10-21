@@ -1716,3 +1716,38 @@
 @keyframes ph-brand-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
 .ph-brand { animation: ph-brand-in .5s cubic-bezier(.2, .8, .2, 1) both; }
 @media (prefers-reduced-motion: reduce) { .ph-brand { animation: none; } }
+
+/* POS catalogue view switch (Products | Scan) and scan mode, where the scanner takes the large catalogue area */
+.cashier-pos-view-toggle {
+  display: inline-flex;
+  padding: 0.15rem;
+  border: 1px solid var(--pos-line);
+  border-radius: 0.45rem;
+  background: var(--pos-soft);
+}
+.cashier-pos-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.05rem;
+  padding: 0.3rem 0.7rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--pos-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.cashier-pos-view-toggle button svg { width: 0.95rem; height: 0.95rem; }
+.cashier-pos-view-toggle button:hover { color: var(--pos-ink); }
+.cashier-pos-view-toggle button.is-active { background: var(--pos-accent); color: var(--pos-accent-contrast); }
+.cashier-pos-columns.is-scan-mode { grid-template-columns: minmax(0, 1.25fr) minmax(340px, 440px); }
+.cashier-pos-scan-stage { height: clamp(26rem, calc(100vh - 16rem), 54rem); }
+@media (max-width: 900px) {
+  .cashier-pos-columns.is-scan-mode { grid-template-columns: minmax(0, 1fr); }
+  .cashier-pos-scan-stage { height: clamp(22rem, 62dvh, 38rem); }
+}
+@media (max-width: 640px) {
+  .cashier-pos-catalog-actions { flex-wrap: wrap; justify-content: flex-end; }
+}
