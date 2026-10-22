@@ -23,9 +23,11 @@ import { supabase } from '../services/supabase';
 import { barcodeVariants, barcodesMatch } from '../utils/barcodeHelper';
 import { impliedDiscountPercent, withDiscountPercent, withSellingPrice, withWholesalePrice } from '../utils/wholesalePricing';
 import { compressImageFile } from '../utils/imageCompression';
+import { attachExistingProductImage } from '../services/productImageLibrary';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
+import ProductPhotoSource from './ProductPhotoSource';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import ProductFlavorsModal from './ProductFlavorsModal';
 import ProductFamiliesPanel from './ProductFamiliesPanel';
@@ -333,11 +335,14 @@ const OrderInventoryPOSControl = () => {
   // Product photo — "Add Product" modal
   const [newProductImageFile, setNewProductImageFile] = useState(null);
   const [newProductImagePreview, setNewProductImagePreview] = useState(null);
+  // A photo picked from the ones already uploaded (instead of a new file); whichever was chosen last wins.
+  const [newProductImageUrl, setNewProductImageUrl] = useState(null);
   const newProductImageInputRef = useRef(null);
 
   // Product photo — inline row edit
   const [editImageFile, setEditImageFile] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState(null);
+  const [editImageUrl, setEditImageUrl] = useState(null);
   const [uploadingEditImage, setUploadingEditImage] = useState(false);
   const editImageInputRef = useRef(null);
 
@@ -396,11 +401,58 @@ const OrderInventoryPOSControl = () => {
     return { gradient, initials };
   };
 
-  // One-tap photo upload straight from the compact product row — no need to
-  // open the full edit form just to add/replace a picture.
+  // Which photo picker is open: { kind: 'quick' | 'edit' | 'new', productId?, query }. Photos have
+  // no names of their own, so the picker finds them through the products that use them, starting
+  // from this product's own name — the same product usually already exists in another store.
+  const [imagePickerTarget, setImagePickerTarget] = useState(null);
+
+  // One-tap photo change straight from the compact product row — no need to open the full edit
+  // form. Tapping offers two choices: browse the photos already uploaded, or upload a new one.
   const openQuickPhotoPicker = (productId) => {
     setQuickPhotoTargetId(productId);
-    quickPhotoInputRef.current?.click();
+    setImagePickerTarget({ kind: 'quick', productId, query: products.find(p => p.id === productId)?.name || '' });
+  };
+
+  const handleExistingPhotoPicked = async (url) => {
+    const target = imagePickerTarget;
+    setImagePickerTarget(null);
+    if (!target) return;
+
+    if (target.kind === 'edit') {
+      setEditImageUrl(url);
+      setEditImageFile(null);
+      setEditImagePreview(url);
+      return;
+    }
+    if (target.kind === 'new') {
+      setNewProductImageUrl(url);
+      setNewProductImageFile(null);
+      setNewProductImagePreview(url);
+      return;
+    }
+
+    const productId = target.productId;
+    setUploadingQuickPhotoId(productId);
+    try {
+      await attachExistingProductImage(productId, url);
+      const applyImage = (p) => (p.id === productId ? { ...p, images: [url] } : p);
+      setProducts(prev => prev.map(applyImage));
+      setFilteredProducts(prev => prev.map(applyImage));
+      toast.success('✅ Photo updated');
+    } catch (error) {
+      console.error('Error using an existing product photo:', error);
+      toast.error('Failed to use that photo');
+    } finally {
+      setUploadingQuickPhotoId(null);
+      setQuickPhotoTargetId(null);
+    }
+  };
+
+  const handleUploadNewPhoto = () => {
+    const kind = imagePickerTarget?.kind;
+    setImagePickerTarget(null);
+    const input = { edit: editImageInputRef, new: newProductImageInputRef, quick: quickPhotoInputRef }[kind];
+    input?.current?.click();
   };
 
   const handleQuickPhotoChange = async (e) => {
@@ -488,6 +540,7 @@ const OrderInventoryPOSControl = () => {
       category_id: null
     });
     setNewProductImageFile(null);
+    setNewProductImageUrl(null);
     setNewProductImagePreview(null);
   };
 
@@ -1115,6 +1168,7 @@ const OrderInventoryPOSControl = () => {
       expiry_date: product.expiry_date || ''
     });
     setEditImageFile(null);
+    setEditImageUrl(null);
     setEditImagePreview(product.images?.[0] || null);
     setEditFlavorRows([]);
     setEditFlavorSharedName(null);
@@ -1158,6 +1212,7 @@ const OrderInventoryPOSControl = () => {
     setEditingId(null);
     setEditValues({});
     setEditImageFile(null);
+    setEditImageUrl(null);
     setEditImagePreview(null);
     setEditFlavorRows([]);
     setEditFlavorSharedName(null);
@@ -1237,6 +1292,8 @@ const OrderInventoryPOSControl = () => {
         } finally {
           setUploadingEditImage(false);
         }
+      } else if (editImageUrl) {
+        imageUrl = await attachExistingProductImage(productId, editImageUrl);
       }
 
       // Update local state
@@ -1288,6 +1345,7 @@ const OrderInventoryPOSControl = () => {
         } catch (flavorError) {
           console.error('❌ Error saving flavors:', flavorError);
           setEditImageFile(null);
+          setEditImageUrl(null);
           toast.error(`❌ ${flavorError.message || 'Could not save the flavors'}. The product itself was saved: fix the flavors and press Save again.`);
           return;
         }
@@ -1298,6 +1356,7 @@ const OrderInventoryPOSControl = () => {
       setEditingId(null);
       setEditValues({});
       setEditImageFile(null);
+      setEditImageUrl(null);
       setEditImagePreview(null);
       setEditFlavorRows([]);
       setEditFlavorSharedName(null);
@@ -1434,6 +1493,14 @@ const OrderInventoryPOSControl = () => {
           console.warn('⚠️ Product saved but photo upload failed:', photoError);
           toast.warning('Product saved, but the photo failed to upload');
         }
+      } else if (newProductImageUrl && data?.id) {
+        try {
+          const url = await attachExistingProductImage(data.id, newProductImageUrl);
+          data = { ...data, images: [url] };
+        } catch (photoError) {
+          console.warn('⚠️ Product saved but the chosen photo could not be attached:', photoError);
+          toast.warning('Product saved, but the photo could not be attached');
+        }
       }
 
       // ✅ CREATE INVENTORY RECORD FOR NEW PRODUCT (only if newly created)
@@ -1517,6 +1584,7 @@ const OrderInventoryPOSControl = () => {
         barcode: ''
       });
       setNewProductImageFile(null);
+      setNewProductImageUrl(null);
       setNewProductImagePreview(null);
       setFlavorRows([]);
       setFlavorSharedName(null);
@@ -2070,7 +2138,7 @@ const OrderInventoryPOSControl = () => {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => editImageInputRef.current?.click()}
+                      onClick={() => setImagePickerTarget({ kind: 'edit', query: editValues.name || '' })}
                       className="w-14 h-14 md:w-16 md:h-16 rounded-lg bg-white border-2 border-dashed border-blue-300 flex items-center justify-center overflow-hidden flex-shrink-0"
                     >
                       {editImagePreview ? (
@@ -2084,12 +2152,12 @@ const OrderInventoryPOSControl = () => {
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => selectImageFile(e.target.files?.[0], setEditImageFile, setEditImagePreview)}
+                      onChange={(e) => selectImageFile(e.target.files?.[0], (file) => { setEditImageFile(file); setEditImageUrl(null); }, setEditImagePreview)}
                     />
                     <div>
                       <button
                         type="button"
-                        onClick={() => editImageInputRef.current?.click()}
+                        onClick={() => setImagePickerTarget({ kind: 'edit', query: editValues.name || '' })}
                         disabled={uploadingEditImage}
                         className="text-xs md:text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
                       >
@@ -2499,6 +2567,15 @@ const OrderInventoryPOSControl = () => {
         />
       )}
 
+      {imagePickerTarget && (
+        <ProductPhotoSource
+          initialQuery={imagePickerTarget.query}
+          onClose={() => setImagePickerTarget(null)}
+          onSelect={handleExistingPhotoPicked}
+          onUploadNew={handleUploadNewPhoto}
+        />
+      )}
+
       {/* Add Product Modal */}
       {showAddProductModal && (
         <div className="oi-modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 md:p-4">
@@ -2529,7 +2606,7 @@ const OrderInventoryPOSControl = () => {
               <div className="flex items-center gap-3 md:gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <button
                   type="button"
-                  onClick={() => newProductImageInputRef.current?.click()}
+                  onClick={() => setImagePickerTarget({ kind: 'new', query: newProduct.name || '' })}
                   className="w-14 h-14 md:w-16 md:h-16 rounded-lg bg-white border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0"
                 >
                   {newProductImagePreview ? (
@@ -2543,12 +2620,12 @@ const OrderInventoryPOSControl = () => {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => selectImageFile(e.target.files?.[0], setNewProductImageFile, setNewProductImagePreview)}
+                  onChange={(e) => selectImageFile(e.target.files?.[0], (file) => { setNewProductImageFile(file); setNewProductImageUrl(null); }, setNewProductImagePreview)}
                 />
                 <div>
                   <button
                     type="button"
-                    onClick={() => newProductImageInputRef.current?.click()}
+                    onClick={() => setImagePickerTarget({ kind: 'new', query: newProduct.name || '' })}
                     className="text-xs md:text-sm font-medium text-green-600 hover:text-green-700"
                   >
                     {newProductImagePreview ? 'Change photo' : 'Add photo (optional)'}
