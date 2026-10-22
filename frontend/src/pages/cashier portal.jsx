@@ -46,10 +46,12 @@ import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
 import CashierIcanMobileCardModal from '../components/CashierIcanMobileCardModal';
+import CashierDigitalCardModal from '../components/CashierDigitalCardModal';
 import PendingSalesPanel from '../components/PendingSalesPanel';
 import usePendingMobileCardSales from '../hooks/usePendingMobileCardSales';
 import { pendingSaleLabel } from '../utils/pendingSales';
 import { MOBILE_CARD_METHOD_ID, MOBILE_CARD_METHOD_NAME, mobileCardAmountProblem, mobileCardChannelLabel } from '../utils/mobileCardPayment';
+import { DIGITAL_CARD_CHOOSER_ID, DIGITAL_CARD_CHOOSER_NAME, digitalCardAmountProblem } from '../utils/digitalCardPayment';
 import '../styles/supermartkera-portals.css';
 
 // How a confirmed IcanEra payment is booked (id is stored on the sale, name is what receipts and history show).
@@ -92,6 +94,7 @@ const CashierPortal = () => {
   const [paymentModal, setPaymentModal] = useState(false);
   const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [showMobileCardModal, setShowMobileCardModal] = useState(false);
+  const [showDigitalCardModal, setShowDigitalCardModal] = useState(false);
   // POS catalogue view: browse the product grid (default) or "scan mode" — products hidden and the
   // scanner takes the large catalogue area beside the basket. Remembered per device.
   const [showProducts, setShowProducts] = useState(() => {
@@ -190,6 +193,19 @@ const CashierPortal = () => {
       limit: Infinity,
       features: ['receive'],
       primary: true
+    },
+    {
+      // A customer who comes with the digital card from their IcanEra wallet: the cashier scans the card's QR and the
+      // customer types their wallet PIN on the till. Paid from their wallet, so it is booked as an IcanEra Wallet sale.
+      id: DIGITAL_CARD_CHOOSER_ID,
+      name: DIGITAL_CARD_CHOOSER_NAME,
+      icon: '💳',
+      color: 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700',
+      description: 'Scan their card - PIN, no fee',
+      fee: 0,
+      limit: Infinity,
+      features: ['receive'],
+      primary: false
     },
     {
       // For customers WITHOUT an IcanEra account (or who prefer not to use it): Mobile Money or card
@@ -1901,6 +1917,32 @@ const CashierPortal = () => {
       return;
     }
 
+    // IcanEra Digital Card - the customer shows the card from their IcanEra wallet, the cashier scans it and the
+    // customer types their wallet PIN. Nothing is reserved while they do: stock is deducted when the payment is
+    // confirmed (see handleIcanPaymentReceived), so a card that is never accepted leaves stock alone.
+    if (paymentMethodId === DIGITAL_CARD_CHOOSER_ID) {
+      if (!navigator.onLine) {
+        toast.error('📴 A card payment needs an internet connection. Take cash instead, or wait until you are back online.');
+        return;
+      }
+      if (!currentTransaction.items.length) {
+        toast.error('Add products before taking a card payment.');
+        return;
+      }
+      const cardProblem = digitalCardAmountProblem(currentTransaction.total);
+      if (cardProblem) {
+        toast.error(cardProblem);
+        return;
+      }
+      if (!cashierProfile.supermarket_id) {
+        toast.error('Your store is still loading - try again in a moment.');
+        return;
+      }
+      setPaymentModal(false);
+      setShowDigitalCardModal(true);
+      return;
+    }
+
     // IcanEra Mobile / Card - the customer needs no IcanEra account. Nothing is reserved while the
     // customer decides: stock is deducted when the payment is confirmed (see handleIcanPaymentReceived),
     // so a request that is never paid leaves stock alone.
@@ -2369,6 +2411,7 @@ const CashierPortal = () => {
     if (!parked) {
       setShowIcanReceiveModal(false);
       setShowMobileCardModal(false);
+      setShowDigitalCardModal(false);
     }
 
     const customerName = sale.customer?.name || paymentData.payerName || 'Walk-in Customer';
@@ -2376,7 +2419,9 @@ const CashierPortal = () => {
     const receiptNote = isMobileCard
       ? `Mobile Money / card via Flutterwave (${mobileCardChannelLabel(paymentData.channel)}) | ref ${paymentData.paymentCode}`
         + (paymentData.processingFeeUGX > 0 ? ` | customer also paid a UGX ${Number(paymentData.processingFeeUGX).toLocaleString()} processing fee` : '')
-      : `ICAN payment code: ${paymentData.paymentCode}`;
+      : paymentData.cardLast4
+        ? `IcanEra digital card ending ${paymentData.cardLast4} (PIN approved at the till) | ref ${paymentData.paymentCode}`
+        : `ICAN payment code: ${paymentData.paymentCode}`;
     // Mobile / card holds no stock while waiting, and a wallet QR payment only has it once prepared.
     const stockAlreadyDeducted = !isMobileCard && method.id !== MOBILE_CARD_METHOD_ID && icanInventoryPrepared;
     
@@ -2715,7 +2760,7 @@ const CashierPortal = () => {
                 context="cashier"
                 onBarcodeScanned={handleBarcodeScanned}
                 onClose={() => setShowProducts(true)}
-                paused={paymentModal || showIcanReceiveModal || showMobileCardModal || showReceiptModal || showBarcodeScanner || !!variantPickerProduct || !!batchPickerProduct || showAddProductModal}
+                paused={paymentModal || showIcanReceiveModal || showMobileCardModal || showDigitalCardModal || showReceiptModal || showBarcodeScanner || !!variantPickerProduct || !!batchPickerProduct || showAddProductModal}
               />
             </div>
           ) : (
@@ -4311,6 +4356,22 @@ const CashierPortal = () => {
             const receipt = await pending.complete(entry, paymentData);
             if (receipt) openParkedReceipt(receipt);
           }}
+        />
+      )}
+
+      {/* 💳 IcanEra Digital Card - the customer shows the card from their IcanEra wallet, scanned here, PIN typed on the till */}
+      {showDigitalCardModal && (
+        <CashierDigitalCardModal
+          isOpen={showDigitalCardModal}
+          onClose={() => setShowDigitalCardModal(false)}
+          supermarketId={cashierProfile?.supermarket_id}
+          amountUGX={currentTransaction.total}
+          orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
+          onChooseAnother={() => {
+            setShowDigitalCardModal(false);
+            setPaymentModal(true);
+          }}
+          onPaymentReceived={(paymentData) => handleIcanPaymentReceived(paymentData, MOBILE_CARD_PAYMENT_METHOD)}
         />
       )}
 
