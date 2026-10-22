@@ -19,6 +19,8 @@ import {
 import { toast } from 'react-toastify';
 import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
+import ProductPhotoSource from './ProductPhotoSource';
+import { attachExistingProductImage } from '../services/productImageLibrary';
 import { supabase } from '../services/supabase';
 import { barcodeVariants } from '../utils/barcodeHelper';
 import { compressImageFile } from '../utils/imageCompression';
@@ -47,6 +49,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef(null);
 
+  // A photo already uploaded for this product elsewhere (any store), picked
+  // from the library instead of uploading the same picture again. Mutually
+  // exclusive with imageFile: whichever was chosen last wins.
+  const [selectedImageUrl, setSelectedImageUrl] = useState(null);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+
   const handleImageSelect = (file) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -54,7 +62,15 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       return;
     }
     setImageFile(file);
+    setSelectedImageUrl(null);
     setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleExistingImageSelect = (url) => {
+    setSelectedImageUrl(url);
+    setImageFile(null);
+    setImagePreview(url);
+    setShowImagePicker(false);
   };
 
   // Quick add mode for fast product entry (not relevant once editing an existing product)
@@ -495,7 +511,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           form: formData,
           priceTiers,
           imageFile,
-          existingImageUrl: Array.isArray(prefilledData.images) ? prefilledData.images[0] || null : null
+          existingImageUrl: selectedImageUrl || (Array.isArray(prefilledData.images) ? prefilledData.images[0] || null : null)
         });
         await savePriceUnit('catalog', id);
         toast.success(isEditMode
@@ -592,6 +608,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
 
       if (imageFile) {
         await uploadProductPhoto(productId);
+      } else if (selectedImageUrl) {
+        await attachExistingProductImage(productId, selectedImageUrl);
       }
 
       if (businessType === 'wholesale') {
@@ -653,6 +671,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     setCalculatedMarkup(0);
     setCalculatedProfit(0);
     setImageFile(null);
+    setSelectedImageUrl(null);
     setImagePreview(null);
     setPriceTiers([]);
     setVariants([]);
@@ -705,7 +724,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
               <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => setShowImagePicker(true)}
                   className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-white border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0"
                 >
                   {imagePreview ? (
@@ -724,7 +743,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                 <div className="min-w-0">
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => setShowImagePicker(true)}
                     disabled={uploadingImage}
                     className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
                   >
@@ -1459,6 +1478,18 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           onBarcodeScanned={handleBarcodeScanned}
           onClose={() => setShowBarcodeScanner(false)}
           context="admin"
+        />
+      )}
+
+      {showImagePicker && (
+        <ProductPhotoSource
+          initialQuery={formData.name || ''}
+          onClose={() => setShowImagePicker(false)}
+          onSelect={handleExistingImageSelect}
+          onUploadNew={() => {
+            setShowImagePicker(false);
+            fileInputRef.current?.click();
+          }}
         />
       )}
     </>
