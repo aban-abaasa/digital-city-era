@@ -6,6 +6,9 @@ the store's IcanEra wallet (the store owner's wallet — the same place the wall
 live icaneracoin value, so the store receives the **full sale amount**. The customer carries the gateway fee
 (`guest_checkout_config.gateway_fee_pct`, default 3.5 %), shown openly; paying from an IcanEra wallet is fee-free.
 
+> A customer who comes with the **digital card from their IcanEra wallet** can also pay with it (cashier scans the card's QR, the customer
+> types their wallet PIN on the till): see `ICAN_DIGITAL_CARD_POS_DEPLOY.md`. It builds on the charge described here.
+
 ## How the cashier uses it
 
 POS → **Process Payment** → **📲 IcanEra Mobile / Card** (the chooser is classic too: the total in serif type and one slim row per way to pay; its Cancel and the payment screens sit above the phone's bottom tab bar, which used to cover them). One screen, three ways, whichever happens first settles the sale.
