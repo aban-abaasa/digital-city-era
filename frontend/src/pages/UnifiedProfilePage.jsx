@@ -127,6 +127,20 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         profileData = createdProfile;
       }
 
+      // users.role is the source of truth (it drives auth and portal routing).
+      // unified_profiles.role is only a copy made when the account was created,
+      // so an account promoted to admin later can still carry a stale 'customer'
+      // copy — which used to hand that admin the customer page with no Admin
+      // Settings tab. Always trust users.role, and heal the stale copy.
+      if (profileData && userRecord.role && profileData.role !== userRecord.role) {
+        const { error: healError } = await supabase
+          .from('unified_profiles')
+          .update({ role: userRecord.role })
+          .eq('id', profileData.id);
+        if (healError) console.error('Error syncing profile role:', healError);
+        profileData = { ...profileData, role: userRecord.role };
+      }
+
       if (profileData) {
         setProfile(profileData);
         setFormData(profileData);
