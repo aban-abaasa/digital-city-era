@@ -9,7 +9,7 @@ const ORDER = { awaiting_deposit: 0, active: 1, ready: 2, pickup_ready: 3, dispa
  * business, on any IcanEra site), the businesses they have an account with,
  * and a shop to start a new plan.
  */
-export default function InstallmentsHub({ customerName, customerPhone }) {
+export default function InstallmentsHub() {
   const [view, setView] = useState('plans');
   const [plans, setPlans] = useState(null);
   const [accounts, setAccounts] = useState([]);
@@ -61,7 +61,7 @@ export default function InstallmentsHub({ customerName, customerPhone }) {
         ))}
       </div>
 
-      {view === 'shop' && <InstallmentShop customerName={customerName} customerPhone={customerPhone} onCreated={(code, notice) => setOpen({ code, notice })} />}
+      {view === 'shop' && <InstallmentShop />}
 
       {view === 'plans' && (
         <>
