@@ -42,6 +42,8 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   const [locatingPickup, setLocatingPickup] = useState(false);
   const [resyncingProducts, setResyncingProducts] = useState(false);
   const [savingOffers, setSavingOffers] = useState(false);
+  // An admin with no store behind them (promoted after signup, or the store was removed)
+  const [noStore, setNoStore] = useState(false);
 
   // Emoji avatars for selection
   const emojiAvatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼', '👨‍🔧', '👩‍🔧',
@@ -65,9 +67,13 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   }, [user]);
 
   useEffect(() => {
-    if (profile?.role?.toLowerCase() === 'admin' && profile?.supermarket_id) {
+    if (profile?.role?.toLowerCase() !== 'admin') return;
+    if (profile?.supermarket_id) {
       loadTeamMembers(profile.supermarket_id, profile.user_id);
       loadSupermarketDetails(profile.supermarket_id);
+    } else if (profile) {
+      setSupermarket(null);
+      setNoStore(true);
     }
   }, [profile?.role, profile?.supermarket_id, profile?.user_id]);
 
@@ -141,6 +147,25 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         profileData = { ...profileData, role: userRecord.role };
       }
 
+      // Same drift for the store link: users.supermarket_id can be set while
+      // the profile copy is empty (or the other way round). Adopt the users
+      // value when that store really exists.
+      if (profileData && !profileData.supermarket_id && userRecord.supermarket_id) {
+        const { data: store } = await supabase
+          .from('supermarkets')
+          .select('id')
+          .eq('id', userRecord.supermarket_id)
+          .maybeSingle();
+        if (store) {
+          const { error: linkError } = await supabase
+            .from('unified_profiles')
+            .update({ supermarket_id: store.id })
+            .eq('id', profileData.id);
+          if (linkError) console.error('Error syncing profile store:', linkError);
+          profileData = { ...profileData, supermarket_id: store.id };
+        }
+      }
+
       if (profileData) {
         setProfile(profileData);
         setFormData(profileData);
@@ -212,8 +237,13 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         .maybeSingle();
 
       if (error) throw error;
-      if (!supermarketData) return;
+      if (!supermarketData) {
+        setSupermarket(null);
+        setNoStore(true);
+        return;
+      }
 
+      setNoStore(false);
       setSupermarket(supermarketData);
 
       if (!profile || profile.business_name) return;
@@ -272,6 +302,7 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
   };
 
   const handleSave = async () => {
+    const isAdminRole = profile?.role?.toLowerCase() === 'admin';
     try {
       setLoading(true);
       const { error } = await supabase
@@ -280,6 +311,22 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
         .eq('id', profile.id);
 
       if (error) throw error;
+
+      // The business name is the store's name — it is what the portals and the
+      // store's website show — so renaming it here renames the store too.
+      const newName = (formData.business_name || '').trim();
+      if (isAdminRole && supermarket?.id && newName && newName !== supermarket.name) {
+        const { error: renameError } = await supabase
+          .from('supermarkets')
+          .update({ name: newName, updated_at: new Date().toISOString() })
+          .eq('id', supermarket.id);
+        if (renameError) {
+          console.error('Error renaming store:', renameError);
+          toast.error('Profile saved, but the store name could not be changed');
+        } else {
+          setSupermarket(prev => ({ ...prev, name: newName }));
+        }
+      }
 
       setProfile(formData);
       setEditing(false);
@@ -1125,6 +1172,22 @@ const UnifiedProfilePage = ({ onClose } = {}) => {
                       <p className="text-gray-900">{profile.admin_level || 'Admin'}</p>
                     </div>
                   </div>
+
+                  {noStore && !supermarket && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                      <h4 className="font-semibold text-amber-900 mb-1">Set up your store</h4>
+                      <p className="text-sm text-amber-800 mb-3">
+                        Your admin account isn't linked to a store yet, so there is no store name, website or team to manage. Create it once and everything here switches on.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/admin-setup')}
+                        className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                      >
+                        Create my store
+                      </button>
+                    </div>
+                  )}
 
                   {supermarket && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
