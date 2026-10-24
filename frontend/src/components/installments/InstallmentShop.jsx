@@ -1,21 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Globe, Loader, Minus, Plus, Search, Store, Truck, X } from 'lucide-react';
-import { browseProducts, formatMoney, productOffers, resellerShelf } from '../../services/installmentService';
-import InstallmentOfferCard from './InstallmentOfferCard';
+import { useEffect, useState } from 'react';
+import { Globe, Loader, Search, Store, Truck, X } from 'lucide-react';
+import { browseProducts, formatMoney, productOffers } from '../../services/installmentService';
+import { getStoreSiteForCustomer } from '../../vendor/mybodaguy/services/storeWebsite';
 /**
  * Find something to pay for in installments: browse products across every
- * reseller, pick the seller you want, fill a basket from that seller's shelf,
- * then choose the deposit and schedule.
+ * reseller and tap one to open that seller's own website, where the customer
+ * has an account with the store and sets up and follows their plan. A product
+ * with several sellers asks which seller first.
  */
-export default function InstallmentShop({ customerName, customerPhone, onCreated }) {
+export default function InstallmentShop() {
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState(null);
   const [selected, setSelected] = useState(null);
   const [offers, setOffers] = useState({});
   const [offersLoading, setOffersLoading] = useState(null);
-  const [seller, setSeller] = useState(null);
-  const [shelf, setShelf] = useState(null);
-  const [qty, setQty] = useState({});
+  const [opening, setOpening] = useState(null);
+  const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -28,100 +28,56 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
       clearTimeout(timer);
     };
   }, [query]);
-  const pickProduct = async p => {
-    if (selected?.product_id === p.product_id) {
-      setSelected(null);
+  const loadOffers = async productId => {
+    if (offers[productId]) return offers[productId];
+    const data = await productOffers(productId);
+    setOffers(prev => ({ ...prev, [productId]: data }));
+    return data;
+  };
+  // `win` is opened synchronously on the tap so mobile browsers don't block it.
+  const openStoreSite = async (businessProfileId, win) => {
+    const site = await getStoreSiteForCustomer({ businessProfileId });
+    if (!site) {
+      win?.close();
+      setError("We couldn't find this store's website. Try again in a moment.");
       return;
     }
-    setSelected(p);
-    if (!offers[p.product_id]) {
+    // Instalments are started from the cart in the website's Market tab.
+    const target = site.viaStorefront ? site.url : `${site.url}?tab=market`;
+    if (win) {
+      win.opener = null;
+      win.location.href = target;
+    } else window.location.href = target;
+  };
+  const pickProduct = async p => {
+    setError('');
+    if (p.reseller_count > 1) {
+      if (selected?.product_id === p.product_id) {
+        setSelected(null);
+        return;
+      }
+      setSelected(p);
       setOffersLoading(p.product_id);
-      const data = await productOffers(p.product_id);
-      setOffers(prev => ({ ...prev, [p.product_id]: data }));
+      await loadOffers(p.product_id);
       setOffersLoading(null);
+      return;
+    }
+    // One seller: straight to its website.
+    const win = window.open('', '_blank');
+    setOpening(p.product_id);
+    try {
+      const seller = (await loadOffers(p.product_id))[0];
+      if (!seller) {
+        win?.close();
+        setError('No sellers available right now');
+        return;
+      }
+      await openStoreSite(seller.reseller_business_profile_id, win);
+    } finally {
+      setOpening(null);
     }
   };
-  const openSeller = async (offer, productId) => {
-    setSeller({ id: offer.reseller_business_profile_id, name: offer.reseller_name });
-    setShelf(null);
-    setQty({ [productId]: 1 });
-    setShelf(await resellerShelf(offer.reseller_business_profile_id));
-  };
-  const cart = useMemo(() => (shelf || []).filter(i => (qty[i.product_id] || 0) > 0).map(i => ({ product_id: i.product_id, quantity: qty[i.product_id] })), [shelf, qty]);
-  const change = (item, delta) => setQty(prev => ({ ...prev, [item.product_id]: Math.max(0, Math.min(item.available_stock, (prev[item.product_id] || 0) + delta)) }));
-  if (seller) {
-    return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setSeller(null);
-              setShelf(null);
-              setQty({});
-            }}
-            aria-label="Back to products"
-            className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-600"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-slate-800">{seller.name}</p>
-            <p className="text-[11px] text-slate-400">{shelf?.[0]?.store_country ? `Ships from ${shelf[0].store_country} · ` : ''}Choose what to put on your plan</p>
-          </div>
-        </div>
-        {!shelf ? (
-          <div className="flex justify-center py-10">
-            <Loader className="animate-spin text-slate-400" />
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              {shelf.map(item => {
-                const q = qty[item.product_id] || 0;
-                return (
-                  <div key={item.listing_id} className="classic-card flex flex-col overflow-hidden">
-                    <div className="flex aspect-square items-center justify-center overflow-hidden bg-slate-100">
-                      {item.images?.[0] ? <img src={item.images[0]} alt={item.name} className="h-full w-full object-cover" /> : <Store className="text-slate-300" size={28} />}
-                    </div>
-                    <div className="flex flex-1 flex-col p-2.5">
-                      <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium text-slate-800">{item.name}</p>
-                      <p className="mt-1 font-bold text-orange-600">{formatMoney(item.listed_price, item.currency)}</p>
-                      {item.cross_border && (
-                        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-sky-600">
-                          <Globe size={11} />
-                          Abroad{item.store_country ? ` · ${item.store_country}` : ''}
-                        </p>
-                      )}
-                      {!item.in_stock ? (
-                        <p className="mt-2 text-xs text-red-500">Out of stock</p>
-                      ) : q === 0 ? (
-                        <button onClick={() => change(item, 1)} className="mt-2 w-full rounded-lg bg-orange-500 py-1.5 text-xs font-semibold text-white">
-                          Add
-                        </button>
-                      ) : (
-                        <div className="mt-2 flex items-center justify-between rounded-lg bg-slate-100">
-                          <button onClick={() => change(item, -1)} aria-label={`Fewer ${item.name}`} className="p-1.5 text-slate-700">
-                            <Minus size={14} />
-                          </button>
-                          <span className="text-sm font-semibold text-slate-800">{q}</span>
-                          <button onClick={() => change(item, 1)} aria-label={`More ${item.name}`} className="p-1.5 text-slate-700">
-                            <Plus size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {cart.length > 0 && (
-              <InstallmentOfferCard businessProfileId={seller.id} cart={cart} customerName={customerName} customerPhone={customerPhone} storeName={seller.name} onCreated={onCreated} />
-            )}
-          </>
-        )}
-      </div>
-    );
-  }
+  const chooseSeller = o => openStoreSite(o.reseller_business_profile_id, window.open('', '_blank'));
   const list = selected ? offers[selected.product_id] : null;
   return (
     <div className="space-y-3">
@@ -138,6 +94,8 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
         <Globe size={13} className="mt-0.5 shrink-0" />
         Shops from around the world. Items from abroad are priced in the shop's currency and shipped to you once they are paid in full.
       </p>
+      <p className="text-[11px] text-slate-400">Tap a product to open the store's website, where you create your account and set up your plan.</p>
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
       {products === null ? (
         <div className="flex justify-center py-10">
           <Loader className="animate-spin text-slate-400" />
@@ -150,10 +108,12 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
             <button
               key={p.product_id}
               onClick={() => pickProduct(p)}
+              disabled={opening === p.product_id}
               className={`classic-card overflow-hidden text-left transition ${selected?.product_id === p.product_id ? 'ring-2 ring-orange-400' : ''}`}
             >
-              <div className="flex aspect-square items-center justify-center overflow-hidden bg-slate-100">
+              <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-slate-100">
                 {p.images?.[0] ? <img src={p.images[0]} alt={p.name} className="h-full w-full object-cover" /> : <Store className="text-slate-300" size={28} />}
+                {opening === p.product_id && <Loader className="absolute animate-spin text-orange-500" />}
               </div>
               <div className="p-2.5">
                 <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium text-slate-800">{p.name}</p>
@@ -212,10 +172,10 @@ export default function InstallmentShop({ customerName, customerPhone, onCreated
                   </div>
                   <button
                     disabled={!o.in_stock}
-                    onClick={() => openSeller(o, selected.product_id)}
+                    onClick={() => chooseSeller(o)}
                     className="shrink-0 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
                   >
-                    Choose
+                    Open store
                   </button>
                 </div>
               ))}
