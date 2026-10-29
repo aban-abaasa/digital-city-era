@@ -255,9 +255,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         inventoryService.getSuppliers()
       ]);
       
-      // Seed default categories / a default supplier when there are none. Categories and
-      // suppliers are optional on a product and only privileged accounts may create them
-      // (RLS), so a refusal here must never stop the form from opening.
+      // Seed default categories when there are none. Categories are optional on a product and
+      // only privileged accounts may create them (RLS), so a refusal here must never stop the
+      // form from opening. No placeholder supplier is invented: a supplier is a real company.
       if (categoriesData.length === 0) {
         const defaultCategories = [
           { name: 'Groceries', description: 'Basic grocery items', is_active: true },
@@ -276,25 +276,6 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           toast.success('✅ Default categories created!');
         } catch (seedError) {
           console.warn('⚠️ Could not create default categories (continuing without them):', seedError);
-        }
-      }
-
-      if (suppliersData.length === 0) {
-        try {
-          await inventoryService.createSupplier({
-            company_name: 'General Supplier',
-            contact_person: 'Store Manager',
-            email: 'supplier@store.com',
-            phone: '+256-000-000-000',
-            address: 'Kampala, Uganda',
-            payment_terms: 'Net 30',
-            rating: 4.0,
-            is_active: true
-          }, { silent: true });
-          suppliersData = await inventoryService.getSuppliers();
-          toast.success('✅ Default supplier created!');
-        } catch (seedError) {
-          console.warn('⚠️ Could not create a default supplier (continuing without one):', seedError);
         }
       }
 
