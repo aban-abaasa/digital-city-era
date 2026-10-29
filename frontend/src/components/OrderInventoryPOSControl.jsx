@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import BookingTypePicker from './booking/BookingTypePicker';
 import {
-  FiSearch, FiEdit, FiSave, FiX, FiTrendingUp, FiTrendingDown,
+  FiSearch, FiEdit, FiEdit2, FiSave, FiX, FiTrendingUp, FiTrendingDown,
   FiBox, FiAlertTriangle, FiCheckCircle, FiDownload, FiRefreshCw,
   FiPlus, FiTrash2, FiDollarSign, FiBarChart2, FiLock, FiAlertCircle, FiCamera, FiHash, FiUpload, FiImage, FiZap
 } from 'react-icons/fi';
@@ -37,6 +37,8 @@ import { generateStoreBarcode, isPlaceholderBarcode } from '../utils/storeBarcod
 import { familyName } from '../utils/productFamilies';
 import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 import BookingsPanel from './booking/BookingsPanel';
+import ServiceEditModal from './ServiceEditModal';
+import { serviceCoverImage } from '../services/servicePhotoService';
 import ExpiryClearancePanel from './ExpiryClearancePanel';
 import ProductBatchManager from './ProductBatchManager';
 import BatchOverviewModal from './BatchOverviewModal';
@@ -270,6 +272,8 @@ const OrderInventoryPOSControl = () => {
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
+  // { id, openPhotoPicker } — the listed service being edited; the camera on its thumbnail opens straight to the photo chooser
+  const [editingServiceTarget, setEditingServiceTarget] = useState(null);
   // Set by a service row's "Configure booking" button — jumps to the
   // Bookings tab with that exact service pre-selected in Availability.
   const [focusBookingServiceId, setFocusBookingServiceId] = useState(null);
@@ -2525,9 +2529,51 @@ const OrderInventoryPOSControl = () => {
           <div className="space-y-2">
             {services.map(svc => (
               <div key={svc.id} className="flex flex-wrap items-center justify-between gap-3 border border-gray-100 rounded-lg p-3">
-                <div className="min-w-0">
-                  <p className="font-semibold text-gray-800 truncate">{svc.name}</p>
-                  {svc.description && <p className="text-xs text-gray-400 truncate">{svc.description}</p>}
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => isAdmin && setEditingServiceTarget({ id: svc.id, openPhotoPicker: true })}
+                    disabled={!isAdmin}
+                    title={isAdmin ? 'Tap to add/change photo' : 'Service photo'}
+                    aria-label={isAdmin ? `Add or change photo for ${svc.name}` : `${svc.name} photo`}
+                    className="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden group"
+                  >
+                    {serviceCoverImage(svc) ? (
+                      <img src={serviceCoverImage(svc)} alt={svc.name} className="w-full h-full object-cover" />
+                    ) : (
+                      (() => {
+                        const { gradient, initials } = productAvatar(svc.name);
+                        return (
+                          <span className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${gradient} text-white text-xs font-bold`}>
+                            {initials}
+                          </span>
+                        );
+                      })()
+                    )}
+                    {isAdmin && (
+                      <span className={`absolute inset-0 flex items-center justify-center transition-colors ${serviceCoverImage(svc) ? 'bg-black/0 group-hover:bg-black/40' : 'bg-black/30'}`}>
+                        <FiCamera className={`h-4 w-4 text-white transition-opacity ${serviceCoverImage(svc) ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`} />
+                      </span>
+                    )}
+                    {svc.images?.length > 1 && (
+                      <span className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 text-[9px] font-semibold text-white">
+                        {svc.images.length}
+                      </span>
+                    )}
+                  </button>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-800 truncate">{svc.name}</p>
+                    {svc.description && <p className="text-xs text-gray-400 truncate">{svc.description}</p>}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingServiceTarget({ id: svc.id, openPhotoPicker: false })}
+                        className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        <FiEdit2 className="h-3 w-3" /> Edit details &amp; photos
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex flex-col gap-0.5">
@@ -2620,6 +2666,16 @@ const OrderInventoryPOSControl = () => {
             loadServices();
           }}
           prefilledData={{ inventory_mode: 'service_item' }}
+        />
+      )}
+
+      {editingServiceTarget && services.some(s => s.id === editingServiceTarget.id) && (
+        <ServiceEditModal
+          key={editingServiceTarget.id}
+          service={services.find(s => s.id === editingServiceTarget.id)}
+          openPhotoPicker={editingServiceTarget.openPhotoPicker}
+          onClose={() => setEditingServiceTarget(null)}
+          onChange={(patch) => setServices(prev => prev.map(s => (s.id === editingServiceTarget.id ? { ...s, ...patch } : s)))}
         />
       )}
 

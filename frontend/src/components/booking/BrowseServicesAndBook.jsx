@@ -9,6 +9,7 @@ import BookServiceModal from './BookServiceModal';
 import BookingChatCallPanel from './BookingChatCallPanel';
 import { BOOKING_TYPES, BookingTypeBadge } from './BookingTypePicker';
 import { servicePriceLabel } from '../../utils/servicePrice';
+import { serviceCoverImage } from '../../services/servicePhotoService';
 
 const STATUS_STYLES = {
   requested: 'bg-amber-100 text-amber-700',
@@ -302,7 +303,9 @@ const BrowseServicesAndBook = ({ identity }) => {
                   onClick={() => setBookingService(svc)}
                   className="group flex items-start gap-3 rounded-xl border border-gray-100 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
                 >
-                  {biz.logo_url ? (
+                  {serviceCoverImage(svc) ? (
+                    <img src={serviceCoverImage(svc)} alt={svc.name} loading="lazy" className="h-14 w-14 rounded-lg object-cover shrink-0" />
+                  ) : biz.logo_url ? (
                     <img src={biz.logo_url} alt={biz.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
                   ) : (
                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
