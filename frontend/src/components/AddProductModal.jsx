@@ -30,6 +30,7 @@ import {
 import StableCoinStyles from '../styles/StableCoinStyles';
 import { getStableQuote, savePricingMode } from '../services/stablePricingService';
 import { PRICE_UNIT_LOCAL, PRICE_UNIT_STABLE, localToStable, stableToLocal } from '../utils/stablePricing';
+import { priceModeOf, buildServicePricing } from '../utils/servicePrice';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
@@ -96,6 +97,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     brand: '',
     cost_price: '',
     selling_price: '',
+    price_max: '',
     tax_rate: '18', // Uganda VAT
     inventory_mode: 'stock_controlled',
     generic_name: '',
@@ -169,6 +171,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const stableReady = stableQuote?.status === 'ok';
   const stableMode = priceUnit === PRICE_UNIT_STABLE;
 
+  // A service is priced as one price, a range ("from X to Y") or on request. Products always have one price.
+  const [priceMode, setPriceMode] = useState(() => (editingProductId ? priceModeOf(prefilledData) : 'fixed'));
+
   // Business-type-driven extras: wholesale quantity-tier pricing and
   // boutique-style variants (see ADD_PRODUCT_PRICE_TIERS_AND_VARIANTS.sql).
   const [businessType, setBusinessType] = useState(null);
@@ -196,6 +201,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     const local = stableToLocal(stablePrice, stableQuote.rate);
     setFormData((prev) => (prev.selling_price === (local ? String(local) : '') ? prev : { ...prev, selling_price: local ? String(local) : '' }));
   }, [stableMode, stableReady, stablePrice, stableQuote]);
+
+  // A range or a quote is always in shillings (ICEC-S pricing is for one fixed price).
+  const choosePriceMode = (mode) => {
+    setPriceMode(mode);
+    setErrors(prev => ({ ...prev, selling_price: '', price_max: '', stable_price: '' }));
+    if (mode !== 'fixed' && stableMode) {
+      setPriceUnit(PRICE_UNIT_LOCAL);
+      setStablePrice('');
+    }
+  };
 
   const choosePriceUnit = (unit) => {
     if (unit === priceUnit) return;
@@ -413,11 +428,17 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     if ((isNaN(costPrice) && !isSupplierMode && !isServiceForm) || costPrice < 0) {
       newErrors.cost_price = 'Valid cost price is required';
     }
-    if (isNaN(sellingPrice) || sellingPrice < 0) {
-      newErrors.selling_price = 'Valid selling price is required';
-    }
-    if (sellingPrice < (costPrice || 0)) {
-      newErrors.selling_price = 'Selling price should be greater than cost price';
+    if (isServiceForm) {
+      // One price, a range or on request: the shared rules say what is wrong with it.
+      const pricing = buildServicePricing({ mode: priceMode, from: formData.selling_price, to: formData.price_max });
+      if (pricing.error && !(stableMode && priceMode === 'fixed')) newErrors[pricing.field || 'selling_price'] = pricing.error;
+    } else {
+      if (isNaN(sellingPrice) || sellingPrice < 0) {
+        newErrors.selling_price = 'Valid selling price is required';
+      }
+      if (sellingPrice < (costPrice || 0)) {
+        newErrors.selling_price = 'Selling price should be greater than cost price';
+      }
     }
     if (stableMode) {
       if (!stableReady) newErrors.stable_price = 'ICEC-S has no live price right now — switch back to shillings or try again shortly';
@@ -510,6 +531,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         return;
       }
 
+      // A service is priced as one price, a range or on request (validated above)
+      const servicePricing = isServiceForm
+        ? buildServicePricing({ mode: priceMode, from: formData.selling_price, to: formData.price_max })
+        : null;
+
       // Prepare data for submission
       const productData = {
         sku: formData.sku.trim() || null,
@@ -520,7 +546,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         supplier_id: formData.supplier_id || null,
         brand: formData.brand?.trim() || null,
         cost_price: parseFloat(formData.cost_price) || 0,
-        selling_price: parseFloat(formData.selling_price) || 0,
+        selling_price: servicePricing ? servicePricing.selling_price : (parseFloat(formData.selling_price) || 0),
+        price_max: servicePricing ? servicePricing.price_max : null,
         tax_rate: parseFloat(formData.tax_rate) || 18,
         inventory_mode: formData.inventory_mode || 'stock_controlled',
         generic_name: formData.generic_name?.trim() || null,
@@ -557,6 +584,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           brand: productData.brand,
           cost_price: productData.cost_price,
           selling_price: productData.selling_price,
+          ...(isServiceForm ? { price_max: productData.price_max } : {}),
           tax_rate: productData.tax_rate,
           inventory_mode: productData.inventory_mode,
           generic_name: productData.generic_name,
@@ -641,6 +669,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       brand: '',
       cost_price: '',
       selling_price: '',
+      price_max: '',
       tax_rate: '18',
       inventory_mode: prefilledData?.inventory_mode || 'stock_controlled',
       generic_name: '',
@@ -1208,7 +1237,38 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   Pricing (UGX)
                 </h3>
 
-                {/* Price in shillings, or fix it in ICEC-S (the stable coin) so inflation can't eat it */}
+                {/* A service can have one price, a range, or none until the customer asks */}
+                {isServiceForm && (
+                  <div className="mb-4" data-testid="service-price-mode">
+                    <p className="text-sm font-medium text-gray-700 mb-2">How do you price this service?</p>
+                    <div className="grid grid-cols-3 gap-2" role="group" aria-label="Service price type">
+                      {[
+                        { id: 'fixed', label: 'One price', hint: 'e.g. UGX 20,000' },
+                        { id: 'range', label: 'Price range', hint: 'e.g. 20,000 – 50,000' },
+                        { id: 'quote', label: 'Ask for a quote', hint: 'Price agreed first' },
+                      ].map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => choosePriceMode(option.id)}
+                          aria-pressed={priceMode === option.id}
+                          className={`rounded-lg border px-2 py-2 sm:py-2.5 text-center transition ${
+                            priceMode === option.id
+                              ? 'border-blue-600 bg-blue-50 text-blue-700 ring-1 ring-blue-600'
+                              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="block text-xs sm:text-sm font-semibold leading-tight">{option.label}</span>
+                          <span className="block text-[10px] sm:text-xs text-gray-500 leading-tight mt-0.5">{option.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Price in shillings, or fix it in ICEC-S (the stable coin) so inflation can't eat it.
+                    A range or a quote is always in shillings. */}
+                {!(isServiceForm && priceMode !== 'fixed') && (
                 <div className={`sc-scope sc-flat mb-4 p-3 ${isSupplierMode ? 'sc-supplier' : ''}`} data-testid="price-unit-picker">
                   <StableCoinStyles />
                   <div className="flex flex-wrap items-center gap-3">
@@ -1246,6 +1306,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     <p className="sc-pill sc-pill-warn mt-1">The live exchange rates are a few hours old, so this price may move slightly when they refresh</p>
                   )}
                 </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Cost Price */}
@@ -1272,9 +1333,15 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   )}
 
                   {/* Selling Price */}
+                  {isServiceForm && priceMode === 'quote' ? (
+                    <div className="md:col-span-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                      Customers will see <b>Ask for a quote</b> instead of a price, and can still message or book you. Nothing to enter here.
+                    </div>
+                  ) : (
+                  <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {isServiceForm ? 'Price *' : 'Selling Price *'} <span className="text-xs text-gray-500">({stableMode ? 'in ICEC-S, VAT-inclusive' : isServiceForm ? 'VAT-inclusive' : 'Retail, VAT-inclusive'})</span>
+                      {isServiceForm ? (priceMode === 'range' ? 'From (lowest price) *' : 'Price *') : 'Selling Price *'} <span className="text-xs text-gray-500">({stableMode ? 'in ICEC-S, VAT-inclusive' : isServiceForm ? 'VAT-inclusive' : 'Retail, VAT-inclusive'})</span>
                     </label>
                     {stableMode ? (
                       <>
@@ -1315,10 +1382,32 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     <p className="text-xs text-green-700 mt-1">
                       Includes {formData.tax_rate || 0}% VAT: UGX {includedTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </p>
-                    {isServiceForm && (
-                      <p className="text-xs text-gray-500 mt-1">Leave at 0 if the price depends on the job — customers will see "Ask for a quote".</p>
-                    )}
                   </div>
+
+                  {/* Top of the range */}
+                  {isServiceForm && priceMode === 'range' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        To (highest price) * <span className="text-xs text-gray-500">(VAT-inclusive)</span>
+                      </label>
+                      <input
+                        type="number"
+                        name="price_max"
+                        value={formData.price_max}
+                        onChange={handleChange}
+                        min="0"
+                        step="0.01"
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                          errors.price_max ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        placeholder="0.00"
+                      />
+                      {errors.price_max && <p className="text-red-500 text-xs mt-1">{errors.price_max}</p>}
+                      <p className="text-xs text-gray-500 mt-1">Customers see "UGX {Number(formData.selling_price || 0).toLocaleString()} - {Number(formData.price_max || 0).toLocaleString()}".</p>
+                    </div>
+                  )}
+                  </>
+                  )}
 
                   {/* Tax Rate */}
                   <div>

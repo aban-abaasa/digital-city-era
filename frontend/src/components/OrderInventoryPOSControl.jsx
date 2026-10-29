@@ -25,6 +25,7 @@ import { impliedDiscountPercent, withDiscountPercent, withSellingPrice, withWhol
 import { compressImageFile } from '../utils/imageCompression';
 import { attachExistingProductImage } from '../services/productImageLibrary';
 import inventoryService, { explainProductSaveError } from '../services/inventorySupabaseService';
+import { servicePriceLabel } from '../utils/servicePrice';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
 import ProductPhotoSource from './ProductPhotoSource';
@@ -1011,7 +1012,7 @@ const OrderInventoryPOSControl = () => {
       const smId = supermarketId || await inventoryService.getCurrentSupermarketId();
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, description, selling_price, price, is_active, is_bookable, booking_type, images')
+        .select('id, name, description, selling_price, price, price_max, is_active, is_bookable, booking_type, images')
         .eq('supermarket_id', smId)
         .eq('inventory_mode', 'service_item')
         .order('name');
@@ -1043,9 +1044,16 @@ const OrderInventoryPOSControl = () => {
     if (visible.length && !visible.includes(activeTab)) setActiveTab(visible[0]);
   }, [offersProducts, offersServices, activeTab]);
 
-  const updateServicePrice = async (serviceId, newPrice) => {
+  // Sets the lowest price (the only price, when there is no "To"). A range top at or below it is refused.
+  const updateServicePrice = async (serviceId, newPrice, inputEl) => {
     const price = parseFloat(newPrice);
     if (isNaN(price) || price < 0) return;
+    const current = services.find(s => s.id === serviceId);
+    if (Number(current?.price_max) > 0 && price >= Number(current.price_max)) {
+      toast.error('❌ "From" must be lower than "To". Clear "To" first for a single price.');
+      if (inputEl) inputEl.value = current.selling_price || current.price || 0;
+      return;
+    }
     try {
       const { error } = await supabase.from('products').update({ selling_price: price, price }).eq('id', serviceId);
       if (error) throw error;
@@ -1054,6 +1062,30 @@ const OrderInventoryPOSControl = () => {
     } catch (error) {
       console.error('❌ Error updating service price:', error);
       toast.error('Failed to update price');
+    }
+  };
+
+  // Sets or clears the top of the price range. Blank means a single price again.
+  const updateServicePriceMax = async (serviceId, rawValue, inputEl) => {
+    const current = services.find(s => s.id === serviceId);
+    const trimmed = String(rawValue ?? '').trim();
+    const max = trimmed === '' ? null : parseFloat(trimmed);
+    if (max !== null && (isNaN(max) || max < 0)) return;
+    const from = Number(current?.selling_price || current?.price || 0);
+    if (max !== null && max <= from) {
+      toast.error('❌ "To" must be higher than "From".');
+      if (inputEl) inputEl.value = current?.price_max ?? '';
+      return;
+    }
+    if (max === (current?.price_max != null ? Number(current.price_max) : null)) return;
+    try {
+      const { error } = await supabase.from('products').update({ price_max: max }).eq('id', serviceId);
+      if (error) throw error;
+      setServices(prev => prev.map(s => (s.id === serviceId ? { ...s, price_max: max } : s)));
+      toast.success(max === null ? '✅ Single price set' : '✅ Price range updated');
+    } catch (error) {
+      console.error('❌ Error updating service price range:', error);
+      toast.error('Failed to update price range');
     }
   };
 
@@ -2498,15 +2530,35 @@ const OrderInventoryPOSControl = () => {
                   {svc.description && <p className="text-xs text-gray-400 truncate">{svc.description}</p>}
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-gray-400">UGX</span>
-                    <input
-                      type="number"
-                      defaultValue={svc.selling_price || svc.price || 0}
-                      disabled={!isAdmin}
-                      onBlur={(e) => updateServicePrice(svc.id, e.target.value)}
-                      className="w-24 text-sm border border-gray-300 rounded-lg px-2 py-1 disabled:bg-gray-100"
-                    />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-400">UGX</span>
+                      <input
+                        key={`from-${svc.id}-${svc.selling_price}`}
+                        type="number"
+                        min="0"
+                        aria-label={`${svc.name} price (from)`}
+                        title="Lowest price. Set 0 to show 'Ask for a quote'."
+                        defaultValue={svc.selling_price || svc.price || 0}
+                        disabled={!isAdmin}
+                        onBlur={(e) => updateServicePrice(svc.id, e.target.value, e.target)}
+                        className="w-24 text-sm border border-gray-300 rounded-lg px-2 py-1 disabled:bg-gray-100"
+                      />
+                      <span className="text-xs text-gray-400">to</span>
+                      <input
+                        key={`to-${svc.id}-${svc.price_max ?? ''}`}
+                        type="number"
+                        min="0"
+                        placeholder="optional"
+                        aria-label={`${svc.name} highest price (optional)`}
+                        title="Highest price, for a price range. Leave empty for a single price."
+                        defaultValue={svc.price_max ?? ''}
+                        disabled={!isAdmin}
+                        onBlur={(e) => updateServicePriceMax(svc.id, e.target.value, e.target)}
+                        className="w-24 text-sm border border-gray-300 rounded-lg px-2 py-1 disabled:bg-gray-100"
+                      />
+                    </div>
+                    <span className="text-[11px] text-gray-400">Customers see: {servicePriceLabel(svc)}</span>
                   </div>
                   <label className="flex items-center gap-1 text-xs text-gray-600">
                     <input
