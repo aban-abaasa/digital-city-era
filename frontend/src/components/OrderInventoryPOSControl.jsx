@@ -24,7 +24,7 @@ import { barcodeVariants, barcodesMatch } from '../utils/barcodeHelper';
 import { impliedDiscountPercent, withDiscountPercent, withSellingPrice, withWholesalePrice } from '../utils/wholesalePricing';
 import { compressImageFile } from '../utils/imageCompression';
 import { attachExistingProductImage } from '../services/productImageLibrary';
-import inventoryService from '../services/inventorySupabaseService';
+import inventoryService, { explainProductSaveError } from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
 import ProductPhotoSource from './ProductPhotoSource';
@@ -1397,6 +1397,8 @@ const OrderInventoryPOSControl = () => {
     }
   };
 
+  const servicesOnlyStore = offersServices && !offersProducts;
+
   const saveNewProduct = async () => {
     // ⚡ Skip expensive auth check - already verified on mount
     // if (!isAdmin) {
@@ -1473,7 +1475,9 @@ const OrderInventoryPOSControl = () => {
             category_id: newProduct.category_id,
             is_active: true,
             barcode: newProduct.barcode || generatedBarcode, // ✅ Use scanned barcode if available
-            supermarket_id: supermarketId || undefined
+            supermarket_id: supermarketId || undefined,
+            // A store that offers only services has nothing to stock: what it adds here is a service
+            ...(servicesOnlyStore ? { inventory_mode: 'service_item', track_inventory: false, is_service: true } : {})
           })
           .select('*')
           .single();
@@ -1504,7 +1508,7 @@ const OrderInventoryPOSControl = () => {
       }
 
       // ✅ CREATE INVENTORY RECORD FOR NEW PRODUCT (only if newly created)
-      if (data && data.id && !newlyRegisteredProductId) {
+      if (data && data.id && !newlyRegisteredProductId && !servicesOnlyStore) {
         const supermarketId = await inventoryService.getCurrentSupermarketId();
         const { error: inventoryError } = await supabase
           .from('inventory')
@@ -1602,7 +1606,7 @@ const OrderInventoryPOSControl = () => {
       calculateStats(updatedProducts);
     } catch (error) {
       console.error('❌ Error saving product:', error);
-      toast.error('❌ Failed to save product: ' + (error.message || 'Unknown error'));
+      toast.error('❌ Failed to save product: ' + explainProductSaveError(error));
     }
   };
 

@@ -61,6 +61,19 @@ const recordSupermarketStockLedgerEntry = async (supermarketId, { productName, c
   }
 };
 
+/**
+ * products.supermarket_id is a real foreign key. When an account is still linked to a store
+ * that has since been deleted, Postgres answers with a raw constraint message that tells the
+ * admin nothing; say what is actually wrong and how to fix it.
+ */
+const explainProductSaveError = (error) => {
+  const text = `${error?.message || ''} ${error?.details || ''}`;
+  if (error?.code === '23503' && /supermarket_id/.test(text)) {
+    return 'This account is linked to a store that no longer exists, so the item could not be saved. Sign out and back in; if it persists, ask support to re-link your account to your business.';
+  }
+  return error?.message || 'Unknown error';
+};
+
 class InventorySupabaseService {
   constructor() {
     this.cache = new Map();
@@ -76,9 +89,18 @@ class InventorySupabaseService {
    * users.id directly (newer trigger), so match either. Each supermarket's
    * products/inventory are isolated from every other supermarket's — this
    * is what scopes writes (and should scope reads) to the right one.
-   * Memoized per page load since bulk imports call this once per row.
+   * Memoized per signed-in user since bulk imports call this once per row. The memo
+   * must not outlive the account: an admin who switches to another account or role
+   * portal in the same tab would otherwise keep writing to the previous account's
+   * store (or to a store that no longer exists, which fails the products FK).
    */
   async getCurrentSupermarketId() {
+    const { data: { session } } = await supabase.auth.getSession();
+    const sessionUserId = session?.user?.id || null;
+    if (this._supermarketIdUserId !== sessionUserId) {
+      this._supermarketIdPromise = null;
+      this._supermarketIdUserId = sessionUserId;
+    }
     if (this._supermarketIdPromise) return this._supermarketIdPromise;
 
     this._supermarketIdPromise = (async () => {
@@ -93,12 +115,15 @@ class InventorySupabaseService {
 
       // An admin's owned store is the canonical context when that admin opens
       // another role portal.
-      const { data: ownedSupermarket } = await supabase
+      // limit(1) rather than maybeSingle(): an owner with two stores makes maybeSingle() error
+      // out and fall through to a possibly stale users.supermarket_id.
+      const { data: ownedRows } = await supabase
         .from('supermarkets')
         .select('id')
         .eq('owner_user_id', user.id)
-        .maybeSingle();
-      if (ownedSupermarket?.id) return ownedSupermarket.id;
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (ownedRows?.[0]?.id) return ownedRows[0].id;
 
       // Staff assignment is authoritative for cashiers/managers. Support both
       // user ID conventions used by older and newer signup flows.
@@ -501,7 +526,10 @@ class InventorySupabaseService {
           productInsert.barcode = generateStoreBarcode({ supermarketId });
           continue;
         }
-        if (productError) throw productError;
+        if (productError) {
+          if (productError.code === '23503') throw new Error(explainProductSaveError(productError));
+          throw productError;
+        }
         product = data;
         break;
       }
@@ -1477,5 +1505,6 @@ export default inventoryService;
 // Named exports for specific functions
 export {
   inventoryService,
-  InventorySupabaseService
+  InventorySupabaseService,
+  explainProductSaveError
 };
