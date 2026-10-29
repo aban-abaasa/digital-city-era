@@ -399,7 +399,8 @@ class InventorySupabaseService {
         is_bookable = false,
         booking_type = 'slot',
         expiry_date,
-        batch_number
+        batch_number,
+        price_max
       } = productData;
 
       // Ensure selling_price is a valid number
@@ -513,6 +514,8 @@ class InventorySupabaseService {
       productInsert.is_bookable = effectiveInventoryMode === 'service_item' ? Boolean(is_bookable) : false;
       productInsert.booking_type = productInsert.is_bookable ? (booking_type || 'slot') : 'slot';
       if (expiry_date) productInsert.expiry_date = expiry_date;
+      // Top of a service price range (selling_price is the lowest price); only sent when there is one
+      if (effectiveInventoryMode === 'service_item' && Number(price_max) > finalSellingPrice) productInsert.price_max = Number(price_max);
 
       // A barcode made here can, very rarely, match one the page can't see: draw another and retry
       let product;

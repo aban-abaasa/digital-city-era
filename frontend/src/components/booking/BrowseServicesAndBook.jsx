@@ -8,6 +8,7 @@ import {
 import BookServiceModal from './BookServiceModal';
 import BookingChatCallPanel from './BookingChatCallPanel';
 import { BOOKING_TYPES, BookingTypeBadge } from './BookingTypePicker';
+import { servicePriceLabel } from '../../utils/servicePrice';
 
 const STATUS_STYLES = {
   requested: 'bg-amber-100 text-amber-700',
@@ -336,9 +337,7 @@ const BrowseServicesAndBook = ({ identity }) => {
                       </p>
                     )}
                     {svc.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{svc.description}</p>}
-                    {(svc.selling_price || svc.price) && (
-                      <p className="text-sm font-semibold text-blue-600 mt-1">UGX {Number(svc.selling_price || svc.price).toLocaleString()}</p>
-                    )}
+                    <p className="text-sm font-semibold text-blue-600 mt-1">{servicePriceLabel(svc)}</p>
                   </div>
                   <span className="mt-1 shrink-0 self-center rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white opacity-90 transition group-hover:opacity-100">
                     Book

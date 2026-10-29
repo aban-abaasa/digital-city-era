@@ -25,7 +25,7 @@ export const getBusinessesOfferingServices = async () => {
 export const getBookableServices = async (supermarketId) => {
   const { data, error } = await supabase
     .from('products')
-    .select('id, name, description, selling_price, price, image_url, images, booking_type')
+    .select('id, name, description, selling_price, price, price_max, image_url, images, booking_type')
     .eq('supermarket_id', supermarketId)
     .eq('inventory_mode', 'service_item')
     .eq('is_bookable', true)
@@ -45,7 +45,7 @@ export const searchBookableServices = async () => {
   const { data, error } = await supabase
     .from('products')
     .select(
-      'id, name, description, selling_price, price, image_url, images, supermarket_id, booking_type,' +
+      'id, name, description, selling_price, price, price_max, image_url, images, supermarket_id, booking_type,' +
         ' supermarkets!inner(id, name, business_type, logo_url, city, address, offers_services, is_active)'
     )
     .eq('inventory_mode', 'service_item')
