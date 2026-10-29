@@ -244,9 +244,10 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         inventoryService.getSuppliers()
       ]);
       
-      // Create default categories if none exist
+      // Seed default categories / a default supplier when there are none. Categories and
+      // suppliers are optional on a product and only privileged accounts may create them
+      // (RLS), so a refusal here must never stop the form from opening.
       if (categoriesData.length === 0) {
-        toast.info('Creating default categories...');
         const defaultCategories = [
           { name: 'Groceries', description: 'Basic grocery items', is_active: true },
           { name: 'Beverages', description: 'Drinks and beverages', is_active: true },
@@ -255,34 +256,37 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           { name: 'Household', description: 'Household items and supplies', is_active: true },
           { name: 'Personal Care', description: 'Personal care products', is_active: true },
         ];
-        
-        for (const cat of defaultCategories) {
-          await inventoryService.createCategory(cat);
+
+        try {
+          for (const cat of defaultCategories) {
+            await inventoryService.createCategory(cat, { silent: true });
+          }
+          categoriesData = await inventoryService.getCategories();
+          toast.success('✅ Default categories created!');
+        } catch (seedError) {
+          console.warn('⚠️ Could not create default categories (continuing without them):', seedError);
         }
-        
-        categoriesData = await inventoryService.getCategories();
-        toast.success('✅ Default categories created!');
       }
-      
-      // Create default supplier if none exist
+
       if (suppliersData.length === 0) {
-        toast.info('Creating default supplier...');
-        const defaultSupplier = {
-          company_name: 'General Supplier',
-          contact_person: 'Store Manager',
-          email: 'supplier@store.com',
-          phone: '+256-000-000-000',
-          address: 'Kampala, Uganda',
-          payment_terms: 'Net 30',
-          rating: 4.0,
-          is_active: true
-        };
-        
-        await inventoryService.createSupplier(defaultSupplier);
-        suppliersData = await inventoryService.getSuppliers();
-        toast.success('✅ Default supplier created!');
+        try {
+          await inventoryService.createSupplier({
+            company_name: 'General Supplier',
+            contact_person: 'Store Manager',
+            email: 'supplier@store.com',
+            phone: '+256-000-000-000',
+            address: 'Kampala, Uganda',
+            payment_terms: 'Net 30',
+            rating: 4.0,
+            is_active: true
+          }, { silent: true });
+          suppliersData = await inventoryService.getSuppliers();
+          toast.success('✅ Default supplier created!');
+        } catch (seedError) {
+          console.warn('⚠️ Could not create a default supplier (continuing without one):', seedError);
+        }
       }
-      
+
       setCategories(categoriesData);
       setSuppliers(suppliersData);
       
@@ -586,6 +590,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           booking_type: productData.booking_type,
           expiry_date: productData.expiry_date,
         };
+        // The dropdown lists supplier accounts (users), but products.supplier_id points at the
+        // suppliers table: sending an id that has no row there fails the foreign key.
+        if (productFields.supplier_id) {
+          const { data: supplierRow } = await supabase
+            .from('suppliers')
+            .select('id')
+            .eq('id', productFields.supplier_id)
+            .maybeSingle();
+          if (!supplierRow) delete productFields.supplier_id;
+        }
         const updated = await inventoryService.updateProduct(editingProductId, productFields);
         productId = updated.id;
 
