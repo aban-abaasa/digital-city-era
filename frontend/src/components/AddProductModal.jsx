@@ -125,6 +125,21 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const isServiceForm = !isSupplierMode && formData.inventory_mode === 'service_item';
   const serviceLocked = isServiceForm && prefilledData?.inventory_mode === 'service_item';
 
+  // Products and services have their own category lists (categories.kind, ADD_CATEGORY_KINDS.sql).
+  // A database that has not had that migration yet has no kind on any row: show the whole list then.
+  const categoriesHaveKinds = categories.some((c) => c.kind);
+  const visibleCategories = categoriesHaveKinds
+    ? categories.filter((c) => c.kind === (isServiceForm ? 'service' : 'product'))
+    : categories;
+
+  // Flipping between product and service must not leave behind a category from the other list.
+  useEffect(() => {
+    const chosen = categories.find((c) => c.id === formData.category_id);
+    if (chosen && !visibleCategories.includes(chosen)) {
+      setFormData(prev => ({ ...prev, category_id: '' }));
+    }
+  }, [isServiceForm, categories, formData.category_id]);
+
   // Common Uganda supermarket products for quick selection
   const commonProducts = [
     { name: 'Sugar - 1kg', category: 'Groceries', brand: 'Kakira', typical_price: 3500 },
@@ -250,42 +265,15 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         setVariants([]);
       }
 
-      let [categoriesData, suppliersData] = await Promise.all([
+      const [categoriesData, suppliersData] = await Promise.all([
         inventoryService.getCategories(),
         inventoryService.getSuppliers()
       ]);
       
-      // Seed default categories when there are none. Categories are optional on a product and
-      // only privileged accounts may create them (RLS), so a refusal here must never stop the
-      // form from opening. No placeholder supplier is invented: a supplier is a real company.
-      if (categoriesData.length === 0) {
-        const defaultCategories = [
-          { name: 'Groceries', description: 'Basic grocery items', is_active: true },
-          { name: 'Beverages', description: 'Drinks and beverages', is_active: true },
-          { name: 'Dairy', description: 'Milk and dairy products', is_active: true },
-          { name: 'Bakery', description: 'Bread and bakery items', is_active: true },
-          { name: 'Household', description: 'Household items and supplies', is_active: true },
-          { name: 'Personal Care', description: 'Personal care products', is_active: true },
-        ];
-
-        try {
-          for (const cat of defaultCategories) {
-            await inventoryService.createCategory(cat, { silent: true });
-          }
-          categoriesData = await inventoryService.getCategories();
-          toast.success('✅ Default categories created!');
-        } catch (seedError) {
-          console.warn('⚠️ Could not create default categories (continuing without them):', seedError);
-        }
-      }
-
       setCategories(categoriesData);
       setSuppliers(suppliersData);
       
-      // Set default category and supplier if only one exists
-      if (categoriesData.length === 1 && !formData.category_id) {
-        setFormData(prev => ({ ...prev, category_id: categoriesData[0].id }));
-      }
+      // Set default supplier if only one exists
       if (suppliersData.length === 1 && !formData.supplier_id) {
         setFormData(prev => ({ ...prev, supplier_id: suppliersData[0].id }));
       }
@@ -947,7 +935,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   {/* Category */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Category <span className="text-xs text-gray-500">(Optional)</span>
+                      {isServiceForm ? 'Service category' : 'Category'} <span className="text-xs text-gray-500">(Optional)</span>
                     </label>
                     <select
                       name="category_id"
@@ -955,8 +943,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select Category</option>
-                      {categories.map(cat => (
+                      <option value="">{isServiceForm ? 'Select service category' : 'Select Category'}</option>
+                      {visibleCategories.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>
