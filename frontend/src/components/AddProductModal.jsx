@@ -33,6 +33,12 @@ import { PRICE_UNIT_LOCAL, PRICE_UNIT_STABLE, localToStable, stableToLocal } fro
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
+// Name-only starters for the Add Service form (no prices: what a service costs is the business's call).
+const SERVICE_SUGGESTIONS = [
+  'Haircut & styling', 'Laundry - wash & fold', 'Home cleaning', 'Repair & maintenance',
+  'Consultation', 'Installation', 'Delivery / errand'
+];
+
 const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null }) => {
   const isSupplierMode = mode === 'supplier';
   const [loading, setLoading] = useState(false);
@@ -113,6 +119,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     min_order_qty: '1',
     ...prefilledData
   });
+
+  // A service has no stock, barcode, supplier or cost to track, so the form shows only what a service needs.
+  // The Add Service page opens it already fixed to a service (no mode picker to flip it back).
+  const isServiceForm = !isSupplierMode && formData.inventory_mode === 'service_item';
+  const serviceLocked = isServiceForm && prefilledData?.inventory_mode === 'service_item';
 
   // Common Uganda supermarket products for quick selection
   const commonProducts = [
@@ -244,9 +255,10 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         inventoryService.getSuppliers()
       ]);
       
-      // Create default categories if none exist
+      // Seed default categories / a default supplier when there are none. Categories and
+      // suppliers are optional on a product and only privileged accounts may create them
+      // (RLS), so a refusal here must never stop the form from opening.
       if (categoriesData.length === 0) {
-        toast.info('Creating default categories...');
         const defaultCategories = [
           { name: 'Groceries', description: 'Basic grocery items', is_active: true },
           { name: 'Beverages', description: 'Drinks and beverages', is_active: true },
@@ -255,34 +267,37 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           { name: 'Household', description: 'Household items and supplies', is_active: true },
           { name: 'Personal Care', description: 'Personal care products', is_active: true },
         ];
-        
-        for (const cat of defaultCategories) {
-          await inventoryService.createCategory(cat);
+
+        try {
+          for (const cat of defaultCategories) {
+            await inventoryService.createCategory(cat, { silent: true });
+          }
+          categoriesData = await inventoryService.getCategories();
+          toast.success('✅ Default categories created!');
+        } catch (seedError) {
+          console.warn('⚠️ Could not create default categories (continuing without them):', seedError);
         }
-        
-        categoriesData = await inventoryService.getCategories();
-        toast.success('✅ Default categories created!');
       }
-      
-      // Create default supplier if none exist
+
       if (suppliersData.length === 0) {
-        toast.info('Creating default supplier...');
-        const defaultSupplier = {
-          company_name: 'General Supplier',
-          contact_person: 'Store Manager',
-          email: 'supplier@store.com',
-          phone: '+256-000-000-000',
-          address: 'Kampala, Uganda',
-          payment_terms: 'Net 30',
-          rating: 4.0,
-          is_active: true
-        };
-        
-        await inventoryService.createSupplier(defaultSupplier);
-        suppliersData = await inventoryService.getSuppliers();
-        toast.success('✅ Default supplier created!');
+        try {
+          await inventoryService.createSupplier({
+            company_name: 'General Supplier',
+            contact_person: 'Store Manager',
+            email: 'supplier@store.com',
+            phone: '+256-000-000-000',
+            address: 'Kampala, Uganda',
+            payment_terms: 'Net 30',
+            rating: 4.0,
+            is_active: true
+          }, { silent: true });
+          suppliersData = await inventoryService.getSuppliers();
+          toast.success('✅ Default supplier created!');
+        } catch (seedError) {
+          console.warn('⚠️ Could not create a default supplier (continuing without one):', seedError);
+        }
       }
-      
+
       setCategories(categoriesData);
       setSuppliers(suppliersData);
       
@@ -418,15 +433,15 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const validateForm = () => {
     const newErrors = {};
 
-    if (!isSupplierMode && !formData.sku?.trim()) newErrors.sku = 'SKU is required';
-    if (!formData.name?.trim()) newErrors.name = 'Product name is required';
+    if (!isSupplierMode && !isServiceForm && !formData.sku?.trim()) newErrors.sku = 'SKU is required';
+    if (!formData.name?.trim()) newErrors.name = isServiceForm ? 'Service name is required' : 'Product name is required';
     // Category and supplier are now optional
     
     const costPrice = parseFloat(formData.cost_price);
     const sellingPrice = parseFloat(formData.selling_price);
     
     // A supplier may not track cost; blank counts as 0 there.
-    if ((isNaN(costPrice) && !isSupplierMode) || costPrice < 0) {
+    if ((isNaN(costPrice) && !isSupplierMode && !isServiceForm) || costPrice < 0) {
       newErrors.cost_price = 'Valid cost price is required';
     }
     if (isNaN(sellingPrice) || sellingPrice < 0) {
@@ -441,7 +456,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     }
 
     const stock = parseInt(formData.initial_stock);
-    if (isNaN(stock) || stock < 0) {
+    if (!isServiceForm && (isNaN(stock) || stock < 0)) {
       newErrors.initial_stock = 'Valid stock quantity is required';
     }
 
@@ -586,22 +601,34 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           booking_type: productData.booking_type,
           expiry_date: productData.expiry_date,
         };
+        // The dropdown lists supplier accounts (users), but products.supplier_id points at the
+        // suppliers table: sending an id that has no row there fails the foreign key.
+        if (productFields.supplier_id) {
+          const { data: supplierRow } = await supabase
+            .from('suppliers')
+            .select('id')
+            .eq('id', productFields.supplier_id)
+            .maybeSingle();
+          if (!supplierRow) delete productFields.supplier_id;
+        }
         const updated = await inventoryService.updateProduct(editingProductId, productFields);
         productId = updated.id;
 
-        const { error: invError } = await supabase
-          .from('inventory')
-          .update({
-            current_stock: productData.initial_stock,
-            minimum_stock: productData.minimum_stock,
-            reorder_point: productData.reorder_point,
-          })
-          .eq('product_id', productId);
-        if (invError) console.warn('⚠️ Inventory update failed:', invError);
+        if (!isServiceForm) {
+          const { error: invError } = await supabase
+            .from('inventory')
+            .update({
+              current_stock: productData.initial_stock,
+              minimum_stock: productData.minimum_stock,
+              reorder_point: productData.reorder_point,
+            })
+            .eq('product_id', productId);
+          if (invError) console.warn('⚠️ Inventory update failed:', invError);
+        }
       } else {
         const newProduct = await inventoryService.createProduct(productData);
         productId = newProduct.id;
-        toast.success(`✅ Product "${productData.name}" added successfully!`);
+        toast.success(`✅ ${isServiceForm ? 'Service' : 'Product'} "${productData.name}" added successfully!`);
       }
 
       await savePriceUnit('product', productId);
@@ -646,7 +673,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       cost_price: '',
       selling_price: '',
       tax_rate: '18',
-      inventory_mode: 'stock_controlled',
+      inventory_mode: prefilledData?.inventory_mode || 'stock_controlled',
       generic_name: '',
       medicine_category: '',
       strength: '',
@@ -694,12 +721,16 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
               <h2 className="text-base sm:text-2xl font-bold truncate">
                 {isSupplierMode
                   ? (isEditMode ? 'Edit Catalog Item' : 'Add to Supply Catalog')
-                  : (isEditMode ? 'Edit Product' : 'Add New Product')}
+                  : isServiceForm
+                    ? (isEditMode ? 'Edit Service' : 'Add New Service')
+                    : (isEditMode ? 'Edit Product' : 'Add New Product')}
               </h2>
               <p className="text-blue-100 text-[11px] sm:text-sm leading-tight line-clamp-2 sm:truncate">
                 {isSupplierMode
                   ? 'Supermarkets see this when they order from you'
-                  : (isEditMode ? 'Update product details and photo' : 'Add product to inventory with real-time sync')}
+                  : isServiceForm
+                    ? (isEditMode ? 'Update what you offer, its price and booking options' : 'Describe what you offer — no stock or barcode needed')
+                    : (isEditMode ? 'Update product details and photo' : 'Add product to inventory with real-time sync')}
               </p>
             </div>
           </div>
@@ -749,12 +780,31 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   >
                     {uploadingImage ? 'Uploading…' : imagePreview ? 'Change photo' : 'Add photo (optional)'}
                   </button>
-                  <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">{isSupplierMode ? 'Shown to supermarkets browsing your catalog' : 'Shown to customers browsing this product'}</p>
+                  <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">{isSupplierMode ? 'Shown to supermarkets browsing your catalog' : isServiceForm ? 'Shown to customers browsing this service' : 'Shown to customers browsing this product'}</p>
                 </div>
               </div>
 
+              {/* Service starters: just a name to begin from */}
+              {!isEditMode && isServiceForm && !formData.name && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 mb-2">Quick start — tap one, or type your own below</p>
+                  <div className="flex flex-wrap gap-2">
+                    {SERVICE_SUGGESTIONS.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, name: suggestion }))}
+                        className="px-3 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700 text-xs sm:text-sm font-medium hover:bg-blue-100 active:scale-95"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Quick Add Mode Toggle — not relevant when editing an existing product */}
-              {!isEditMode && (
+              {!isEditMode && !isServiceForm && (
                 <>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between p-3 sm:p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
                     <div className="flex items-center gap-2 sm:gap-3">
@@ -816,10 +866,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
                   <FiTag className="mr-2" />
-                  Product Details {quickAddMode && <span className="ml-2 text-sm text-green-600">(Auto-filled or customize)</span>}
+                  {isServiceForm ? 'Service Details' : 'Product Details'} {quickAddMode && !isServiceForm && <span className="ml-2 text-sm text-green-600">(Auto-filled or customize)</span>}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* SKU */}
+                  {!isServiceForm && (<>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       SKU * <span className="text-xs text-gray-500">(Product Code)</span>
@@ -874,10 +925,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     </div>
                   </div>
 
+                  </>)}
+
                   {/* Product Name */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Product Name *
+                      {isServiceForm ? 'Service Name *' : 'Product Name *'}
                     </label>
                     <input
                       type="text"
@@ -887,12 +940,13 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
                         errors.name ? 'border-red-500' : 'border-gray-300'
                       }`}
-                      placeholder="e.g., iPhone 15 Pro Max 256GB"
+                      placeholder={isServiceForm ? 'e.g., Wash & fold laundry (per kg)' : 'e.g., iPhone 15 Pro Max 256GB'}
                     />
                     {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
                   </div>
 
                   {/* Brand */}
+                  {!isServiceForm && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Brand
@@ -906,6 +960,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       placeholder="e.g., Apple"
                     />
                   </div>
+
+                  )}
 
                   {/* Category */}
                   <div>
@@ -955,7 +1011,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   ) : (
                     <>
                   {/* POS inventory behavior */}
-                  <div>
+                  <div className={isServiceForm ? 'md:col-span-2' : undefined}>
+                    {!serviceLocked && (
+                      <>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       POS inventory mode
                     </label>
@@ -973,9 +1031,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     <p className="text-xs text-gray-500 mt-1">
                       Listing-only products remain sellable without fixed quantities.
                     </p>
+                      </>
+                    )}
                     {formData.inventory_mode === 'service_item' && (
                       <>
-                        <label className="flex items-center gap-2 mt-3 text-sm text-gray-700">
+                        <label className={`flex items-center gap-2 ${serviceLocked ? '' : 'mt-3'} text-sm text-gray-700`}>
                           <input
                             type="checkbox"
                             name="is_bookable"
@@ -1000,7 +1060,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   )}
 
                   {/* Wholesale quantity-tier pricing */}
-                  {businessType === 'wholesale' && (
+                  {businessType === 'wholesale' && !isServiceForm && (
                     <div className="md:col-span-2 border border-blue-200 bg-blue-50 rounded-lg p-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         📦 Quantity price tiers <span className="text-xs text-gray-500">{isSupplierMode ? '(optional — buyers see these bulk prices when they order more)' : '(optional — bulk pricing applied automatically in POS)'}</span>
@@ -1046,7 +1106,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   )}
 
                   {/* Boutique-style variants (size/color) */}
-                  {businessType === 'boutique' && (
+                  {businessType === 'boutique' && !isServiceForm && (
                     <div className="md:col-span-2 border border-pink-200 bg-pink-50 rounded-lg p-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         👗 Variants <span className="text-xs text-gray-500">(optional — e.g. Size: M, Color: Red — each with its own stock)</span>
@@ -1103,7 +1163,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     </div>
                   )}
 
-                  {!isSupplierMode && (
+                  {!isSupplierMode && !isServiceForm && (
                     <>
                   {/* Supplier */}
                   <div className="md:col-span-2">
@@ -1131,7 +1191,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   {/* Description */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description
+                      {isServiceForm ? 'What\'s included' : 'Description'}
                     </label>
                     <textarea
                       name="description"
@@ -1139,11 +1199,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       onChange={handleChange}
                       rows="3"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Product description..."
+                      placeholder={isServiceForm ? 'e.g., Wash, dry and fold up to 5 kg. Ready in 24 hours.' : 'Product description...'}
                     />
                   </div>
 
-                  {!isSupplierMode && (
+                  {!isSupplierMode && !isServiceForm && (
                     <>
                   {/* Optional pharmacy fields. The database applies these only
                       to pharmacy products and keeps other business types safe. */}
@@ -1220,6 +1280,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Cost Price */}
+                  {!isServiceForm && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Cost Price * <span className="text-xs text-gray-500">(Buying)</span>
@@ -1239,10 +1300,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     {errors.cost_price && <p className="text-red-500 text-xs mt-1">{errors.cost_price}</p>}
                   </div>
 
+                  )}
+
                   {/* Selling Price */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Selling Price * <span className="text-xs text-gray-500">({stableMode ? 'in ICEC-S, VAT-inclusive' : 'Retail, VAT-inclusive'})</span>
+                      {isServiceForm ? 'Price *' : 'Selling Price *'} <span className="text-xs text-gray-500">({stableMode ? 'in ICEC-S, VAT-inclusive' : isServiceForm ? 'VAT-inclusive' : 'Retail, VAT-inclusive'})</span>
                     </label>
                     {stableMode ? (
                       <>
@@ -1283,6 +1346,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     <p className="text-xs text-green-700 mt-1">
                       Includes {formData.tax_rate || 0}% VAT: UGX {includedTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </p>
+                    {isServiceForm && (
+                      <p className="text-xs text-gray-500 mt-1">Leave at 0 if the price depends on the job — customers will see "Ask for a quote".</p>
+                    )}
                   </div>
 
                   {/* Tax Rate */}
@@ -1304,7 +1370,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                 </div>
 
                 {/* Profit & Markup Display */}
-                {(formData.cost_price && formData.selling_price) && (
+                {!isServiceForm && (formData.cost_price && formData.selling_price) && (
                   <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
@@ -1322,7 +1388,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                 )}
               </div>
 
-              {/* Inventory Settings */}
+              {/* Inventory Settings: a service has no stock to track */}
+              {!isServiceForm && (
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
                   <FiBox className="mr-2" />
@@ -1432,6 +1499,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   )}
                 </div>
               </div>
+              )}
             </div>
           )}
 
@@ -1457,12 +1525,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                 {loading || uploadingImage ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    <span>{isEditMode ? 'Saving…' : (isSupplierMode ? 'Adding to Catalog…' : 'Adding Product…')}</span>
+                    <span>{isEditMode ? 'Saving…' : (isSupplierMode ? 'Adding to Catalog…' : isServiceForm ? 'Adding Service…' : 'Adding Product…')}</span>
                   </>
                 ) : (
                   <>
                     <FiSave className="h-4 w-4" />
-                    <span>{isEditMode ? 'Save Changes' : (isSupplierMode ? 'Add to Catalog' : 'Add Product')}</span>
+                    <span>{isEditMode ? 'Save Changes' : (isSupplierMode ? 'Add to Catalog' : isServiceForm ? 'Add Service' : 'Add Product')}</span>
                   </>
                 )}
               </button>

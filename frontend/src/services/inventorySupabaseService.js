@@ -1147,7 +1147,7 @@ class InventorySupabaseService {
    * @param {Object} categoryData - Category information
    * @returns {Promise<Object>} Created category
    */
-  async createCategory(categoryData) {
+  async createCategory(categoryData, { silent = false } = {}) {
     try {
       const { data, error } = await supabase
         .from('categories')
@@ -1157,12 +1157,12 @@ class InventorySupabaseService {
 
       if (error) throw error;
 
-      toast.success('✅ Category created successfully!');
+      if (!silent) toast.success('✅ Category created successfully!');
       return data;
 
     } catch (error) {
       console.error('❌ Error creating category:', error);
-      toast.error('Failed to create category');
+      if (!silent) toast.error('Failed to create category');
       throw error;
     }
   }
@@ -1181,8 +1181,7 @@ class InventorySupabaseService {
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('role', 'supplier')
-        .order('company_name', { ascending: true });
+        .eq('role', 'supplier');
 
       if (error) {
         console.error('❌ Supabase error fetching suppliers:', error);
@@ -1204,7 +1203,8 @@ class InventorySupabaseService {
         rating: sup.rating || null
       }));
 
-      return suppliers;
+      // users has no company_name column to ORDER BY in SQL, so sort by the display name here
+      return suppliers.sort((x, y) => x.company_name.localeCompare(y.company_name));
 
     } catch (error) {
       console.error('❌ Error fetching suppliers:', error);
@@ -1217,7 +1217,7 @@ class InventorySupabaseService {
    * @param {Object} supplierData - Supplier information
    * @returns {Promise<Object>} Created supplier
    */
-  async createSupplier(supplierData) {
+  async createSupplier(supplierData, { silent = false } = {}) {
     try {
       const { data, error } = await supabase
         .from('suppliers')
@@ -1227,12 +1227,12 @@ class InventorySupabaseService {
 
       if (error) throw error;
 
-      toast.success('✅ Supplier created successfully!');
+      if (!silent) toast.success('✅ Supplier created successfully!');
       return data;
 
     } catch (error) {
       console.error('❌ Error creating supplier:', error);
-      toast.error('Failed to create supplier');
+      if (!silent) toast.error('Failed to create supplier');
       throw error;
     }
   }
