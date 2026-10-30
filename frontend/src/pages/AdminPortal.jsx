@@ -32,7 +32,7 @@ import {
   FiUpload, FiTrash2, FiEdit, FiEye, FiRotateCw, FiX,
   FiMoreVertical, FiMail, FiPhone, FiBriefcase, FiFileText,
   FiChevronDown, FiMenu, FiChevronUp, FiChevronRight, FiLogOut, FiInfo,
-  FiSun, FiMoon, FiShoppingCart, FiPackage
+  FiSun, FiMoon, FiShoppingCart, FiPackage, FiPlus
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -44,6 +44,8 @@ import { useBackLayer } from '../hooks/useBackLayer';
 const AdminPortal = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('dashboard');
+  // Bumped by every "Add products" shortcut; Order Inventory opens its Add Products page when it changes
+  const [addProductsSignal, setAddProductsSignal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [systemData, setSystemData] = useState({
     analytics: {},
@@ -5545,6 +5547,13 @@ const AdminPortal = () => {
   // sub-views, chosen through viewMode.
   const openSection = useCallback((section, mode) => {
     if (mode) setViewMode(mode);
+    // Add products: the inventory section, opened straight on the full-page Add Products form
+    if (section === 'add-products') {
+      setActiveSection('inventory-pos');
+      setAddProductsSignal((count) => count + 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     // Orders live on the dashboard now: land there and scroll to the orders block.
     if (section === 'orders') {
       setActiveSection('dashboard');
@@ -5804,6 +5813,7 @@ const AdminPortal = () => {
           { id: 'users', label: 'Users' },
           { id: 'ican-wallet', label: 'Wallet' }
         ]}
+        bottomAction={{ label: 'Add', ariaLabel: 'Add products', icon: FiPlus, onClick: () => openSection('add-products') }}
       />
 
       {/* Main Content Area */}
@@ -5870,7 +5880,7 @@ const AdminPortal = () => {
             
             {/* 📦 ORDER INVENTORY POS CONTROL */}
             {activeSection === 'inventory-pos' && (
-              <OrderInventoryPOSControl />
+              <OrderInventoryPOSControl openAddSignal={addProductsSignal} />
             )}
 
             {/* 📅 SERVICE BOOKINGS */}

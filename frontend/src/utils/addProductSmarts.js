@@ -81,12 +81,12 @@ export const marginPercent = (cost, selling) => {
 };
 
 let rowCounter = 0;
-export const newQuickRow = () => ({ id: `q${Date.now().toString(36)}${rowCounter++}`, name: '', price: '', stock: '' });
+export const newQuickRow = () => ({ id: `q${Date.now().toString(36)}${rowCounter++}`, name: '', price: '', cost: '', stock: '' });
 
-const isBlankRow = (row) => !String(row.name ?? '').trim() && !String(row.price ?? '').trim() && !String(row.stock ?? '').trim();
+const isBlankRow = (row) => ['name', 'price', 'cost', 'stock'].every((field) => !String(row[field] ?? '').trim());
 
 // Splits the quick list into rows ready to save and rows with a problem. Completely empty rows
-// are ignored; a row needs a name and a price above zero. Names repeated inside the list or
+// are ignored; a row needs a name and a price above zero (cost and stock are optional). Names repeated inside the list or
 // already in the shop are reported too, because saving them would create a second copy.
 export const checkQuickRows = (rows, products = []) => {
   const ready = [];
@@ -98,9 +98,11 @@ export const checkQuickRows = (rows, products = []) => {
     const name = String(row.name ?? '').trim();
     const price = Number(row.price);
     const stock = String(row.stock ?? '').trim() === '' ? 0 : Number(row.stock);
+    const cost = String(row.cost ?? '').trim() === '' ? 0 : Number(row.cost);
 
     if (!name) { issues[row.id] = 'Add a name'; continue; }
     if (!(price > 0)) { issues[row.id] = 'Add a price'; continue; }
+    if (!Number.isFinite(cost) || cost < 0) { issues[row.id] = 'Cost must be 0 or more'; continue; }
     if (!Number.isFinite(stock) || stock < 0) { issues[row.id] = 'Stock must be 0 or more'; continue; }
 
     const key = normalizeName(name);
@@ -111,7 +113,7 @@ export const checkQuickRows = (rows, products = []) => {
       issues[row.id] = 'Already in your shop';
       continue;
     }
-    ready.push({ id: row.id, name, selling_price: price, initial_stock: Math.floor(stock) });
+    ready.push({ id: row.id, name, selling_price: price, cost_price: cost, initial_stock: Math.floor(stock) });
   }
   return { ready, issues };
 };

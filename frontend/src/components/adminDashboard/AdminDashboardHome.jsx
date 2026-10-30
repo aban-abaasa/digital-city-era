@@ -3,7 +3,7 @@ import {
   FiActivity, FiAlertTriangle, FiArrowUpRight, FiBell, FiBriefcase, FiCalendar, FiChevronDown, FiChevronLeft,
   FiChevronRight, FiClipboard, FiDollarSign, FiFileText, FiPackage, FiRefreshCw,
   FiSettings, FiShoppingBag, FiShoppingCart, FiTrendingUp, FiTruck, FiUser, FiUserCheck,
-  FiUsers, FiInbox, FiCheckCircle
+  FiUsers, FiInbox, FiCheckCircle, FiPlus
 } from 'react-icons/fi';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import useAdminDashboardData from './useAdminDashboardData';
@@ -275,6 +275,14 @@ function AdminDashboardHome({ adminName, storeName, supermarketId, businessProfi
           )}
           <h2 className="adh-hero-title">{greeting()}, {adminName?.split(' ')[0] || 'Admin'}</h2>
           <p className="adh-hero-sub">Every part of your business, one tap away.</p>
+          <button type="button" className="adh-hero-add" onClick={() => onOpen?.('add-products')}>
+            <span className="adh-hero-add-icon"><FiPlus /></span>
+            <span className="adh-hero-add-text">
+              <strong>Add products</strong>
+              <small>No scanner needed: a name and a price is enough</small>
+            </span>
+            <FiArrowUpRight aria-hidden="true" />
+          </button>
           <div className="adh-hero-meta">
             <span className="adh-live"><i /> Live</span>
             <span className="adh-updated">

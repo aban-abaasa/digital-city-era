@@ -137,3 +137,13 @@ html[data-theme="dark"] .sk-bottom-nav {
 @media (prefers-reduced-motion: reduce) {
   .sk-bottom-nav-tab { transition: none; animation: none; }
 }
+
+/* ── A bar action (e.g. "Add"): the one filled button among the bare icons ── */
+.sk-bottom-nav-action { color: var(--bn-active); }
+.sk-bottom-nav-action-icon {
+  align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: 50%;
+  color: #fff; background: linear-gradient(135deg, var(--bn-c2), var(--bn-c3));
+  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--bn-c2) 80%, transparent);
+}
+.sk-bottom-nav-action-icon svg { filter: none; stroke-width: 2.5; }
+html[data-theme="dark"] .sk-bottom-nav-action-icon { color: #06210f; }
