@@ -23,6 +23,7 @@ import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { findStoreProductForOrderItem, createStoreProductForOrderItem, orderItemBarcode } from '../utils/orderItemMatching';
 
 const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
@@ -658,38 +659,21 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
           
           console.log(`🛒 Processing item:`, { productName, quantity, unitPrice, item });
           
-          if (!productName) {
-            console.warn('⚠️ No product name found in item:', item);
+          if (!productName && !orderItemBarcode(item)) {
+            console.warn('⚠️ No product name or barcode found in item:', item);
             failedCount++;
             results.push({
               name: 'Unknown',
               action: 'failed',
-              error: 'No product name in order item'
+              error: 'Order item has no barcode or product name'
             });
             continue;
           }
 
-          // Try to find existing product - use exact match on name
-          let productQuery = supabase
-            .from('products')
-            .select(`
-              id,
-              name,
-              inventory (
-                id,
-                current_stock,
-                minimum_stock
-              )
-            `)
-            .eq('name', productName);
-          if (supermarketId) productQuery = productQuery.eq('supermarket_id', supermarketId);
-          const { data: existingProducts, error: searchError } = await productQuery;
-
-          console.log(`🔍 Search result for "${productName}":`, { existingProducts, searchError });
-
-          if (searchError) {
-            throw searchError;
-          }
+          // Barcode decides which of THIS store's products the line is; the supplier's name is optional
+          const match = await findStoreProductForOrderItem(supabase, { supermarketId, item });
+          console.log(`🔍 Match for "${productName}" / ${orderItemBarcode(item) || 'no barcode'}:`, match?.matchedBy || 'none');
+          const existingProducts = match ? [match.product] : [];
 
           if (existingProducts && existingProducts.length > 0) {
             // Product exists - update stock in inventory table
@@ -726,7 +710,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             }
 
             results.push({
-              name: productName,
+              name: existingProduct.name || productName,
               action: 'updated',
               quantity: quantity,
               newStock: newStock
@@ -736,21 +720,12 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             // Create new product in POS
             console.log(`🆕 Creating new product in POS: "${productName}" x ${quantity} @ ${unitPrice}`);
 
-            const { data: newProduct, error: insertError } = await supabase
-              .from('products')
-              .insert({
-                name: productName,
-                ...(supermarketId ? { supermarket_id: supermarketId } : {}),
-                price: unitPrice,
-                selling_price: unitPrice,
-                cost_price: unitPrice,
-                description: `Added from supplier order ${order.po_number}`,
-                barcode: `AUTO-${Date.now()}`,
-                markup_percentage: 0
-              })
-              .select('id');
-
-            if (insertError) throw insertError;
+            const createdProduct = await createStoreProductForOrderItem(supabase, {
+              supermarketId,
+              item,
+              orderRef: order.po_number
+            });
+            const newProduct = [createdProduct];
 
             // Create inventory record
             if (newProduct && newProduct.length > 0) {
@@ -767,7 +742,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             }
 
             results.push({
-              name: productName,
+              name: productName || orderItemBarcode(item),
               action: 'created',
               quantity: quantity
             });

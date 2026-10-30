@@ -60,16 +60,23 @@ const OrderItemsSelector = ({
       return;
     }
     const loadSupplierOfferings = async () => {
-      let catalogQuery = supabase.from('supplier_catalog_items')
-        .select('id, name, description, price_per_unit, unit, category, min_order_qty, image_url')
-        .eq('is_available', true);
-    const catalogOwnerFilters = [
-      supplierId ? `supplier_user_id.eq.${supplierId}` : null,
-      supplierBusinessProfileId ? `supplier_business_profile_id.eq.${supplierBusinessProfileId}` : null
-    ].filter(Boolean);
-      if (catalogOwnerFilters.length) catalogQuery = catalogQuery.or(catalogOwnerFilters.join(','));
+      const catalogOwnerFilters = [
+        supplierId ? `supplier_user_id.eq.${supplierId}` : null,
+        supplierBusinessProfileId ? `supplier_business_profile_id.eq.${supplierBusinessProfileId}` : null
+      ].filter(Boolean);
+      const baseCatalogColumns = 'id, name, description, price_per_unit, unit, category, min_order_qty, image_url';
+      const buildCatalogQuery = (columns) => {
+        let query = supabase.from('supplier_catalog_items').select(columns).eq('is_available', true);
+        if (catalogOwnerFilters.length) query = query.or(catalogOwnerFilters.join(','));
+        return query;
+      };
+      // Barcode/SKU let the receiving store match by code; older databases may not have the columns yet
+      const loadCatalog = async () => {
+        const withCodes = await buildCatalogQuery(`${baseCatalogColumns}, barcode, sku`);
+        return withCodes.error ? buildCatalogQuery(baseCatalogColumns) : withCodes;
+      };
       const [{ data: catalog, error: catalogError }, { data: supplierStores }] = await Promise.all([
-        catalogQuery,
+        loadCatalog(),
         supabase.from('supermarkets').select('id').eq('owner_user_id', supplierId).eq('is_active', true)
       ]);
       if (catalogError) console.warn('Could not load supplier catalog prices:', catalogError.message);
@@ -80,7 +87,7 @@ const OrderItemsSelector = ({
       const storeIds = (supplierStores || []).map(store => store.id);
       if (storeIds.length) {
         const { data: posProducts, error: posError } = await supabase.from('products')
-          .select('id, name, sku, cost_price, wholesale_price, selling_price, price, images, is_active')
+          .select('id, name, sku, barcode, cost_price, wholesale_price, selling_price, price, images, is_active')
           .in('supermarket_id', storeIds)
           .eq('is_active', true)
           .order('name');
@@ -89,6 +96,8 @@ const OrderItemsSelector = ({
           id: `pos-${product.id}`,
           source_product_id: product.id,
           name: product.name,
+          barcode: product.barcode || '',
+          sku: product.sku || '',
           description: `POS product${product.sku ? ` · SKU ${product.sku}` : ''}`,
           price_per_unit: Number(product.wholesale_price) || Number(product.cost_price) || Number(product.selling_price) || Number(product.price) || 0,
           admin_buying_price: Number(product.wholesale_price) || Number(product.cost_price) || 0,
@@ -160,6 +169,8 @@ const OrderItemsSelector = ({
       supplier_catalog_item_id: catalogItem.id,
       product_id: null,
       product_name: catalogItem.name,
+      barcode: catalogItem.barcode || '',
+      sku: catalogItem.sku || '',
       quantity,
       display_quantity: quantity,
       unit_type: catalogItem.unit || 'units',
@@ -338,6 +349,7 @@ const OrderItemsSelector = ({
       product_id: selectedProduct.id,
       product_name: selectedProduct.name,
       sku: selectedProduct.sku,
+      barcode: selectedProduct.barcode || '',
       quantity: totalUnits,
       display_quantity: quantity,
       unit_type: unitType,
@@ -416,6 +428,7 @@ const OrderItemsSelector = ({
         product_id: product.id,
         product_name: product.name,
         sku: product.sku,
+        barcode: product.barcode || '',
         quantity: 1,
         display_quantity: 1,
         unit_type: 'units',
