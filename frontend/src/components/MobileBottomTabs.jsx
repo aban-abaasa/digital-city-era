@@ -13,10 +13,17 @@ import '../styles/mobile-bottom-tabs.css';
  * mobile-bottom-tabs.css). Hidden from `sm` up, where every portal already
  * shows its full top tab strip.
  *
+ * With no bar behind the icons, cards scrolling underneath would show through
+ * (labels sitting on top of card text), so the bar carries its own page-coloured
+ * fade (.sk-bottom-nav-fade): every portal and dashboard that mounts it gets the
+ * same soft fade-out at the bottom edge, hidden and themed together with the bar.
+ *
  * tabs: [{ id, label, icon, badge? }]. Pages need ~5rem of bottom padding so
  * their last card isn't hidden under the bar.
+ * tone: the page colour the fade blends into — 'portal' (the ivory / deep-green
+ * portals, default) or 'customer' (the customer dashboard's blue-grey page).
  */
-const MobileBottomTabs = ({ tabs, activeTab, onSelect, action }) => {
+const MobileBottomTabs = ({ tabs, activeTab, onSelect, action, tone = 'portal' }) => {
   // An action (a button that does something instead of opening a section) takes the middle slot
   const visible = (tabs || []).slice(0, action ? 4 : 5);
   if (visible.length === 0 && !action) return null;
@@ -40,8 +47,9 @@ const MobileBottomTabs = ({ tabs, activeTab, onSelect, action }) => {
   return (
     <nav
       aria-label="Primary"
-      className="sk-bottom-nav fixed inset-x-0 bottom-0 z-[60] flex sm:hidden"
+      className={`sk-bottom-nav ${tone === 'customer' ? 'sk-bottom-nav-customer' : ''} fixed inset-x-0 bottom-0 z-[60] flex sm:hidden`}
     >
+      <span aria-hidden="true" className="sk-bottom-nav-fade" />
       <NavGlowDefs />
       {visible.map((tab, index) => {
         const active = activeTab === tab.id;
