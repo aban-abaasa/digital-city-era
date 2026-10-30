@@ -24,7 +24,7 @@ import { toast } from 'react-toastify';
  * CMMS's mixed spare-parts/tools/equipment inventory needs.
  * Best-effort: never blocks or fails the product/stock write it's called from.
  */
-const recordSupermarketStockLedgerEntry = async (supermarketId, { productName, category, amount, note }) => {
+export const recordSupermarketStockLedgerEntry = async (supermarketId, { productName, category, amount, note }) => {
   if (!amount || amount <= 0 || !supermarketId) return;
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -367,9 +367,10 @@ class InventorySupabaseService {
   /**
    * Create a new product
    * @param {Object} productData - Product information
+   * @param {{quiet?: boolean}} options - quiet: skip the success toast (a caller adding many products shows one summary)
    * @returns {Promise<Object>} Created product
    */
-  async createProduct(productData) {
+  async createProduct(productData, { quiet = false } = {}) {
     try {
       const {
         sku,
@@ -591,7 +592,7 @@ class InventorySupabaseService {
         });
       }
 
-      toast.success(`✅ Product "${name}" created successfully!`);
+      if (!quiet) toast.success(`✅ Product "${name}" created successfully!`);
       return { ...product, inventory };
 
     } catch (error) {
