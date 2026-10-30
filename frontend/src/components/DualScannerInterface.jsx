@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import jsQR from 'jsqr';
 import Quagga from '@ericblade/quagga2';
 import { supabase } from '../services/supabase';
+import inventoryService from '../services/inventorySupabaseService';
 import geminiAIService from '../services/geminiAIService';
 import { findProductByBarcode } from '../utils/barcodeHelper';
 import { useBackLayer } from '../hooks/useBackLayer';
@@ -771,9 +772,17 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       setLoadingProducts(true);
       console.log('📥 Loading products from Supabase...');
       
+      // Any signed-in user can read every store's active products, so only
+      // ask for this store's.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (!supermarketId) {
+        setSupabaseProducts([]);
+        return;
+      }
       const { data: productsData, error } = await supabase
         .from('products')
         .select('id, name, sku, selling_price, price, barcode')
+        .eq('supermarket_id', supermarketId)
         .eq('is_active', true);
 
       if (error) throw error;
