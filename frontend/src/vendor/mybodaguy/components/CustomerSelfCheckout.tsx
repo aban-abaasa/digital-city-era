@@ -107,8 +107,13 @@ function cartTotals(cart: CartItem[]) {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onShopModeChange }: {
+/** A service the customer chose in the Shop: the dashboard opens its Book screen for it. */
+export type BookableServiceRef = { id: string; name: string; is_bookable?: boolean };
+
+export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onShopModeChange, onBookService }: {
   user: any;
+  /** Called when the customer picks a bookable service in the Shop, so the dashboard can open its Book screen. */
+  onBookService?: (service: BookableServiceRef) => void;
   /** Optional: lets a parent (e.g. the phone section bar) own the Store/Scan toggle. */
   shopMode?: ShopMode;
   onShopModeChange?: (mode: ShopMode) => void;
@@ -340,7 +345,11 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
     const product = { ...(data[0] as Product), supermarket_id: selectedSupermarketId };
 
     if (!product.in_stock) {
-      setScanError(`${product.name} is out of stock`);
+      // A service has no stock to run out of: it is booked, not scanned and paid for at the till.
+      const { data: kind } = await supabase.from('products').select('inventory_mode').eq('id', product.product_id).maybeSingle();
+      setScanError(kind?.inventory_mode === 'service_item'
+        ? `${product.name} is a service, so it can't be scanned and paid for here. Book it from Services in the Shop.`
+        : `${product.name} is out of stock`);
       setState('idle');
       return;
     }
@@ -989,6 +998,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
                 syncQty={pickerSync}
                 onCartChange={handleBrowseCartChange}
                 onOpenCart={() => setState('cart')}
+                onBookService={onBookService}
                 fullPage
               />
             </div>
