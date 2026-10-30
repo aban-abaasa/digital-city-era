@@ -861,6 +861,7 @@ const CustomerDashboard = () => {
         ]}
         activeTab={activeTab}
         onSelect={switchTab}
+        tone="customer"
       />
 
       {/* Role Banner — admin / manager / cashier / supplier. One slim ink bar with a

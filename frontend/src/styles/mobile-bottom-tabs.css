@@ -46,6 +46,9 @@
   --bn-c1: #c4a052;
   --bn-c2: #6366f1;
   --bn-c3: #10b981;
+  /* The page colour at the bottom edge, which the fade below blends into
+     (the foot of the ivory portal gradient). */
+  --bn-fade: #f4efe3;
   background: none;
   border: 0;
   gap: 0.5rem;
@@ -85,6 +88,33 @@ html[data-theme="dark"] .sk-bottom-nav {
   --bn-c1: #e6c980;
   --bn-c2: #818cf8;
   --bn-c3: #34d399;
+  --bn-fade: #061510;
+}
+
+/* The customer dashboard sits on a grey-to-blue page in the light theme (its dark
+   theme shares the portals' deep green). */
+.sk-bottom-nav.sk-bottom-nav-customer { --bn-fade: #f1f5fb; }
+html[data-theme="dark"] .sk-bottom-nav.sk-bottom-nav-customer { --bn-fade: #061510; }
+
+/* ── The fade: page colour behind the bare icons ──────────────────────── */
+/* Nothing is painted behind the icons, so cards scrolling underneath would
+   show through and sit under the labels. This strip of the page colour,
+   solid at the screen edge and clearing to nothing above the icons, keeps both
+   readable. `fixed` takes it out of the (clipping, scrolling) row so it spans
+   the whole screen width; as a child of the bar it hides and themes with it,
+   and it paints beneath the tabs. It never takes a tap. */
+.sk-bottom-nav-fade {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  height: calc(5rem + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--bn-fade) 0%,
+    color-mix(in srgb, var(--bn-fade) 90%, transparent) 50%,
+    transparent 100%
+  );
 }
 
 /* ── One tab: icon over label, no box, no background ──────────────────── */
