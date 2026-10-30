@@ -81,12 +81,12 @@ export const marginPercent = (cost, selling) => {
 };
 
 let rowCounter = 0;
-export const newQuickRow = () => ({ id: `q${Date.now().toString(36)}${rowCounter++}`, name: '', price: '', cost: '', stock: '' });
+export const newQuickRow = () => ({ id: `q${Date.now().toString(36)}${rowCounter++}`, name: '', price: '', cost: '', stock: '', photoFile: null, photoPreview: null });
 
-const isBlankRow = (row) => ['name', 'price', 'cost', 'stock'].every((field) => !String(row[field] ?? '').trim());
+const isBlankRow = (row) => !row.photoFile && ['name', 'price', 'cost', 'stock'].every((field) => !String(row[field] ?? '').trim());
 
 // Splits the quick list into rows ready to save and rows with a problem. Completely empty rows
-// are ignored; a row needs a name and a price above zero (cost and stock are optional). Names repeated inside the list or
+// are ignored (a row with only a photo is not empty); a row needs a name and a price above zero (cost, stock and photo are optional). Names repeated inside the list or
 // already in the shop are reported too, because saving them would create a second copy.
 export const checkQuickRows = (rows, products = []) => {
   const ready = [];
@@ -113,7 +113,10 @@ export const checkQuickRows = (rows, products = []) => {
       issues[row.id] = 'Already in your shop';
       continue;
     }
-    ready.push({ id: row.id, name, selling_price: price, cost_price: cost, initial_stock: Math.floor(stock) });
+    ready.push({
+      id: row.id, name, selling_price: price, cost_price: cost, initial_stock: Math.floor(stock),
+      ...(row.photoFile ? { photo_file: row.photoFile } : {})
+    });
   }
   return { ready, issues };
 };

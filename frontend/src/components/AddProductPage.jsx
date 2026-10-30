@@ -8,7 +8,7 @@
 //   One product  - photo, name, prices and stock, with a profit helper, a warning when the
 //                  product is already listed, a category guessed from the name, and
 //                  "Save & add another" (or Enter) for working down a shelf.
-//   Quick list   - a grid for typing many products at once: name, price, stock.
+//   Quick list   - a grid for typing many products at once: photo, name, price, stock.
 //
 // The parent (OrderInventoryPOSControl) owns the form state and does the saving; this file is
 // the screen. Pure rules (duplicates, category guess, margin) live in utils/addProductSmarts.js.
@@ -16,7 +16,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FiAlertTriangle, FiArrowLeft, FiCamera, FiCheck, FiChevronDown, FiHash, FiImage,
-  FiList, FiMinus, FiPackage, FiPlus, FiTrash2, FiZap
+  FiList, FiMinus, FiPackage, FiPlus, FiTrash2, FiX, FiZap
 } from 'react-icons/fi';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import { withDiscountPercent, withSellingPrice, withWholesalePrice } from '../utils/wholesalePricing';
@@ -89,6 +89,9 @@ const AP_STYLES = `
 .ap-row-card { padding: 0 0 .7rem; border-bottom: 1px solid var(--ap-line); }
 .ap-row-head { display: none; font-size: .72rem; font-weight: 800; color: var(--ap-muted); text-transform: uppercase; letter-spacing: .04em; }
 .ap-cellinput { padding: .6rem .7rem; font-size: 1rem; min-height: 2.75rem; }
+.ap-rowphoto { width: 2.75rem; height: 2.75rem; flex: none; border-radius: 10px; border: 2px dashed #cbbf9c; background: #fbf8f1; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; color: var(--ap-muted); }
+.ap-rowphoto:hover { border-color: var(--ap-gold); }
+.ap-rowphoto[data-has-photo='true'] { border-style: solid; }
 .ap-del { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.75rem; border-radius: 10px; color: var(--ap-muted); }
 .ap-del:hover:not(:disabled) { color: var(--ap-red); background: rgba(240,68,56,.08); }
 .ap-del:disabled { opacity: .35; }
@@ -108,6 +111,7 @@ const AP_STYLES = `
 .ap-prev-img { aspect-ratio: 4 / 3; background: linear-gradient(135deg, #e0e7ff, #fde68a); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: 800; color: rgba(20,33,61,.55); overflow: hidden; }
 [data-theme='dark'] .ap-root { --ap-bg: #0a1f17; --ap-card: #0f2a20; --ap-line: rgba(196,160,82,.3); --ap-ink: #f1ead4; --ap-muted: #a3b3aa; --ap-gold-soft: rgba(184,145,47,.22); --ap-green-soft: rgba(31,111,74,.3); --ap-green: #4cc38a; --ap-warn-soft: rgba(180,95,6,.22); --ap-warn: #f6c177; }
 [data-theme='dark'] .ap-root .ap-label { color: #d6ddd9; }
+[data-theme='dark'] .ap-root .ap-rowphoto { background: #0c231b; border-color: rgba(196,160,82,.4); }
 [data-theme='dark'] .ap-root .ap-input, [data-theme='dark'] .ap-root .ap-step, [data-theme='dark'] .ap-root .ap-chip, [data-theme='dark'] .ap-root .ap-btn-second, [data-theme='dark'] .ap-root .ap-prev { background: #0c231b; color: #f1ead4; border-color: rgba(196,160,82,.4); }
 [data-theme='dark'] .ap-root .ap-btn-primary { color: #06210f; }
 [data-theme='dark'] .ap-root .ap-notice-info { background: rgba(255,255,255,.06); color: #d6ddd9; border-color: rgba(255,255,255,.12); }
@@ -228,6 +232,11 @@ const AddProductPage = ({
   const [quickSaving, setQuickSaving] = useState(false);
   const [showQuickErrors, setShowQuickErrors] = useState(false);
   const gridRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const photoRowId = useRef(null);
+  const previewUrls = useRef(new Set());
+
+  useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
   const checked = useMemo(() => checkQuickRows(rows, products), [rows, products]);
   const allIssues = { ...checked.issues, ...quickIssues };
@@ -256,7 +265,38 @@ const AddProductPage = ({
     return fresh;
   };
 
-  const removeRow = (id) => setRows((previous) => (previous.length > 1 ? previous.filter((row) => row.id !== id) : previous));
+  const dropPreview = (url) => {
+    if (!url) return;
+    URL.revokeObjectURL(url);
+    previewUrls.current.delete(url);
+  };
+
+  const removeRow = (id) => {
+    if (rows.length <= 1) return;
+    dropPreview(rows.find((row) => row.id === id)?.photoPreview);
+    setRows((previous) => previous.filter((row) => row.id !== id));
+  };
+
+  const openRowPhoto = (id) => {
+    photoRowId.current = id;
+    photoInputRef.current?.click();
+  };
+
+  const handleRowPhoto = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const id = photoRowId.current;
+    if (!file || !id || !file.type.startsWith('image/')) return;
+    const url = URL.createObjectURL(file);
+    previewUrls.current.add(url);
+    dropPreview(rows.find((row) => row.id === id)?.photoPreview);
+    updateRow(id, { photoFile: file, photoPreview: url });
+  };
+
+  const clearRowPhoto = (id) => {
+    dropPreview(rows.find((row) => row.id === id)?.photoPreview);
+    updateRow(id, { photoFile: null, photoPreview: null });
+  };
 
   const handleCellKey = (event, row, column) => {
     if (event.key !== 'Enter') return;
@@ -280,6 +320,7 @@ const AddProductPage = ({
       const { savedIds, failedIds } = await onQuickSave(checked.ready, quickCategory || null);
       const saved = new Set(savedIds);
       const failed = new Set(failedIds);
+      rows.filter((row) => saved.has(row.id)).forEach((row) => dropPreview(row.photoPreview));
       setRows((previous) => {
         const left = previous.filter((row) => !saved.has(row.id));
         const blanks = Math.max(0, 3 - left.length);
@@ -685,7 +726,7 @@ const AddProductPage = ({
             <div className="mx-auto max-w-3xl space-y-4 p-3 sm:p-5">
               <section className="ap-card">
                 <p className="text-sm font-bold">Type your products, one per line</p>
-                <p className="ap-hint">Name and price are all you need; cost lets us show your profit. Press Enter to move along; a new line appears at the end. Barcodes are made for you.</p>
+                <p className="ap-hint">Name and price are all you need; cost lets us show your profit, and the picture button adds a photo. Press Enter to move along; a new line appears at the end. Barcodes are made for you.</p>
                 <div className="mt-3">
                   <label htmlFor="ap-quick-category" className="ap-label">Category for all of these <span className="font-normal" style={{ color: 'var(--ap-muted)' }}>(optional)</span></label>
                   <select id="ap-quick-category" className="ap-input" value={quickCategory} onChange={(e) => setQuickCategory(e.target.value)}>
@@ -696,6 +737,7 @@ const AddProductPage = ({
               </section>
 
               <section className="ap-card" ref={gridRef}>
+                <input type="file" accept="image/*" ref={photoInputRef} onChange={handleRowPhoto} className="hidden" />
                 <div className="ap-row ap-row-head mb-2" aria-hidden="true">
                   <span>Product name</span><span>Price (UGX)</span><span>Cost (UGX)</span><span>In stock</span><span />
                 </div>
@@ -706,17 +748,33 @@ const AddProductPage = ({
                     return (
                       <div key={row.id} className="ap-row-card">
                         <div className="ap-row">
-                          <input
-                            data-cell={`${row.id}-name`}
-                            className="ap-input ap-cellinput"
-                            placeholder="e.g. Sugar - 1kg"
-                            value={row.name}
-                            autoComplete="off"
-                            aria-label="Product name"
-                            aria-invalid={showIssue ? 'true' : undefined}
-                            onChange={(e) => updateRow(row.id, { name: e.target.value })}
-                            onKeyDown={(e) => handleCellKey(e, row, 'name')}
-                          />
+                          <div className="flex min-w-0 items-center gap-2">
+                            <button
+                              type="button"
+                              className="ap-rowphoto"
+                              data-has-photo={row.photoPreview ? 'true' : undefined}
+                              onClick={() => openRowPhoto(row.id)}
+                              aria-label={row.photoPreview ? 'Change photo for this line' : 'Add a photo for this line'}
+                            >
+                              {row.photoPreview ? <img src={row.photoPreview} alt="" className="h-full w-full object-cover" /> : <FiImage className="h-5 w-5" />}
+                            </button>
+                            <input
+                              data-cell={`${row.id}-name`}
+                              className="ap-input ap-cellinput min-w-0 flex-1"
+                              placeholder="e.g. Sugar - 1kg"
+                              value={row.name}
+                              autoComplete="off"
+                              aria-label="Product name"
+                              aria-invalid={showIssue ? 'true' : undefined}
+                              onChange={(e) => updateRow(row.id, { name: e.target.value })}
+                              onKeyDown={(e) => handleCellKey(e, row, 'name')}
+                            />
+                            {row.photoPreview && (
+                              <button type="button" className="ap-del" onClick={() => clearRowPhoto(row.id)} aria-label="Remove this photo">
+                                <FiX className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
                           <input
                             data-cell={`${row.id}-price`}
                             className="ap-input ap-cellinput"

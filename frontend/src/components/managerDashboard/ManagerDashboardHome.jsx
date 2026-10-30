@@ -3,7 +3,7 @@ import {
   FiAlertTriangle, FiArrowUpRight, FiBriefcase, FiCalendar, FiCheckCircle,
   FiChevronDown, FiChevronLeft, FiChevronRight, FiClipboard, FiDollarSign, FiInbox, FiLayers,
   FiPackage, FiPlus, FiRefreshCw, FiSend, FiShoppingBag, FiShoppingCart, FiTrendingUp,
-  FiTruck, FiUserCheck, FiUserPlus, FiUsers
+  FiTruck, FiUserCheck, FiUsers
 } from 'react-icons/fi';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import useAdminDashboardData from '../adminDashboard/useAdminDashboardData';
@@ -92,7 +92,7 @@ const PIPELINE = [
  * purchase-order pipeline at a glance, and live numbers scoped to the store.
  *
  * onOpen(target) receives a manager tab id ('orders', 'pos', 'team', …) or one
- * of the actions 'new-order', 'add-cashier', 'inventory-modal'.
+ * of the actions 'new-order', 'inventory-modal'.
  */
 function ManagerDashboardHome({ managerName, storeName, supermarketId, businessProfileId, alertCount = 0, onOpen }) {
   const { data, loading, failed, updatedAt, refresh } = useAdminDashboardData({ supermarketId, businessProfileId });
@@ -243,7 +243,6 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
     {
       title: 'People',
       items: [
-        { label: 'Add cashier', hint: 'Give someone a till login', icon: FiUserPlus, open: 'add-cashier' },
         { label: 'Payroll & Transport', hint: 'Employees and pay', icon: FiBriefcase, open: 'business-operations' }
       ]
     }
@@ -277,9 +276,6 @@ function ManagerDashboardHome({ managerName, storeName, supermarketId, businessP
         <div className="mdh-hero-actions">
           <button type="button" className="mdh-hero-btn is-gold" onClick={() => go('new-order')}>
             <FiPlus /> New purchase order
-          </button>
-          <button type="button" className="mdh-hero-btn" onClick={() => go('add-cashier')}>
-            <FiUserPlus /> Add cashier
           </button>
         </div>
       </section>

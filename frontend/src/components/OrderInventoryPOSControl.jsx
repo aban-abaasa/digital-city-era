@@ -1700,6 +1700,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
     const savedIds = [];
     const failedIds = [];
     const created = [];
+    let photoFailures = 0;
     for (const row of rowsToSave) {
       try {
         const product = await inventoryService.createProduct({
@@ -1710,6 +1711,15 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
           category_id: categoryId || undefined
         }, { quiet: true });
         savedIds.push(row.id);
+        let images = [];
+        if (row.photo_file) {
+          try {
+            images = [await uploadProductPhoto(product.id, row.photo_file)];
+          } catch (photoError) {
+            console.warn('⚠️ Quick list photo failed:', row.name, photoError);
+            photoFailures += 1;
+          }
+        }
         created.push({
           id: product.id,
           name: product.name,
@@ -1721,7 +1731,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
           selling_price: product.selling_price,
           tax_rate: product.tax_rate,
           is_active: product.is_active !== false,
-          images: [],
+          images,
           current_stock: row.initial_stock
         });
       } catch (error) {
@@ -1740,6 +1750,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
         ...created.map(item => ({ key: item.id, name: item.name, price: item.selling_price }))
       ]);
       toast.success(`✅ ${created.length} product${created.length === 1 ? '' : 's'} added${failedIds.length ? `, ${failedIds.length} could not be saved` : ''}`);
+      if (photoFailures > 0) toast.warning(`${photoFailures} photo${photoFailures === 1 ? '' : 's'} could not be uploaded. Add ${photoFailures === 1 ? 'it' : 'them'} from the product list.`);
     } else if (failedIds.length > 0) {
       toast.error('❌ Could not save those products. Check the connection and try again.');
     }
