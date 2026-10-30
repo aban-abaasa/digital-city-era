@@ -6,12 +6,12 @@
 // Real-time Supabase integration - NO MOCK DATA
 // =====================================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   FiTruck, FiCheckCircle, FiXCircle, FiSend, FiEdit, FiPlus,
   FiPackage, FiDollarSign, FiClock, FiAlertTriangle, FiSearch,
   FiDownload, FiMail, FiPhone, FiMapPin, FiCalendar, FiUser, FiChevronDown,
-  FiX, FiCheck, FiArrowLeft, FiChevronRight
+  FiX, FiCheck, FiArrowLeft, FiChevronRight, FiMinus
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LabelList } from 'recharts';
@@ -22,6 +22,7 @@ import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
+import '../styles/supplier-order-create.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { findStoreProductForOrderItem, createStoreProductForOrderItem, orderItemBarcode } from '../utils/orderItemMatching';
 
@@ -108,6 +109,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   useBackLayer(!!selectedOrder, () => setSelectedOrder(null));
   useBackLayer(showPaymentModal, () => setShowPaymentModal(false));
+  useBackLayer(showApprovalModal, () => setShowApprovalModal(false));
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false); // NEW: Approval with payment modal
   const [approvalOrderId, setApprovalOrderId] = useState(null); // NEW: Order being approved
@@ -1084,26 +1086,21 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
     const paymentStatus = paymentAmount >= totalAmount ? 'paid' : paymentAmount > 0 ? 'partially_paid' : 'unpaid';
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-          {/* Header */}
-          <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">✅ Approve Purchase Order</h2>
-                <p className="text-blue-100 mt-1">Order #{selectedOrder.po_number}</p>
-              </div>
-              <button
-                onClick={() => setShowApprovalModal(false)}
-                className="text-white hover:text-gray-200 text-3xl font-bold"
-              >
-                ×
+      <div className="co-root co-legacy" role="dialog" aria-modal="true" aria-label="Approve purchase order">
+          <header className="co-bar" style={{ paddingBottom: '0.6rem' }}>
+            <div className="co-bar-top">
+              <button type="button" className="co-back" onClick={() => setShowApprovalModal(false)} aria-label="Back">
+                <FiArrowLeft className="h-5 w-5" />
               </button>
+              <div className="co-title">
+                <h1>✅ Approve Purchase Order</h1>
+                <p>Order #{selectedOrder.po_number}</p>
+              </div>
             </div>
-          </div>
+          </header>
 
-          {/* Order Summary */}
-          <div className="p-6 space-y-6">
+          <main className="co-main">
+          <div className="co-wrap" style={{ paddingTop: '0.75rem' }}>
             <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
               <h3 className="font-bold text-gray-800 mb-3">📋 Order Summary</h3>
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1419,7 +1416,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
+            <div className="co-sticky-actions">
               <button
                 type="button"
                 onClick={() => setShowApprovalModal(false)}
@@ -1443,7 +1440,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               </button>
             </div>
           </div>
-        </div>
+          </main>
       </div>
     );
   };
@@ -1992,149 +1989,112 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       )}
 
       {/* Order Detail Modal */}
-      {selectedOrder && !showPaymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4 sm:p-0">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 sm:p-6 rounded-t-2xl sm:rounded-t-xl">
-              <div className="flex items-center justify-between gap-3 mb-4 sm:mb-4">
-                <h2 className="text-lg sm:text-2xl font-bold">Purchase Order Details</h2>
-                <button
-                  onClick={() => {
-                    setSelectedOrder(null);
-                    setActiveTab('details');
-                  }}
-                  className="text-white hover:text-gray-200 text-2xl sm:text-3xl font-bold flex-shrink-0"
-                >
-                  ×
+      {selectedOrder && !showPaymentModal && (() => {
+        const detailTotal = Number(selectedOrder.total_amount_ugx || 0);
+        const detailPaid = Number(selectedOrder.amount_paid_ugx ?? selectedOrder.amount_paid ?? 0);
+        const storedBalance = Number(selectedOrder.balance_due_ugx ?? selectedOrder.balance_due ?? 0);
+        const detailBalance = storedBalance > 0 ? storedBalance : Math.max(0, detailTotal - detailPaid);
+        const canPay = ['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'].includes(selectedOrder.status)
+          && selectedOrder.payment_status !== 'paid';
+        const closeDetail = () => { setSelectedOrder(null); setActiveTab('details'); };
+        const lines = Array.isArray(selectedOrder.items) ? selectedOrder.items : [];
+        return (
+          <div className="co-root" role="dialog" aria-modal="true" aria-label="Purchase order details">
+            <header className="co-bar">
+              <div className="co-bar-top">
+                <button type="button" className="co-back" onClick={closeDetail} aria-label="Back to orders">
+                  <FiArrowLeft className="h-5 w-5" />
                 </button>
+                <div className="co-title">
+                  <h1>{selectedOrder.po_number}</h1>
+                  <p>{selectedOrder.supplierName || 'Purchase order'} · {selectedOrder.status?.replace(/_/g, ' ')}</p>
+                </div>
               </div>
-              
-              {/* Tabs - Mobile Optimized */}
-              <div className="flex gap-2 sm:gap-4 border-b border-white/20 overflow-x-auto">
-                <button
-                  onClick={() => setActiveTab('details')}
-                  className={`pb-2 px-3 sm:px-4 font-semibold text-xs sm:text-base transition-all whitespace-nowrap ${
-                    activeTab === 'details'
-                      ? 'border-b-2 border-white text-white'
-                      : 'text-white/70 hover:text-white'
-                  }`}
-                >
-                  📋 Details
-                </button>
-                <button
-                  onClick={() => setActiveTab('payment')}
-                  className={`pb-2 px-3 sm:px-4 font-semibold text-xs sm:text-base transition-all whitespace-nowrap ${
-                    activeTab === 'payment'
-                      ? 'border-b-2 border-white text-white'
-                      : 'text-white/70 hover:text-white'
-                  }`}
-                >
-                  💰 Payment
-                </button>
+              <div className="co-tabs" role="tablist" aria-label="Order sections">
+                <button type="button" role="tab" className="co-tab" aria-selected={activeTab === 'details'} onClick={() => setActiveTab('details')}>📋 Details</button>
+                <button type="button" role="tab" className="co-tab" aria-selected={activeTab === 'payment'} onClick={() => setActiveTab('payment')}>💰 Payment</button>
               </div>
-            </div>
-            
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {/* Order Details Tab */}
-              {activeTab === 'details' && (
-                <>
-                  {/* Complete order details would go here */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500">PO Number</p>
-                      <p className="font-bold text-lg">{selectedOrder.po_number}</p>
+            </header>
+
+            <main className="co-main">
+              <div className="co-wrap">
+                {activeTab === 'details' && (
+                  <>
+                    <dl className="co-facts">
+                      <div><dt>Total</dt><dd className="co-big">{formatUGX(detailTotal)}</dd></div>
+                      <div><dt>Balance due</dt><dd className={`co-big ${detailBalance > 0 ? 'co-bad' : 'co-good'}`}>{formatUGX(detailBalance)}</dd></div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd><span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedOrder.status)}`}>{selectedOrder.status?.replace(/_/g, ' ').toUpperCase()}</span></dd>
+                      </div>
+                      <div>
+                        <dt>Payment</dt>
+                        <dd><span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border-2 ${getPaymentStatusColor(selectedOrder.payment_status)}`}>{getPaymentStatusLabel(selectedOrder.payment_status)}</span></dd>
+                      </div>
+                      <div className="is-wide"><dt>Supplier</dt><dd>{selectedOrder.supplierName || 'N/A'}</dd></div>
+                    </dl>
+
+                    <div className="co-head-row">
+                      <h2 className="co-open-title" style={{ padding: 0 }}>Items <span className="ois-tab-count">{lines.length}</span></h2>
+                      <button
+                        type="button"
+                        className="co-btn-sm"
+                        onClick={() => { setSelectedOrderForProduct(selectedOrder); setShowAddProductModal(true); }}
+                      >
+                        <FiPlus className="h-4 w-4" /> Add product
+                      </button>
                     </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Total Amount</p>
-                      <p className="font-bold text-lg text-green-600">{formatUGX(selectedOrder.total_amount_ugx)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Supplier</p>
-                      <p className="font-semibold">{selectedOrder.supplierName}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Status</p>
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedOrder.status)}`}>
-                        {selectedOrder.status?.replace(/_/g, ' ').toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Payment Status</p>
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border-2 ${getPaymentStatusColor(selectedOrder.payment_status)}`}>
-                        {getPaymentStatusLabel(selectedOrder.payment_status)}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Balance Due</p>
-                      <p className="font-bold text-lg text-red-600">{formatUGX(selectedOrder.balance_due)}</p>
-                    </div>
+                    {lines.length === 0 ? (
+                      <p className="ois-empty">No items on this order.</p>
+                    ) : (
+                      <ul className="co-lines">
+                        {lines.map((item, idx) => {
+                          const price = item.unit_price || item.unitPrice || 0;
+                          return (
+                            <li key={idx}>
+                              <span className="n">{item.product_name || item.productName}</span>
+                              <span className="s">{item.quantity} × {formatUGX(price)}</span>
+                              <span className="t">{formatUGX(price * item.quantity)}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </>
+                )}
+
+                {activeTab === 'payment' && (
+                  <div className="co-legacy" style={{ paddingTop: '0.75rem' }}>
+                    <OrderPaymentTracker
+                      order={selectedOrder}
+                      businessProfileId={activeBusinessProfileId}
+                      onPaymentAdded={() => {
+                        loadAllData();
+                        // Refresh selected order data
+                        const updatedOrder = orders.find(o => o.id === selectedOrder.id);
+                        if (updatedOrder) setSelectedOrder(updatedOrder);
+                      }}
+                      showAddPayment={true}
+                      userRole="manager"
+                    />
                   </div>
+                )}
+              </div>
+            </main>
 
-                  {/* Items Table */}
-                  {selectedOrder.items && Array.isArray(selectedOrder.items) && (
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-bold text-lg">Order Items</h3>
-                        <button
-                          onClick={() => {
-                            console.log('Add Product modal clicked for order:', selectedOrder);
-                            setSelectedOrderForProduct(selectedOrder);
-                            setShowAddProductModal(true);
-                          }}
-                          className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 flex items-center space-x-2 font-semibold text-sm"
-                        >
-                          <FiPlus className="h-4 w-4" />
-                          <span>Add Product</span>
-                        </button>
-                      </div>
-                      <div className="border rounded-lg overflow-hidden">
-                        <table className="w-full">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-sm font-semibold">Product</th>
-                              <th className="px-4 py-3 text-center text-sm font-semibold">Quantity</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold">Unit Price</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selectedOrder.items.map((item, idx) => (
-                              <tr key={idx} className="border-t">
-                                <td className="px-4 py-3">{item.product_name || item.productName}</td>
-                                <td className="px-4 py-3 text-center">{item.quantity}</td>
-                                <td className="px-4 py-3 text-right">{formatUGX(item.unit_price || item.unitPrice)}</td>
-                                <td className="px-4 py-3 text-right font-semibold">
-                                  {formatUGX((item.unit_price || item.unitPrice) * item.quantity)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Payment Progress Tab */}
-              {activeTab === 'payment' && (
-                <OrderPaymentTracker 
-                  order={selectedOrder}
-                  businessProfileId={activeBusinessProfileId}
-                  onPaymentAdded={() => {
-                    loadAllData();
-                    // Refresh selected order data
-                    const updatedOrder = orders.find(o => o.id === selectedOrder.id);
-                    if (updatedOrder) setSelectedOrder(updatedOrder);
-                  }}
-                  showAddPayment={true}
-                  userRole="manager"
-                />
-              )}
-            </div>
+            <footer className="co-foot">
+              <div className="co-foot-actions">
+                <button type="button" className="co-ghost" onClick={closeDetail}>Close</button>
+                {canPay && (
+                  <button type="button" className="co-cta" onClick={() => setShowPaymentModal(true)}>
+                    <FiDollarSign className="h-5 w-5" /><span>Add payment</span>
+                  </button>
+                )}
+              </div>
+            </footer>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Payment Modal */}
       {showPaymentModal && selectedOrder && (
@@ -2159,7 +2119,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
           depended on the approve_order_with_payment RPC, which — like
           record_payment_with_tracking — was never actually created on
           this DB; both issues are fixed above. */}
-      <ApprovalModal />
+      {ApprovalModal()}
 
       {/* 🆕 ADD PRODUCT TO ORDER MODAL */}
       {showAddProductModal && selectedOrderForProduct && (
@@ -2184,6 +2144,25 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 // =====================================================================
 // CREATE ORDER MODAL COMPONENT
 // =====================================================================
+// Dates for the delivery shortcuts, in the phone's own time zone (toISOString would shift them).
+const toLocalISO = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const inDays = (days) => { const date = new Date(); date.setDate(date.getDate() + days); return toLocalISO(date); };
+
+// A folded section of a full page: one line with a summary until it is opened.
+const CoFold = ({ icon, title, summary, tone, open, onToggle, hasError, sectionRef, children }) => (
+  <section className={`co-section${hasError ? ' has-error' : ''}`} ref={sectionRef}>
+    <button type="button" className="co-fold-head" aria-expanded={open} onClick={onToggle}>
+      <span className="co-fold-icon" aria-hidden="true">{icon}</span>
+      <span className="co-fold-title">
+        {title}
+        {summary && <small className={tone ? `is-${tone}` : undefined}>{summary}</small>}
+      </span>
+      <FiChevronDown className={`co-fold-chev${open ? ' is-open' : ''}`} aria-hidden="true" />
+    </button>
+    <div className="co-fold-body" hidden={!open}>{children}</div>
+  </section>
+);
+
 const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplier_price', onClose, onSuccess }) => {
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [orderItems, setOrderItems] = useState([]);
@@ -2211,6 +2190,31 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
   const [walletPin, setWalletPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [verifyingPin, setVerifyingPin] = useState(false);
+
+  // Page state: which sections are open, what is missing, and where to scroll to
+  const [errors, setErrors] = useState({});
+  const [openSections, setOpenSections] = useState({ supplier: true, delivery: false, details: false, pay: false });
+  const sectionRefs = { supplier: useRef(null), items: useRef(null), delivery: useRef(null), details: useRef(null), pay: useRef(null) };
+  const toggleSection = (key) => setOpenSections((previous) => ({ ...previous, [key]: !previous[key] }));
+
+  const requestClose = () => {
+    if (submitting) return;
+    if (orderItems.length > 0 && !window.confirm('Discard this order?')) return;
+    onClose();
+  };
+  useBackLayer(true, requestClose);
+
+  // Nothing behind the page should scroll while it covers the dashboard
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  const goTo = (key) => {
+    if (key !== 'items') setOpenSections((previous) => ({ ...previous, [key]: true }));
+    setTimeout(() => sectionRefs[key]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
 
   // Load the manager's live ICAN balance when they switch to the ICAN Wallet method
   useEffect(() => {
@@ -2260,20 +2264,17 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
 
-    if (!selectedSupplier) {
-      alert('Please select a supplier');
-      return;
-    }
-
-    if (orderItems.length === 0) {
-      alert('Please add at least one item');
-      return;
-    }
-
-    if (!expectedDeliveryDate) {
-      alert('Please select expected delivery date');
+    const found = {};
+    if (!selectedSupplier) found.supplier = 'Choose a supplier';
+    if (orderItems.length === 0) found.items = 'Add at least one product';
+    if (!expectedDeliveryDate) found.date = 'Pick a delivery date';
+    if (!deliveryAddress.trim()) found.address = 'Add a delivery address';
+    setErrors(found);
+    const first = found.supplier ? 'supplier' : found.items ? 'items' : (found.date || found.address) ? 'delivery' : null;
+    if (first) {
+      goTo(first);
       return;
     }
 
@@ -2419,8 +2420,24 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
     }).format(amount || 0);
   };
 
+  const chosenSupplier = suppliers.find((supplier) => supplier.id === selectedSupplier);
+  const supplierDone = Boolean(selectedSupplier);
+  const itemsDone = orderItems.length > 0;
+  const deliveryDone = Boolean(expectedDeliveryDate) && Boolean(deliveryAddress.trim());
+  const nextStep = !supplierDone ? 'supplier' : !itemsDone ? 'items' : !deliveryDone ? 'delivery' : null;
+  const ctaLabel = nextStep === 'supplier' ? 'Choose a supplier'
+    : nextStep === 'items' ? 'Add products'
+    : nextStep === 'delivery' ? (expectedDeliveryDate ? 'Add delivery address' : 'Set delivery date')
+    : `Create order · ${formatUGX(totals.total)}`;
+  const unitCount = orderItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const prettyDate = expectedDeliveryDate
+    ? new Date(`${expectedDeliveryDate}T00:00:00`).toLocaleDateString('en-UG', { weekday: 'short', day: 'numeric', month: 'short' })
+    : '';
+  const priorityLabel = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }[priority];
+  const payingNow = Number(cashPaidNow) > 0;
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <>
       {showPinPrompt && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
@@ -2472,285 +2489,244 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
           </div>
         </div>
       )}
-      <div className="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 text-white p-6 rounded-t-xl z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold">🇺🇬 Create New Purchase Order</h2>
-              <p className="text-green-100 mt-1">SUPERMARTKERA Uganda - Supplier Order System</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-gray-200 text-3xl font-bold leading-none"
-              disabled={submitting}
-            >
-              ×
+
+      <div className="co-root" role="dialog" aria-modal="true" aria-label="Create New Purchase Order">
+        <header className="co-bar">
+          <div className="co-bar-top">
+            <button type="button" className="co-back" onClick={requestClose} disabled={submitting} aria-label="Back to orders">
+              <FiArrowLeft className="h-5 w-5" />
             </button>
-          </div>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Supplier Selection */}
-          <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              🏢 Select supplier or wholesaler *
-            </label>
-            <select
-              value={selectedSupplier}
-              onChange={(e) => setSelectedSupplier(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-lg"
-              required
-            >
-              <option value="">-- Choose supplier or wholesaler --</option>
-              {suppliers.map(supplier => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.business_name} ({supplier.supplier_code})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Order Items - Using New Enhanced Selector */}
-          <OrderItemsSelector
-            orderItems={orderItems}
-            onItemsChange={setOrderItems}
-            totals={totals}
-            pricingMode={pricingMode}
-            supplierId={selectedSupplier}
-            supplierBusinessProfileId={suppliers.find(supplier => supplier.id === selectedSupplier)?.supplier_business_profile_id || ''}
-            onTotalsChange={setTotals}
-          />
-
-          {/* Delivery Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                📅 Expected Delivery Date *
-              </label>
-              <input
-                type="date"
-                value={expectedDeliveryDate}
-                onChange={(e) => setExpectedDeliveryDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                required
-              />
+            <div className="co-title">
+              <h1>🇺🇬 Create New Purchase Order</h1>
+              <p>{chosenSupplier ? chosenSupplier.business_name : 'SUPERMARTKERA Uganda · Supplier Order System'}</p>
             </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                ⚡ Priority Level
-              </label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+          </div>
+          <div className="co-steps" role="list" aria-label="Progress">
+            {[
+              { key: 'supplier', label: 'Supplier', done: supplierDone },
+              { key: 'items', label: 'Products', done: itemsDone },
+              { key: 'delivery', label: 'Delivery', done: deliveryDone }
+            ].map((step, index) => (
+              <button
+                key={step.key}
+                type="button"
+                role="listitem"
+                className={`co-step${step.done ? ' is-done' : ''}${nextStep === step.key ? ' is-next' : ''}`}
+                onClick={() => goTo(step.key)}
               >
-                <option value="low">📝 Low</option>
-                <option value="normal">📋 Normal</option>
-                <option value="high">⚠️ High</option>
-                <option value="urgent">🔥 Urgent</option>
-              </select>
-            </div>
+                <i aria-hidden="true">{step.done ? '✓' : index + 1}</i><span>{step.label}</span>
+              </button>
+            ))}
           </div>
+        </header>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📍 Delivery Address *
-            </label>
-            <input
-              type="text"
-              value={deliveryAddress}
-              onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Enter delivery address"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-              required
-            />
-          </div>
+        <form className="co-form" onSubmit={handleSubmit} noValidate>
+          <main className="co-main">
+            <div className="co-wrap">
+              {/* 1. Supplier: open until one is chosen, then a single line */}
+              <CoFold
+                icon="🏢"
+                title="Supplier or wholesaler"
+                summary={chosenSupplier ? `${chosenSupplier.business_name} (${chosenSupplier.supplier_code})` : (errors.supplier || 'Tap to choose')}
+                tone={chosenSupplier ? 'ok' : errors.supplier ? 'bad' : undefined}
+                open={openSections.supplier}
+                onToggle={() => toggleSection('supplier')}
+                hasError={Boolean(errors.supplier)}
+                sectionRef={sectionRefs.supplier}
+              >
+                <select
+                  value={selectedSupplier}
+                  onChange={(e) => {
+                    setSelectedSupplier(e.target.value);
+                    setErrors((previous) => ({ ...previous, supplier: undefined }));
+                    if (e.target.value) {
+                      setOpenSections((previous) => ({ ...previous, supplier: false }));
+                      if (orderItems.length === 0) goTo('items');
+                    }
+                  }}
+                  className="co-input"
+                  aria-label="Supplier or wholesaler"
+                >
+                  <option value="">-- Choose supplier or wholesaler --</option>
+                  {suppliers.map(supplier => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.business_name} ({supplier.supplier_code})
+                    </option>
+                  ))}
+                </select>
+              </CoFold>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📝 Delivery Instructions
-            </label>
-            <textarea
-              value={deliveryInstructions}
-              onChange={(e) => setDeliveryInstructions(e.target.value)}
-              placeholder="Any special delivery instructions..."
-              rows="2"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            />
-          </div>
+              {/* 2. Products: a grid you tap */}
+              <section className={`co-section${errors.items ? ' has-error' : ''}`} ref={sectionRefs.items}>
+                <h2 className="co-open-title"><span aria-hidden="true">🛒</span> Products</h2>
+                {errors.items && <p className="co-error" role="alert">{errors.items}</p>}
+                <OrderItemsSelector
+                  orderItems={orderItems}
+                  onItemsChange={(items) => { setOrderItems(items); setErrors((previous) => ({ ...previous, items: undefined })); }}
+                  totals={totals}
+                  pricingMode={pricingMode}
+                  supplierId={selectedSupplier}
+                  supplierBusinessProfileId={chosenSupplier?.supplier_business_profile_id || ''}
+                  onTotalsChange={setTotals}
+                />
+              </section>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              💬 Additional Notes
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any additional notes or requirements..."
-              rows="3"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          {/* Payment Section - NEW */}
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-6 border-2 border-green-300">
-            <h3 className="text-lg font-bold text-green-800 mb-4 flex items-center gap-2">
-              💵 Payment at Order Creation (Optional)
-              <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
-                Awaits Supplier Confirmation
-              </span>
-            </h3>
-            <p className="text-sm text-green-700 mb-4">
-              💡 If you're paying cash now, enter the amount here. It will be recorded with a transaction number and sent to the supplier for confirmation.
-            </p>
-            <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-              <strong>ICAN business-wallet protection:</strong> no ICAN funds move when this order is submitted. First approve the purchase order, then submit its wallet payment. The authorized business-wallet administrator receives the request in ICANera Wallet or CMMS and must enter the business-wallet PIN to approve it.
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Cash Amount */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-bold text-green-800 mb-2">
-                  💵 Cash Paid Now (UGX)
-                </label>
+              {/* 3. Delivery */}
+              <CoFold
+                icon="📅"
+                title="Delivery"
+                summary={deliveryDone ? `${prettyDate} · ${deliveryAddress}` : (errors.date || errors.address || 'Date and address needed')}
+                tone={deliveryDone ? 'ok' : (errors.date || errors.address) ? 'bad' : undefined}
+                open={openSections.delivery}
+                onToggle={() => toggleSection('delivery')}
+                hasError={Boolean(errors.date || errors.address)}
+                sectionRef={sectionRefs.delivery}
+              >
+                <label className="co-label" htmlFor="co-date">Expected delivery date *</label>
                 <input
+                  id="co-date"
+                  type="date"
+                  value={expectedDeliveryDate}
+                  onChange={(e) => { setExpectedDeliveryDate(e.target.value); setErrors((previous) => ({ ...previous, date: undefined })); }}
+                  min={toLocalISO(new Date())}
+                  className="co-input"
+                  aria-invalid={errors.date ? 'true' : undefined}
+                />
+                <div className="co-chips">
+                  {[['Tomorrow', 1], ['In 3 days', 3], ['Next week', 7]].map(([label, days]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className="co-chip"
+                      aria-pressed={expectedDeliveryDate === inDays(days)}
+                      onClick={() => { setExpectedDeliveryDate(inDays(days)); setErrors((previous) => ({ ...previous, date: undefined })); }}
+                    >{label}</button>
+                  ))}
+                </div>
+                {errors.date && <p className="co-error" role="alert">{errors.date}</p>}
+
+                <label className="co-label" htmlFor="co-address">Delivery address *</label>
+                <input
+                  id="co-address"
+                  type="text"
+                  value={deliveryAddress}
+                  onChange={(e) => { setDeliveryAddress(e.target.value); setErrors((previous) => ({ ...previous, address: undefined })); }}
+                  placeholder="Where should it be delivered?"
+                  className="co-input"
+                  aria-invalid={errors.address ? 'true' : undefined}
+                />
+                {errors.address && <p className="co-error" role="alert">{errors.address}</p>}
+              </CoFold>
+
+              {/* 4. Optional extras, folded */}
+              <CoFold
+                icon="⚡"
+                title="Priority and notes"
+                summary={`${priorityLabel}${notes || deliveryInstructions ? ' · notes added' : ''}`}
+                open={openSections.details}
+                onToggle={() => toggleSection('details')}
+                sectionRef={sectionRefs.details}
+              >
+                <p className="co-label">Priority</p>
+                <div className="co-seg" role="group" aria-label="Priority">
+                  {[['low', '📝 Low'], ['normal', '📋 Normal'], ['high', '⚠️ High'], ['urgent', '🔥 Urgent']].map(([value, label]) => (
+                    <button key={value} type="button" aria-pressed={priority === value} onClick={() => setPriority(value)}>{label}</button>
+                  ))}
+                </div>
+                <label className="co-label" htmlFor="co-instructions">Delivery instructions</label>
+                <textarea id="co-instructions" value={deliveryInstructions} onChange={(e) => setDeliveryInstructions(e.target.value)} placeholder="Gate, contact person, time of day…" rows="2" className="co-input" />
+                <label className="co-label" htmlFor="co-notes">Notes</label>
+                <textarea id="co-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything the supplier should know" rows="2" className="co-input" />
+              </CoFold>
+
+              {/* 5. Pay now, optional */}
+              <CoFold
+                icon="💵"
+                title="Pay now"
+                summary={payingNow ? `${formatUGX(cashPaidNow)} · ${paymentMethod === 'ican_wallet' ? 'IcanEra Wallet' : 'Cash'}` : 'Optional'}
+                tone={payingNow ? 'ok' : undefined}
+                open={openSections.pay}
+                onToggle={() => toggleSection('pay')}
+                sectionRef={sectionRefs.pay}
+              >
+                <label className="co-label" htmlFor="co-cash">Amount paid now (UGX)</label>
+                <input
+                  id="co-cash"
                   type="number"
+                  inputMode="numeric"
                   value={cashPaidNow}
                   onChange={(e) => setCashPaidNow(e.target.value)}
                   min="0"
                   max={totals.total}
                   step="1000"
-                  placeholder="Enter cash amount (leave 0 if not paying now)"
-                  className="w-full px-4 py-3 border-2 border-green-500 rounded-lg focus:border-green-600 focus:outline-none text-lg font-semibold text-green-700 bg-white"
+                  placeholder="0"
+                  className="co-input"
                 />
-                {cashPaidNow > 0 && (
-                  <div className="mt-2 space-y-1">
-                    <p className="text-sm text-green-700 flex justify-between">
-                      <span>Order Total:</span>
-                      <span className="font-bold">{formatUGX(totals.total)}</span>
-                    </p>
-                    <p className="text-sm text-green-700 flex justify-between">
-                      <span>Paying Now:</span>
-                      <span className="font-bold">{formatUGX(cashPaidNow)}</span>
-                    </p>
-                    <p className="text-sm font-bold text-orange-700 flex justify-between pt-2 border-t border-green-300">
-                      <span>Balance Due:</span>
-                      <span>{formatUGX(totals.total - parseFloat(cashPaidNow || 0))}</span>
-                    </p>
+                {itemsDone && (
+                  <div className="co-chips">
+                    <button type="button" className="co-chip" onClick={() => setCashPaidNow(Math.round(totals.total / 2))}>Half</button>
+                    <button type="button" className="co-chip" onClick={() => setCashPaidNow(Math.round(totals.total))}>Full amount</button>
+                    {payingNow && <button type="button" className="co-chip" onClick={() => setCashPaidNow(0)}>Clear</button>}
                   </div>
                 )}
-              </div>
+                {payingNow && (
+                  <>
+                    <p className="co-balance is-due"><span>Balance due</span><span>{formatUGX(Math.max(0, totals.total - parseFloat(cashPaidNow || 0)))}</span></p>
 
-              {/* Payment Method */}
-              {cashPaidNow > 0 && (
-                <>
-                  <div>
-                    <label className="block text-sm font-bold text-green-800 mb-2">
-                      💳 Payment Method
-                    </label>
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
-                    >
-                      <option value="cash">💵 Cash</option>
-                      <option value="ican_wallet">🪙 IcanEra Wallet</option>
-                    </select>
-                  </div>
-
-                  {/* ICAN Wallet Balance — shown only when paying with ICAN */}
-                  {paymentMethod === 'ican_wallet' && (
-                    <div className="md:col-span-2 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-                      <p className="mb-3 text-sm font-semibold text-indigo-900">This balance is informational only. The payment is requested after order approval and requires a business-wallet administrator's PIN approval in ICANera Wallet or CMMS.</p>
-                      <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
-                      {icanBalanceLoading ? (
-                        <div className="text-sm text-gray-500">Loading balance...</div>
-                      ) : (
-                        <>
-                          <div className="text-xl font-bold text-purple-700">
-                            {formatICAN(icanBalance?.ican || 0)} ICAN
-                          </div>
-                          {parseFloat(cashPaidNow) > 0 && (
-                            <div className="text-sm text-gray-600 mt-1">
-                              This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(cashPaidNow)))} ICAN
-                              {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow)) && (
-                                <span className="text-red-600 font-semibold"> — insufficient balance</span>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
+                    <p className="co-label">Pay with</p>
+                    <div className="co-seg two" role="group" aria-label="Payment method">
+                      <button type="button" aria-pressed={paymentMethod === 'cash'} onClick={() => setPaymentMethod('cash')}>💵 Cash</button>
+                      <button type="button" aria-pressed={paymentMethod === 'ican_wallet'} onClick={() => setPaymentMethod('ican_wallet')}>🪙 IcanEra Wallet</button>
                     </div>
-                  )}
 
-                  {/* Payment Reference — not applicable to ICAN Wallet, the on-chain tx is the reference */}
-                  {paymentMethod !== 'ican_wallet' && (
-                    <div>
-                      <label className="block text-sm font-bold text-green-800 mb-2">
-                        🔖 Payment Reference (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={paymentReference}
-                        onChange={(e) => setPaymentReference(e.target.value)}
-                        placeholder="Transaction ID, receipt #, etc."
-                        className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
-                      />
-                    </div>
-                  )}
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-bold text-green-800 mb-2">
-                      📝 Payment Notes (Optional)
-                    </label>
-                    <textarea
-                      value={paymentNotes}
-                      onChange={(e) => setPaymentNotes(e.target.value)}
-                      placeholder="Any notes about this payment..."
-                      rows="2"
-                      className="w-full px-4 py-3 border-2 border-green-400 rounded-lg focus:border-green-600 focus:outline-none bg-white"
-                    />
-                  </div>
-                </>
-              )}
+                    {paymentMethod === 'ican_wallet' ? (
+                      <div className="co-note">
+                        {icanBalanceLoading ? 'Loading balance…' : (
+                          <>
+                            Store balance <b>{formatICAN(icanBalance?.ican || 0)} ICAN</b>. This payment needs ≈ <b>{formatICAN(ugxToICAN(parseFloat(cashPaidNow)))} ICAN</b>
+                            {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow)) && <b style={{ color: 'var(--c-red)' }}> — not enough</b>}.
+                          </>
+                        )}
+                        <br />No ICAN moves now. After the order is approved, the wallet administrator approves the payment with the business-wallet PIN.
+                      </div>
+                    ) : (
+                      <>
+                        <label className="co-label" htmlFor="co-ref">Payment reference (optional)</label>
+                        <input id="co-ref" type="text" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Receipt or transaction number" className="co-input" />
+                      </>
+                    )}
+                    <label className="co-label" htmlFor="co-paynotes">Payment notes (optional)</label>
+                    <textarea id="co-paynotes" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} rows="2" className="co-input" />
+                  </>
+                )}
+              </CoFold>
             </div>
-          </div>
+          </main>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-300 font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || orderItems.length === 0}
-              className="px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
-              {submitting ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Creating Order...</span>
-                </>
-              ) : (
-                <>
-                  <FiCheckCircle className="h-5 w-5" />
-                  <span>Create Purchase Order</span>
-                </>
-              )}
-            </button>
-          </div>
+          <footer className="co-foot">
+            <p className="co-foot-sum" aria-live="polite">
+              <span>{orderItems.length === 0 ? 'No products yet' : `${orderItems.length} item${orderItems.length === 1 ? '' : 's'} · ${unitCount} unit${unitCount === 1 ? '' : 's'} · incl. VAT`}</span>
+              <b>{formatUGX(totals.total)}</b>
+            </p>
+            <div className="co-foot-actions">
+              <button type="button" className="co-ghost" onClick={requestClose} disabled={submitting}>Cancel</button>
+              <button
+                type="button"
+                className={`co-cta${nextStep ? ' is-guide' : ''}`}
+                disabled={submitting}
+                onClick={nextStep ? () => goTo(nextStep) : handleSubmit}
+              >
+                {submitting ? (
+                  <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current"></div><span>Creating…</span></>
+                ) : (
+                  <>{nextStep ? <FiChevronRight className="h-5 w-5" /> : <FiCheckCircle className="h-5 w-5" />}<span>{ctaLabel}</span></>
+                )}
+              </button>
+            </div>
+          </footer>
         </form>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -2786,6 +2762,15 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
     }).format(amount || 0);
   };
 
+  // The order row stores these as *_ugx; older rows and other screens used the short names
+  const orderTotal = Number(order.total_amount_ugx ?? order.total_amount ?? 0);
+  const alreadyPaid = Number(order.amount_paid_ugx ?? order.amount_paid ?? 0);
+  const storedBalance = Number(order.balance_due_ugx ?? order.balance_due ?? 0);
+  const balanceDue = storedBalance > 0 ? storedBalance : Math.max(0, orderTotal - alreadyPaid);
+  const supplierLabel = order.supplierName || order.supplier_name || order.supplier?.business_name || 'Supplier';
+  const [showExtras, setShowExtras] = useState(false);
+  useBackLayer(true, () => { if (!submitting) onClose(); });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -2805,8 +2790,8 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
       return;
     }
 
-    if (amount > parseFloat(order.balance_due_ugx)) {
-      alert(`Payment amount cannot exceed balance due: ${formatUGX(order.balance_due_ugx)}`);
+    if (amount > balanceDue) {
+      alert(`Payment amount cannot exceed balance due: ${formatUGX(balanceDue)}`);
       return;
     }
 
@@ -2879,186 +2864,104 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
     }
   };
 
+  const amountNumber = parseFloat(amountPaid) || 0;
+  const notEnoughIcan = paymentMethod === 'ican_wallet' && amountNumber > 0 && icanBalance && icanBalance.ican < ugxToICAN(amountNumber);
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-green-600 to-emerald-600 text-white p-6 rounded-t-xl z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold flex items-center">
-                <FiDollarSign className="mr-3 h-8 w-8" />
-                💰 Record Payment - SUPERMARTKERA Uganda
-              </h2>
-              <p className="text-green-100 mt-1">Order: {order.po_number}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-gray-200 text-3xl font-bold leading-none"
-              disabled={submitting}
-            >
-              ×
-            </button>
+    <div className="co-root" role="dialog" aria-modal="true" aria-label="Record payment">
+      <header className="co-bar" style={{ paddingBottom: '0.6rem' }}>
+        <div className="co-bar-top">
+          <button type="button" className="co-back" onClick={onClose} disabled={submitting} aria-label="Back">
+            <FiArrowLeft className="h-5 w-5" />
+          </button>
+          <div className="co-title">
+            <h1>💰 Record Payment</h1>
+            <p>{order.po_number} · {supplierLabel}</p>
           </div>
         </div>
+      </header>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Order Summary */}
-          <div className="bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
-            <h3 className="font-bold text-lg mb-3">Payment Summary</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Supplier:</span>
-                <span className="font-semibold">{order.supplierName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Order Total:</span>
-                <span className="font-semibold">{formatUGX(order.total_amount_ugx)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Already Paid:</span>
-                <span className="font-semibold text-green-600">{formatUGX(order.amount_paid || 0)}</span>
-              </div>
-              <div className="flex justify-between pt-2 border-t-2 border-gray-300">
-                <span className="font-bold text-lg">Balance Due:</span>
-                <span className="font-bold text-lg text-red-600">{formatUGX(order.balance_due)}</span>
-              </div>
-            </div>
-          </div>
+      <form onSubmit={handleSubmit} className="co-form" noValidate>
+        <main className="co-main">
+          <div className="co-wrap">
+            <dl className="co-stats" aria-label="Payment summary">
+              <div><dt>Order total</dt><dd>{formatUGX(orderTotal)}</dd></div>
+              <div><dt>Paid</dt><dd className="co-good">{formatUGX(alreadyPaid)}</dd></div>
+              <div><dt>Balance due</dt><dd className="co-bad">{formatUGX(balanceDue)}</dd></div>
+            </dl>
 
-          {/* Payment Amount */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              💵 Payment Amount (UGX) *
-            </label>
+            <label className="co-label" htmlFor="pay-amount" style={{ marginTop: '1rem' }}>Amount to pay (UGX)</label>
             <input
+              id="pay-amount"
               type="number"
+              inputMode="numeric"
               value={amountPaid}
               onChange={(e) => setAmountPaid(e.target.value)}
-              placeholder="Enter payment amount"
+              placeholder="0"
               min="0"
-              max={order.balance_due}
+              max={balanceDue || undefined}
               step="1000"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none text-lg font-semibold"
-              required
+              className="co-input co-amount"
+              autoFocus={typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: fine)').matches)}
             />
-            <p className="text-sm text-gray-500 mt-1">
-              Maximum: {formatUGX(order.balance_due)}
-            </p>
-          </div>
+            {balanceDue > 0 && (
+              <div className="co-chips">
+                <button type="button" className="co-chip" onClick={() => setAmountPaid(String(Math.round(balanceDue / 4)))}>25%</button>
+                <button type="button" className="co-chip" onClick={() => setAmountPaid(String(Math.round(balanceDue / 2)))}>Half</button>
+                <button type="button" className="co-chip" onClick={() => setAmountPaid(String(Math.round(balanceDue)))}>Full balance</button>
+              </div>
+            )}
 
-          {/* Payment Method */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              💳 Payment Method *
-            </label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-              required
-            >
-              <option value="cash">💵 Cash</option>
-              <option value="ican_wallet">🪙 IcanEra Wallet</option>
-            </select>
-          </div>
+            <p className="co-label">Pay with</p>
+            <div className="co-seg two" role="group" aria-label="Payment method">
+              <button type="button" aria-pressed={paymentMethod === 'cash'} onClick={() => setPaymentMethod('cash')}>💵 Cash</button>
+              <button type="button" aria-pressed={paymentMethod === 'ican_wallet'} onClick={() => setPaymentMethod('ican_wallet')}>🪙 IcanEra Wallet</button>
+            </div>
 
-          {/* IcanEra Wallet Balance — shown only when paying with ICAN */}
-          {paymentMethod === 'ican_wallet' && (
-            <div className="p-4 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
-              <div className="text-sm text-gray-600 mb-1">Store Business Account Balance</div>
-              {icanBalanceLoading ? (
-                <div className="text-sm text-gray-500">Loading balance...</div>
-              ) : (
+            {paymentMethod === 'ican_wallet' && (
+              <div className="co-note">
+                {icanBalanceLoading ? 'Loading balance…' : (
+                  <>
+                    Store balance <b>{formatICAN(icanBalance?.ican || 0)} ICAN</b>
+                    {amountNumber > 0 && <> · this payment needs ≈ <b>{formatICAN(ugxToICAN(amountNumber))} ICAN</b></>}
+                    {notEnoughIcan && <b style={{ color: 'var(--c-red)' }}> — not enough</b>}
+                  </>
+                )}
+                <br />This only sends an approval request. The wallet administrator approves it with the business-wallet PIN in ICANera Wallet or CMMS.
+              </div>
+            )}
+
+            <button type="button" className="co-fold-head" aria-expanded={showExtras} onClick={() => setShowExtras((value) => !value)} style={{ marginTop: '0.6rem', borderTop: '1px solid var(--c-line)' }}>
+              <span className="co-fold-icon" aria-hidden="true">📝</span>
+              <span className="co-fold-title">Reference and notes<small>{paymentReference || paymentNotes ? 'Added' : 'Optional'}</small></span>
+              <FiChevronDown className={`co-fold-chev${showExtras ? ' is-open' : ''}`} aria-hidden="true" />
+            </button>
+            <div className="co-fold-body" hidden={!showExtras}>
+              {paymentMethod !== 'ican_wallet' && (
                 <>
-                  <div className="text-xl font-bold text-purple-700">
-                    {formatICAN(icanBalance?.ican || 0)} ICAN
-                  </div>
-                  {parseFloat(amountPaid) > 0 && (
-                    <div className="text-sm text-gray-600 mt-1">
-                      This payment needs ≈ {formatICAN(ugxToICAN(parseFloat(amountPaid)))} ICAN
-                      {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(amountPaid)) && (
-                        <span className="text-red-600 font-semibold"> — insufficient balance</span>
-                      )}
-                    </div>
-                  )}
+                  <label className="co-label" htmlFor="pay-ref">Reference / transaction ID</label>
+                  <input id="pay-ref" type="text" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="e.g. TXN123456789, cheque no." className="co-input" />
                 </>
               )}
+              <label className="co-label" htmlFor="pay-notes">Notes</label>
+              <textarea id="pay-notes" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} rows="2" className="co-input" />
             </div>
-          )}
-
-          {paymentMethod === 'ican_wallet' && (
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-              <strong>Manager action:</strong> submitting this creates an approval request only. The authorized business-wallet administrator receives it in ICANera Wallet or CMMS and enters the business-wallet PIN there to approve payment.
-            </div>
-          )}
-
-          {/* Payment Reference — not applicable to IcanEra Wallet, the on-chain tx is the reference */}
-          {paymentMethod !== 'ican_wallet' && (
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                🔖 Payment Reference / Transaction ID
-              </label>
-              <input
-                type="text"
-                value={paymentReference}
-                onChange={(e) => setPaymentReference(e.target.value)}
-                placeholder="e.g., TXN123456789, Cheque #12345"
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-              />
-            </div>
-          )}
-
-          {/* Payment Notes */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📝 Payment Notes
-            </label>
-            <textarea
-              value={paymentNotes}
-              onChange={(e) => setPaymentNotes(e.target.value)}
-              placeholder="Any additional notes about this payment..."
-              rows="3"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-            />
           </div>
+        </main>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end space-x-4 pt-4 border-t-2 border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-300 font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || (
-                paymentMethod === 'ican_wallet' &&
-                parseFloat(amountPaid) > 0 &&
-                icanBalance &&
-                icanBalance.ican < ugxToICAN(parseFloat(amountPaid))
-              )}
-              className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
+        <footer className="co-foot">
+          <div className="co-foot-actions">
+            <button type="button" className="co-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button type="submit" className="co-cta" disabled={submitting || Boolean(notEnoughIcan)}>
               {submitting ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Recording Payment...</span>
-                </>
+                <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current"></div><span>Recording…</span></>
               ) : (
-                <>
-                  <FiCheckCircle className="h-5 w-5" />
-                  <span>{paymentMethod === 'ican_wallet' ? 'Pay with ICAN' : 'Record Payment'}</span>
-                </>
+                <><FiCheckCircle className="h-5 w-5" /><span>{paymentMethod === 'ican_wallet' ? 'Pay with ICAN' : 'Record payment'}{amountNumber > 0 ? ` · ${formatUGX(amountNumber)}` : ''}</span></>
               )}
             </button>
           </div>
-        </form>
-      </div>
+        </footer>
+      </form>
     </div>
   );
 };
@@ -3097,6 +3000,8 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
+
+  useBackLayer(Boolean(isOpen), onClose);
 
   const validateForm = () => {
     const newErrors = {};
@@ -3253,134 +3158,47 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
 
   const totalLineAmount = formData.quantity * (parseFloat(formData.unitPrice) || 0);
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm transition-opacity duration-300">
-      <style>{`
-        @keyframes slideInUp {
-          from {
-            opacity: 0;
-            transform: translateY(30px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes slideOutDown {
-          from {
-            opacity: 1;
-            transform: translateY(0);
-          }
-          to {
-            opacity: 0;
-            transform: translateY(30px);
-          }
-        }
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.5;
-          }
-        }
-        @keyframes bounce {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-        }
-        .animate-slideInUp {
-          animation: slideInUp 0.4s ease-out;
-        }
-        .animate-slideOutDown {
-          animation: slideOutDown 0.3s ease-in;
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-        .animate-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        .animate-bounce {
-          animation: bounce 1s infinite;
-        }
-      `}</style>
-      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full animate-slideInUp">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-4 rounded-t-xl flex items-center justify-between shadow-lg">
-          <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <FiPlus className="h-6 w-6 animate-bounce" />
-            Add Product to Order
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-all duration-200 hover:rotate-90"
-          >
-            <FiX className="h-6 w-6" />
-          </button>
-        </div>
+  const setQuantity = (value) => setFormData({ ...formData, quantity: Math.max(1, value) });
 
-        {/* Order Info */}
-        <div className="px-6 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Order Number</p>
-              <p className="font-bold text-gray-900">{order.po_number}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-600">Current Total</p>
-              <p className="font-bold text-green-600">UGX {(order.total_amount_ugx || 0).toLocaleString()}</p>
-            </div>
+  return (
+    <div className="co-root" role="dialog" aria-modal="true" aria-label="Add product to order">
+      <header className="co-bar" style={{ paddingBottom: '0.6rem' }}>
+        <div className="co-bar-top">
+          <button type="button" className="co-back" onClick={onClose} aria-label="Back">
+            <FiArrowLeft className="h-5 w-5" />
+          </button>
+          <div className="co-title">
+            <h1>Add Product to Order</h1>
+            <p>{order.po_number} · now UGX {(order.total_amount_ugx || 0).toLocaleString()}</p>
           </div>
         </div>
+      </header>
 
-        {/* Form */}
-        <form onSubmit={handleAddProduct} className="p-6 space-y-4">
-          {/* Product Name */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📦 Product Name *
-            </label>
+      <form onSubmit={handleAddProduct} className="co-form" noValidate>
+        <main className="co-main">
+          <div className="co-wrap">
+            <label className="co-label" htmlFor="ap-order-name" style={{ marginTop: '0.9rem' }}>Product name *</label>
             <input
+              id="ap-order-name"
               ref={productNameRef}
               type="text"
-              placeholder="e.g., Sugar - 1kg, Rice - 10kg"
+              placeholder="e.g. Sugar - 1kg, Rice - 10kg"
               value={formData.productName}
               onChange={(e) => {
                 setFormData({ ...formData, productName: e.target.value });
                 if (errors.productName) setErrors({ ...errors, productName: '' });
               }}
-              className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-all duration-200 ${
-                errors.productName ? 'border-red-500 focus:border-red-600' : 'border-gray-300 focus:border-indigo-500'
-              }`}
+              className="co-input"
+              aria-invalid={errors.productName ? 'true' : undefined}
             />
-            {errors.productName && (
-              <p className="text-red-600 text-xs mt-1 flex items-center gap-1">
-                <FiAlertTriangle className="h-4 w-4" />
-                {errors.productName}
-              </p>
-            )}
-          </div>
+            {errors.productName && <p className="co-error" role="alert">{errors.productName}</p>}
 
-          {/* Quantity and Unit Price */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                📊 Quantity *
-              </label>
+            <p className="co-label">Quantity *</p>
+            <div className="co-qty">
+              <button type="button" onClick={() => setQuantity(formData.quantity - 1)} aria-label="One less"><FiMinus className="h-5 w-5" /></button>
               <input
                 type="number"
+                inputMode="numeric"
                 min="1"
                 step="1"
                 value={formData.quantity}
@@ -3388,106 +3206,68 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
                   setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 });
                   if (errors.quantity) setErrors({ ...errors, quantity: '' });
                 }}
-                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-all ${
-                  errors.quantity ? 'border-red-500 focus:border-red-600' : 'border-gray-300 focus:border-indigo-500'
-                }`}
+                className="co-input"
+                aria-label="Quantity"
               />
-              {errors.quantity && (
-                <p className="text-red-600 text-xs mt-1 flex items-center gap-1">
-                  <FiAlertTriangle className="h-4 w-4" />
-                  {errors.quantity}
-                </p>
-              )}
+              <button type="button" onClick={() => setQuantity(formData.quantity + 1)} aria-label="One more"><FiPlus className="h-5 w-5" /></button>
             </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                💰 Unit Price (UGX) *
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="100"
-                placeholder="0"
-                value={formData.unitPrice}
-                onChange={(e) => {
-                  setFormData({ ...formData, unitPrice: e.target.value });
-                  if (errors.unitPrice) setErrors({ ...errors, unitPrice: '' });
-                }}
-                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-all ${
-                  errors.unitPrice ? 'border-red-500 focus:border-red-600' : 'border-gray-300 focus:border-indigo-500'
-                }`}
-              />
-              {errors.unitPrice && (
-                <p className="text-red-600 text-xs mt-1 flex items-center gap-1">
-                  <FiAlertTriangle className="h-4 w-4" />
-                  {errors.unitPrice}
-                </p>
-              )}
+            <div className="co-chips">
+              {[6, 12, 24, 50].map((count) => (
+                <button key={count} type="button" className="co-chip" aria-pressed={formData.quantity === count} onClick={() => setQuantity(count)}>{count}</button>
+              ))}
             </div>
-          </div>
+            {errors.quantity && <p className="co-error" role="alert">{errors.quantity}</p>}
 
-          {/* Line Total Preview */}
-          {formData.quantity > 0 && formData.unitPrice && (
-            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 rounded-lg border-2 border-indigo-200 shadow-md">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-700 font-semibold">Line Total:</span>
-                <span className="text-xl font-bold text-indigo-600 animate-pulse">
-                  UGX {totalLineAmount.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-indigo-200">
-                <span className="text-gray-700 font-semibold">New Order Total:</span>
-                <span className="text-xl font-bold text-green-600 animate-pulse">
-                  UGX {((order.total_amount_ugx || 0) + totalLineAmount).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          )}
+            <label className="co-label" htmlFor="ap-order-price">Unit price (UGX) *</label>
+            <input
+              id="ap-order-price"
+              type="number"
+              inputMode="numeric"
+              min="0"
+              step="100"
+              placeholder="0"
+              value={formData.unitPrice}
+              onChange={(e) => {
+                setFormData({ ...formData, unitPrice: e.target.value });
+                if (errors.unitPrice) setErrors({ ...errors, unitPrice: '' });
+              }}
+              className="co-input"
+              aria-invalid={errors.unitPrice ? 'true' : undefined}
+            />
+            {errors.unitPrice && <p className="co-error" role="alert">{errors.unitPrice}</p>}
 
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              📝 Notes (Optional)
-            </label>
+            {formData.quantity > 0 && formData.unitPrice && (
+              <dl className="ois-sum" style={{ marginTop: '0.9rem' }} aria-live="polite">
+                <div><dt>This line</dt><dd>UGX {totalLineAmount.toLocaleString()}</dd></div>
+                <div className="is-total"><dt>New order total</dt><dd>UGX {((order.total_amount_ugx || 0) + totalLineAmount).toLocaleString()}</dd></div>
+              </dl>
+            )}
+
+            <label className="co-label" htmlFor="ap-order-notes">Notes (optional)</label>
             <textarea
-              placeholder="Add any special notes about this product..."
+              id="ap-order-notes"
+              placeholder="Anything special about this product"
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows="2"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none transition-all"
+              className="co-input"
             />
           </div>
+        </main>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-4 pt-4 border-t-2 border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 transition-all font-bold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
-            >
+        <footer className="co-foot">
+          <div className="co-foot-actions">
+            <button type="button" className="co-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" disabled={loading} className="co-cta">
               {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                  Adding...
-                </>
+                <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current"></div><span>Adding…</span></>
               ) : (
-                <>
-                  <FiCheck className="h-5 w-5" />
-                  Add Product
-                </>
+                <><FiCheck className="h-5 w-5" /><span>Add product</span></>
               )}
             </button>
           </div>
-        </form>
-      </div>
+        </footer>
+      </form>
     </div>
   );
 };

@@ -6,14 +6,43 @@
 // Real-time inventory & cost tracking - SUPERMARTKERA Uganda 🇺🇬
 // =====================================================================
 
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  FiX, FiPlus, FiSearch, FiEdit2, FiTrendingUp, FiTrendingDown, FiBox,
-  FiAlertCircle, FiCheckCircle
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  FiX, FiPlus, FiMinus, FiSearch, FiEdit2, FiBox, FiChevronDown, FiShoppingCart
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import { catalogItemOffer, groupBatchesByItem } from '../utils/supplierBatchExpiry';
+import '../styles/supplier-order-create.css';
+
+const initialOf = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
+
+// One product in the grid: picture, name, price, and either an Add button or a - qty + stepper
+const OisTile = ({ image, name, price, sub, note, qty, dimmed, onAdd, onStep }) => (
+  <div className={`ois-tile${qty != null ? ' is-in' : ''}${dimmed ? ' is-dim' : ''}`}>
+    <button type="button" className="ois-tile-main" onClick={onAdd} aria-label={`Add ${name}`}>
+      <span className="ois-img">
+        {image
+          ? <img src={image} alt="" loading="lazy" />
+          : <span className="ois-initial" aria-hidden="true">{initialOf(name)}</span>}
+        {qty != null && <span className="ois-pill">{qty} in order</span>}
+      </span>
+      <span className="ois-name">{name}</span>
+      <span className="ois-price">{price}</span>
+      {sub && <span className="ois-sub">{sub}</span>}
+      {note && <span className="ois-note">{note}</span>}
+    </button>
+    {qty != null ? (
+      <div className="ois-step">
+        <button type="button" onClick={() => onStep(-1)} aria-label="One less"><FiMinus className="h-4 w-4" /></button>
+        <span aria-live="polite">{qty}</span>
+        <button type="button" onClick={() => onStep(1)} aria-label="One more"><FiPlus className="h-4 w-4" /></button>
+      </div>
+    ) : (
+      <button type="button" className="ois-add" onClick={onAdd} aria-label={`Add ${name}`}><FiPlus className="h-4 w-4" /> Add</button>
+    )}
+  </div>
+);
 
 const OrderItemsSelector = ({ 
   orderItems, 
@@ -25,9 +54,8 @@ const OrderItemsSelector = ({
   supplierBusinessProfileId = ''
 }) => {
   const [products, setProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [source, setSource] = useState(null); // 'store' | 'supplier'; null = pick a sensible one
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [unitType, setUnitType] = useState('units');
@@ -37,8 +65,6 @@ const OrderItemsSelector = ({
   const [supplierPrices, setSupplierPrices] = useState({});
   const [supplierCatalogItems, setSupplierCatalogItems] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
-  const searchInputRef = useRef(null);
-  const dropdownRef = useRef(null);
 
   // Always derive this from the rows being displayed. Some parent screens use
   // a read-only totals object, so relying only on totals.totalUnits can leave
@@ -158,7 +184,7 @@ const OrderItemsSelector = ({
     const existingIndex = orderItems.findIndex(item => item.supplier_catalog_item_id === catalogItem.id);
     if (existingIndex >= 0) {
       const updated = orderItems.map((item, index) => index === existingIndex
-        ? { ...item, quantity: item.quantity + (Number(catalogItem.min_order_qty) || 1), total: (item.quantity + (Number(catalogItem.min_order_qty) || 1)) * item.unit_price }
+        ? { ...item, quantity: item.quantity + (Number(catalogItem.min_order_qty) || 1), display_quantity: item.quantity + (Number(catalogItem.min_order_qty) || 1), total: (item.quantity + (Number(catalogItem.min_order_qty) || 1)) * item.unit_price }
         : item);
       onItemsChange(updated);
       return;
@@ -247,6 +273,7 @@ const OrderItemsSelector = ({
           wholesale_price,
           category_id,
           supermarket_id,
+          images,
           inventory(current_stock,supermarket_id)
         `)
         .eq('is_active', true)
@@ -277,50 +304,67 @@ const OrderItemsSelector = ({
     }
   };
 
-  // Filter products based on search
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const filtered = products.filter(p =>
-        (p.name && p.name.toLowerCase().includes(query)) ||
-        (p.sku && p.sku.toLowerCase().includes(query)) ||
-        (p.barcode && p.barcode.includes(query))
-      ).slice(0, 15);
-      setFilteredProducts(filtered);
-    } else {
-      setFilteredProducts([]);
-    }
-  }, [searchQuery, products]);
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-UG', {
+      style: 'currency',
+      currency: 'UGX',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount || 0);
+  };
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  // One place that saves a new list of rows and keeps the parent's totals in step
+  const commit = (updatedItems) => {
+    onItemsChange(updatedItems);
+    const subtotal = updatedItems.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    onTotalsChange({
+      subtotal,
+      tax: subtotal * 0.18,
+      total: subtotal * 1.18,
+      itemCount: updatedItems.length,
+      totalUnits: updatedItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+    });
+  };
 
-  const selectProduct = (product) => {
-    // Search selections are also order selections. Editing an existing item
-    // remains manual so choosing a replacement does not add a new row.
-    if (editingIndex === null) {
-      addCatalogProduct(product);
-      return;
-    }
-    setSelectedProduct(product);
-    setSearchQuery(product.name);
-    setUnitPrice(priceFor(product));
-    setBuyingPrice(pricingMode === 'supplier_price' ? priceFor(product) : (product.cost_price || 0));
-    setShowDropdown(false);
+  const firstImage = (images) => (Array.isArray(images) ? images[0] : images) || null;
+
+  const productImage = (item) => {
+    if (item.supplier_catalog_item_id) return supplierCatalogItems.find((c) => c.id === item.supplier_catalog_item_id)?.image_url || null;
+    return firstImage(products.find((p) => p.id === item.product_id)?.images);
+  };
+
+  const rowIndexOfProduct = (productId) => orderItems.findIndex((item) => item.product_id === productId);
+  const rowIndexOfCatalog = (catalogId) => orderItems.findIndex((item) => item.supplier_catalog_item_id === catalogId);
+
+  // + / - on a row or a tile. Going below 1 takes the row off the order.
+  const bumpItem = (index, delta) => {
+    const item = orderItems[index];
+    if (!item) return;
+    const boxes = item.unit_type === 'boxes';
+    const display = (Number(item.display_quantity) || Number(item.quantity) || 0) + delta;
+    if (display <= 0) { removeItem(index); return; }
+    const quantity = boxes ? display * (Number(item.units_per_box) || 1) : display;
+    commit(orderItems.map((row, i) => (i === index
+      ? { ...row, quantity, display_quantity: display, total: quantity * Number(row.unit_price || 0) }
+      : row)));
+  };
+
+  const resetForm = () => {
+    setEditingIndex(null);
+    setSelectedProduct(null);
+    setQuantity(1);
+    setUnitType('units');
+    setUnitsPerBox(12);
+    setUnitPrice(0);
+    setBuyingPrice(0);
   };
 
   const calculateTotalPrice = () => {
     const units = unitType === 'boxes' ? quantity * unitsPerBox : quantity;
     return units * unitPrice;
   };
+
+  const getTotalUnits = () => (unitType === 'boxes' ? quantity * unitsPerBox : quantity);
 
   const validateItem = () => {
     if (!selectedProduct) {
@@ -338,127 +382,69 @@ const OrderItemsSelector = ({
     return true;
   };
 
-  const addOrUpdateItem = () => {
-    if (!validateItem()) return;
+  // Saves the line being edited (boxes, a different quantity or a custom price)
+  const updateEditedItem = () => {
+    if (!validateItem() || editingIndex === null) return;
 
-    const totalUnits = unitType === 'boxes' ? quantity * unitsPerBox : quantity;
-    const itemTotal = calculateTotalPrice();
-    
-    const newItem = {
-      id: editingIndex !== null ? orderItems[editingIndex].id : Date.now(),
-      product_id: selectedProduct.id,
-      product_name: selectedProduct.name,
-      sku: selectedProduct.sku,
-      barcode: selectedProduct.barcode || '',
+    const totalUnits = getTotalUnits();
+    const previous = orderItems[editingIndex];
+    const edited = {
+      ...previous,
       quantity: totalUnits,
       display_quantity: quantity,
       unit_type: unitType,
       units_per_box: unitsPerBox,
       unit_price: unitPrice,
       buying_price: buyingPrice,
-      total: itemTotal,
+      total: calculateTotalPrice(),
       margin: unitPrice - buyingPrice,
-      margin_percent: ((unitPrice - buyingPrice) / buyingPrice * 100).toFixed(1),
-      current_stock: selectedProduct.current_stock || 0
+      margin_percent: buyingPrice > 0 ? ((unitPrice - buyingPrice) / buyingPrice * 100).toFixed(1) : '0.0'
     };
-
-    let updatedItems;
-    if (editingIndex !== null) {
-      updatedItems = [...orderItems];
-      updatedItems[editingIndex] = newItem;
-      setEditingIndex(null);
-    } else {
-      updatedItems = [...orderItems, newItem];
-    }
-
-    onItemsChange(updatedItems);
-    
-    // Calculate totals
-    const subtotal = updatedItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.18; // 18% VAT
-    const total = subtotal + tax;
-    
-    onTotalsChange({
-      subtotal,
-      tax,
-      total,
-      itemCount: updatedItems.length,
-      totalUnits: updatedItems.reduce((sum, item) => sum + item.quantity, 0)
-    });
-
-    // Reset form
-    setSearchQuery('');
-    setSelectedProduct(null);
-    setQuantity(1);
-    setUnitType('units');
-    setUnitPrice(0);
-    setBuyingPrice(0);
-    searchInputRef.current?.focus();
-    
-    toast.success('✅ Item added successfully');
+    commit(orderItems.map((row, i) => (i === editingIndex ? edited : row)));
+    resetForm();
+    toast.success('✅ Item updated');
   };
 
-  // A product chosen from Quick Select is already an order choice. Add it
-  // immediately with the default quantity instead of forcing the manager to
-  // select the same product again and press Add Item.
+  // Tapping a tile adds the product straight away with a quantity of 1; tapping again adds one more.
   const addCatalogProduct = (product) => {
     const unitPriceForProduct = priceFor(product);
     if (unitPriceForProduct <= 0) {
-      toast.warning(pricingMode === 'supplier_price'
-        ? 'This supplier has not published a price for this product yet.'
-        : 'This product has no admin buying price yet. Set its cost price first.');
+      toast.warning(!supplierId && pricingMode === 'supplier_price'
+        ? 'Choose a supplier first to see its prices.'
+        : pricingMode === 'supplier_price'
+          ? 'This supplier has not published a price for this product yet.'
+          : 'This product has no admin buying price yet. Set its cost price first.');
       return;
     }
 
-    const existingIndex = orderItems.findIndex((item) => item.product_id === product.id);
-    let updatedItems;
-
+    const existingIndex = rowIndexOfProduct(product.id);
     if (existingIndex >= 0) {
-      updatedItems = orderItems.map((item, index) => {
-        if (index !== existingIndex) return item;
-        const itemQuantity = (Number(item.quantity) || 0) + 1;
-        return { ...item, quantity: itemQuantity, display_quantity: itemQuantity, total: itemQuantity * unitPriceForProduct };
-      });
-    } else {
-      const buyingPriceForProduct = pricingMode === 'supplier_price'
-        ? unitPriceForProduct
-        : (Number(product.cost_price) || 0);
-      updatedItems = [...orderItems, {
-        id: Date.now(),
-        product_id: product.id,
-        product_name: product.name,
-        sku: product.sku,
-        barcode: product.barcode || '',
-        quantity: 1,
-        display_quantity: 1,
-        unit_type: 'units',
-        units_per_box: 12,
-        unit_price: unitPriceForProduct,
-        buying_price: buyingPriceForProduct,
-        total: unitPriceForProduct,
-        margin: unitPriceForProduct - buyingPriceForProduct,
-        margin_percent: buyingPriceForProduct > 0
-          ? ((unitPriceForProduct - buyingPriceForProduct) / buyingPriceForProduct * 100).toFixed(1)
-          : '0.0',
-        current_stock: product.current_stock || 0
-      }];
+      bumpItem(existingIndex, 1);
+      return;
     }
 
-    onItemsChange(updatedItems);
-    const subtotal = updatedItems.reduce((sum, item) => sum + Number(item.total || 0), 0);
-    onTotalsChange({
-      subtotal,
-      tax: subtotal * 0.18,
-      total: subtotal * 1.18,
-      itemCount: updatedItems.length,
-      totalUnits: updatedItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
-    });
-    setSelectedProduct(product);
-    setSearchQuery(product.name);
-    setUnitPrice(priceFor(product));
-    setBuyingPrice(pricingMode === 'supplier_price' ? priceFor(product) : (Number(product.cost_price) || 0));
-    setShowDropdown(false);
-    toast.success(`${product.name} added to the order`);
+    const buyingPriceForProduct = pricingMode === 'supplier_price'
+      ? unitPriceForProduct
+      : (Number(product.cost_price) || 0);
+    commit([...orderItems, {
+      id: Date.now(),
+      product_id: product.id,
+      product_name: product.name,
+      sku: product.sku,
+      barcode: product.barcode || '',
+      quantity: 1,
+      display_quantity: 1,
+      unit_type: 'units',
+      units_per_box: 12,
+      unit_price: unitPriceForProduct,
+      buying_price: buyingPriceForProduct,
+      total: unitPriceForProduct,
+      margin: unitPriceForProduct - buyingPriceForProduct,
+      margin_percent: buyingPriceForProduct > 0
+        ? ((unitPriceForProduct - buyingPriceForProduct) / buyingPriceForProduct * 100).toFixed(1)
+        : '0.0',
+      current_stock: product.current_stock || 0
+    }]);
   };
 
   const editItem = (index) => {
@@ -468,63 +454,27 @@ const OrderItemsSelector = ({
       name: item.product_name,
       sku: item.sku,
       selling_price: item.unit_price,
-      cost_price: item.buying_price
+      cost_price: item.buying_price,
+      current_stock: item.current_stock || 0
     });
-    setSearchQuery(item.product_name);
-    setQuantity(item.display_quantity);
-    setUnitType(item.unit_type);
-    setUnitsPerBox(item.units_per_box);
+    setQuantity(item.display_quantity || item.quantity || 1);
+    setUnitType(item.unit_type === 'boxes' ? 'boxes' : 'units');
+    setUnitsPerBox(item.units_per_box || 12);
     setUnitPrice(item.unit_price);
-    setBuyingPrice(item.buying_price);
+    setBuyingPrice(item.buying_price || 0);
     setEditingIndex(index);
-    searchInputRef.current?.focus();
-    toast.info('ℹ️ Editing item - Click Add Item when done');
   };
 
   const removeItem = (index) => {
-    const updatedItems = orderItems.filter((_, i) => i !== index);
-    onItemsChange(updatedItems);
-    
-    // Recalculate totals
-    const subtotal = updatedItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.18;
-    const total = subtotal + tax;
-    
-    onTotalsChange({
-      subtotal,
-      tax,
-      total,
-      itemCount: updatedItems.length,
-      totalUnits: updatedItems.reduce((sum, item) => sum + item.quantity, 0)
-    });
-
-    if (editingIndex === index) {
-      setEditingIndex(null);
-      setSearchQuery('');
-      setSelectedProduct(null);
-      setQuantity(1);
-      setUnitPrice(0);
-      setBuyingPrice(0);
-    }
-    
+    commit(orderItems.filter((_, i) => i !== index));
+    if (editingIndex === index) resetForm();
+    else if (editingIndex !== null && editingIndex > index) setEditingIndex(editingIndex - 1);
     toast.success('✅ Item removed');
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount || 0);
-  };
-
-  const getTotalUnits = () => {
-    return unitType === 'boxes' ? quantity * unitsPerBox : quantity;
-  };
-
   const addNewProduct = async () => {
-    if (!searchQuery.trim()) {
+    const name = searchQuery.trim();
+    if (!name) {
       toast.warning('⚠️ Enter product name first');
       return;
     }
@@ -549,24 +499,23 @@ const OrderItemsSelector = ({
         .from('products')
         .select('id')
         .eq('supermarket_id', supermarketId)
-        .ilike('name', searchQuery.trim())
+        .ilike('name', name)
         .single();
 
       if (existing) {
         toast.info('ℹ️ Product already exists in your store catalog');
-        selectProduct(existing);
         return;
       }
 
       // Generate SKU from name
-      const sku = searchQuery.trim().replace(/\s+/g, '-').toUpperCase().substring(0, 20);
-      
+      const sku = name.replace(/\s+/g, '-').toUpperCase().substring(0, 20);
+
       // Insert new product FOR THIS SUPERMARKET
-      const { data: newProduct, error } = await supabase
+      const { error } = await supabase
         .from('products')
         .insert([{
-          name: searchQuery.trim(),
-          sku: sku,
+          name,
+          sku,
           cost_price: 0,
           selling_price: 0,
           price: 0,
@@ -579,385 +528,219 @@ const OrderItemsSelector = ({
 
       if (error) throw error;
 
-      // Notify admin
-      const adminMessage = `🆕 NEW PRODUCT ADDED BY MANAGER\n📦 ${searchQuery.trim()}\n🏪 Supermarket ID: ${supermarketId}\n⏰ ${new Date().toLocaleString('en-UG')}`;
-      console.log('Admin notification:', adminMessage);
-      
-      // Optional: Send notification to admin via email/push
       toast.success('✅ Product added to your store catalog! Admin notified.');
-      
-      // Load updated products
       await loadProducts();
-      selectProduct(newProduct);
     } catch (error) {
       console.error('❌ Error adding product:', error);
       toast.error('Failed to add product');
     }
   };
 
+  // ---------- what the grid shows ----------
+  const hasSupplierItems = Boolean(supplierId) && supplierCatalogItems.length > 0;
+  const activeSource = source || (hasSupplierItems ? 'supplier' : 'store');
+  const query = searchQuery.trim().toLowerCase();
+
+  const shownProducts = useMemo(() => {
+    if (!query) return products;
+    return products.filter((p) =>
+      (p.name && p.name.toLowerCase().includes(query)) ||
+      (p.sku && p.sku.toLowerCase().includes(query)) ||
+      (p.barcode && p.barcode.includes(query))
+    );
+  }, [products, query]);
+
+  const shownCatalog = useMemo(() => {
+    if (!query) return supplierCatalogItems;
+    return supplierCatalogItems.filter((item) =>
+      (item.name && item.name.toLowerCase().includes(query)) ||
+      (item.sku && String(item.sku).toLowerCase().includes(query)) ||
+      (item.barcode && String(item.barcode).includes(query))
+    );
+  }, [supplierCatalogItems, query]);
+
+  const needsSupplierFirst = pricingMode === 'supplier_price' && !supplierId;
+
+  const subtotal = totals?.subtotal ?? 0;
+
   return (
-    <div className="ois space-y-6">
-      {/* Product Selection Card */}
-      <div className="ois-card bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
-        <h3 className="ois-card-title text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
-          <FiBox className="h-5 w-5" />
-          🛒 Order Items - Select from Catalog
-        </h3>
-
-        {/* Quick Select Dropdown - All Products */}
-        <div className="ois-quick mb-4 p-4 bg-white rounded-lg border-2 border-blue-200">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            ⚡ Quick Select - All Products ({products.length})
-          </label>
-          <select
-            onChange={(e) => {
-              if (e.target.value) {
-                const product = products.find(p => p.id === e.target.value);
-                if (product) addCatalogProduct(product);
-                e.target.value = '';
-              }
-            }}
-            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none bg-white"
-          >
-            <option value="">-- Click to Browse All Products --</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name} ({product.sku}) - {formatCurrency(product.selling_price)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {supplierId && (
-          <div className="mb-4 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="font-bold text-emerald-900">Supplier catalog ({supplierCatalogItems.length})</p>
-                <p className="text-xs text-emerald-700">Select an item to add its published supplier price and minimum quantity.</p>
-              </div>
-            </div>
-            {supplierCatalogItems.length === 0 ? <p className="text-sm text-emerald-800">No available catalog items found for this supplier.</p> : (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                {supplierCatalogItems.map(item => (
-                  <button type="button" key={item.id} onClick={() => addSupplierCatalogItem(item)} className="overflow-hidden rounded-xl border border-emerald-100 bg-white text-left shadow-sm transition hover:border-emerald-500 hover:shadow-md">
-                    {item.image_url ? <img src={item.image_url} alt={item.name} className="h-24 w-full object-cover" /> : <div className="flex h-24 items-center justify-center bg-emerald-50 text-3xl">📦</div>}
-                    <div className="p-2">
-                      <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
-                      <p className="text-xs text-emerald-700">
-                        {item.expiry_discount_percent > 0 && <span className="mr-1 text-gray-400 line-through">{formatCurrency(item.list_price)}</span>}
-                        {formatCurrency(item.price_per_unit)} / {item.unit || 'unit'}
-                      </p>
-                      {item.expiry_discount_percent > 0 && (
-                        <p className="text-[11px] font-semibold text-orange-700">
-                          −{item.expiry_discount_percent}% · {item.next_expiry_label} ({item.next_batch_quantity} in batch)
-                        </p>
-                      )}
-                      {item.admin_selling_price > 0 && <p className="text-[11px] text-blue-700">Sell: {formatCurrency(item.admin_selling_price)}</p>}
-                      <p className="text-[11px] text-gray-500">Min {item.min_order_qty || 1}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+    <div className="ois">
+      {/* Search + which shelf to browse */}
+      <div className="ois-search">
+        <FiSearch className="ois-search-icon" aria-hidden="true" />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name, SKU or barcode"
+          aria-label="Search products"
+          className="ois-input"
+        />
+        {searchQuery && (
+          <button type="button" className="ois-clear" onClick={() => setSearchQuery('')} aria-label="Clear search"><FiX className="h-4 w-4" /></button>
         )}
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Product Search */}
-          <div className="lg:col-span-5 relative" ref={dropdownRef}>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              📦 Product Name
-            </label>
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowDropdown(true);
-                  setSelectedProduct(null);
-                }}
-                onFocus={() => setShowDropdown(true)}
-                placeholder="Search product name, SKU, or barcode..."
-                className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none transition-colors"
-              />
-            </div>
-
-            {/* Dropdown */}
-            {showDropdown && filteredProducts.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-blue-300 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                {filteredProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => selectProduct(product)}
-                    className="w-full text-left px-4 py-3 hover:bg-blue-100 border-b border-gray-100 transition-colors last:border-b-0"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold text-gray-800">{product.name}</p>
-                        <p className="text-sm text-gray-600">SKU: {product.sku}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">{formatCurrency(product.selling_price)}</p>
-                        <p className="text-xs text-gray-500">Stock: {product.current_stock || 0}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {showDropdown && searchQuery && filteredProducts.length === 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-amber-50 border-2 border-amber-300 rounded-lg shadow-xl z-50 overflow-hidden">
-                <div className="p-4">
-                  <p className="text-sm text-amber-800 mb-3">
-                    ⚠️ No products found matching "{searchQuery}"
-                  </p>
-                  <button
-                    onClick={addNewProduct}
-                    type="button"
-                    className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-lg hover:from-green-600 hover:to-green-700 transition-all flex items-center justify-center gap-2"
-                  >
-                    <FiPlus className="h-5 w-5" />
-                    ✨ Add "{searchQuery}" to Catalog
-                  </button>
-                  <p className="text-xs text-amber-700 mt-2">
-                    💡 New product will be added & admin will be notified
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quantity Section */}
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              📊 Quantity
-            </label>
-            <input
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              min="1"
-              className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-bold"
-            />
-          </div>
-
-          {/* Unit Type */}
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              📦 Unit Type
-            </label>
-            <select
-              value={unitType}
-              onChange={(e) => setUnitType(e.target.value)}
-              className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            >
-              <option value="units">Units</option>
-              <option value="boxes">Boxes</option>
-            </select>
-          </div>
-
-          {/* Units per Box (if boxes selected) */}
-          {unitType === 'boxes' && (
-            <div className="lg:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                📦 Units/Box
-              </label>
-              <input
-                type="number"
-                value={unitsPerBox}
-                onChange={(e) => setUnitsPerBox(Math.max(1, parseInt(e.target.value) || 12))}
-                min="1"
-                className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-bold"
-              />
-            </div>
-          )}
-
-          {/* Unit Price */}
-          <div className="lg:col-span-3">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              💰 {pricingMode === 'supplier_price' ? 'Supplier Price' : 'Admin Buying Price'} (UGX)
-            </label>
-            <input
-              type="number"
-              value={unitPrice}
-              onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
-              min="0"
-              step="100"
-              className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-bold text-green-600"
-            />
-          </div>
-
-          {/* Buying Price */}
-          <div className="lg:col-span-3">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              🏪 Buying Price (UGX)
-            </label>
-            <input
-              type="number"
-              value={buyingPrice}
-              onChange={(e) => setBuyingPrice(Math.max(0, parseFloat(e.target.value) || 0))}
-              min="0"
-              step="100"
-              className="w-full px-3 py-3 border-2 border-orange-300 rounded-lg focus:border-orange-500 focus:outline-none font-bold text-orange-600"
-            />
-          </div>
-        </div>
-
-        {/* Smart Info Display */}
-        {selectedProduct && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="bg-blue-100 rounded-lg p-3 border-l-4 border-blue-500">
-              <p className="text-xs text-blue-600 font-semibold">Total Units</p>
-              <p className="text-lg font-bold text-blue-900">{getTotalUnits()}</p>
-            </div>
-            <div className="bg-green-100 rounded-lg p-3 border-l-4 border-green-500">
-              <p className="text-xs text-green-600 font-semibold">Item Total</p>
-              <p className="text-lg font-bold text-green-900">{formatCurrency(calculateTotalPrice())}</p>
-            </div>
-            <div className={`rounded-lg p-3 border-l-4 ${buyingPrice > 0 && unitPrice > buyingPrice ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500'}`}>
-              <p className="text-xs font-semibold">Profit Margin</p>
-              <p className={`text-lg font-bold ${buyingPrice > 0 && unitPrice > buyingPrice ? 'text-green-900' : 'text-red-900'}`}>
-                {buyingPrice > 0 ? `${((unitPrice - buyingPrice) / buyingPrice * 100).toFixed(1)}%` : 'N/A'}
-              </p>
-            </div>
-            <div className="bg-purple-100 rounded-lg p-3 border-l-4 border-purple-500">
-              <p className="text-xs text-purple-600 font-semibold">Current Stock</p>
-              <p className="text-lg font-bold text-purple-900">{selectedProduct.current_stock || 0}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Add Button */}
-        <button
-          onClick={addOrUpdateItem}
-          disabled={!selectedProduct}
-          className={`w-full mt-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all duration-300 ${
-            selectedProduct
-              ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:shadow-lg'
-              : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-          }`}
-        >
-          <FiPlus className="h-5 w-5" />
-          {editingIndex !== null ? 'Update Item' : 'Add Item to Order'}
+      <div className="ois-tabs" role="tablist" aria-label="Where to pick products from">
+        <button type="button" role="tab" aria-selected={activeSource === 'store'} className="ois-tab" onClick={() => setSource('store')}>
+          <FiBox className="h-4 w-4" /> My products <span className="ois-tab-count">{products.length}</span>
         </button>
-      </div>
-
-      {/* Items List */}
-      <div className="ois-list">
-        <h3 className="ois-list-title text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <FiCheckCircle className="h-5 w-5 text-blue-600" />
-          📋 Order Items ({orderItems.length} items)
-        </h3>
-
-        {orderItems.length > 0 ? (
-          <div className="space-y-3">
-            {orderItems.map((item, index) => (
-              <div
-                key={item.id}
-                className={`bg-white border-2 rounded-lg p-4 hover:shadow-md transition-all ${
-                  editingIndex === index ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                }`}
-              >
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  {/* Product Info */}
-                  <div className="md:col-span-3">
-                    <p className="font-bold text-gray-800">{item.product_name}</p>
-                    <p className="text-sm text-gray-600">SKU: {item.sku}</p>
-                  </div>
-
-                  {/* Quantity Info */}
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Quantity</p>
-                    <p className="font-bold text-blue-600">
-                      {item.display_quantity} {item.unit_type === 'boxes' ? 'boxes' : 'units'}
-                      {item.unit_type === 'boxes' && <span className="text-sm text-gray-600"> ({item.quantity} units)</span>}
-                    </p>
-                  </div>
-
-                  {/* Prices */}
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Selling Price</p>
-                    <p className="font-bold text-green-600">{formatCurrency(item.unit_price)}</p>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Buying Price</p>
-                    <p className="font-bold text-orange-600">{formatCurrency(item.buying_price)}</p>
-                  </div>
-
-                  {/* Margin */}
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-gray-600 font-semibold">Margin</p>
-                    <p className={`font-bold ${item.margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {item.margin_percent}%
-                    </p>
-                  </div>
-
-                  {/* Total */}
-                  <div className="md:col-span-1">
-                    <p className="text-xs text-gray-600 font-semibold">Total</p>
-                    <p className="font-bold text-gray-900">{formatCurrency(item.total)}</p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="md:col-span-2 flex gap-2">
-                    <button
-                      onClick={() => editItem(index)}
-                      className="flex-1 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-1 text-sm font-semibold"
-                    >
-                      <FiEdit2 className="h-4 w-4" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => removeItem(index)}
-                      className="flex-1 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-1 text-sm font-semibold"
-                    >
-                      <FiX className="h-4 w-4" />
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* Totals Summary */}
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4 border-2 border-gray-200 mt-4">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">Total Items</p>
-                  <p className="text-2xl font-bold text-blue-600">{orderItems.length}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">Total Units</p>
-                  <p className="text-2xl font-bold text-purple-600">{calculatedTotalUnits}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">Subtotal</p>
-                  <p className="text-2xl font-bold text-gray-800">{formatCurrency(totals.subtotal)}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold">VAT (18%)</p>
-                  <p className="text-2xl font-bold text-orange-600">{formatCurrency(totals.tax)}</p>
-                </div>
-                <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-lg p-3 text-white">
-                  <p className="text-xs font-semibold">TOTAL</p>
-                  <p className="text-2xl font-bold">{formatCurrency(totals.total)}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-8 text-center">
-            <FiAlertCircle className="h-12 w-12 text-blue-500 mx-auto mb-3" />
-            <p className="text-blue-800 font-semibold">No items added yet</p>
-            <p className="text-sm text-blue-600 mt-1">Search and add products above to start building your order</p>
-          </div>
+        {supplierId && (
+          <button type="button" role="tab" aria-selected={activeSource === 'supplier'} className="ois-tab" onClick={() => setSource('supplier')}>
+            🏢 Supplier catalog <span className="ois-tab-count">{supplierCatalogItems.length}</span>
+          </button>
         )}
       </div>
+
+      {needsSupplierFirst && activeSource === 'store' && (
+        <p className="ois-hint">Choose a supplier above and the prices appear on every product.</p>
+      )}
+
+      {activeSource === 'supplier' && supplierId ? (
+        shownCatalog.length === 0 ? (
+          <p className="ois-empty">{supplierCatalogItems.length === 0 ? 'No available catalog items for this supplier.' : `Nothing matches “${searchQuery}”.`}</p>
+        ) : (
+          <div className="ois-grid">
+            {shownCatalog.map((item) => {
+              const idx = rowIndexOfCatalog(item.id);
+              return (
+                <OisTile
+                  key={item.id}
+                  image={item.image_url}
+                  name={item.name}
+                  price={<>
+                    {item.expiry_discount_percent > 0 && <s className="ois-was">{formatCurrency(item.list_price)}</s>}
+                    {formatCurrency(item.price_per_unit)}<small> / {item.unit || 'unit'}</small>
+                  </>}
+                  sub={`Min ${item.min_order_qty || 1}${item.admin_selling_price > 0 ? ` · Sell ${formatCurrency(item.admin_selling_price)}` : ''}`}
+                  note={item.expiry_discount_percent > 0 ? `−${item.expiry_discount_percent}% · ${item.next_expiry_label}` : null}
+                  qty={idx >= 0 ? (orderItems[idx]?.display_quantity ?? orderItems[idx]?.quantity) : null}
+                  onStep={(delta) => bumpItem(idx, delta)}
+                  onAdd={() => addSupplierCatalogItem(item)}
+                />
+              );
+            })}
+          </div>
+        )
+      ) : shownProducts.length === 0 ? (
+        <div className="ois-empty">
+          {products.length === 0 ? 'No products in your store yet. Add them in Inventory first.' : <>Nothing matches “{searchQuery}”.</>}
+          {products.length > 0 && query && (
+            <button type="button" className="ois-addnew" onClick={addNewProduct}>
+              <FiPlus className="h-4 w-4" /> Add “{searchQuery.trim()}” to my catalog
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="ois-grid">
+          {shownProducts.map((product) => {
+            const price = priceFor(product);
+            const idx = rowIndexOfProduct(product.id);
+            return (
+              <OisTile
+                key={product.id}
+                image={firstImage(product.images)}
+                name={product.name}
+                price={price > 0 ? formatCurrency(price) : (needsSupplierFirst ? 'Pick a supplier' : 'No price yet')}
+                sub={`Stock ${product.current_stock || 0}`}
+                qty={idx >= 0 ? (orderItems[idx]?.display_quantity ?? orderItems[idx]?.quantity) : null}
+                onStep={(delta) => bumpItem(idx, delta)}
+                dimmed={price <= 0}
+                onAdd={() => addCatalogProduct(product)}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* The order so far */}
+      <section className="ois-list" aria-label="Order items">
+        <h3 className="ois-list-title"><FiShoppingCart className="h-4 w-4" /> Your order <span className="ois-tab-count">{orderItems.length}</span></h3>
+
+        {orderItems.length === 0 ? (
+          <p className="ois-empty">Tap a product above to start your order.</p>
+        ) : (
+          <>
+            <ul className="ois-rows">
+              {orderItems.map((item, index) => {
+                const image = productImage(item);
+                return (
+                  <li key={item.id} className={`ois-row${editingIndex === index ? ' is-editing' : ''}`}>
+                    <span className="ois-thumb">
+                      {image ? <img src={image} alt="" loading="lazy" /> : <span aria-hidden="true">{initialOf(item.product_name)}</span>}
+                    </span>
+                    <span className="ois-row-main">
+                      <span className="ois-row-name">{item.product_name}</span>
+                      <span className="ois-row-sub">
+                        {formatCurrency(item.unit_price)} × {item.quantity}{item.unit_type === 'boxes' ? ` (${item.display_quantity} boxes)` : ''}
+                      </span>
+                    </span>
+                    <span className="ois-row-end">
+                      <span className="ois-row-total">{formatCurrency(item.total)}</span>
+                      <span className="ois-row-ctrl">
+                        <button type="button" onClick={() => bumpItem(index, -1)} aria-label="One less"><FiMinus className="h-4 w-4" /></button>
+                        <b>{item.display_quantity ?? item.quantity}</b>
+                        <button type="button" onClick={() => bumpItem(index, 1)} aria-label="One more"><FiPlus className="h-4 w-4" /></button>
+                        {!item.supplier_catalog_item_id && (
+                          <button type="button" onClick={() => editItem(index)} aria-label={`Edit ${item.product_name}`}><FiEdit2 className="h-4 w-4" /></button>
+                        )}
+                        <button type="button" className="is-remove" onClick={() => removeItem(index)} aria-label={`Remove ${item.product_name}`}><FiX className="h-4 w-4" /></button>
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <dl className="ois-sum">
+              <div><dt>Units</dt><dd>{calculatedTotalUnits}</dd></div>
+              <div><dt>Subtotal</dt><dd>{formatCurrency(subtotal)}</dd></div>
+              <div><dt>VAT (18%)</dt><dd>{formatCurrency(totals?.tax)}</dd></div>
+              <div className="is-total"><dt>Total</dt><dd>{formatCurrency(totals?.total)}</dd></div>
+            </dl>
+          </>
+        )}
+
+        {/* Boxes, or a price that differs from the list: opens from a row's pencil */}
+        {editingIndex !== null && selectedProduct && (
+          <div className="ois-edit">
+            <button type="button" className="ois-edit-head" onClick={resetForm} aria-label="Close editor">
+              <span><FiEdit2 className="h-4 w-4" /> {selectedProduct.name}</span>
+              <FiChevronDown className="h-4 w-4 rotate-180" aria-hidden="true" />
+            </button>
+            <div className="ois-edit-grid">
+              <label>Quantity
+                <input type="number" min="1" className="ois-input" value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
+              </label>
+              <label>Sold as
+                <select className="ois-input" value={unitType} onChange={(e) => setUnitType(e.target.value)}>
+                  <option value="units">Units</option>
+                  <option value="boxes">Boxes</option>
+                </select>
+              </label>
+              {unitType === 'boxes' && (
+                <label>Units per box
+                  <input type="number" min="1" className="ois-input" value={unitsPerBox} onChange={(e) => setUnitsPerBox(Math.max(1, parseInt(e.target.value) || 12))} />
+                </label>
+              )}
+              <label>{pricingMode === 'supplier_price' ? 'Supplier price' : 'Admin buying price'} (UGX)
+                <input type="number" min="0" step="100" className="ois-input" value={unitPrice} onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))} />
+              </label>
+              <label>Buying price (UGX)
+                <input type="number" min="0" step="100" className="ois-input" value={buyingPrice} onChange={(e) => setBuyingPrice(Math.max(0, parseFloat(e.target.value) || 0))} />
+              </label>
+            </div>
+            <p className="ois-edit-sum">
+              {getTotalUnits()} units · {formatCurrency(calculateTotalPrice())}
+              {buyingPrice > 0 && <> · margin <b className={unitPrice > buyingPrice ? 'is-good' : 'is-bad'}>{((unitPrice - buyingPrice) / buyingPrice * 100).toFixed(1)}%</b></>}
+            </p>
+            <div className="ois-edit-actions">
+              <button type="button" className="ois-btn ois-btn-ghost" onClick={resetForm}>Cancel</button>
+              <button type="button" className="ois-btn ois-btn-primary" onClick={updateEditedItem}>Update item</button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 };
