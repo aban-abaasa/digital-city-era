@@ -19,6 +19,7 @@ import {
 import { SiGoogle } from 'react-icons/si';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
+import { signInWithIcanera } from '../services/icaneraSignIn';
 import { useTheme } from '../contexts/ThemeContext';
 import '../styles/supermartkera-auth.css';
 import CanweFields from '../components/security/CanweFields';
@@ -85,11 +86,13 @@ const CustomerLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
-  const [showWalletLogin, setShowWalletLogin] = useState(false);
-  const [walletIdentifier, setWalletIdentifier] = useState('');
-  const [walletPin, setWalletPin] = useState('');
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [walletError, setWalletError] = useState('');
+  const [showIcaneraLogin, setShowIcaneraLogin] = useState(false);
+  const [icaneraEmail, setIcaneraEmail] = useState('');
+  const [icaneraPassword, setIcaneraPassword] = useState('');
+  const [icaneraCode, setIcaneraCode] = useState('');
+  const [icaneraStep, setIcaneraStep] = useState(null);
+  const [icaneraLoading, setIcaneraLoading] = useState(false);
+  const [icaneraError, setIcaneraError] = useState('');
 
   // Checks dev_operators (is_dev_operator()) before the normal role routing
   // below — role is unrelated to dev-panel access (see DevPanel.jsx), so a
@@ -298,50 +301,78 @@ const CustomerLogin = () => {
     }
   };
 
-  // Sign in with an ICANera wallet account number (or phone) + PIN. Verified
-  // server-side by the same wallet-login edge function ICAN and mybodaguy
-  // use (shared Supabase project, shared auth.users), which hands back a
-  // magic-link token_hash redeemed into a real session here — so one wallet
-  // account works across ICAN, digital-city-era and mybodaguy. mockData.jsx's
-  // login() auto-creates the `users` row (role 'customer') on first use.
-  const handleWalletLogin = async (e) => {
-    e.preventDefault();
-    setWalletError('');
+  const resetIcaneraLogin = () => {
+    if (icaneraStep?.status === 'mfa_required') icaneraStep.cancel();
+    setIcaneraStep(null);
+    setIcaneraPassword('');
+    setIcaneraCode('');
+    setIcaneraError('');
+  };
 
-    if (!walletIdentifier.trim() || !/^\d{4,6}$/.test(walletPin.trim())) {
-      setWalletError('Enter your wallet account number (or phone) and 4-6 digit PIN');
+  // Sign in with ICANera credentials (email + password of the shared ICANera
+  // account, plus its authenticator-app code when two-step is on) — see
+  // services/icaneraSignIn.js. mockData.jsx's login() auto-creates the
+  // `users` row (role 'customer') on first use.
+  const handleIcaneraLogin = async (e) => {
+    e.preventDefault();
+    setIcaneraError('');
+
+    if (checkCanweFields(e.currentTarget, 'customer-login-icanera')) {
+      setIcaneraLoading(true);
+      setTimeout(() => {
+        setIcaneraLoading(false);
+        setIcaneraError('Invalid ICANera email or password.');
+      }, 900 + Math.random() * 400);
       return;
     }
 
-    setWalletLoading(true);
+    setIcaneraLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('wallet-login', {
-        body: { identifier: walletIdentifier.trim(), pin: walletPin.trim() },
-      });
+      let enteredEmail = icaneraEmail.trim().toLowerCase();
 
-      if (error) {
-        // supabase-js only gives a generic "Edge Function returned a non-2xx
-        // status code" here — the real { success: false, error } body lives
-        // on error.context (the raw Response object).
-        const detail = await error.context?.json?.().catch(() => null);
-        throw new Error(detail?.error || error.message);
+      if (icaneraStep?.status === 'mfa_required') {
+        const digits = icaneraCode.replace(/\D/g, '');
+        if (digits.length !== 6) {
+          setIcaneraError('Enter the 6-digit code from your authenticator app');
+          return;
+        }
+        await icaneraStep.verify(digits);
+      } else {
+        if (!enteredEmail || !icaneraPassword) {
+          setIcaneraError('Enter your ICANera email and password');
+          return;
+        }
+
+        const result = await signInWithIcanera(enteredEmail, icaneraPassword);
+        if (result.status === 'mfa_required') {
+          setIcaneraStep(result);
+          setIcaneraPassword('');
+          return;
+        }
       }
-      if (!data?.success) throw new Error(data?.error || 'Wallet sign-in failed');
 
-      const { error: otpError } = await supabase.auth.verifyOtp({
-        token_hash: data.token_hash,
-        type: 'email',
-      });
-      if (otpError) throw otpError;
-
-      const signedInUser = await login(data.email);
+      const signedInUser = await login(enteredEmail);
       toast.success('🎉 Welcome back!', { position: 'top-right', autoClose: 2000 });
       navigate(safeRedirect || await getSignedInRoute(signedInUser), { replace: true });
     } catch (error) {
-      console.error('Wallet login error:', error);
-      setWalletError(error.message || 'Wallet sign-in failed');
+      console.error('ICANera login error:', error);
+      const message = String(error?.message || '');
+      if (icaneraStep?.status === 'mfa_required') {
+        setIcaneraCode('');
+        setIcaneraError(
+          /rate|too many|limit/i.test(message)
+            ? 'Too many attempts. Wait a minute and try again.'
+            : 'That code is not right, or it has expired. Check the latest code in your authenticator app.'
+        );
+      } else {
+        setIcaneraError(
+          /invalid login credentials/i.test(message)
+            ? 'Invalid ICANera email or password.'
+            : message || 'ICANera sign-in failed'
+        );
+      }
     } finally {
-      setWalletLoading(false);
+      setIcaneraLoading(false);
     }
   };
 
@@ -568,42 +599,76 @@ const CustomerLogin = () => {
 
             <button
               type="button"
-              onClick={() => { setShowWalletLogin((prev) => !prev); setWalletError(''); }}
-              disabled={walletLoading}
+              onClick={() => {
+                if (showIcaneraLogin) resetIcaneraLogin();
+                setShowIcaneraLogin((prev) => !prev);
+                setIcaneraError('');
+              }}
+              aria-expanded={showIcaneraLogin}
+              disabled={icaneraLoading}
               className={`mb-6 flex w-full items-center justify-center gap-3 sk-btn-classic min-h-[3rem] border-2 px-4 py-3 text-center font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${palette.altButton}`}
             >
-              <span className="text-xl">💳</span>
-              Sign in with Wallet
+              <span className="text-xl">💎</span>
+              Sign in with ICANera
             </button>
 
-            {showWalletLogin && (
-              <form onSubmit={handleWalletLogin} className="mb-6 space-y-3">
-                <input
-                  type="text"
-                  value={walletIdentifier}
-                  onChange={(e) => { setWalletIdentifier(e.target.value); setWalletError(''); }}
-                  placeholder="Wallet account number or phone"
-                  autoComplete="off"
-                  className={`block w-full px-3 py-3 transition ${palette.input}`}
-                />
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  value={walletPin}
-                  onChange={(e) => { setWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setWalletError(''); }}
-                  placeholder="Wallet PIN"
-                  maxLength={6}
-                  autoComplete="off"
-                  className={`block w-full px-3 py-3 transition ${palette.input}`}
-                />
-                {walletError && <p className="text-sm text-red-600">{walletError}</p>}
+            {showIcaneraLogin && (
+              <form onSubmit={handleIcaneraLogin} className="mb-6 space-y-3">
+                <CanweFields />
+                {icaneraStep?.status === 'mfa_required' ? (
+                  <>
+                    <p className={`text-sm ${palette.helper}`}>
+                      Open your authenticator app and enter the 6-digit code for your ICANera account.
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={icaneraCode}
+                      onChange={(e) => { setIcaneraCode(e.target.value.replace(/[^\d ]/g, '').slice(0, 7)); setIcaneraError(''); }}
+                      placeholder="123 456"
+                      maxLength={7}
+                      autoComplete="one-time-code"
+                      autoFocus
+                      className={`block w-full px-3 py-3 text-center text-lg tracking-[0.4em] transition ${palette.input}`}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="email"
+                      value={icaneraEmail}
+                      onChange={(e) => { setIcaneraEmail(e.target.value); setIcaneraError(''); }}
+                      placeholder="ICANera email"
+                      autoComplete="email"
+                      className={`block w-full px-3 py-3 transition ${palette.input}`}
+                    />
+                    <input
+                      type="password"
+                      value={icaneraPassword}
+                      onChange={(e) => { setIcaneraPassword(e.target.value); setIcaneraError(''); }}
+                      placeholder="ICANera password"
+                      autoComplete="current-password"
+                      className={`block w-full px-3 py-3 transition ${palette.input}`}
+                    />
+                  </>
+                )}
+                {icaneraError && <p className="text-sm text-red-600" role="alert">{icaneraError}</p>}
                 <button
                   type="submit"
-                  disabled={walletLoading}
+                  disabled={icaneraLoading}
                   className={`sk-btn-classic min-h-[3rem] w-full border-2 border-[#1f1a12] px-4 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${palette.button}`}
                 >
-                  {walletLoading ? 'Verifying...' : 'Sign In'}
+                  {icaneraLoading ? 'Verifying...' : icaneraStep ? 'Verify and continue' : 'Sign In'}
                 </button>
+                {icaneraStep && (
+                  <button
+                    type="button"
+                    onClick={resetIcaneraLogin}
+                    className={`w-full text-sm ${palette.muted}`}
+                  >
+                    Use a different account
+                  </button>
+                )}
               </form>
             )}
 
