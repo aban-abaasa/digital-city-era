@@ -39,6 +39,7 @@ import BusinessOperationsHub from '../components/BusinessOperationsHub';
 import { PRODUCT_OF_HTML, PRODUCT_OF_TEXT } from '../constants/brand';
 import '../styles/supermartkera-portals.css';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { findStoreProductForOrderItem, orderItemBarcode } from '../utils/orderItemMatching';
 
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
@@ -6230,11 +6231,17 @@ _Automated Business Report System_`)}`;
               console.log(`💰 Cost: ${unitCost}, Selling: ${sellingPrice}`);
 
               // Step 1: Get the product from the products table to find its inventory record
-              const { data: productData, error: productError } = await supabase
-                .from('products')
-                .select('id, inventory(id, current_stock)')
-                .eq('name', item.product_name || item.name)
-                .single();
+              // Barcode first, inside this manager's store only; the supplier's name is optional
+              const storeId = (() => {
+                try { return JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null; } catch { return null; }
+              })();
+              let productData = null;
+              let productError = null;
+              try {
+                productData = (await findStoreProductForOrderItem(supabase, { supermarketId: storeId, item }))?.product || null;
+              } catch (matchErr) {
+                productError = matchErr;
+              }
 
               if (!productError && productData && productData.inventory && productData.inventory.length > 0) {
                 // Step 2: Update the inventory table's current_stock (Admin Portal stock)
@@ -6264,7 +6271,7 @@ _Automated Business Report System_`)}`;
                 .from('products_inventory')
                 .insert({
                   product_name: item.product_name || item.name || `Product ${item.product_id}`,
-                  barcode: item.sku || item.barcode || `SKU-${item.product_id}`,
+                  barcode: orderItemBarcode(item) || item.sku || `SKU-${item.product_id}`,
                   category: 'Purchased Items',
                   quantity: item.quantity || 0,
                   cost_price: unitCost,
