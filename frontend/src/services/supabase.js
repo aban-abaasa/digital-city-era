@@ -158,6 +158,26 @@ function initSupabase() {
 // Initialize immediately on module load
 export const supabase = initSupabase()
 
+// A throw-away client that never stores or refreshes a session. "Sign in with
+// ICANera" checks the password and the two-step code on this one, and only
+// hands the finished session to the app-wide client above, so the app never
+// sees a half-signed-in (password-only) session for an account that has
+// two-step verification turned on.
+export const createIsolatedAuthClient = () => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase is not configured.')
+  }
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+      storageKey: 'icanera-signin-isolated',
+    },
+  })
+}
+
 // Authentication helpers
 export const auth = {
   // Sign up with email and password
