@@ -268,7 +268,9 @@ const EMPTY_NEW_PRODUCT = {
   category_id: null
 };
 
-const OrderInventoryPOSControl = () => {
+// openAddSignal: a number that goes up each time something outside (the dashboard's Add button, the phone
+// bottom bar) asks for the full-page Add Products form; it opens once the admin check has finished.
+const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
   // Admin Authorization Check
   const [userRole, setUserRole] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -328,6 +330,7 @@ const OrderInventoryPOSControl = () => {
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   // Phone Back closes the Add Products page the same way its Back button does
   useBackLayer(showAddProductModal, () => closeAddProductWindow());
+  const handledAddSignal = useRef(0);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [newlyRegisteredProductId, setNewlyRegisteredProductId] = useState(null); // Track newly created product for update
   const [registeringBarcode, setRegisteringBarcode] = useState(false); // A scanned code is being checked/registered behind the open form
@@ -560,6 +563,14 @@ const OrderInventoryPOSControl = () => {
     setAddedThisVisit([]);
     resetAddProductForm();
   };
+
+  // An outside "Add products" request: open the page once we know whether this is an admin
+  useEffect(() => {
+    if (openAddSignal <= handledAddSignal.current || authLoading) return;
+    handledAddSignal.current = openAddSignal;
+    if (isAdmin) setShowAddProductModal(true);
+    else toast.error('❌ Admin access required to add products');
+  }, [openAddSignal, authLoading, isAdmin]);
 
   // Drops one field's error message as soon as the admin starts fixing it
   const clearAddError = (field) => setAddErrors((previous) => {
@@ -1694,6 +1705,7 @@ const OrderInventoryPOSControl = () => {
         const product = await inventoryService.createProduct({
           name: row.name,
           selling_price: row.selling_price,
+          cost_price: row.cost_price,
           initial_stock: row.initial_stock,
           category_id: categoryId || undefined
         }, { quiet: true });
@@ -1704,7 +1716,7 @@ const OrderInventoryPOSControl = () => {
           sku: product.sku,
           barcode: product.barcode,
           category_id: product.category_id ?? null,
-          cost_price: product.cost_price ?? 0,
+          cost_price: product.cost_price ?? row.cost_price ?? 0,
           wholesale_price: product.wholesale_price || 0,
           selling_price: product.selling_price,
           tax_rate: product.tax_rate,

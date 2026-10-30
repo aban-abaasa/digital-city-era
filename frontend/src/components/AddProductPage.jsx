@@ -33,7 +33,7 @@ const AP_STYLES = `
   animation: ap-in .22s ease-out both;
 }
 @keyframes ap-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.ap-bar { background: linear-gradient(90deg, var(--ap-ink), var(--ap-ink-2)); color: #fff; border-bottom: 2px solid var(--ap-gold); }
+.ap-bar { background: linear-gradient(90deg, #14213d, #1f3260); color: #fff; border-bottom: 2px solid var(--ap-gold); }
 .ap-bar-btn { display: inline-flex; align-items: center; gap: .35rem; padding: .5rem .7rem; border-radius: 8px; background: rgba(255,255,255,.12); color: #fff; font-weight: 600; font-size: .875rem; }
 .ap-bar-btn:hover { background: rgba(255,255,255,.22); }
 .ap-added { background: var(--ap-green-soft); color: var(--ap-green); border-radius: 999px; padding: .2rem .65rem; font-size: .8rem; font-weight: 700; white-space: nowrap; }
@@ -41,8 +41,8 @@ const AP_STYLES = `
 .ap-mode { position: relative; padding: .7rem 1rem; font-weight: 700; font-size: .9rem; color: var(--ap-muted); display: inline-flex; align-items: center; gap: .4rem; }
 .ap-mode[aria-selected='true'] { color: var(--ap-ink); }
 .ap-mode[aria-selected='true']::after { content: ''; position: absolute; left: .75rem; right: .75rem; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--ap-gold); }
-.ap-card { background: var(--ap-card); border: 1px solid var(--ap-line); border-radius: 12px; padding: 1rem; }
-@media (min-width: 640px) { .ap-card { padding: 1.25rem; } }
+/* No boxes: sections sit flat on the page, separated by a thin line */
+.ap-card { background: none; border: 0; border-bottom: 1px solid var(--ap-line); border-radius: 0; padding: .25rem 0 1.1rem; }
 .ap-label { display: block; font-size: .8rem; font-weight: 700; color: #374151; margin-bottom: .35rem; }
 .ap-hint { font-size: .75rem; color: var(--ap-muted); margin-top: .3rem; }
 .ap-input { width: 100%; border: 2px solid #d9d2bf; border-radius: 10px; background: #fff; color: #111827; padding: .6rem .8rem; font-size: 1rem; }
@@ -60,11 +60,11 @@ const AP_STYLES = `
 .ap-notice-warn { background: var(--ap-warn-soft); color: var(--ap-warn); border: 1px solid #f1d59e; }
 .ap-notice-info { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
 .ap-notice-good { background: var(--ap-green-soft); color: var(--ap-green); border: 1px solid #bfe0cd; }
-.ap-fold { background: var(--ap-card); border: 1px solid var(--ap-line); border-radius: 12px; overflow: hidden; }
-.ap-fold-head { width: 100%; display: flex; align-items: center; gap: .6rem; text-align: left; padding: .85rem 1rem; font-weight: 700; }
-.ap-fold-head:hover { background: var(--ap-gold-soft); }
-.ap-fold-body { padding: .25rem 1rem 1rem; border-top: 1px solid var(--ap-line); }
-.ap-btn { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; border-radius: 12px; padding: .8rem 1.1rem; font-weight: 800; font-size: .95rem; border: 2px solid transparent; transition: transform .1s, background .15s; }
+.ap-fold { background: none; border: 0; border-bottom: 1px solid var(--ap-line); border-radius: 0; }
+.ap-fold-head { width: 100%; display: flex; align-items: center; gap: .6rem; text-align: left; padding: .8rem 0; font-weight: 700; }
+.ap-fold-head:hover { color: var(--ap-gold); }
+.ap-fold-body { padding: 0 0 1rem; }
+.ap-btn { white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; border-radius: 12px; padding: .8rem 1.1rem; font-weight: 800; font-size: .95rem; border: 2px solid transparent; transition: transform .1s, background .15s; }
 .ap-btn:active:not(:disabled) { transform: scale(.98); }
 .ap-btn:disabled { opacity: .6; cursor: wait; }
 .ap-btn-primary { background: var(--ap-green); color: #fff; }
@@ -74,14 +74,36 @@ const AP_STYLES = `
 .ap-btn-ghost { background: transparent; color: var(--ap-muted); }
 .ap-btn-ghost:hover { color: var(--ap-ink); background: rgba(0,0,0,.05); }
 .ap-foot .ap-btn { padding: .75rem .9rem; }
+@media (max-width: 400px) {
+  .ap-foot { padding-inline: .6rem; gap: .4rem; }
+  .ap-foot .ap-btn { padding: .75rem .6rem; font-size: .9rem; }
+  .ap-foot .ap-btn-ghost { padding-inline: .35rem; }
+}
 .ap-foot { background: var(--ap-card); border-top: 1px solid var(--ap-line); padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom)); }
 .ap-step { width: 2.6rem; flex: none; border-radius: 10px; border: 2px solid #d9d2bf; background: #fff; display: inline-flex; align-items: center; justify-content: center; }
 .ap-step:hover { border-color: var(--ap-gold); background: var(--ap-gold-soft); }
 .ap-photo { width: 5rem; height: 5rem; flex: none; border-radius: 12px; border: 2px dashed #cbbf9c; background: #fbf8f1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; color: var(--ap-muted); font-size: .65rem; font-weight: 700; gap: .15rem; }
 .ap-photo:hover { border-color: var(--ap-gold); }
-.ap-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem 4.75rem 2rem; gap: .5rem; align-items: center; }
-.ap-row-head { font-size: .72rem; font-weight: 800; color: var(--ap-muted); text-transform: uppercase; letter-spacing: .04em; }
-.ap-cellinput { padding: .5rem .6rem; font-size: .95rem; }
+.ap-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 2.5rem; gap: .5rem; align-items: center; }
+.ap-row > :first-child { grid-column: 1 / -1; }
+.ap-row-card { padding: 0 0 .7rem; border-bottom: 1px solid var(--ap-line); }
+.ap-row-head { display: none; font-size: .72rem; font-weight: 800; color: var(--ap-muted); text-transform: uppercase; letter-spacing: .04em; }
+.ap-cellinput { padding: .6rem .7rem; font-size: 1rem; min-height: 2.75rem; }
+.ap-del { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.75rem; border-radius: 10px; color: var(--ap-muted); }
+.ap-del:hover:not(:disabled) { color: var(--ap-red); background: rgba(240,68,56,.08); }
+.ap-del:disabled { opacity: .35; }
+@media (min-width: 560px) {
+  .ap-row { grid-template-columns: minmax(0, 1fr) 6.5rem 6.5rem 6.5rem 2.5rem; }
+  .ap-row > :first-child { grid-column: auto; }
+  .ap-row-card { padding: 0; border: 0; }
+  .ap-row-head { display: grid; }
+}
+.ap-chip { min-height: 2.25rem; }
+@media (max-width: 400px) {
+  .ap-photo { width: 4.25rem; height: 4.25rem; }
+  .ap-big { font-size: 1.2rem; padding-left: 3.2rem; }
+  .ap-mode { padding: .65rem .7rem; }
+}
 .ap-prev { border: 1px solid var(--ap-line); border-radius: 12px; overflow: hidden; background: #fff; }
 .ap-prev-img { aspect-ratio: 4 / 3; background: linear-gradient(135deg, #e0e7ff, #fde68a); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: 800; color: rgba(20,33,61,.55); overflow: hidden; }
 [data-theme='dark'] .ap-root { --ap-bg: #0a1f17; --ap-card: #0f2a20; --ap-line: rgba(196,160,82,.3); --ap-ink: #f1ead4; --ap-muted: #a3b3aa; --ap-gold-soft: rgba(184,145,47,.22); --ap-green-soft: rgba(31,111,74,.3); --ap-green: #4cc38a; --ap-warn-soft: rgba(180,95,6,.22); --ap-warn: #f6c177; }
@@ -239,7 +261,7 @@ const AddProductPage = ({
   const handleCellKey = (event, row, column) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
-    const next = { name: 'price', price: 'stock', stock: null }[column];
+    const next = { name: 'price', price: 'cost', cost: 'stock', stock: null }[column];
     if (next) { focusCell(row.id, next); return; }
     const index = rows.findIndex((r) => r.id === row.id);
     if (index < rows.length - 1) { focusCell(rows[index + 1].id, 'name'); return; }
@@ -277,7 +299,7 @@ const AddProductPage = ({
   const avatarLetter = (product.name.trim()[0] || '?').toUpperCase();
 
   return (
-    <div className="ap-root fixed inset-0 z-[1000] flex flex-col" role="dialog" aria-modal="true" aria-label="Add products">
+    <div className="ap-root fixed inset-0 z-[1000] flex h-[100dvh] flex-col" role="dialog" aria-modal="true" aria-label="Add products">
       <style>{AP_STYLES}</style>
 
       <header className="ap-bar flex flex-none items-center gap-2 px-3 py-2.5 sm:px-5">
@@ -287,7 +309,7 @@ const AddProductPage = ({
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-extrabold sm:text-xl">Add products</h1>
           <p className="truncate text-[11px] text-white/75 sm:text-xs">
-            {storeName ? `🏪 ${storeName} · ` : ''}No scanner needed: a name and a price is enough
+            {storeName ? `🏪 ${storeName} · ` : ''}No scanner needed<span className="hidden sm:inline">: a name and a price is enough</span>
           </p>
         </div>
         {addedThisVisit.length > 0 && (
@@ -611,7 +633,7 @@ const AddProductPage = ({
 
               {/* Side: how it will look + what was added */}
               <aside className="space-y-4 lg:sticky lg:top-0 lg:self-start">
-                <div className="ap-prev" aria-label="Preview">
+                <div className="ap-prev hidden lg:block" aria-label="Preview">
                   <div className="ap-prev-img">
                     {photoPreview ? <img src={photoPreview} alt="" className="h-full w-full object-cover" /> : avatarLetter}
                   </div>
@@ -644,7 +666,7 @@ const AddProductPage = ({
             </div>
           </main>
 
-          <footer className="ap-foot flex flex-none flex-wrap items-center justify-end gap-2">
+          <footer className="ap-foot flex flex-none items-center justify-end gap-2">
             <p className="mr-auto hidden text-xs md:block" style={{ color: 'var(--ap-muted)' }}>Tip: press Enter to save and start the next one</p>
             <button type="button" className="ap-btn ap-btn-ghost" onClick={requestClose}>
               {addedThisVisit.length > 0 ? 'Done' : 'Cancel'}
@@ -652,7 +674,7 @@ const AddProductPage = ({
             <button type="button" className="ap-btn ap-btn-second" onClick={() => onSave(true)} disabled={busy}>
               <FiPlus className="h-4 w-4" /> <span className="sm:hidden">Add another</span><span className="hidden sm:inline">Save &amp; add another</span>
             </button>
-            <button type="button" className="ap-btn ap-btn-primary" onClick={() => onSave(false)} disabled={busy}>
+            <button type="button" className="ap-btn ap-btn-primary flex-1 sm:flex-none" onClick={() => onSave(false)} disabled={busy}>
               <FiCheck className="h-4 w-4" /> <span>{registering ? 'Registering…' : saving ? 'Saving…' : <>Save<span className="hidden sm:inline"> product</span></>}</span>
             </button>
           </footer>
@@ -663,7 +685,7 @@ const AddProductPage = ({
             <div className="mx-auto max-w-3xl space-y-4 p-3 sm:p-5">
               <section className="ap-card">
                 <p className="text-sm font-bold">Type your products, one per line</p>
-                <p className="ap-hint">Name and price are all you need. Press Enter to move along; a new line appears at the end. Barcodes are made for you.</p>
+                <p className="ap-hint">Name and price are all you need; cost lets us show your profit. Press Enter to move along; a new line appears at the end. Barcodes are made for you.</p>
                 <div className="mt-3">
                   <label htmlFor="ap-quick-category" className="ap-label">Category for all of these <span className="font-normal" style={{ color: 'var(--ap-muted)' }}>(optional)</span></label>
                   <select id="ap-quick-category" className="ap-input" value={quickCategory} onChange={(e) => setQuickCategory(e.target.value)}>
@@ -674,15 +696,15 @@ const AddProductPage = ({
               </section>
 
               <section className="ap-card" ref={gridRef}>
-                <div className="ap-row ap-row-head mb-2">
-                  <span>Product name</span><span>Price (UGX)</span><span>In stock</span><span />
+                <div className="ap-row ap-row-head mb-2" aria-hidden="true">
+                  <span>Product name</span><span>Price (UGX)</span><span>Cost (UGX)</span><span>In stock</span><span />
                 </div>
                 <div className="space-y-2">
                   {rows.map((row) => {
                     const issue = allIssues[row.id];
                     const showIssue = issue && (showQuickErrors || quickIssues[row.id] || issue === 'Already in your shop' || issue === 'Listed twice here');
                     return (
-                      <div key={row.id}>
+                      <div key={row.id} className="ap-row-card">
                         <div className="ap-row">
                           <input
                             data-cell={`${row.id}-name`}
@@ -702,11 +724,24 @@ const AddProductPage = ({
                             inputMode="numeric"
                             min="0"
                             step="100"
-                            placeholder="0"
+                            placeholder="Price"
                             value={row.price}
                             aria-label="Selling price"
                             onChange={(e) => updateRow(row.id, { price: e.target.value })}
                             onKeyDown={(e) => handleCellKey(e, row, 'price')}
+                          />
+                          <input
+                            data-cell={`${row.id}-cost`}
+                            className="ap-input ap-cellinput"
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            step="100"
+                            placeholder="Cost"
+                            value={row.cost}
+                            aria-label="Cost price (optional)"
+                            onChange={(e) => updateRow(row.id, { cost: e.target.value })}
+                            onKeyDown={(e) => handleCellKey(e, row, 'cost')}
                           />
                           <input
                             data-cell={`${row.id}-stock`}
@@ -715,13 +750,13 @@ const AddProductPage = ({
                             inputMode="numeric"
                             min="0"
                             step="1"
-                            placeholder="0"
+                            placeholder="Stock"
                             value={row.stock}
                             aria-label="Number in stock"
                             onChange={(e) => updateRow(row.id, { stock: e.target.value })}
                             onKeyDown={(e) => handleCellKey(e, row, 'stock')}
                           />
-                          <button type="button" className="ap-btn-ghost rounded-lg p-1.5" onClick={() => removeRow(row.id)} aria-label="Remove this line" disabled={rows.length === 1}>
+                          <button type="button" className="ap-del" onClick={() => removeRow(row.id)} aria-label="Remove this line" disabled={rows.length === 1}>
                             <FiTrash2 className="h-4 w-4" />
                           </button>
                         </div>
@@ -743,7 +778,7 @@ const AddProductPage = ({
           </main>
 
           <footer className="ap-foot flex flex-none flex-wrap items-center justify-end gap-2">
-            <p className="mr-auto text-xs" style={{ color: quickProblemCount > 0 && showQuickErrors ? 'var(--ap-red)' : 'var(--ap-muted)' }} aria-live="polite">
+            <p className="w-full text-xs sm:mr-auto sm:w-auto" style={{ color: quickProblemCount > 0 && showQuickErrors ? 'var(--ap-red)' : 'var(--ap-muted)' }} aria-live="polite">
               {quickProblemCount > 0 && showQuickErrors
                 ? `Fix ${quickProblemCount} line${quickProblemCount === 1 ? '' : 's'} marked in red`
                 : quickCount > 0 ? `${quickCount} product${quickCount === 1 ? '' : 's'} ready` : 'Fill in a name and price to begin'}
@@ -751,7 +786,7 @@ const AddProductPage = ({
             <button type="button" className="ap-btn ap-btn-ghost" onClick={requestClose}>
               {addedThisVisit.length > 0 ? 'Done' : 'Cancel'}
             </button>
-            <button type="button" className="ap-btn ap-btn-primary" onClick={saveQuick} disabled={quickSaving || (quickCount === 0 && quickProblemCount === 0)}>
+            <button type="button" className="ap-btn ap-btn-primary flex-1 sm:flex-none" onClick={saveQuick} disabled={quickSaving || (quickCount === 0 && quickProblemCount === 0)}>
               <FiCheck className="h-4 w-4" />
               <span>{quickSaving ? 'Saving…' : quickCount > 0 ? `Save ${quickCount} product${quickCount === 1 ? '' : 's'}` : 'Save products'}</span>
             </button>

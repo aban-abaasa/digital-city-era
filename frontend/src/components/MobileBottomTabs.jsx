@@ -16,9 +16,26 @@ import '../styles/mobile-bottom-tabs.css';
  * tabs: [{ id, label, icon, badge? }]. Pages need ~5rem of bottom padding so
  * their last card isn't hidden under the bar.
  */
-const MobileBottomTabs = ({ tabs, activeTab, onSelect }) => {
-  const visible = (tabs || []).slice(0, 5);
-  if (visible.length === 0) return null;
+const MobileBottomTabs = ({ tabs, activeTab, onSelect, action }) => {
+  // An action (a button that does something instead of opening a section) takes the middle slot
+  const visible = (tabs || []).slice(0, action ? 4 : 5);
+  if (visible.length === 0 && !action) return null;
+  const ActionIcon = action?.icon;
+  const actionButton = action && (
+    <button
+      key="bottom-action"
+      type="button"
+      onClick={action.onClick}
+      aria-label={action.ariaLabel || action.label}
+      className="sk-bottom-nav-tab sk-bottom-nav-action flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[10px] font-semibold whitespace-nowrap"
+    >
+      <span className="sk-bottom-nav-action-icon flex">
+        {ActionIcon && <ActionIcon className="h-5 w-5 flex-shrink-0" />}
+      </span>
+      <span className="max-w-[68px] truncate">{action.label}</span>
+    </button>
+  );
+  const actionAt = Math.ceil(visible.length / 2);
 
   return (
     <nav
@@ -26,12 +43,13 @@ const MobileBottomTabs = ({ tabs, activeTab, onSelect }) => {
       className="sk-bottom-nav fixed inset-x-0 bottom-0 z-[60] flex sm:hidden"
     >
       <NavGlowDefs />
-      {visible.map((tab) => {
+      {visible.map((tab, index) => {
         const active = activeTab === tab.id;
         const Icon = tab.icon;
         return (
+          <React.Fragment key={tab.id}>
+          {index === actionAt && actionButton}
           <button
-            key={tab.id}
             type="button"
             onClick={() => onSelect(tab.id)}
             aria-current={active ? 'page' : undefined}
@@ -47,8 +65,10 @@ const MobileBottomTabs = ({ tabs, activeTab, onSelect }) => {
             </span>
             <span className="max-w-[68px] truncate">{tab.shortLabel || tab.label}</span>
           </button>
+          </React.Fragment>
         );
       })}
+      {actionAt >= visible.length && actionButton}
     </nav>
   );
 };

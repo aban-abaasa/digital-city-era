@@ -28,6 +28,10 @@ const tabClass = (isActive) => `classic-tab relative flex items-center gap-1.5 p
  * bottomTabs: the 4 vital tabs for the phone's bottom bar, as
  * [{ id, label? }] — icon/badge come from the matching entry in `tabs`, and
  * `label` is an optional short name for the bar. Defaults to the first 4 tabs.
+ *
+ * bottomAction: { label, icon, onClick, ariaLabel? } — an extra phone-only button in the middle of
+ * the bottom bar that does something (e.g. "Add") rather than opening a section. With one, the bar
+ * shows 4 tabs + the action.
  */
 const PortalTabNavigator = ({
   tabs,
@@ -39,6 +43,7 @@ const PortalTabNavigator = ({
   showWallet = false,
   onWallet,
   bottomTabs,
+  bottomAction,
   homeTab
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -138,7 +143,7 @@ const PortalTabNavigator = ({
         initial={initial}
       />
 
-      <MobileBottomTabs tabs={barTabs} activeTab={activeTab} onSelect={pick} />
+      <MobileBottomTabs tabs={barTabs} activeTab={activeTab} onSelect={pick} action={bottomAction} />
     </>
   );
 };

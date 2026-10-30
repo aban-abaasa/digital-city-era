@@ -73,15 +73,15 @@ test('margin is profit as a percentage of cost', () => {
 
 test('quick list: blank rows are skipped and good rows are ready', () => {
   const rows = [
-    { id: 'a', name: 'Sugar 1kg', price: '5000', stock: '12' },
-    { id: 'b', name: '', price: '', stock: '' },
-    { id: 'c', name: 'Salt', price: '1500', stock: '' }
+    { id: 'a', name: 'Sugar 1kg', price: '5000', cost: '4200', stock: '12' },
+    { id: 'b', name: '', price: '', cost: '', stock: '' },
+    { id: 'c', name: 'Salt', price: '1500', cost: '', stock: '' }
   ];
   const { ready, issues } = checkQuickRows(rows, shelf);
   assert.deepEqual(issues, {});
   assert.deepEqual(ready, [
-    { id: 'a', name: 'Sugar 1kg', selling_price: 5000, initial_stock: 12 },
-    { id: 'c', name: 'Salt', selling_price: 1500, initial_stock: 0 }
+    { id: 'a', name: 'Sugar 1kg', selling_price: 5000, cost_price: 4200, initial_stock: 12 },
+    { id: 'c', name: 'Salt', selling_price: 1500, cost_price: 0, initial_stock: 0 }
   ]);
 });
 
@@ -92,7 +92,9 @@ test('quick list: every problem is named on its row', () => {
     { id: 'c', name: 'Millet', price: '3000', stock: '-4' },
     { id: 'd', name: 'Rice 1KG', price: '4500', stock: '' },
     { id: 'e', name: 'Maize', price: '2500', stock: '' },
-    { id: 'f', name: 'maize', price: '2500', stock: '' }
+    { id: 'f', name: 'maize', price: '2500', stock: '' },
+    { id: 'g', name: 'Flour', price: '3000', cost: '-1', stock: '' },
+    { id: 'h', name: '', price: '', cost: '900', stock: '' }
   ];
   const { ready, issues } = checkQuickRows(rows, shelf);
   assert.equal(issues.a, 'Add a price');
@@ -100,6 +102,8 @@ test('quick list: every problem is named on its row', () => {
   assert.equal(issues.c, 'Stock must be 0 or more');
   assert.equal(issues.d, 'Already in your shop');
   assert.equal(issues.f, 'Listed twice here');
+  assert.equal(issues.g, 'Cost must be 0 or more');
+  assert.equal(issues.h, 'Add a name', 'a row with only a cost is not blank');
   assert.deepEqual(ready.map((r) => r.id), ['e']);
 });
 
