@@ -109,9 +109,9 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   useBackLayer(!!selectedOrder, () => setSelectedOrder(null));
   useBackLayer(showPaymentModal, () => setShowPaymentModal(false));
-  useBackLayer(showApprovalModal, () => setShowApprovalModal(false));
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false); // NEW: Approval with payment modal
+  useBackLayer(showApprovalModal, () => setShowApprovalModal(false));
   const [approvalOrderId, setApprovalOrderId] = useState(null); // NEW: Order being approved
   const [showAddProductModal, setShowAddProductModal] = useState(false); // 🆕 Add Product modal state
   const [selectedOrderForProduct, setSelectedOrderForProduct] = useState(null); // 🆕 Track which order we're adding product to
@@ -2014,6 +2014,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       <CreateOrderModal
           suppliers={suppliers}
           businessProfileId={activeBusinessProfileId}
+          pricingMode={wholesalePricingMode}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
