@@ -11,7 +11,7 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import OverflowTabs from './OverflowTabs';
 import useIsPhone from '../hooks/useIsPhone';
 import { useBackLayer } from '../hooks/useBackLayer';
-import { publishPhoneChrome, clearPhoneChrome, HUB_ROUTE } from '../utils/phoneChrome';
+import { publishPhoneChrome, clearPhoneChrome, usePhoneFullPage, setPhoneFullPage } from '../utils/phoneChrome';
 import { HeaderTabsSlot } from './PortalHeaderSlot';
 
 /**
@@ -40,20 +40,15 @@ import { HeaderTabsSlot } from './PortalHeaderSlot';
  *                          Nothing is shown when the account has no business.
  *   onCurrentPortalClick   called when the active portal's own tab is tapped
  *                          (e.g. to leave the wallet tab again)
- *   hub                    the phone home screen (PortalHub.jsx) — keeps the full
- *                          header on phones, which every other page hides
  *
- * Phones, accounts with more than one portal: this header is hidden so each
- * portal opens as a full page. What it offered (switch portal, profile, its
- * own menu items, sign out) is published to the portal's Menu sheet instead —
- * see utils/phoneChrome.js and PhonePortalNav.jsx.
+ * Phones, accounts with more than one portal: tapping a portal here (or the
+ * Wallet) opens it full-screen and hides this header, so the portal gets the
+ * whole page. What the header offered (switch portal, profile, its own menu
+ * items, sign out) is published to the portal's Menu sheet instead, and Back
+ * (the section bar's arrow or the phone's Back button) brings this header back
+ * over the same page — see utils/phoneChrome.js and PhonePortalNav.jsx.
  */
-// sessionStorage: which account has already been shown the phone hub this session
-// (so it only greets you once and never fights a portal you opened on purpose).
-const HUB_SEEN_KEY = 'sk_portal_hub_seen';
-
 const PortalHeader = ({
-  hub = false,
   brand = 'Supermartkera',
   title,
   leftSlot = null,
@@ -136,7 +131,10 @@ const PortalHeader = ({
   const ActiveIcon = active?.icon || FiShoppingBag;
   const subtitle = title || `${active?.label || 'Portal'} Dashboard`;
   const showTabs = accessiblePortals.length > 1;
-  const phoneFull = isPhone && showTabs && !hub;
+  const fullPage = usePhoneFullPage();
+  const phoneFull = isPhone && showTabs && fullPage;
+  // Phone/browser Back brings this header back over the page instead of leaving it.
+  useBackLayer(phoneFull, () => setPhoneFullPage(false));
 
   const handleSignOut = async () => {
     setShowMenu(false);
@@ -177,19 +175,6 @@ const PortalHeader = ({
   });
   useEffect(() => () => clearPhoneChrome(chromeOwner), [chromeOwner]);
 
-  // A multi-portal account on a phone lands on the hub (this header + a card per portal)
-  // the first time it reaches a portal in a session; from there each portal opens full-page.
-  useEffect(() => {
-    if (!email || !isPhone) return;
-    try {
-      if (hub) { sessionStorage.setItem(HUB_SEEN_KEY, email); return; }
-      if (!phoneFull || !currentPortal || location.search) return; // deep links (?tab=…) go where they point
-      if (sessionStorage.getItem(HUB_SEEN_KEY) === email) return;
-      sessionStorage.setItem(HUB_SEEN_KEY, email);
-    } catch { return; /* storage unavailable: skip the hub rather than loop */ }
-    navigate(HUB_ROUTE, { replace: true });
-  }, [email, isPhone, hub, phoneFull, currentPortal, location.search, navigate]);
-
   const tabClass = (isActive) => `flex items-center gap-1 px-3 sm:px-4 py-1.5 sm:py-2 lg:py-0 text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
     isActive ? 'text-white border-[#f5dfa0]' : 'text-white/70 hover:text-white/90 border-transparent'
   }`;
@@ -215,6 +200,8 @@ const PortalHeader = ({
     // Start fetching that portal's page before the tap lands
     onHover: () => prefetchPortal(portal.id),
     onClick: () => {
+      // On a phone the tapped portal (even the one you're on) opens full-screen.
+      if (isPhone) setPhoneFullPage(true);
       if (currentPortal?.id === portal.id) onCurrentPortalClick?.();
       else navigate(portal.route);
     }
@@ -357,7 +344,7 @@ const PortalHeader = ({
             {onWalletClick && (
               <button
                 type="button"
-                onClick={onWalletClick}
+                onClick={() => { if (isPhone) setPhoneFullPage(true); onWalletClick(); }}
                 className={`${tabClass(walletActive)} flex-shrink-0`}
               >
                 ₡ Wallet

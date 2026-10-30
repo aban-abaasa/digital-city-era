@@ -36,9 +36,24 @@ const subscribe = (listener) => {
 
 export const usePhoneChrome = () => useSyncExternalStore(subscribe, () => current, () => null);
 
-// Where the phone "hub" lives: the shared header with every portal you can
-// enter, plus a card for each. See pages/PortalHub.jsx.
-export const HUB_ROUTE = '/portals';
-
 /** True while a multi-portal account is on a phone, i.e. the shared header is hidden and the page owns the whole screen. */
 export const useFullPage = () => Boolean(usePhoneChrome()?.multi);
+
+/*
+ * Phones, multi-portal accounts: is the current portal showing full-screen?
+ * false (the default): the shared header with every portal tab sits above the
+ * page, as it always has. true: the header is hidden and the page owns the
+ * screen. Tapping a portal in the header sets it; Back (the section bar's arrow
+ * or the phone's Back button) clears it, bringing the header back over the same page.
+ * Lives here, not in a component, because it has to survive the route change
+ * between one portal and the next.
+ */
+let fullPage = false;
+
+export const setPhoneFullPage = (value) => {
+  if (fullPage === value) return;
+  fullPage = value;
+  emit();
+};
+
+export const usePhoneFullPage = () => useSyncExternalStore(subscribe, () => fullPage, () => false);

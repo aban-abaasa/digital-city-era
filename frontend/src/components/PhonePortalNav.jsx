@@ -1,30 +1,27 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiArrowLeft, FiHome, FiLogOut, FiMoon, FiSun, FiUser } from 'react-icons/fi';
+import { FiArrowLeft, FiLogOut, FiMoon, FiSun, FiUser } from 'react-icons/fi';
 import { useTheme } from '../contexts/ThemeContext';
-import { usePhoneChrome, HUB_ROUTE } from '../utils/phoneChrome';
+import { usePhoneChrome, setPhoneFullPage } from '../utils/phoneChrome';
 
 /**
- * Back arrow for a portal's phone section bar. Inside a sub-section it returns
- * to the portal's home section; from home it goes back to wherever the user
- * came from (the hub, or the portal they switched from), falling back to the hub.
- * Renders nothing for single-portal accounts, which keep the normal header.
+ * Back arrow for a portal's full-screen phone section bar. Inside a sub-section
+ * it returns to the portal's home section; from home it brings the shared
+ * header (every portal + Wallet) back over this same page.
+ * Renders nothing when the header is showing, or for single-portal accounts.
  */
 export const PhoneBackArrow = ({ atHome, onHome }) => {
-  const navigate = useNavigate();
   const chrome = usePhoneChrome();
   if (!chrome?.multi) return null;
   const goBack = () => {
     if (!atHome) { onHome(); return; }
-    // history.state.idx > 0 means there is an earlier in-app page to return to.
-    if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
-    else navigate(HUB_ROUTE, { replace: true });
+    setPhoneFullPage(false);
   };
   return (
     <button
       type="button"
       onClick={goBack}
-      aria-label={atHome ? 'Back' : 'Back to home section'}
+      aria-label={atHome ? 'Back to portal tabs' : 'Back to home section'}
       className="-ml-1.5 grid h-9 w-9 flex-shrink-0 place-items-center rounded-full text-slate-700 transition-transform active:scale-90 dark:text-slate-200"
     >
       <FiArrowLeft className="h-5 w-5" />
@@ -49,13 +46,6 @@ export const PhonePortalSection = ({ onDone }) => {
     <div className="px-4 pb-2 pt-4">
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Switch portal</p>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => { onDone(); navigate(HUB_ROUTE); }}
-          className="inline-flex items-center gap-1.5 rounded-full border border-[#c4a052]/40 bg-[#faf8f3] px-4 py-2 text-xs font-semibold text-slate-700 transition-transform active:scale-95 dark:bg-slate-800 dark:text-slate-100"
-        >
-          <FiHome className="h-3.5 w-3.5" /> All portals
-        </button>
         {others.map((p) => (
           <button
             key={p.id}
