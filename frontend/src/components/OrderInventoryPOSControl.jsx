@@ -24,10 +24,11 @@ import { barcodeVariants, barcodesMatch } from '../utils/barcodeHelper';
 import { impliedDiscountPercent, withDiscountPercent, withSellingPrice, withWholesalePrice } from '../utils/wholesalePricing';
 import { compressImageFile } from '../utils/imageCompression';
 import { attachExistingProductImage } from '../services/productImageLibrary';
-import inventoryService, { explainProductSaveError } from '../services/inventorySupabaseService';
+import inventoryService, { explainProductSaveError, recordSupermarketStockLedgerEntry } from '../services/inventorySupabaseService';
 import { servicePriceLabel } from '../utils/servicePrice';
 import DualScannerInterface from './DualScannerInterface';
 import AddProductModal from './AddProductModal';
+import AddProductPage from './AddProductPage';
 import ProductPhotoSource from './ProductPhotoSource';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import ProductFlavorsModal from './ProductFlavorsModal';
@@ -254,6 +255,19 @@ const CountUp = ({ value, decimals = 0, format }) => {
   return format ? format(shown) : shown.toFixed(decimals);
 };
 
+// What the Add Products form starts from (and returns to after a save)
+const EMPTY_NEW_PRODUCT = {
+  name: '',
+  sku: '',
+  barcode: '',
+  cost_price: 0,
+  wholesale_price: 0,
+  wholesale_discount_percent: 0,
+  selling_price: 0,
+  tax_rate: 18,
+  category_id: null
+};
+
 const OrderInventoryPOSControl = () => {
   // Admin Authorization Check
   const [userRole, setUserRole] = useState(null);
@@ -312,7 +326,8 @@ const OrderInventoryPOSControl = () => {
   const priceChangesAnnounced = useRef(false);
   const [inventoryMap, setInventoryMap] = useState({}); // Map product_id to inventory data
   const [showAddProductModal, setShowAddProductModal] = useState(false);
-  useBackLayer(showAddProductModal, () => setShowAddProductModal(false));
+  // Phone Back closes the Add Products page the same way its Back button does
+  useBackLayer(showAddProductModal, () => closeAddProductWindow());
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [newlyRegisteredProductId, setNewlyRegisteredProductId] = useState(null); // Track newly created product for update
   const [registeringBarcode, setRegisteringBarcode] = useState(false); // A scanned code is being checked/registered behind the open form
@@ -324,17 +339,11 @@ const OrderInventoryPOSControl = () => {
   const [addErrors, setAddErrors] = useState({}); // Inline problems in the Add Product window, by field
   const addNameRef = useRef(null);
   const [editFlavorSharedName, setEditFlavorSharedName] = useState(null);
-  const [newProduct, setNewProduct] = useState({
-    name: '',
-    sku: '',
-    barcode: '',
-    cost_price: 0,
-    wholesale_price: 0,
-    wholesale_discount_percent: 0,
-    selling_price: 0,
-    tax_rate: 18,
-    category_id: null
-  });
+  const [newProduct, setNewProduct] = useState(EMPTY_NEW_PRODUCT);
+  const [newProductStock, setNewProductStock] = useState(''); // How many the shop has now (kept as typed)
+  const [savingNew, setSavingNew] = useState(false); // A save is running: blocks a second tap/Enter
+  const [addedThisVisit, setAddedThisVisit] = useState([]); // [{ key, name, price }] saved since the Add Products page opened
+  const stockLedgerRecorded = useRef(new Set()); // Products whose starting stock is already in the ledger (a retry must not record it twice)
   const [expandedId, setExpandedId] = useState(null); // Track which product row is expanded
   const [uploadingProducts, setUploadingProducts] = useState(false);
   const fileInputRef = useRef(null);
@@ -526,41 +535,38 @@ const OrderInventoryPOSControl = () => {
     }
   };
 
-  // Shuts the Add Product window and puts everything in it back the way a fresh one starts
-  const closeAddProductWindow = () => {
-    scanRequestRef.current++;
-    setRegisteringBarcode(false);
+  // Puts the Add Products form back the way a fresh one starts. `keepSettings` carries the
+  // category and tax rate over, for "Save & add another" down a shelf of similar things.
+  const resetAddProductForm = ({ keepSettings = false } = {}) => {
     setFlavorRows([]);
     setFlavorSharedName(null);
-    setShowAddProductModal(false);
     setNewlyRegisteredProductId(null);
     setAddErrors({});
-    setNewProduct({
-      name: '',
-      sku: '',
-      barcode: '',
-      cost_price: 0,
-      wholesale_price: 0,
-      wholesale_discount_percent: 0,
-      selling_price: 0,
-      tax_rate: 18,
-      category_id: null
-    });
+    setNewProduct(keepSettings
+      ? { ...EMPTY_NEW_PRODUCT, category_id: newProduct.category_id, tax_rate: newProduct.tax_rate }
+      : EMPTY_NEW_PRODUCT);
+    setNewProductStock('');
     setNewProductImageFile(null);
     setNewProductImageUrl(null);
     setNewProductImagePreview(null);
   };
 
-  // Enter saves from the plain fields. Not from the barcode box or the flavors (a hand scanner ends every
-  // code with Enter, and in the flavors it means "add this one"), and never from the notes.
-  const handleAddKeyDown = (e) => {
-    if (e.key !== 'Enter' || e.defaultPrevented || e.shiftKey) return;
-    const target = e.target;
-    if (target.tagName !== 'INPUT' || ['file', 'checkbox', 'radio', 'button', 'submit'].includes(target.type)) return;
-    if (target.closest('[data-no-enter-save]')) return;
-    e.preventDefault();
-    saveNewProduct();
+  // Shuts the Add Products page and puts everything in it back the way a fresh one starts
+  const closeAddProductWindow = () => {
+    scanRequestRef.current++;
+    setRegisteringBarcode(false);
+    setShowAddProductModal(false);
+    setSavingNew(false);
+    setAddedThisVisit([]);
+    resetAddProductForm();
   };
+
+  // Drops one field's error message as soon as the admin starts fixing it
+  const clearAddError = (field) => setAddErrors((previous) => {
+    if (!previous[field]) return previous;
+    const { [field]: _cleared, ...rest } = previous;
+    return rest;
+  });
 
   // A new store barcode: scannable, unique, and clear of every code already on the page
   const generateBarcodeFor = (alsoTaken = []) =>
@@ -1437,7 +1443,9 @@ const OrderInventoryPOSControl = () => {
 
   const servicesOnlyStore = offersServices && !offersProducts;
 
-  const saveNewProduct = async () => {
+  // `addAnother` keeps the Add Products page open on a fresh form (category and tax carried over)
+  // instead of going back to the list.
+  const saveNewProduct = async (addAnother = false) => {
     // ⚡ Skip expensive auth check - already verified on mount
     // if (!isAdmin) {
     //   toast.error('❌ Only Admins can add products');
@@ -1446,6 +1454,8 @@ const OrderInventoryPOSControl = () => {
 
     // The scanned barcode is still being registered; Save is disabled for that moment
     if (registeringBarcode) return;
+    // A save is already running (double tap, or Enter held down)
+    if (savingNew) return;
 
     // Validation
     if (!newProduct.name.trim()) {
@@ -1460,6 +1470,18 @@ const OrderInventoryPOSControl = () => {
       return;
     }
 
+    // A product with no price would be given away at the till
+    if (!(Number(newProduct.selling_price) > 0)) {
+      setAddErrors({ selling_price: 'Enter the selling price' });
+      document.getElementById('ap-price')?.focus();
+      toast.error('❌ Enter the selling price');
+      return;
+    }
+
+    const startingStock = Math.max(0, Math.floor(Number(newProductStock) || 0));
+    const addedPrice = Number(newProduct.selling_price);
+    const addedName = newProduct.name.trim();
+
     // Flavors listed in the form are checked before anything is saved
     const flavorsToAdd = activeFlavorRows(flavorRows);
     if (flavorsToAdd.length > 0 && hasFlavorIssues(checkFlavorRows(flavorRows, { mainBarcode: newProduct.barcode, products }))) {
@@ -1467,6 +1489,7 @@ const OrderInventoryPOSControl = () => {
       return;
     }
 
+    setSavingNew(true);
     try {
       let data, error;
       let generatedBarcode = null;
@@ -1553,7 +1576,7 @@ const OrderInventoryPOSControl = () => {
           .insert({
             product_id: data.id,
             supermarket_id: supermarketId || undefined,
-            current_stock: 0,
+            current_stock: startingStock,
             reserved_stock: 0,
             minimum_stock: 10,
             reorder_point: 20,
@@ -1562,10 +1585,33 @@ const OrderInventoryPOSControl = () => {
         
         if (inventoryError) {
           console.warn('⚠️ Could not create inventory record:', inventoryError);
+          if (startingStock > 0) toast.warning('Product saved, but its stock count could not be set. Set it from the product list.');
         } else {
           console.log('✅ Inventory record created for product:', data.id);
         }
+      } else if (data?.id && newlyRegisteredProductId && startingStock > 0) {
+        // A scanned product already has its stock row (made when the code was registered)
+        const { error: stockError } = await supabase
+          .from('inventory')
+          .update({ current_stock: startingStock })
+          .eq('product_id', data.id);
+        if (stockError) {
+          console.warn('⚠️ Could not set the starting stock:', stockError);
+          toast.warning('Product saved, but its stock count could not be set. Set it from the product list.');
+        }
       }
+
+      // The stock the shop already holds is money spent: record it once for the Financial Summary,
+      // the same way a product created with stock elsewhere is.
+      if (data?.id && startingStock > 0 && Number(newProduct.cost_price) > 0 && !stockLedgerRecorded.current.has(data.id)) {
+        stockLedgerRecorded.current.add(data.id);
+        recordSupermarketStockLedgerEntry(supermarketId, {
+          productName: addedName,
+          amount: Number(newProduct.cost_price) * startingStock
+        });
+      }
+
+      if (data) data = { ...data, current_stock: startingStock };
 
       // Update products list. A product registered by a scan isn't in the list yet
       // (the scan doesn't reload it), so it is added the first time it is saved.
@@ -1612,40 +1658,80 @@ const OrderInventoryPOSControl = () => {
 
       setProducts(updatedProducts);
       setFilteredProducts(updatedFiltered);
-      
-      // Reset form and state
-      setNewProduct({
-        name: '',
-        sku: '',
-        cost_price: 0,
-        wholesale_price: 0,
-        wholesale_discount_percent: 0,
-        selling_price: 0,
-        tax_rate: 18,
-        category_id: null,
-        barcode: ''
-      });
-      setNewProductImageFile(null);
-      setNewProductImageUrl(null);
-      setNewProductImagePreview(null);
-      setFlavorRows([]);
-      setFlavorSharedName(null);
-      setAddErrors({});
 
-      setNewlyRegisteredProductId(null);
-      setShowAddProductModal(false);
-      
       const successMsg = (newlyRegisteredProductId 
         ? '✅ Product updated successfully!' 
         : '✅ Product added successfully!') + (flavorCount > 0 ? ` + ${flavorCount} flavor${flavorCount === 1 ? '' : 's'}` : '');
       toast.success(successMsg);
+
+      if (addAnother) {
+        // Stay on the page for the next product; category and tax carry over
+        setAddedThisVisit(previous => [...previous, { key: data.id, name: addedName, price: addedPrice }]);
+        resetAddProductForm({ keepSettings: true });
+        setTimeout(() => addNameRef.current?.focus(), 0);
+      } else {
+        closeAddProductWindow();
+      }
       
       // Recalculate stats
       calculateStats(updatedProducts);
     } catch (error) {
       console.error('❌ Error saving product:', error);
       toast.error('❌ Failed to save product: ' + explainProductSaveError(error));
+    } finally {
+      setSavingNew(false);
     }
+  };
+
+  // Quick list: many products from the Add Products page, each with a name, a price and a stock count.
+  // Returns which rows were saved and which were not, so the page keeps only the ones that need another go.
+  const saveQuickProducts = async (rowsToSave, categoryId) => {
+    const savedIds = [];
+    const failedIds = [];
+    const created = [];
+    for (const row of rowsToSave) {
+      try {
+        const product = await inventoryService.createProduct({
+          name: row.name,
+          selling_price: row.selling_price,
+          initial_stock: row.initial_stock,
+          category_id: categoryId || undefined
+        }, { quiet: true });
+        savedIds.push(row.id);
+        created.push({
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          barcode: product.barcode,
+          category_id: product.category_id ?? null,
+          cost_price: product.cost_price ?? 0,
+          wholesale_price: product.wholesale_price || 0,
+          selling_price: product.selling_price,
+          tax_rate: product.tax_rate,
+          is_active: product.is_active !== false,
+          images: [],
+          current_stock: row.initial_stock
+        });
+      } catch (error) {
+        console.error('❌ Quick list row failed:', row.name, error);
+        failedIds.push(row.id);
+      }
+    }
+
+    if (created.length > 0) {
+      const nextProducts = [...products, ...created];
+      setProducts(nextProducts);
+      setFilteredProducts(previous => [...previous, ...created]);
+      calculateStats(nextProducts);
+      setAddedThisVisit(previous => [
+        ...previous,
+        ...created.map(item => ({ key: item.id, name: item.name, price: item.selling_price }))
+      ]);
+      toast.success(`✅ ${created.length} product${created.length === 1 ? '' : 's'} added${failedIds.length ? `, ${failedIds.length} could not be saved` : ''}`);
+    } else if (failedIds.length > 0) {
+      toast.error('❌ Could not save those products. Check the connection and try again.');
+    }
+    return { savedIds, failedIds };
   };
 
   const applyBulkPricing = async () => {
@@ -1796,8 +1882,21 @@ const OrderInventoryPOSControl = () => {
     return tally;
   }, { expiring: 0, offers: 0 });
 
+  // Add Products is a tab in the strip but not a screen of its own: it opens the full-page form over
+  // the dashboard, and closing that lands back on whichever tab was showing.
+  const openTab = (id) => {
+    if (id !== 'add-products') { setActiveTab(id); return; }
+    if (!isAdmin) {
+      toast.error('❌ Admin access required to add products');
+      return;
+    }
+    setShowAddProductModal(true);
+  };
+
   const visibleTabs = [
     offersProducts && { id: 'products', label: '📦 Products' },
+    // Opens the full-screen Add Products page rather than a list of its own (see openTab)
+    offersProducts && { id: 'add-products', label: '➕ Add Products' },
     offersServices && { id: 'services', label: '🧾 Services' },
     offersServices && { id: 'bookings', label: '📅 Bookings' },
   ].filter(Boolean);
@@ -1834,9 +1933,9 @@ const OrderInventoryPOSControl = () => {
               {visibleTabs.map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => openTab(tab.id)}
                   role="tab"
-                  aria-selected={activeTab === tab.id}
+                  aria-selected={tab.id === 'add-products' ? showAddProductModal : activeTab === tab.id}
                   className="oi-tab px-0.5 pb-2 pt-1 text-[13px] sm:text-sm font-semibold whitespace-nowrap"
                 >
                   {tab.label}
@@ -1875,10 +1974,10 @@ const OrderInventoryPOSControl = () => {
               setShowAddProductModal(true);
             }}
             className={`${toolBtn} ${isAdmin ? 'oi-btn-primary' : toolBtnOff}`}
-            title={!isAdmin ? 'Admin access required' : 'Add new product to inventory'}
+            title={!isAdmin ? 'Admin access required' : 'Add products: one at a time or a whole list at once'}
           >
             <FiPlus className="h-4 w-4 flex-shrink-0" />
-            <span>Add</span>
+            <span>Add products</span>
           </button>
           <input
             type="file"
@@ -1892,6 +1991,16 @@ const OrderInventoryPOSControl = () => {
             accept="image/*"
             ref={quickPhotoInputRef}
             onChange={handleQuickPhotoChange}
+            className="hidden"
+          />
+          <input
+            type="file"
+            accept="image/*"
+            ref={newProductImageInputRef}
+            onChange={(e) => {
+              selectImageFile(e.target.files?.[0], (file) => { setNewProductImageFile(file); setNewProductImageUrl(null); }, setNewProductImagePreview);
+              e.target.value = '';
+            }}
             className="hidden"
           />
           <button
@@ -2493,8 +2602,27 @@ const OrderInventoryPOSControl = () => {
       {filteredProducts.length === 0 && (
         <div className="oi-list oi-empty p-8 text-center">
           <FiBox className="h-10 w-10 text-[#b8912f] mx-auto mb-3" />
-          <p className="text-gray-800 font-semibold">No products found</p>
-          <p className="text-sm text-gray-500 mt-1">Try adjusting your search filters</p>
+          {products.length === 0 ? (
+            <>
+              <p className="text-gray-800 font-semibold">Your shop has no products yet</p>
+              <p className="text-sm text-gray-500 mt-1">No scanner needed: type a name and a price and you are selling.</p>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddProductModal(true)}
+                  className={`${toolBtn} oi-btn-primary mt-4 mx-auto`}
+                >
+                  <FiPlus className="h-4 w-4 flex-shrink-0" />
+                  <span>Add your first products</span>
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-gray-800 font-semibold">No products found</p>
+              <p className="text-sm text-gray-500 mt-1">Try adjusting your search filters</p>
+            </>
+          )}
         </div>
       )}
       </>
@@ -2690,297 +2818,37 @@ const OrderInventoryPOSControl = () => {
         />
       )}
 
-      {/* Add Product Modal */}
+      {/* Add Products: a full-screen page over the whole dashboard (inline, so the scanner and photo picker open above it) */}
       {showAddProductModal && (
-        <div className="oi-modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 md:p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="add-product-title" className="oi-modal-panel bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[92dvh] flex flex-col overflow-hidden">
-            <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-3 md:p-5 flex items-center justify-between gap-3 flex-shrink-0">
-              <div className="min-w-0">
-                <h2 id="add-product-title" className="text-lg md:text-2xl font-bold">➕ Add New Product</h2>
-                {storeName ? (
-                  <p className="oi-store-chip mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-0.5 text-xs md:text-sm font-semibold text-white">
-                    <span aria-hidden="true">🏪</span><span className="truncate">{storeName}</span>
-                  </p>
-                ) : (
-                  <p className="text-green-100 text-xs md:text-sm mt-1">Create a new product for your POS inventory</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={closeAddProductWindow}
-                aria-label="Close"
-                className="text-white hover:bg-white hover:bg-opacity-20 p-1 md:p-2 rounded-lg transition flex-shrink-0"
-              >
-                <FiX className="h-5 w-5 md:h-6 md:w-6" />
-              </button>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-6 space-y-4" onKeyDown={handleAddKeyDown}>
-              {/* Product Photo */}
-              <div className="flex items-center gap-3 md:gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setImagePickerTarget({ kind: 'new', query: newProduct.name || '' })}
-                  className="w-14 h-14 md:w-16 md:h-16 rounded-lg bg-white border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0"
-                >
-                  {newProductImagePreview ? (
-                    <img src={newProductImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <FiImage className="h-5 w-5 text-gray-400" />
-                  )}
-                </button>
-                <input
-                  ref={newProductImageInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => selectImageFile(e.target.files?.[0], (file) => { setNewProductImageFile(file); setNewProductImageUrl(null); }, setNewProductImagePreview)}
-                />
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setImagePickerTarget({ kind: 'new', query: newProduct.name || '' })}
-                    className="text-xs md:text-sm font-medium text-green-600 hover:text-green-700"
-                  >
-                    {newProductImagePreview ? 'Change photo' : 'Add photo (optional)'}
-                  </button>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Shown to customers browsing this product</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                <div>
-                  <label htmlFor="add-product-name" className="block text-xs md:text-sm font-semibold text-gray-700 mb-1 md:mb-2">
-                    Product Name *
-                  </label>
-                  <input
-                    id="add-product-name"
-                    ref={addNameRef}
-                    type="text"
-                    autoFocus={typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: fine)').matches)}
-                    aria-required="true"
-                    aria-invalid={addErrors.name ? 'true' : undefined}
-                    aria-describedby={addErrors.name ? 'add-product-name-error' : undefined}
-                    value={newProduct.name}
-                    onChange={(e) => {
-                      setNewProduct({ ...newProduct, name: e.target.value });
-                      if (addErrors.name) setAddErrors({});
-                    }}
-                    placeholder="e.g., Rice - 1kg"
-                    className={`w-full px-3 md:px-4 py-1.5 md:py-2 border-2 rounded-lg focus:outline-none text-sm ${addErrors.name ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-green-500'}`}
-                  />
-                  {addErrors.name && <p id="add-product-name-error" role="alert" className="oi-field-error mt-1 text-xs font-medium text-red-600">{addErrors.name}</p>}
-                </div>
-
-                <div>
-                  <label htmlFor="add-product-sku" className="block text-xs md:text-sm font-semibold text-gray-700 mb-1 md:mb-2">
-                    SKU (Optional)
-                  </label>
-                  <input
-                    id="add-product-sku"
-                    type="text"
-                    value={newProduct.sku}
-                    onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
-                    placeholder="e.g., TIL-1015"
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label htmlFor="add-product-barcode" className="block text-xs md:text-sm font-semibold text-gray-700 mb-1 md:mb-2">
-                    <FiHash className="inline mr-1" />
-                    Barcode {newlyRegisteredProductId ? '(Locked)' : '(Optional)'}
-                  </label>
-                  <div className="flex gap-2" data-no-enter-save>
-                    <input
-                      id="add-product-barcode"
-                      type="text"
-                      value={newProduct.barcode}
-                      onChange={(e) => !newlyRegisteredProductId && setNewProduct({ ...newProduct, barcode: e.target.value })}
-                      placeholder="e.g., 1234567890123"
-                      disabled={newlyRegisteredProductId} // ✅ Disable editing if from barcode scan
-                      className={`flex-1 px-3 md:px-4 py-1.5 md:py-2 border-2 rounded-lg focus:outline-none text-sm ${
-                        newlyRegisteredProductId 
-                          ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' 
-                          : 'border-gray-300 focus:border-green-500'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowBarcodeScanner(true)}
-                      disabled={newlyRegisteredProductId} // ✅ Disable scan button if barcode already scanned
-                      className={`px-3 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap text-sm ${
-                        newlyRegisteredProductId
-                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                      title={newlyRegisteredProductId ? "Barcode is locked from scan" : "Scan barcode with camera or barcode gun"}
-                    >
-                      <FiCamera className="h-4 w-4" />
-                      <span className="hidden sm:inline">Scan</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewProduct({ ...newProduct, barcode: generateBarcodeFor() })}
-                      disabled={newlyRegisteredProductId || registeringBarcode}
-                      className="px-3 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-400 disabled:text-gray-200 disabled:cursor-not-allowed"
-                      title="No barcode on the item? Make one, then print it from Barcodes"
-                    >
-                      <FiZap className="h-4 w-4" />
-                      <span className="hidden sm:inline">Generate</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="add-product-cost" className="block text-sm font-semibold text-gray-700 mb-2">
-                    Cost Price (USh) *
-                  </label>
-                  <input
-                    id="add-product-cost"
-                    type="number"
-                    value={newProduct.cost_price}
-                    onChange={(e) => setNewProduct({ ...newProduct, cost_price: Math.max(0, parseFloat(e.target.value) || 0) })}
-                    placeholder="0"
-                    min="0"
-                    step="100"
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500"
-                  />
-                </div>
-
-                 <div>
-                   <label htmlFor="add-product-selling" className="block text-sm font-semibold text-gray-700 mb-2">
-                     Selling Price (USh) *
-                  </label>
-                  <input
-                    id="add-product-selling"
-                    type="number"
-                    value={newProduct.selling_price}
-                     onChange={(e) => setNewProduct({ ...newProduct, ...withSellingPrice(newProduct, e.target.value) })}
-                    placeholder="0"
-                    min="0"
-                    step="100"
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500"
-                  />
-                 </div>
-
-                 <div>
-                   <label htmlFor="add-product-wholesale" className="block text-sm font-semibold text-gray-700 mb-2">Wholesale Price (USh)</label>
-                   <input id="add-product-wholesale" type="number" min="0" step="100" value={newProduct.wholesale_price}
-                     onChange={(e) => setNewProduct({ ...newProduct, ...withWholesalePrice(newProduct, e.target.value) })}
-                     placeholder="Optional bulk price" className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500" />
-                 </div>
-
-                 <div>
-                   <label htmlFor="add-product-wholesale-percent" className="block text-sm font-semibold text-gray-700 mb-2">Wholesale discount (%)</label>
-                   <input id="add-product-wholesale-percent" type="number" min="0" max="100" step="1" value={newProduct.wholesale_discount_percent}
-                     onChange={(e) => setNewProduct({ ...newProduct, ...withDiscountPercent(newProduct, e.target.value) })}
-                     placeholder="e.g. 10" className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:outline-none focus:border-purple-500" />
-                   <p className="mt-1 text-[11px] text-gray-500">Always filled in: type the price and it shows the discount, type the discount and it sets the price.</p>
-                 </div>
-
-                <div>
-                  <label htmlFor="add-product-tax" className="block text-sm font-semibold text-gray-700 mb-2">
-                    Tax Rate (%)
-                  </label>
-                  <input
-                    id="add-product-tax"
-                    type="number"
-                    value={newProduct.tax_rate}
-                    onChange={(e) => setNewProduct({ ...newProduct, tax_rate: Math.max(0, parseFloat(e.target.value) || 18) })}
-                    placeholder="18"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="add-product-category" className="block text-sm font-semibold text-gray-700 mb-2">
-                    Category (Optional)
-                  </label>
-                  <select
-                    id="add-product-category"
-                    value={newProduct.category_id || ''}
-                    onChange={(e) => {
-                      const selectedValue = e.target.value;
-                      const categoryId = selectedValue ? selectedValue : null;
-                      setNewProduct({ 
-                        ...newProduct, 
-                        category_id: categoryId 
-                      });
-                      console.log('Product category selected:', categoryId);
-                    }}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500 bg-white"
-                  >
-                    <option value="">Select a category...</option>
-                    {categories && categories.length > 0 ? (
-                      categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))
-                    ) : (
-                      <option disabled>Loading categories...</option>
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              {/* Margin Display */}
-              {newProduct.cost_price > 0 && newProduct.selling_price > 0 && (
-                <div className="bg-blue-50 border-2 border-blue-200 dark:border-blue-400/30 rounded-lg p-2 md:p-3">
-                  <p className="text-xs md:text-sm text-gray-700">
-                    <span className="font-semibold">Profit Margin:</span>{' '}
-                    <span className="text-base md:text-lg font-bold text-green-600">
-                      {((newProduct.selling_price - newProduct.cost_price) / newProduct.cost_price * 100).toFixed(1)}%
-                    </span>
-                  </p>
-                </div>
-              )}
-
-              {/* Flavors — each gets its own barcode and is saved as its own product */}
-              <ProductFlavorsEditor
-                rows={flavorRows}
-                onRowsChange={setFlavorRows}
-                sharedName={flavorSharedName ?? newProduct.name}
-                onSharedNameChange={setFlavorSharedName}
-                mainBarcode={newProduct.barcode}
-                products={products}
-                basePrice={newProduct.selling_price}
-                generateBarcode={generateBarcodeFor}
-              />
-
-            </div>
-
-            {/* Save / Cancel stay in view while the form scrolls */}
-            <div className="flex-shrink-0 flex flex-col sm:flex-row gap-2 md:gap-3 border-t border-gray-200 bg-white p-3 md:px-6 md:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <button
-                type="button"
-                onClick={saveNewProduct}
-                disabled={registeringBarcode}
-                className="flex-1 bg-green-500 text-white px-3 md:px-4 py-2 md:py-3 rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base disabled:opacity-60 disabled:cursor-wait"
-              >
-                <FiPlus className="h-4 w-4" />
-                <span className="hidden sm:inline">
-                  {registeringBarcode ? 'Registering barcode…' : newlyRegisteredProductId ? 'Save Product' : 'Add Product'}
-                </span>
-                <span className="sm:hidden">
-                  {registeringBarcode ? 'Wait…' : newlyRegisteredProductId ? 'Save' : 'Add'}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={closeAddProductWindow}
-                className="flex-1 bg-gray-400 text-white px-3 md:px-4 py-2 md:py-3 rounded-lg hover:bg-gray-500 transition-colors font-semibold flex items-center justify-center gap-2 text-sm md:text-base"
-              >
-                <FiX className="h-4 w-4" />
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddProductPage
+          storeName={storeName}
+          product={newProduct}
+          setProduct={setNewProduct}
+          errors={addErrors}
+          clearError={clearAddError}
+          nameRef={addNameRef}
+          stock={newProductStock}
+          setStock={setNewProductStock}
+          categories={categories}
+          products={products}
+          photoPreview={newProductImagePreview}
+          onPickPhoto={() => setImagePickerTarget({ kind: 'new', query: newProduct.name || '' })}
+          barcodeLocked={Boolean(newlyRegisteredProductId)}
+          registering={registeringBarcode}
+          onScan={() => setShowBarcodeScanner(true)}
+          onGenerateBarcode={() => setNewProduct(previous => ({ ...previous, barcode: generateBarcodeFor() }))}
+          flavorRows={flavorRows}
+          setFlavorRows={setFlavorRows}
+          flavorSharedName={flavorSharedName}
+          setFlavorSharedName={setFlavorSharedName}
+          generateBarcode={generateBarcodeFor}
+          offersWholesale={offersWholesale}
+          addedThisVisit={addedThisVisit}
+          saving={savingNew}
+          onSave={saveNewProduct}
+          onQuickSave={saveQuickProducts}
+          onClose={closeAddProductWindow}
+        />
       )}
 
       {/* Barcodes: generate for items that have none, and print the sheet */}

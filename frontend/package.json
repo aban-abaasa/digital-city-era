@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test:era-api": "node --test tests/eraApi.test.js",
+    "test:add-product": "node --test tests/addProductSmarts.test.js",
     "test:farm-produce": "node --test tests/farmProduce.test.js",
     "test:ranked-products": "node --experimental-test-module-mocks --test tests/rankedProducts.test.js",
     "dev": "vite",
