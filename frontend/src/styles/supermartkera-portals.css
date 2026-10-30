@@ -1564,6 +1564,10 @@
   --sorders-line: rgba(196, 160, 82, 0.3);
   gap: 1rem !important;
   color: var(--sorders-text);
+  /* Its own surface, so the text always contrasts with what is behind it in both light and dark mode */
+  background: var(--sorders-panel);
+  border-radius: 0.8rem;
+  padding: 0.25rem 1rem 0.75rem;
 }
 .manager-supplier-orders > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem !important; }
 [data-theme="dark"] .manager-supplier-orders {
