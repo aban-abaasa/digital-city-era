@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { formatICAN, sellICAN, getMyTradingInfo } from '@/services/icanWalletService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 export default function SellIcanModal({ userId, balance, onClose, onSuccess }) {
+  useBackLayer(true, onClose);
   const [icanAmount, setIcanAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);

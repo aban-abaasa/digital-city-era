@@ -15,9 +15,11 @@ import {
   FiUser,
   FiSettings,
 } from 'react-icons/fi';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useBackLayer(sidebarOpen, () => setSidebarOpen(false));
   // Mock user data for demo (no authentication needed)
   const user = { name: 'Manager', email: 'manager@supermartkera.com' };
   const location = useLocation();

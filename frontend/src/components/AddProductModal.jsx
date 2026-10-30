@@ -31,6 +31,7 @@ import StableCoinStyles from '../styles/StableCoinStyles';
 import { getStableQuote, savePricingMode } from '../services/stablePricingService';
 import { PRICE_UNIT_LOCAL, PRICE_UNIT_STABLE, localToStable, stableToLocal } from '../utils/stablePricing';
 import { priceModeOf, buildServicePricing } from '../utils/servicePrice';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
@@ -41,6 +42,7 @@ const SERVICE_SUGGESTIONS = [
 ];
 
 const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null }) => {
+  useBackLayer(isOpen, onClose);
   const isSupplierMode = mode === 'supplier';
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);

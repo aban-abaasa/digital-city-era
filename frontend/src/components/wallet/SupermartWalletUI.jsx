@@ -5,6 +5,7 @@ import {
   ArrowDown, ArrowUp, Banknote, Check, ChevronDown, Copy, CreditCard, Eye, EyeOff, Leaf, QrCode, RefreshCw,
   ScanLine, Search, ShoppingBasket, Sparkles, X,
 } from 'lucide-react';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 /**
  * SupermartKera's IcanEra wallet, dressed as a shopping till: an emerald store
@@ -74,6 +75,7 @@ export function Barcode({ value, height = 34, color = '#f6e7bd', className = '' 
 // ── sheet (every wallet dialog) ─────────────────────────────────────────────
 
 export function Sheet({ title, onClose, children, z = 50 }) {
+  useBackLayer(true, onClose);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);

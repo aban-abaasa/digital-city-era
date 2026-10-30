@@ -46,6 +46,7 @@ import {
   whatsappShareUrl,
   smsShareUrl,
 } from '../utils/mobileCardPayment';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const POLL_MS = 3000;          // ask the database every 3 s ...
 const CONFIRM_EVERY = 3;       // ... and Flutterwave itself every 3rd time (about 9 s)
@@ -83,6 +84,7 @@ const CashierIcanMobileCardModal = ({
   onPark = null,             // ({ charge, contact }) => leave this sale waiting and free the till
   parkDisabledReason = null, // why another sale cannot wait right now
 }) => {
+  useBackLayer(isOpen, onClose);
   const [phase, setPhase] = useState(resumeCharge ? 'ready' : 'creating'); // creating | ready | paid | dead
   const [charge, setCharge] = useState(resumeCharge);
   const [error, setError] = useState(null);

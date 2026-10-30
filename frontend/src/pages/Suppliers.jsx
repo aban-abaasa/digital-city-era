@@ -63,6 +63,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const Suppliers = () => {
   const [suppliers, setSuppliers] = useState([]);
@@ -71,6 +72,8 @@ const Suppliers = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  useBackLayer(showAddModal || showEditModal, () => { setShowAddModal(false); setShowEditModal(false); });
+  useBackLayer(showViewModal, () => setShowViewModal(false));
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);

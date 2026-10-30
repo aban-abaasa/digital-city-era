@@ -5,8 +5,10 @@ import {
   FiHeart, FiShoppingBag, FiInfo, FiSettings
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ARProductViewer = ({ product, isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [viewMode, setViewMode] = useState('ar'); // 'ar', '3d', '360'
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);

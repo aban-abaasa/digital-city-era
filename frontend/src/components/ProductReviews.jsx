@@ -5,8 +5,10 @@ import {
   FiCheckCircle, FiAlertCircle, FiHeart, FiShare2, FiFlag, FiX
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ProductReviews = ({ product, isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [reviews, setReviews] = useState([
     {
       id: 1,
@@ -71,6 +73,7 @@ const ProductReviews = ({ product, isOpen, onClose }) => {
   const [filterRating, setFilterRating] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
   const [showWriteReview, setShowWriteReview] = useState(false);
+  useBackLayer(showWriteReview, () => setShowWriteReview(false));
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredReviews = reviews.filter(review => {

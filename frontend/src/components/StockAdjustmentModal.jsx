@@ -6,8 +6,10 @@ import {
   FiUpload, FiDownload, FiZap, FiCalendar, FiUser, FiFileText
 } from 'react-icons/fi';
 import inventoryService from '../services/inventoryApiService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const StockAdjustmentModal = ({ isOpen, onClose, products = [], onAdjustmentComplete }) => {
+  useBackLayer(isOpen, onClose);
   const [adjustments, setAdjustments] = useState([]);
   const [reason, setReason] = useState('');
   const [adjustmentType, setAdjustmentType] = useState('manual'); // 'manual', 'received', 'damaged', 'sold', 'returned'

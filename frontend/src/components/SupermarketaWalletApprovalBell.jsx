@@ -4,6 +4,7 @@ import { FiBell, FiCheckCircle, FiLock, FiX, FiXCircle } from 'react-icons/fi';
 import ClassicNotificationList from './ClassicNotificationList';
 import { supabase } from '../services/supabase';
 import { enablePushAlerts, getPushStatus, refreshPushRegistration } from '../services/pushAlertsService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const SEEN_KEY = 'sk_wallet_approvals_seen';
 const DISMISSED_APPROVALS_KEY = 'sk_wallet_approvals_dismissed';
@@ -71,6 +72,7 @@ export default function SupermarketaWalletApprovalBell() {
   const [requests, setRequests] = useState([]);
   const dismissedApprovalIdsRef = useRef(readDismissedApprovals());
   const [open, setOpen] = useState(false);
+  useBackLayer(open, () => setOpen(false));
   const [approvalRequest, setApprovalRequest] = useState(null);
   const [pin, setPin] = useState('');
   const [working, setWorking] = useState('');

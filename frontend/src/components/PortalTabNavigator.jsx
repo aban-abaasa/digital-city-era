@@ -5,6 +5,9 @@ import MobileBottomTabs from './MobileBottomTabs';
 import OverflowTabs from './OverflowTabs';
 import { InHeaderTabs } from './PortalHeaderSlot';
 import { headerTabClass, headerTabIconClass } from './portalHeaderSlotUtils';
+import { PhoneBackArrow } from './PhonePortalNav';
+import { usePhoneChrome, useFullPage } from '../utils/phoneChrome';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const tabClass = (isActive) => `classic-tab relative flex items-center gap-1.5 px-3.5 py-3 text-sm whitespace-nowrap ${
   isActive
@@ -35,9 +38,18 @@ const PortalTabNavigator = ({
   initial,
   showWallet = false,
   onWallet,
-  bottomTabs
+  bottomTabs,
+  homeTab
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  // The section Back returns to (default: the first tab). Phone/browser Back
+  // walks a sub-section back to it before leaving the page.
+  const home = homeTab || tabs[0]?.id;
+  useBackLayer(Boolean(home) && activeTab !== home, () => onSelect(home));
+  // Phone, multi-portal account: the shared header is hidden, so this bar becomes the page's
+  // only top bar — sticky, with Back, and it carries the header's right-hand extras.
+  const fullPage = useFullPage();
+  const headerExtras = usePhoneChrome()?.rightSlot;
   const humanize = (id) => String(id || '').replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
   const active = tabs.find((t) => t.id === activeTab) || { label: humanize(activeTab), icon: FiGrid };
   const ActiveIcon = active?.icon;
@@ -91,14 +103,16 @@ const PortalTabNavigator = ({
       </InHeaderTabs>
 
       {/* Phone section bar — current section in serif + the one Menu trigger */}
-      <div className="sm:hidden border-b border-[#c4a052]/25 bg-white">
+      <div className={`sm:hidden border-b border-[#c4a052]/25 bg-white dark:border-slate-700 dark:bg-slate-900 ${fullPage ? 'safe-top sticky top-0 z-40' : ''}`}>
         <div className="flex h-12 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-2">
+            <PhoneBackArrow atHome={activeTab === home} onHome={() => onSelect(home)} />
             {ActiveIcon && <ActiveIcon className="h-[17px] w-[17px] flex-shrink-0 text-indigo-600" />}
             <h2 className="truncate font-classic-display text-[18px] font-semibold leading-none text-slate-800">
               {active?.label}
             </h2>
           </div>
+          {fullPage && headerExtras}
           <button
             type="button"
             onClick={() => setMenuOpen(true)}

@@ -8,6 +8,7 @@ import { ArrowUpRight, X, Loader } from 'lucide-react';
 import jsQR from 'jsqr';
 import ScanFrameOverlay from './ScanFrameOverlay';
 import { supabase } from '../services/supabase';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PayMoneyModal = ({ 
   isOpen, 
@@ -15,6 +16,7 @@ const PayMoneyModal = ({
   onPaymentScanned = null,
   userId = null
 }) => {
+  useBackLayer(isOpen, onClose);
   console.log('PayMoneyModal rendered, isOpen:', isOpen);
   
   const [cameraActive, setCameraActive] = useState(false);

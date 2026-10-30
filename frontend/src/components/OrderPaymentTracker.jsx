@@ -10,9 +10,11 @@ import { FiDollarSign, FiPlus, FiCheck, FiClock, FiAlertCircle, FiCheckCircle } 
 import { supabase } from '../services/supabase';
 import supplierOrdersService, { getBusinessWalletBalance } from '../services/supplierOrdersService';
 import { ugxToICAN, formatICAN } from '../services/icanWalletService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  useBackLayer(showPaymentModal, () => setShowPaymentModal(false));
   const [paymentTransactions, setPaymentTransactions] = useState([]);
   const [unconfirmedCount, setUnconfirmedCount] = useState(0);
   const [paymentData, setPaymentData] = useState({

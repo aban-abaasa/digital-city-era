@@ -4,8 +4,10 @@ import {
   FiEye, FiUser, FiShield, FiCheck, FiX, FiLoader,
   FiAlertCircle, FiRefreshCw, FiLock, FiUnlock, FiCamera
 } from 'react-icons/fi';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const BiometricAuth = ({ isOpen, onClose, onAuthComplete }) => {
+  useBackLayer(isOpen, onClose);
   const [authStep, setAuthStep] = useState('select'); // select, fingerprint, face, processing, success, error
   const [selectedMethod, setSelectedMethod] = useState('');
   const [loading, setLoading] = useState(false);

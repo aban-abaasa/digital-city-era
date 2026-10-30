@@ -53,6 +53,7 @@ import {
   bulkImportProductRows,
   exportRowsToFile
 } from '../utils/inventoryFileIO';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 // ---------------------------------------------------------------------
 // Classic ledger look: midnight navy + antique gold on ivory, hairline
@@ -311,6 +312,7 @@ const OrderInventoryPOSControl = () => {
   const priceChangesAnnounced = useRef(false);
   const [inventoryMap, setInventoryMap] = useState({}); // Map product_id to inventory data
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  useBackLayer(showAddProductModal, () => setShowAddProductModal(false));
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [newlyRegisteredProductId, setNewlyRegisteredProductId] = useState(null); // Track newly created product for update
   const [registeringBarcode, setRegisteringBarcode] = useState(false); // A scanned code is being checked/registered behind the open form

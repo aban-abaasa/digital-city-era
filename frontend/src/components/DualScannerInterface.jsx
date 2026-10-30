@@ -6,11 +6,13 @@ import Quagga from '@ericblade/quagga2';
 import { supabase } from '../services/supabase';
 import geminiAIService from '../services/geminiAIService';
 import { findProductByBarcode } from '../utils/barcodeHelper';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 // embedded: render inline, filling whatever box the parent gives it, instead of as a full-screen modal — the POS
 // "scan mode" uses this so scanning gets the big catalogue area next to the cashier's own basket (which replaces the
 // scanner's private receipt panel). paused: ignore scans (a payment is in progress and must not gain items).
 const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0, keepOpen = false, embedded = false, paused = false }) => {
+  useBackLayer(!embedded, () => onClose?.());
   const [scanMode, setScanMode] = useState('camera'); // 'smart', 'camera', 'gun' - CAMERA ACTIVE BY DEFAULT
   const [cameraActive, setCameraActive] = useState(false);
   const [gunListening, setGunListening] = useState(true); // GUN SCANNER LISTENING BY DEFAULT
@@ -33,6 +35,7 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
   const [showTip, setShowTip] = useState(false); // nudge shown when nothing has scanned for a while
   const [scanFlash, setScanFlash] = useState(null); // 'ok' | 'error' — brief result flash on the viewfinder
   const [showAIAnalysis, setShowAIAnalysis] = useState(false);
+  useBackLayer(showAIAnalysis, () => setShowAIAnalysis(false));
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [lastFrameData, setLastFrameData] = useState(null);

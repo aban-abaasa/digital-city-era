@@ -42,6 +42,7 @@ import PortalTabNavigator from '../components/PortalTabNavigator';
 import { ROLE_HOME } from '../components/RoleProtectedRoute';
 import { SUPPLIER_CAPABLE_ROLES, getSupplierAccess } from '../utils/supplierAccess';
 import '../styles/supermartkera-portals.css';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const SupplierPortal = () => {
   const navigate = useNavigate();
@@ -71,6 +72,7 @@ const SupplierPortal = () => {
   // Order ID pending a vehicle-type choice — shown right after "Confirm
   // Order" instead of dispatching automatically with no supplier input.
   const [vehicleChoiceOrderId, setVehicleChoiceOrderId] = useState(null);
+  useBackLayer(!!vehicleChoiceOrderId, () => setVehicleChoiceOrderId(null));
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [supplierProfile, setSupplierProfile] = useState({
@@ -168,6 +170,8 @@ const SupplierPortal = () => {
 
   // Edit Financial Details States
   const [isEditingFinancial, setIsEditingFinancial] = useState(false);
+  useBackLayer(isEditingFinancial, () => setIsEditingFinancial(false));
+  useBackLayer(isEditingProfile, () => setIsEditingProfile(false));
   const [editedFinancial, setEditedFinancial] = useState({});
   const [isSavingFinancial, setIsSavingFinancial] = useState(false);
 

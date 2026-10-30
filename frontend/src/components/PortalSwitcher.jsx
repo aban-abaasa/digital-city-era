@@ -4,10 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiChevronDown } from 'react-icons/fi';
 import { usePortalAccess } from '../hooks/usePortalAccess';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PortalSwitcher = ({ variant = 'light', fullWidth = false, onNavigate, mobileFloating = false, mobileFloatingPositionClass = 'top-3 right-3 z-40' }) => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  useBackLayer(isOpen, () => setIsOpen(false));
   const { accessiblePortals, currentPortal } = usePortalAccess();
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const buttonRef = useRef(null);

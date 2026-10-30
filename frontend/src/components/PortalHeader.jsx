@@ -9,6 +9,9 @@ import { usePortalAccess } from '../hooks/usePortalAccess';
 import { prefetchPortal } from '../utils/portalPages';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import OverflowTabs from './OverflowTabs';
+import useIsPhone from '../hooks/useIsPhone';
+import { useBackLayer } from '../hooks/useBackLayer';
+import { publishPhoneChrome, clearPhoneChrome, HUB_ROUTE } from '../utils/phoneChrome';
 import { HeaderTabsSlot } from './PortalHeaderSlot';
 
 /**
@@ -37,8 +40,20 @@ import { HeaderTabsSlot } from './PortalHeaderSlot';
  *                          Nothing is shown when the account has no business.
  *   onCurrentPortalClick   called when the active portal's own tab is tapped
  *                          (e.g. to leave the wallet tab again)
+ *   hub                    the phone home screen (PortalHub.jsx) — keeps the full
+ *                          header on phones, which every other page hides
+ *
+ * Phones, accounts with more than one portal: this header is hidden so each
+ * portal opens as a full page. What it offered (switch portal, profile, its
+ * own menu items, sign out) is published to the portal's Menu sheet instead —
+ * see utils/phoneChrome.js and PhonePortalNav.jsx.
  */
+// sessionStorage: which account has already been shown the phone hub this session
+// (so it only greets you once and never fights a portal you opened on purpose).
+const HUB_SEEN_KEY = 'sk_portal_hub_seen';
+
 const PortalHeader = ({
+  hub = false,
   brand = 'Supermartkera',
   title,
   leftSlot = null,
@@ -63,6 +78,10 @@ const PortalHeader = ({
   const [avatarUrl, setAvatarUrl] = useState(avatarUrlProp);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef(null);
+  const isPhone = useIsPhone();
+  const chromeOwner = useRef({}).current;
+  // Phone/browser Back closes the avatar menu before it leaves the page.
+  useBackLayer(showMenu, () => setShowMenu(false));
 
   useEffect(() => {
     let active = true;
@@ -117,6 +136,7 @@ const PortalHeader = ({
   const ActiveIcon = active?.icon || FiShoppingBag;
   const subtitle = title || `${active?.label || 'Portal'} Dashboard`;
   const showTabs = accessiblePortals.length > 1;
+  const phoneFull = isPhone && showTabs && !hub;
 
   const handleSignOut = async () => {
     setShowMenu(false);
@@ -137,6 +157,38 @@ const PortalHeader = ({
     // The cloud profile page means nothing on a business LAN server; send people to its home instead.
     else navigate(supabaseConfig.localBusinessServer ? '/local-home' : '/profile');
   };
+
+  // Hand this header's phone extras to the portal's Menu sheet (every render, so the
+  // handlers are never stale; only the Menu sheet re-renders for it).
+  useEffect(() => {
+    if (!phoneFull) { clearPhoneChrome(chromeOwner); return; }
+    publishPhoneChrome(chromeOwner, {
+      multi: true,
+      portals: accessiblePortals,
+      currentId: currentPortal?.id,
+      items: [
+        { label: supabaseConfig.localBusinessServer ? 'Local home' : 'My Profile', icon: supabaseConfig.localBusinessServer ? FiHome : FiUser, onClick: handleProfile },
+        ...menuItems,
+        { label: 'Offline server settings', icon: FiServer, onClick: () => navigate(`/business-local-server?returnTo=${encodeURIComponent(location.pathname)}`) }
+      ],
+      onSignOut: handleSignOut,
+      rightSlot
+    });
+  });
+  useEffect(() => () => clearPhoneChrome(chromeOwner), [chromeOwner]);
+
+  // A multi-portal account on a phone lands on the hub (this header + a card per portal)
+  // the first time it reaches a portal in a session; from there each portal opens full-page.
+  useEffect(() => {
+    if (!email || !isPhone) return;
+    try {
+      if (hub) { sessionStorage.setItem(HUB_SEEN_KEY, email); return; }
+      if (!phoneFull || !currentPortal || location.search) return; // deep links (?tab=…) go where they point
+      if (sessionStorage.getItem(HUB_SEEN_KEY) === email) return;
+      sessionStorage.setItem(HUB_SEEN_KEY, email);
+    } catch { return; /* storage unavailable: skip the hub rather than loop */ }
+    navigate(HUB_ROUTE, { replace: true });
+  }, [email, isPhone, hub, phoneFull, currentPortal, location.search, navigate]);
 
   const tabClass = (isActive) => `flex items-center gap-1 px-3 sm:px-4 py-1.5 sm:py-2 lg:py-0 text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
     isActive ? 'text-white border-[#f5dfa0]' : 'text-white/70 hover:text-white/90 border-transparent'
@@ -167,6 +219,8 @@ const PortalHeader = ({
       else navigate(portal.route);
     }
   }));
+
+  if (phoneFull) return null;
 
   return (
     <>

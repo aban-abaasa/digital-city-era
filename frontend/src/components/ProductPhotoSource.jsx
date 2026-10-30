@@ -15,8 +15,10 @@
 import React, { useEffect, useState } from 'react';
 import { FiSearch, FiUpload, FiChevronRight } from 'react-icons/fi';
 import ProductImagePicker from './ProductImagePicker';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ProductPhotoSource = ({ onClose, onSelect, onUploadNew, initialQuery = '' }) => {
+  useBackLayer(true, onClose);
   const [browsing, setBrowsing] = useState(false);
 
   useEffect(() => {

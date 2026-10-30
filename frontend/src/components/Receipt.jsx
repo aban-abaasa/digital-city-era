@@ -17,6 +17,7 @@ import { formatPaymentMethod } from '../utils/paymentMethod';
 import './Receipt.css';
 // The same stylesheet, as a string, for the print window.
 import receiptCss from './Receipt.css?inline';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ACTION_BTN = 'flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c] focus-visible:ring-offset-1';
 const SHARE_TILE = 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border border-[#ddd2b6] bg-white px-1 py-2 text-[11px] font-semibold text-[#173d32] transition hover:bg-[#f3ecd8] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c]';
@@ -37,6 +38,7 @@ const Section = ({ id, title, meta, open, onToggle, children }) => (
 );
 
 const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => {
+  useBackLayer(true, onClose);
   const receiptRef = useRef();
   const loadedBranding = useSupermarketBranding();
 

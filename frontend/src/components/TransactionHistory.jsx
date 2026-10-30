@@ -12,6 +12,7 @@ import receiptGeneratorService from '../services/receiptGeneratorService';
 import Receipt from './Receipt';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { formatPaymentMethod, paymentMethodKind } from '../utils/paymentMethod';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PAYMENT_BADGE = {
   cash: 'bg-green-100 text-green-800',
@@ -45,6 +46,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   const paymentOf = (item) => (localReceiptsOnly ? item.paymentMethod : item.payment_provider || item.payment_method);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [collectingFor, setCollectingFor] = useState(null); // transaction being paid off
+  useBackLayer(!!collectingFor, () => setCollectingFor(null));
   const [collectAmount, setCollectAmount] = useState('');
   const [collecting, setCollecting] = useState(false);
 

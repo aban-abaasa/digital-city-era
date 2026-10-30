@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import { getExpiryStatus, formatExpiryDate } from '../utils/productExpiry';
 import { isMissingBatchSetup } from '../utils/productBatches';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PILL = {
   expired: 'oi-pill-out',
@@ -24,6 +25,7 @@ const todayIso = () => {
 const STATUS_LABEL = { active: 'On sale', depleted: 'Sold out', expired: 'Pulled (expired)', recalled: 'Recalled' };
 
 const ProductBatchManager = ({ product, batches, isAdmin, onClose, onChanged }) => {
+  useBackLayer(true, onClose);
   const [dates, setDates] = useState({}); // batchId -> edited expiry date
   const [prices, setPrices] = useState({}); // batchId -> edited selling price (string)
   const emptyDraft = { batch_number: '', quality: '', quantity: '', expiry_date: '', selling_price: '', add_to_stock: true };

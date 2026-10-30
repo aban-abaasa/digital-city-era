@@ -26,6 +26,7 @@ import {
 import { lookupDigitalCard, payWithDigitalCard } from '../services/icanDigitalCardService';
 import { mobileCardPaymentData } from '../utils/mobileCardPayment';
 import { parseCardQr, cardPinProblem, cardHolderLabel, digitalCardPaymentData } from '../utils/digitalCardPayment';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const DEAD_STATES = ['cancelled', 'refunded', 'expired'];
 
@@ -45,6 +46,7 @@ const CashierDigitalCardModal = ({
   onPaymentReceived = null,
   onChooseAnother = null, // () => the list of ways to pay, for a customer with no card (the sale is voided first)
 }) => {
+  useBackLayer(isOpen, onClose);
   const [phase, setPhase] = useState('creating'); // creating | scan | pin | paid | dead
   const [charge, setCharge] = useState(null);
   const [error, setError] = useState(null);

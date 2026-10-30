@@ -12,6 +12,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FiSearch, FiX, FiImage, FiUpload } from 'react-icons/fi';
 import { searchProductImages } from '../services/productImageLibrary';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const SEARCH_DELAY_MS = 300;
 
@@ -50,6 +51,7 @@ const PhotoTile = ({ entry, onSelect }) => {
 };
 
 const ProductImagePicker = ({ onClose, onSelect, onUploadNew, initialQuery = '' }) => {
+  useBackLayer(true, onClose);
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -46,6 +46,7 @@ import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
 import { findProductByBarcode } from '../utils/barcodeHelper';
 import '../styles/supermartkera-portals.css';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const CashierPortal = () => {
   const navigate = useNavigate();
@@ -71,6 +72,7 @@ const CashierPortal = () => {
     customer: null
   });
   const [paymentModal, setPaymentModal] = useState(false);
+  useBackLayer(paymentModal, () => setPaymentModal(false));
   const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
@@ -107,6 +109,7 @@ const CashierPortal = () => {
   // 👗 Boutique variant picker - shown before adding a product with
   // size/color variants to the cart
   const [variantPickerProduct, setVariantPickerProduct] = useState(null);
+  useBackLayer(!!variantPickerProduct, () => setVariantPickerProduct(null));
   // Batch (quality) picker - shown when a product has more than one sellable batch
   const [batchPickerProduct, setBatchPickerProduct] = useState(null);
   
@@ -191,6 +194,8 @@ const CashierPortal = () => {
   // Edit Profile & Settings Modals
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  useBackLayer(showSettingsModal, () => setShowSettingsModal(false));
+  useBackLayer(showEditProfileModal, () => setShowEditProfileModal(false));
   const [editProfileForm, setEditProfileForm] = useState({
     name: '',
     phone: '',

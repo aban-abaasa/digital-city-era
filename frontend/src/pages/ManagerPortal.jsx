@@ -38,6 +38,7 @@ import ProfileModal from '../components/ProfileModal';
 import BusinessOperationsHub from '../components/BusinessOperationsHub';
 import { PRODUCT_OF_HTML, PRODUCT_OF_TEXT } from '../constants/brand';
 import '../styles/supermartkera-portals.css';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
@@ -268,6 +269,7 @@ const ManagerPortal = () => {
   const [dateRange, setDateRange] = useState('this_week');
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [showOrderDetails, setShowOrderDetails] = useState(null);
+  useBackLayer(!!showOrderDetails, () => setShowOrderDetails(null));
   const [showApprovalModal, setShowApprovalModal] = useState(null);
   const [showRejectModal, setShowRejectModal] = useState(null);
   const [bulkAction, setBulkAction] = useState('');
@@ -315,6 +317,7 @@ const ManagerPortal = () => {
     notifications.filter(n => n.unread).length
   );
   const [showNotifications, setShowNotifications] = useState(false);
+  useBackLayer(showNotifications, () => setShowNotifications(false));
   const [notificationFilter, setNotificationFilter] = useState('all');
   const [showMobileDropdown, setShowMobileDropdown] = useState(false);
   const [showMainQuickActions, setShowMainQuickActions] = useState(false);
@@ -4310,6 +4313,7 @@ _Automated Business Report System_`)}`;
 
   // Edit Profile States
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  useBackLayer(isEditingProfile, () => setIsEditingProfile(false));
   const [editedProfile, setEditedProfile] = useState({});
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { FiPlus, FiSearch, FiEdit, FiTrash2, FiUserCheck, FiMail, FiPhone } from 'react-icons/fi';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const Employees = () => {
   const [employees, setEmployees] = useState([]);
@@ -9,6 +10,7 @@ const Employees = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  useBackLayer(showAddModal || showEditModal, () => { setShowAddModal(false); setShowEditModal(false); });
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [formData, setFormData] = useState({
     username: '',

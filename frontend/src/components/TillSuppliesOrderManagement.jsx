@@ -13,6 +13,7 @@ import {
 import { toast } from 'react-toastify';
 import cashierOrdersService from '../services/cashierOrdersService';
 import { supabase } from '../services/supabase';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const TillSuppliesOrderManagement = () => {
   const [orders, setOrders] = useState([]);
@@ -21,6 +22,7 @@ const TillSuppliesOrderManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  useBackLayer(showDetailModal, () => setShowDetailModal(false));
   const [actionLoading, setActionLoading] = useState(false);
 
   // Stats

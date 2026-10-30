@@ -6,6 +6,7 @@ import RoomPicker from './RoomPicker';
 import BookingChatCallPanel from './BookingChatCallPanel';
 import DynamicBookingFields, { findMissingRequiredField } from './DynamicBookingFields';
 import { createBooking, getBookingFormFieldsForService, newIdempotencyKey } from '../../services/bookingService';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 const fmtDate = (iso) =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
@@ -52,6 +53,7 @@ const CONFIRM_LABEL = (bookingType, selected) => {
 // 'room') which decides which picker below is shown; `identity` is
 // { userId, name, email, phone } for the signed-in customer.
 const BookServiceModal = ({ service, businessName, identity, onClose }) => {
+  useBackLayer(true, onClose);
   const bookingType = service.booking_type || 'slot';
   const [selected, setSelected] = useState(null);
   const [name, setName] = useState(identity?.name || '');

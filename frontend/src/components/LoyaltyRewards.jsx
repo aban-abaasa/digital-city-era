@@ -6,8 +6,10 @@ import {
   FiX, FiShield, FiFlag
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const LoyaltyRewards = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [userLevel, setUserLevel] = useState({
     current: 'Platinum',
     points: 2847,

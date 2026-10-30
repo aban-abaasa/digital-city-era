@@ -6,8 +6,10 @@ import {
   FiUpload, FiZap, FiCalendar, FiTrendingUp, FiStar
 } from 'react-icons/fi';
 import inventoryService from '../services/inventoryApiService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ProductModal = ({ isOpen, onClose, product, onSave }) => {
+  useBackLayer(isOpen, onClose);
   const [formData, setFormData] = useState({
     name: '',
     sku: '',

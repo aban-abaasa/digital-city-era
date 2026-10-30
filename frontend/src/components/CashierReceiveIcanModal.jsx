@@ -11,6 +11,7 @@ import {
   getIcanPaymentRequest,
 } from '../services/icanPaymentRequestService';
 import { formatICAN, ugxToICAN } from '../services/icanWalletService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const CashierReceiveIcanModal = ({ 
   isOpen, 
@@ -22,6 +23,7 @@ const CashierReceiveIcanModal = ({
   orderDescription = '',
   onPaymentReceived = null 
 }) => {
+  useBackLayer(isOpen, onClose);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);

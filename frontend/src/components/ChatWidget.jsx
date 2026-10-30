@@ -38,6 +38,7 @@ import CallStage from './calls/CallStage';
 import IncomingCallOverlay from './calls/IncomingCallOverlay';
 import CommunityLiveStage from './community/CommunityLiveStage';
 import NavGlowDefs from './NavGlowDefs';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 // The colours that travel along the floating chat button's own outline (see NavGlowDefs).
 const CHAT_RAINBOW = ['#f43f5e', '#f59e0b', '#facc15', '#22c55e', '#06b6d4', '#6366f1', '#d946ef'];
@@ -93,6 +94,7 @@ const ChatWidget = () => {
   const [guestFormError, setGuestFormError] = useState('');
 
   const [open, setOpen] = useState(false);
+  useBackLayer(open, () => setOpen(false));
   const [maximized, setMaximized] = useState(false);
   const [channel, setChannel] = useState('support'); // 'support' | 'team' | 'community'
   const [draft, setDraft] = useState('');

@@ -15,8 +15,10 @@ import {
 import { toast } from 'react-toastify';
 import receiptService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ReceiptModal = ({ isOpen, onClose, saleData }) => {
+  useBackLayer(isOpen, onClose);
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
   const [activeTab, setActiveTab] = useState('preview');

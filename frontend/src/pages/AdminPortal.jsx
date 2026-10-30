@@ -39,6 +39,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
 import '../styles/supermartkera-portals.css';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const AdminPortal = () => {
   const navigate = useNavigate();
@@ -139,6 +140,7 @@ const AdminPortal = () => {
   // User Details Modal State
   const [selectedUser, setSelectedUser] = useState(null);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
+  useBackLayer(showUserDetailsModal, () => setShowUserDetailsModal(false));
 
   // Authorization state
   const [isAdmin, setIsAdmin] = useState(false);
@@ -1122,6 +1124,7 @@ const AdminPortal = () => {
   });
   
   const [showPortalConfig, setShowPortalConfig] = useState(false);
+  useBackLayer(showPortalConfig, () => setShowPortalConfig(false));
   const [configForm, setConfigForm] = useState({});
   const [configLoading, setConfigLoading] = useState(false);
   const [configHistory, setConfigHistory] = useState([]);
@@ -1695,6 +1698,7 @@ const AdminPortal = () => {
   // Import Employee Access Service
   const [employeeAccessService, setEmployeeAccessService] = useState(null);
   const [showEmployeeControlModal, setShowEmployeeControlModal] = useState(false);
+  useBackLayer(showEmployeeControlModal, () => setShowEmployeeControlModal(false));
   const [employeeList, setEmployeeList] = useState([]);
   const [accessControlStats, setAccessControlStats] = useState({});
   const [selectedEmployees, setSelectedEmployees] = useState([]);
@@ -1704,6 +1708,7 @@ const AdminPortal = () => {
   // Admin Data Storage System
   const [adminDataService, setAdminDataService] = useState(null);
   const [showDataDashboard, setShowDataDashboard] = useState(false);
+  useBackLayer(showDataDashboard, () => setShowDataDashboard(false));
   const [dashboardData, setDashboardData] = useState({});
   const [dataInsights, setDataInsights] = useState([]);
   const [businessIntelligence, setBusinessIntelligence] = useState({});

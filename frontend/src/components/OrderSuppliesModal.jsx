@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiX, FiPlus, FiMinus, FiShoppingCart, FiPackage } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const OrderSuppliesModal = ({ 
   isOpen, 
@@ -9,6 +10,7 @@ const OrderSuppliesModal = ({
   onSubmitOrder,
   submitting = false 
 }) => {
+  useBackLayer(isOpen, onClose);
   const [selectedItems, setSelectedItems] = useState([]);
   const [orderNotes, setOrderNotes] = useState('');
   const [priority, setPriority] = useState('normal');

@@ -13,8 +13,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const InventoryManagement = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('grid');
