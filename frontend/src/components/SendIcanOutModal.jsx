@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { toast } from 'react-toastify';
+import { showPayoutError } from '@/utils/showPayoutError';
 import { ICAN_TO_UGX, SOURCE_APP, formatICAN, requestIcanPayout } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
 import { useBackLayer } from '../hooks/useBackLayer';
@@ -44,7 +45,7 @@ export default function SendIcanOutModal({ userId, balance, onClose, onSuccess }
       toast.success('Payout submitted — funds are on the way.');
       if (onSuccess) onSuccess();
     } catch (e) {
-      toast.error(e.message || 'Payout failed');
+      showPayoutError(e);
     } finally {
       setProcessing(false);
     }

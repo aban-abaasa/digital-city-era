@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { showPayoutError } from '@/utils/showPayoutError';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -219,7 +220,7 @@ function SendModal({ userId, balance, onClose, onDone }) {
       onDone();
       onClose();
     } catch (e) {
-      toast.error(e.message);
+      showPayoutError(e, 'Transfer failed');
     } finally {
       setLoading(false);
     }
