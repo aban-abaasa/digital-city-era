@@ -11,7 +11,7 @@ import {
   FiTruck, FiCheckCircle, FiXCircle, FiSend, FiEdit, FiPlus,
   FiPackage, FiDollarSign, FiClock, FiAlertTriangle, FiSearch,
   FiDownload, FiMail, FiPhone, FiMapPin, FiCalendar, FiUser, FiChevronDown,
-  FiX, FiCheck
+  FiX, FiCheck, FiArrowLeft, FiChevronRight
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LabelList } from 'recharts';
@@ -24,6 +24,21 @@ import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { findStoreProductForOrderItem, createStoreProductForOrderItem, orderItemBarcode } from '../utils/orderItemMatching';
+
+// A section that stays folded until it is wanted; its content stays mounted so nothing typed inside is lost.
+const SoFold = ({ title, badge, startOpen = false, children }) => {
+  const [open, setOpen] = useState(startOpen);
+  return (
+    <section className="so-fold">
+      <button type="button" className="so-fold-head" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <span className="so-fold-title">{title}</span>
+        {badge && <span className="so-count">{badge}</span>}
+        <FiChevronDown className={`so-link-chevron so-fold-chevron${open ? ' is-open' : ''}`} aria-hidden="true" />
+      </button>
+      <div className="so-fold-body" hidden={!open}>{children}</div>
+    </section>
+  );
+};
 
 const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
@@ -103,6 +118,12 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [viewMode, setViewMode] = useState('active'); // 'active' or 'history'
+  const [ordersPage, setOrdersPage] = useState(null); // which tab is open as a full page: 'active' | 'history' | 'pos'
+  const closePage = () => {
+    setOrdersPage(null);
+    setViewMode('active');
+  };
+  useBackLayer(Boolean(ordersPage), closePage);
   const [activeTab, setActiveTab] = useState('details'); // 'details' or 'payment'
   
   // NEW: Approval form state
@@ -1427,89 +1448,40 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
     );
   };
 
+  const hasActiveFilters = statusFilter !== 'all' || priorityFilter !== 'all' || paymentFilter !== 'all' || Boolean(searchTerm);
+  const pricingLabel = wholesalePricingMode === 'admin_price' ? 'Admin-set price' : 'Supplier price';
+  const PAGE_TITLES = { active: 'Active orders', history: 'Order history', pos: 'POS inventory' };
+
+  const openPage = (page) => {
+    if (page === 'active' || page === 'history') setViewMode(page);
+    setOrdersPage(page);
+  };
+
   return (
-    <div className="manager-supplier-orders space-y-6 animate-fadeInUp">
-      {/* Header Section */}
-      <div className="manager-supplier-orders-hero relative overflow-hidden rounded-2xl p-6 sm:p-7 text-white shadow-xl bg-gradient-to-br from-yellow-500 via-red-600 to-neutral-900">
-        <div className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-black/20 blur-3xl" />
+    <div className="manager-supplier-orders animate-fadeInUp">
+      {/* Home: one button to order, a line for each tab (each opens a full page), the rest folded away */}
+      <div className="so-home">
+        <button type="button" className="so-new" onClick={() => setShowCreateModal(true)}>
+          <FiPlus className="h-5 w-5" /> <span>New order</span>
+        </button>
 
-        <div className="relative flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-yellow-100 bg-white/10 border border-white/20 rounded-full px-3 py-1 mb-3">
-              🇺🇬 Trusted by Uganda's modern traders
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold flex items-center gap-3 mb-2 tracking-tight">
-              <span className="bg-white/15 p-2 rounded-xl backdrop-blur-sm">
-                <FiTruck className="h-6 w-6 sm:h-7 sm:w-7" />
-              </span>
-              Supplier Order Verification &amp; Management
-            </h2>
-            <p className="text-yellow-100/90 text-base sm:text-lg max-w-xl">
-              Choose suppliers, compare prices, and create purchase orders — built for a world-class buying experience.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="bg-white text-neutral-900 px-6 py-3 rounded-xl font-bold hover:bg-yellow-50 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center gap-2 shadow-lg shadow-black/20"
-          >
-            <FiPlus className="h-5 w-5" />
-            <span>Create New Order</span>
-          </button>
-        </div>
-        {storeId && (
-          <div className="relative mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-black/25 backdrop-blur-sm border border-white/10 p-3 text-sm">
-            <span className="font-semibold">Order using:</span>
-            <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)} className="rounded-lg px-3 py-2 text-slate-900 font-medium">
-              <option value="supplier_price">Supplier price</option>
-              <option value="admin_price">Admin-set price</option>
-            </select>
-            <span className="text-yellow-100/80">You can change this any time before creating an order.</span>
-          </div>
-        )}
-      </div>
+        <nav className="so-links" aria-label="Orders">
+          {[
+            { key: 'active', icon: FiPackage, count: viewMode === 'active' ? orders.length : null },
+            { key: 'history', icon: FiClock, count: null },
+            { key: 'pos', icon: FiTruck, count: products ? products.length : null }
+          ].map(({ key, icon: Icon, count }) => (
+            <button key={key} type="button" className="so-link" onClick={() => openPage(key)}>
+              <Icon className="so-link-icon" aria-hidden="true" />
+              <span className="so-link-label">{PAGE_TITLES[key]}</span>
+              {count != null && <span className="so-count">{count}</span>}
+              <FiChevronRight className="so-link-chevron" aria-hidden="true" />
+            </button>
+          ))}
+        </nav>
 
-      {/* View Mode Toggle */}
-      <div className="flex justify-center">
-        <div className="inline-flex items-center gap-1 bg-gray-100 rounded-xl p-1 shadow-inner">
-          <button
-            onClick={() => setViewMode('active')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${
-              viewMode === 'active'
-                ? 'bg-white text-blue-700 shadow-md'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📦 Active Orders
-          </button>
-          <button
-            onClick={() => setViewMode('history')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${
-              viewMode === 'history'
-                ? 'bg-white text-purple-700 shadow-md'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📚 Order History
-          </button>
-        </div>
-      </div>
-
-      {/* Order Overview by status */}
-      <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-lg border border-gray-100">
-        <div className="flex items-start justify-between flex-wrap gap-3 mb-2">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              Order Overview
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live
-              </span>
-            </h3>
-            <p className="text-sm text-gray-500 mt-0.5">Orders by status and payment</p>
-          </div>
-        </div>
-
+        <SoFold title="Overview">
+          <div className="so-chart-wrap">
         <div className="supplier-order-chart">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={overviewChartData} layout="vertical" margin={{ top: 4, right: 30, left: 0, bottom: 4 }} barCategoryGap={8}>
@@ -1544,10 +1516,95 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             </BarChart>
           </ResponsiveContainer>
         </div>
+          </div>
+        </SoFold>
+
+        {storeId && (
+          <SoFold title="Order pricing" badge={pricingLabel}>
+            <select value={wholesalePricingMode} onChange={e => saveWholesalePricingMode(e.target.value)} className="so-select" aria-label="Order using">
+              <option value="supplier_price">Supplier price</option>
+              <option value="admin_price">Admin-set price</option>
+            </select>
+          </SoFold>
+        )}
       </div>
 
-      {/* Filters and Search */}
-      <div className="bg-white rounded-xl p-6 shadow-lg">
+      {/* Full page for whichever tab was opened */}
+      {ordersPage && (
+        <div className="so-page fixed inset-0 z-[45] flex flex-col" role="dialog" aria-modal="true" aria-label={PAGE_TITLES[ordersPage]}>
+          <header className="so-page-bar">
+            <button type="button" className="so-back" onClick={closePage} aria-label="Back to orders">
+              <FiArrowLeft className="h-5 w-5" />
+            </button>
+            <h2 className="so-page-title">{PAGE_TITLES[ordersPage]}</h2>
+            <button type="button" className="so-new so-new-small" onClick={() => setShowCreateModal(true)}>
+              <FiPlus className="h-4 w-4" /> <span>New order</span>
+            </button>
+          </header>
+          <main className="so-page-body">
+            {ordersPage === 'pos' ? (
+              <>
+      <div className="so-pos">
+
+        {products && products.length > 0 ? (
+          <div>
+            {products.map((product) => {
+              const stock = product.inventory?.[0]?.quantity || 0;
+              const stockStatus = stock > 10 ? 'text-green-600' : stock > 0 ? 'text-yellow-600' : 'text-red-600';
+              
+              return (
+                <div key={product.id} className="so-pos-row">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800 text-sm break-words">{product.name}</p>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">SKU: {product.sku || 'N/A'}</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${stockStatus} bg-opacity-10`}>
+                          📦 {stock} units
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold text-green-600">UGX {(product.price || 0).toLocaleString()}</p>
+                      <p className={`text-xs font-semibold mt-1 ${stockStatus}`}>
+                        {stock > 10 ? '✅ Good' : stock > 0 ? '⚠️ Low' : '❌ Out'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-gray-500">
+            <p className="text-sm">📭 No products in POS inventory</p>
+          </div>
+        )}
+        
+        {/* Summary Stats */}
+        {products && products.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="p-2">
+              <p className="font-bold text-gray-800">{products.length}</p>
+              <p className="text-gray-600">Total Products</p>
+            </div>
+            <div className="p-2">
+              <p className="font-bold text-gray-800">{products.reduce((sum, p) => sum + (p.inventory?.[0]?.quantity || 0), 0)}</p>
+              <p className="text-gray-600">Total Stock</p>
+            </div>
+            <div className="p-2">
+              <p className="font-bold text-green-600">UGX {(products.reduce((sum, p) => sum + (p.price || 0), 0)).toLocaleString()}</p>
+              <p className="text-gray-600">Total Value</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+              </>
+            ) : (
+              <>
+                <SoFold title="Search & filters" badge={hasActiveFilters ? 'On' : null} startOpen={hasActiveFilters}>
+            <div className="so-filters">
         <div className="space-y-4">
           {/* Search Bar */}
           <div className="relative max-w-2xl">
@@ -1632,10 +1689,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         </div>
       </div>
 
-      {/* Orders List */}
-      <div className="space-y-4">
+                </SoFold>
+      <div className="so-list">
         {filteredOrders.length === 0 ? (
-          <div className="bg-gray-50 rounded-xl p-12 text-center">
+          <div className="py-12 text-center">
             <FiPackage className="h-16 w-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-600 mb-2">No Orders Found</h3>
             <p className="text-gray-500">
@@ -1648,11 +1705,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
           filteredOrders.map((order) => (
             <div
               key={order.id}
-              className={`bg-white rounded-xl shadow-lg border-2 hover:shadow-xl transition-all duration-300 overflow-hidden ${
-                order.status === 'pending_approval' ? 'border-yellow-300' :
-                order.status === 'approved' ? 'border-green-300' :
-                order.status === 'cancelled' ? 'border-red-300' :
-                'border-gray-200'
+              className={`so-order ${
+                order.status === 'pending_approval' ? 'is-pending' :
+                order.status === 'approved' ? 'is-approved' :
+                order.status === 'cancelled' ? 'is-cancelled' : ''
               }`}
             >
               {/* Collapsed View - Order Header */}
@@ -1916,68 +1972,11 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         )}
       </div>
 
-      {/* 🛒 POS INVENTORY SECTION - Products Added to POS */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 shadow-lg">
-        <h3 className="text-xl font-bold text-gray-800 mb-3 flex items-center">
-          <span className="mr-2 text-2xl">🛒</span>
-          POS Inventory
-        </h3>
-        <p className="text-gray-600 text-sm mb-4">Products available for sale in POS system</p>
-        
-        {products && products.length > 0 ? (
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {products.map((product) => {
-              const stock = product.inventory?.[0]?.quantity || 0;
-              const stockStatus = stock > 10 ? 'text-green-600' : stock > 0 ? 'text-yellow-600' : 'text-red-600';
-              
-              return (
-                <div key={product.id} className="bg-white rounded-lg p-3 border border-gray-200 hover:border-blue-400 transition-all hover:shadow-md">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-sm break-words">{product.name}</p>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">SKU: {product.sku || 'N/A'}</span>
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${stockStatus} bg-opacity-10`}>
-                          📦 {stock} units
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-green-600">UGX {(product.price || 0).toLocaleString()}</p>
-                      <p className={`text-xs font-semibold mt-1 ${stockStatus}`}>
-                        {stock > 10 ? '✅ Good' : stock > 0 ? '⚠️ Low' : '❌ Out'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-gray-500">
-            <p className="text-sm">📭 No products in POS inventory</p>
-            <p className="text-xs text-gray-400 mt-1">Add from supplier orders to populate</p>
-          </div>
-        )}
-        
-        {/* Summary Stats */}
-        {products && products.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="bg-white rounded p-2">
-              <p className="font-bold text-gray-800">{products.length}</p>
-              <p className="text-gray-600">Total Products</p>
-            </div>
-            <div className="bg-white rounded p-2">
-              <p className="font-bold text-gray-800">{products.reduce((sum, p) => sum + (p.inventory?.[0]?.quantity || 0), 0)}</p>
-              <p className="text-gray-600">Total Stock</p>
-            </div>
-            <div className="bg-white rounded p-2">
-              <p className="font-bold text-green-600">UGX {(products.reduce((sum, p) => sum + (p.price || 0), 0)).toLocaleString()}</p>
-              <p className="text-gray-600">Total Value</p>
-            </div>
-          </div>
-        )}
-      </div>
+              </>
+            )}
+          </main>
+        </div>
+      )}
 
       {/* Create Order Modal */}
       {showCreateModal && (
