@@ -559,6 +559,40 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
     try {
       setLoading(true);
+
+      // Receiving adds stock to the order's store, so the order must have one. Orders made before
+      // the store was recorded get the receiving manager's store here; without it the database
+      // refuses the stock update ("null value in column supermarket_id of relation inventory").
+      const { data: orderRow } = await supabase.from('purchase_orders').select('supermarket_id').eq('id', orderId).maybeSingle();
+      if (orderRow && !orderRow.supermarket_id) {
+        let storeId = null;
+        try {
+          storeId = JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null;
+        } catch {
+          // Fall back to the authenticated user below.
+        }
+        if (!storeId) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.id) {
+            const { data: userRow } = await supabase
+              .from('users')
+              .select('supermarket_id')
+              .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+              .maybeSingle();
+            storeId = userRow?.supermarket_id || null;
+          }
+        }
+        if (!storeId) {
+          alert('❌ Your account is not assigned to a store, so this order cannot be received into inventory. Ask an admin to assign your account to a store, then try again.');
+          return;
+        }
+        const { error: storeError } = await supabase.from('purchase_orders').update({ supermarket_id: storeId }).eq('id', orderId);
+        if (storeError) {
+          alert(`❌ Error: ${storeError.message}`);
+          return;
+        }
+      }
+
       // Step 1: Update order status to 'received'
       const { error: statusError } = await supabase
         .from('purchase_orders')
@@ -2353,7 +2387,9 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
         deliveryInstructions,
         priority,
         notes,
-        orderedBy: managerId // Use internal user ID, not auth_id
+        orderedBy: managerId, // Use internal user ID, not auth_id
+        // The store receiving the goods: stock is added to it when the order is marked received
+        supermarketId: parsedUser.supermarket_id || null
       };
 
       const response = await supplierOrdersService.createPurchaseOrder(orderData);
