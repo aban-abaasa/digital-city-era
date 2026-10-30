@@ -177,3 +177,19 @@ html[data-theme="dark"] .sk-bottom-nav.sk-bottom-nav-customer { --bn-fade: #0615
 }
 .sk-bottom-nav-action-icon svg { filter: none; stroke-width: 2.5; }
 html[data-theme="dark"] .sk-bottom-nav-action-icon { color: #06210f; }
+
+/* ── Full-screen pages stop above the bar ─────────────────────────────── */
+/* The bar publishes its height (--sk-bottom-nav-h) and .sk-has-bottom-nav on
+   <html> while it is shown (MobileBottomTabs.jsx). Pages that cover the screen
+   with `fixed inset-0` end above it on phones, so their sticky action buttons
+   (Cancel, Add payment, Record payment...) are never underneath the tabs. */
+@media (max-width: 639px) {
+  html.sk-has-bottom-nav .co-root,
+  html.sk-has-bottom-nav .so-page {
+    bottom: var(--sk-bottom-nav-h, 0px);
+    height: auto;
+  }
+  /* The bar already clears the home indicator, so the sticky bars need no second inset. */
+  html.sk-has-bottom-nav .co-sticky-actions { padding-bottom: 0.7rem; }
+  html.sk-has-bottom-nav .co-foot { padding-bottom: 0.6rem; }
+}
