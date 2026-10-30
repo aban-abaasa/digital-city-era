@@ -196,6 +196,8 @@ const CustomerDashboard = () => {
     if (requested === 'payments') return 'installments';
     return validTabs.includes(requested) ? requested : 'overview';
   });
+  // A service picked in the Shop opens the Book screen already searching for it.
+  const [bookSearch, setBookSearch] = useState('');
   // Overview main column: Recent Orders / Recommended split into small tabs
   // instead of two stacked cards. Tabs stay visible; content collapses.
   const [overviewSubTab, setOverviewSubTab] = useState('orders');
@@ -1107,13 +1109,22 @@ const CustomerDashboard = () => {
             )}
 
             {/* Shop — self-checkout POS */}
-            {activeTab === 'shop' && <CustomerSelfCheckout user={user} shopMode={shopMode} onShopModeChange={setShopMode} />}
+            {activeTab === 'shop' && (
+              <CustomerSelfCheckout
+                user={user}
+                shopMode={shopMode}
+                onShopModeChange={setShopMode}
+                onBookService={(service) => { setBookSearch(service.name); setActiveTab('book-service'); }}
+              />
+            )}
 
             {/* Book — appointment-style service bookings, reusing the
                 existing chat/call system for follow-up with the store */}
             {activeTab === 'book-service' && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <BrowseServicesAndBook
+                  key={bookSearch}
+                  initialSearch={bookSearch}
                   identity={{
                     userId: user?.id,
                     name: customer?.full_name || user?.email || 'Customer',

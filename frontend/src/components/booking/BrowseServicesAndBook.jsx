@@ -67,11 +67,11 @@ const norm = (s) => (s || '').toString().toLowerCase();
 // Customer "Book" tab: search/filter every bookable service across every
 // business that offers them (not just one store at a time), then
 // BookServiceModal, plus a list of this customer's own bookings.
-const BrowseServicesAndBook = ({ identity }) => {
+const BrowseServicesAndBook = ({ identity, initialSearch = '' }) => {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const [businessType, setBusinessType] = useState('all');
   const [businessId, setBusinessId] = useState(null);
   const [bookingKind, setBookingKind] = useState('all');
