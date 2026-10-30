@@ -111,3 +111,13 @@ test('quick list: part-filled stock is rounded down to whole items', () => {
   const { ready } = checkQuickRows([{ id: 'a', name: 'Cabbage', price: '1000', stock: '3.7' }], []);
   assert.equal(ready[0].initial_stock, 3);
 });
+
+test('quick list: a photo rides along, and a photo-only row is not treated as empty', () => {
+  const photo = { name: 'sugar.jpg' };
+  const { ready, issues } = checkQuickRows([
+    { id: 'a', name: 'Sugar', price: '5000', photoFile: photo },
+    { id: 'b', name: '', price: '', photoFile: photo }
+  ], []);
+  assert.equal(ready[0].photo_file, photo);
+  assert.equal(issues.b, 'Add a name');
+});

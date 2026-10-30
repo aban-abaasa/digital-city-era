@@ -23,7 +23,6 @@ import InventoryManagement from '../components/InventoryManagement';
 import SupplierManagement from '../components/SupplierManagement';
 import ProductInventoryInterface from '../components/ProductInventoryInterface';
 import AddProductModal from '../components/AddProductModal';
-import AddCashierModal from '../components/AddCashierModal';
 import Receipt from '../components/Receipt';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
 import OrderInventoryPOSControl from '../components/OrderInventoryPOSControl';
@@ -254,7 +253,6 @@ const ManagerPortal = () => {
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showSupplierManagementModal, setShowSupplierManagementModal] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
-  const [showAddCashierModal, setShowAddCashierModal] = useState(false);
   // Bumped by the dashboard's "New purchase order" shortcut so the Orders page opens its create form
   const [orderCreateSignal, setOrderCreateSignal] = useState(0);
   const [editModal, setEditModal] = useState({
@@ -9363,7 +9361,6 @@ _Automated Business Report System_`)}`;
           <div className="p-6 bg-white animate-fadeIn">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {[
-                { title: 'Add Team', icon: FiUsers, color: 'bg-blue-500 hover:bg-blue-600', action: () => setShowAddCashierModal(true) },
                 { title: 'New Supplier', icon: FiCheckCircle, color: 'bg-green-500 hover:bg-green-600', action: () => setActiveTab('suppliers') },
                 { title: 'Check Orders', icon: FiTruck, color: 'bg-orange-500 hover:bg-orange-600', action: () => setActiveTab('orders') },
                 { title: 'View Stock', icon: FiPackage, color: 'bg-purple-500 hover:bg-purple-600', action: () => setShowInventoryModal(true) },
@@ -10163,7 +10160,6 @@ SUPERMARTKERA Uganda Management Team
   // Only tabs that exist in ManagerNavigation can be opened
   const MANAGER_NAV_TABS = ['overview', 'orders', 'business-operations', 'ican-wallet'];
   const openManagerSection = (target) => {
-    if (target === 'add-cashier') { setShowAddCashierModal(true); return; }
     if (target === 'inventory-modal') { setShowInventoryModal(true); return; }
     if (target === 'new-order') {
       setActiveTab('orders');
@@ -10606,17 +10602,6 @@ SUPERMARTKERA Uganda Management Team
 
       {/* Edit Modal */}
       {renderEditModal()}
-
-      {/* Add Cashier Modal */}
-      {showAddCashierModal && (
-        <AddCashierModal
-          onClose={() => setShowAddCashierModal(false)}
-          onSuccess={() => {
-            setShowAddCashierModal(false);
-            loadTeamPerformanceAnalytics();
-          }}
-        />
-      )}
 
       {/* Inventory Management Modal */}
       <InventoryManagement 
