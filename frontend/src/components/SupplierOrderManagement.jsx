@@ -15,6 +15,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LabelList } from 'recharts';
+import inventoryService from '../services/inventorySupabaseService';
 import supplierOrdersService, { getBusinessWalletBalance, resolveBusinessProfileId } from '../services/supplierOrdersService';
 import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
@@ -196,6 +197,14 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
    */
   const loadProducts = async () => {
     try {
+      // Every store's active products are readable by any signed-in user (the
+      // customer showcase needs that), so the manager's list must be filtered
+      // to his own store here.
+      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      if (!supermarketId) {
+        setProducts([]);
+        return;
+      }
       const { data, error } = await supabase
         .from('products')
         .select(`
@@ -212,7 +221,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             current_stock,
             minimum_stock
           )
-        `);
+        `)
+        .eq('supermarket_id', supermarketId);
 
       if (error) throw error;
 
@@ -3126,10 +3136,16 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
       try {
         console.log('🛒 Adding product to POS inventory:', formData.productName);
         
+        // Only this store's catalog: a same-named product in another store must
+        // never be matched (its stock would be changed) and a new one belongs here.
+        const supermarketId = await inventoryService.getCurrentSupermarketId();
+        if (!supermarketId) throw new Error('No supermarket is assigned to this account.');
+
         // First, try to find existing product - use exact match on name
         const { data: existingProducts, error: searchError } = await supabase
           .from('products')
           .select('id, stock')
+          .eq('supermarket_id', supermarketId)
           .eq('name', formData.productName);
 
         let posUpdateResult;
@@ -3169,6 +3185,7 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
               brand: 'Supplier Order',
               unit: 'piece',
               description: formData.notes || `Added from supplier order - ${new Date().toLocaleDateString()}`,
+              supermarket_id: supermarketId,
               created_at: new Date().toISOString()
             })
             .select();
