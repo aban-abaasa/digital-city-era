@@ -10,8 +10,10 @@ import inventoryService from '../services/inventorySupabaseService';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import { familyName } from '../utils/productFamilies';
 import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ProductFlavorsModal = ({ product, products, storeName, uploadPhoto, generateBarcode, onClose, onCreated }) => {
+  useBackLayer(true, onClose);
   const [rows, setRows] = useState([]);
   // The product may itself be a flavor ("Fanta - Orange"); the new ones share its family name ("Fanta")
   const [sharedName, setSharedName] = useState(familyName(product.name));

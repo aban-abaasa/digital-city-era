@@ -24,6 +24,7 @@ import {
 import AnimatedCounter from '../components/AnimatedCounter';
 import ClassicNotificationList from '../components/ClassicNotificationList';
 import { useApp } from '../contexts/AppContext';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const Customers = () => {
   const { state, actions } = useApp();
@@ -32,6 +33,7 @@ const Customers = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  useBackLayer(showAddModal || showEditModal, () => { setShowAddModal(false); setShowEditModal(false); });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [customerMetrics, setCustomerMetrics] = useState({

@@ -29,6 +29,7 @@ import {
   FiClock,
   FiTarget
 } from 'react-icons/fi';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const Products = () => {
   const [products, setProducts] = useState([]);
@@ -39,6 +40,8 @@ const Products = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  useBackLayer(showAddModal || showEditModal, () => { setShowAddModal(false); setShowEditModal(false); });
+  useBackLayer(showViewModal, () => setShowViewModal(false));
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);

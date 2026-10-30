@@ -1,9 +1,11 @@
 import { FiX } from 'react-icons/fi';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 // Fullscreen tap-to-view for any message/status image — click the image
 // anywhere it's rendered to open it here, click the backdrop or the X to
 // dismiss. Deliberately just takes a src/alt: no carousel, no timers.
 export default function ImageLightbox({ src, alt = '', onClose }) {
+  useBackLayer(!!src, onClose);
   if (!src) return null;
   return (
     <div

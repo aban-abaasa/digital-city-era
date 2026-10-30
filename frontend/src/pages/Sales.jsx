@@ -52,12 +52,14 @@ import {
   PolarRadiusAxis,
   Radar
 } from 'recharts';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const Sales = () => {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSale, setSelectedSale] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  useBackLayer(showModal, () => setShowModal(false));
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState('7d');
   const [paymentFilter, setPaymentFilter] = useState('all');

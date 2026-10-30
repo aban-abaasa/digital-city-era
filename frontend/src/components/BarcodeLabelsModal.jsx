@@ -10,8 +10,10 @@ import { supabase } from '../services/supabase';
 import { printableBarcode } from '../utils/barcodeSymbols';
 import { downloadBarcodeSheet, openBarcodeSheet } from '../utils/barcodePdf';
 import { generateStoreBarcode, generateStoreBarcodes, isPlaceholderBarcode, isStoreBarcode } from '../utils/storeBarcodes';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const BarcodeLabelsModal = ({ products, categories, supermarketId, storeName, isAdmin, formatCurrency, onClose, onBarcodesAssigned }) => {
+  useBackLayer(true, onClose);
   const [scope, setScope] = useState('store'); // 'store' = the barcodes made here, 'all' = every product
   const [categoryId, setCategoryId] = useState('');
   const [includePrice, setIncludePrice] = useState(true);

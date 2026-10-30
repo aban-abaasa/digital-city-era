@@ -8,8 +8,10 @@ import {
   FiInfo, FiZap, FiLock, FiSearch, FiCalendar, FiGlobe
 } from 'react-icons/fi';
 import paymentService from '../services/paymentService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PaymentSecurity = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [securityData, setSecurityData] = useState({
     fraudAlerts: [],
     riskTransactions: [],

@@ -8,8 +8,10 @@ import {
   FiArrowDown, FiMoreHorizontal, FiShield, FiHeart, FiStar
 } from 'react-icons/fi';
 import paymentService from '../services/paymentService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PaymentAnalytics = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('7d');

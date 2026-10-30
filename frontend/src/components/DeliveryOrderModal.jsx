@@ -5,6 +5,7 @@ import {
   FiMail, FiHome, FiPackage, FiCheckCircle, FiCreditCard, FiShield,
   FiPlus, FiMinus, FiXCircle, FiStar, FiNavigation
 } from 'react-icons/fi';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const DeliveryOrderModal = ({
   isOpen,
@@ -17,6 +18,7 @@ const DeliveryOrderModal = ({
   setDeliveryInfo,
   onSubmit
 }) => {
+  useBackLayer(isOpen, onClose);
   const [currentStep, setCurrentStep] = useState('delivery-info'); // delivery-info, review, payment, confirmation
   const [paymentMethod, setPaymentMethod] = useState('ican');
   const [isSubmitting, setIsSubmitting] = useState(false);

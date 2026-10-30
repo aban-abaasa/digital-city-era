@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 import { ICAN_TO_UGX, SOURCE_APP, formatICAN, requestIcanPayout } from '@/services/icanWalletService';
 import { supabase } from '@/services/supabase';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 export default function SendIcanOutModal({ userId, balance, onClose, onSuccess }) {
+  useBackLayer(true, onClose);
   const [icanAmount, setIcanAmount] = useState('');
   const [channel, setChannel] = useState('mobilemoneyuganda');
   const [network, setNetwork] = useState('MTN');

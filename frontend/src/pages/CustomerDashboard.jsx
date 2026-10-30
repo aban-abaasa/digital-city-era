@@ -58,6 +58,8 @@ import OverflowTabs from '../components/OverflowTabs';
 import { InHeaderTabs } from '../components/PortalHeaderSlot';
 import { headerTabClass } from '../components/portalHeaderSlotUtils';
 import MobileMenuSheet from '../components/customerDashboard/MobileMenuSheet';
+import { PhoneBackArrow } from '../components/PhonePortalNav';
+import { useBackLayer } from '../hooks/useBackLayer';
 import MobileBottomTabs from '../components/MobileBottomTabs';
 import PhoneOverviewHero from '../components/customerDashboard/PhoneOverviewHero';
 import DesktopOverview from '../components/customerDashboard/DesktopOverview';
@@ -196,6 +198,8 @@ const CustomerDashboard = () => {
     if (requested === 'payments') return 'installments';
     return validTabs.includes(requested) ? requested : 'overview';
   });
+  // Phone/browser Back walks a sub-section back to Overview before leaving the page.
+  useBackLayer(activeTab !== 'overview', () => setActiveTab('overview'));
   // A service picked in the Shop opens the Book screen already searching for it.
   const [bookSearch, setBookSearch] = useState('');
   // Overview main column: Recent Orders / Recommended split into small tabs
@@ -223,6 +227,9 @@ const CustomerDashboard = () => {
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [showRewardsModal, setShowRewardsModal] = useState(false);
   const [showReferModal, setShowReferModal] = useState(false);
+  useBackLayer(showTrackModal, () => setShowTrackModal(false));
+  useBackLayer(showRewardsModal, () => setShowRewardsModal(false));
+  useBackLayer(showReferModal, () => setShowReferModal(false));
   const [trackingNumber, setTrackingNumber] = useState('');
   // Real ride/delivery bookings (mbg_rides, made via EnhancedRideRequest)
   // for the Track Orders modal — separate from customerData.recentOrders,
@@ -802,6 +809,7 @@ const CustomerDashboard = () => {
         <div className="border-b border-[#c4a052]/25 bg-white sm:hidden dark:border-slate-700 dark:bg-slate-900">
           <div className="flex h-12 items-center justify-between gap-3 px-4">
             <div className="flex min-w-0 items-center gap-2">
+              <PhoneBackArrow atHome={activeTab === 'overview'} onHome={() => setActiveTab('overview')} />
               <ActiveTabIcon className="h-[17px] w-[17px] flex-shrink-0 text-indigo-600" />
               <h2 className="truncate font-classic-display text-[18px] font-semibold leading-none text-slate-800 dark:text-slate-100">
                 {activeTabMeta.label}

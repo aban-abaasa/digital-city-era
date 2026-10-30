@@ -5,8 +5,10 @@ import {
   FiTag, FiClock, FiTrendingUp, FiGift, FiZap
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ProductWishlist = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [wishlistItems, setWishlistItems] = useState([
     {
       id: 1,

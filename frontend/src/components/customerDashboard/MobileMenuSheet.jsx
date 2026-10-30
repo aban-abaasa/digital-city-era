@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX, FiCreditCard } from 'react-icons/fi';
+import { PhonePortalSection } from '../PhonePortalNav';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 // Phone navigation as a bottom sheet: profile header, then every section as a
 // big, thumb-sized tile. Replaces the small 3-dot dropdown, which was easy to
@@ -14,6 +16,8 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
   // the effect (and re-toggling body scroll lock) on every parent render.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // Phone/browser Back closes the sheet instead of leaving the page.
+  useBackLayer(open, () => onCloseRef.current());
 
   useEffect(() => {
     if (!open) return undefined;
@@ -104,6 +108,9 @@ export default function MobileMenuSheet({ open, onClose, tabs, activeTab, onSele
           </button>
           )}
         </div>
+
+        {/* Multi-portal accounts: the hidden header's switch-portal / profile / sign-out live here. */}
+        <PhonePortalSection onDone={onClose} />
       </div>
     </div>,
     document.body

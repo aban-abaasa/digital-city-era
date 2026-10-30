@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import UnifiedProfilePage from '../pages/UnifiedProfilePage';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 /**
  * Shows the single unified profile page as a full-screen page layered over
@@ -9,6 +10,7 @@ import UnifiedProfilePage from '../pages/UnifiedProfilePage';
  * overflow/z-index can clip it (same reasoning as PortalSwitcher's dropdown).
  */
 const ProfileModal = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   if (!isOpen) return null;
 
   return createPortal(

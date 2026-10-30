@@ -22,6 +22,7 @@ import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
 import OrderItemsSelector from './OrderItemsSelector';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
@@ -89,6 +90,8 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  useBackLayer(!!selectedOrder, () => setSelectedOrder(null));
+  useBackLayer(showPaymentModal, () => setShowPaymentModal(false));
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false); // NEW: Approval with payment modal
   const [approvalOrderId, setApprovalOrderId] = useState(null); // NEW: Order being approved
@@ -2230,6 +2233,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
   const [icanBalance, setIcanBalance] = useState(null);
   const [icanBalanceLoading, setIcanBalanceLoading] = useState(false);
   const [showPinPrompt, setShowPinPrompt] = useState(false);
+  useBackLayer(showPinPrompt, () => setShowPinPrompt(false));
   const [walletPin, setWalletPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [verifyingPin, setVerifyingPin] = useState(false);

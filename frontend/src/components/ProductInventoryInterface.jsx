@@ -13,6 +13,7 @@ import {
   downloadProductTemplate,
   exportRowsToFile
 } from '../utils/inventoryFileIO';
+import { useBackLayer } from '../hooks/useBackLayer';
 // import PurchaseOrderManager from './PurchaseOrderManager'; // COMMENTED OUT - Using order system instead
 
 const ProductInventoryInterface = ({ defaultView = 'all' }) => {
@@ -21,6 +22,8 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
   const [viewFilter, setViewFilter] = useState(defaultView); // 'all' | 'products' | 'services'
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [showReorderModal, setShowReorderModal] = useState(false);
+  useBackLayer(showAdjustModal, () => setShowAdjustModal(false));
+  useBackLayer(showReorderModal, () => setShowReorderModal(false));
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   // const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false); // COMMENTED OUT
   const [selectedProduct, setSelectedProduct] = useState(null);

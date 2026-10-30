@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { formatICAN, buyICANFromWallet, getMyTradingInfo } from '@/services/icanWalletService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 // Buying icaneracoin spends the money in the user's own IcanEra Wallet, in THEIR OWN currency, at
 // the coin's LIVE value in that currency —
 // an exchange between two balances they already hold, so there is no payment window. (Flutterwave
 // is for money entering or leaving the platform.)
 export default function BuyIcanModal({ userId, onClose, onSuccess }) {
+  useBackLayer(true, onClose);
   const [spendInput, setSpendInput] = useState('');
   const [processing, setProcessing] = useState(false);
   // The user's own currency, the live price of a coin in it, and the money they hold in it — one

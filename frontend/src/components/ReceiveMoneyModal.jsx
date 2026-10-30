@@ -11,6 +11,7 @@ import {
   getActiveIcanPaymentRequests,
   deleteIcanPaymentRequest,
 } from '../services/icanPaymentRequestService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ReceiveMoneyModal = ({ 
   isOpen, 
@@ -21,6 +22,7 @@ const ReceiveMoneyModal = ({
   prefilledAmount = null,
   prefilledDescription = ''
 }) => {
+  useBackLayer(isOpen, onClose);
   const initialFormData = {
     amount: prefilledAmount || '',
     description: prefilledDescription || ''

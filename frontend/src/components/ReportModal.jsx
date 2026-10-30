@@ -3,8 +3,10 @@ import { FiX, FiMessageSquare, FiMail, FiDownload, FiBarChart, FiCalendar, FiFil
 import AdvancedReportService from '../services/advancedReportService';
 import { toast } from 'react-toastify';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ReportModal = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
   const [reportConfig, setReportConfig] = useState({

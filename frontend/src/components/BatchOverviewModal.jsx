@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { getExpiryStatus, formatExpiryDate } from '../utils/productExpiry';
 import { nextBatch } from '../utils/productBatches';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const PILL = {
   expired: 'oi-pill-out',
@@ -13,6 +14,7 @@ const PILL = {
 };
 
 const BatchOverviewModal = ({ products, batchesByProduct, onOpenProduct, onClose }) => {
+  useBackLayer(true, onClose);
   const [query, setQuery] = useState('');
   const [onlyTracked, setOnlyTracked] = useState(false);
 

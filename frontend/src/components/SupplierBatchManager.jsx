@@ -14,6 +14,7 @@ import {
   formatExpiryDate,
   isMissingBatchTable,
 } from '../utils/supplierBatchExpiry';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const fmtUGX = (n) => 'UGX ' + Number(n || 0).toLocaleString();
 
@@ -33,6 +34,7 @@ const todayIso = () => {
 const emptyDraft = () => ({ batch_number: '', quantity: '', expiry_date: '', discount_mode: 'auto', discount_percent: '' });
 
 export default function SupplierBatchManager({ item, batches, onClose, onChanged }) {
+  useBackLayer(true, onClose);
   const [draft, setDraft] = useState(emptyDraft);
   const [edits, setEdits] = useState({}); // batchId -> partial fields being edited
   const [busy, setBusy] = useState(null);

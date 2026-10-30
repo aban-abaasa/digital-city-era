@@ -10,8 +10,10 @@ import {
   FiCopy, FiExternalLink, FiWifi, FiBluetooth, FiMonitor, FiSave
 } from 'react-icons/fi';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const DigitalReceipt = ({ isOpen, onClose, receiptData }) => {
+  useBackLayer(isOpen, onClose);
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
   const storeWebsite = branding?.publicWebsiteUrl || receiptData?.store?.website || window.location.origin;

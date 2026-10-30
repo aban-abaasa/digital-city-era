@@ -3,8 +3,10 @@ import { FiX, FiPlus, FiMinus, FiMessageSquare, FiMail, FiDownload, FiSend, FiPa
 import orderService from '../services/orderService';
 import orderApiService from '../services/orderApiService';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const OrderModal = ({ isOpen, onClose, supplier }) => {
+  useBackLayer(isOpen, onClose);
   const [orderItems, setOrderItems] = useState([]);
   const [newItem, setNewItem] = useState({
     name: '',

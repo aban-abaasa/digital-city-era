@@ -15,8 +15,10 @@ import { toast } from 'react-toastify';
 import { FiX, FiCamera, FiTrash2, FiStar, FiPlus } from 'react-icons/fi';
 import ProductPhotoSource from './ProductPhotoSource';
 import { saveServiceDetails, saveServiceImages, uploadServicePhoto } from '../services/servicePhotoService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const ServiceEditModal = ({ service, openPhotoPicker = false, onClose, onChange }) => {
+  useBackLayer(true, onClose);
   const [name, setName] = useState(service.name || '');
   const [description, setDescription] = useState(service.description || '');
   const [images, setImages] = useState(Array.isArray(service.images) ? service.images.filter(Boolean) : []);

@@ -44,6 +44,7 @@ import {
   FiTruck,
   FiServer
 } from 'react-icons/fi';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const POS = () => {
   const navigate = useNavigate();
@@ -115,6 +116,8 @@ const POS = () => {
   
   // Supplier Order Management
   const [showOrderManagement, setShowOrderManagement] = useState(false);
+  useBackLayer(showOrderManagement, () => setShowOrderManagement(false));
+  useBackLayer(showSearchTab, () => setShowSearchTab(false));
 
   useEffect(() => {
     fetchProducts();

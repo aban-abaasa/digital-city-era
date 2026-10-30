@@ -12,8 +12,10 @@ import React, { useState } from 'react';
 import { FiX, FiUserPlus, FiMail, FiPhone, FiUser } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const AddCashierModal = ({ onClose, onSuccess }) => {
+  useBackLayer(true, onClose);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');

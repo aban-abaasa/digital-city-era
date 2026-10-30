@@ -6,8 +6,10 @@ import {
   FiClock, FiCalendar, FiMapPin, FiPhone, FiMail as FiEmail, FiShield
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const AdvancedPOS = ({ isOpen, onClose }) => {
+  useBackLayer(isOpen, onClose);
   const [currentCart, setCurrentCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -16,6 +18,7 @@ const AdvancedPOS = ({ isOpen, onClose }) => {
   const [tax, setTax] = useState(8.5);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  useBackLayer(showCustomerModal, () => setShowCustomerModal(false));
 
   const [products] = useState([
     { id: 1, name: 'iPhone 15 Pro Max', price: 1199.99, category: 'Electronics', stock: 15, image: '📱' },

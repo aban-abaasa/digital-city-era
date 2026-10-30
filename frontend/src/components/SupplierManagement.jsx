@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import PaymentService from '../services/paymentService';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const SupplierManagement = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState('suppliers');
@@ -175,6 +176,11 @@ const SupplierManagement = ({ isOpen, onClose }) => {
   const [showStockAdjustment, setShowStockAdjustment] = useState(false);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
+  useBackLayer(showPaymentHistory, () => setShowPaymentHistory(false));
+  useBackLayer(!!selectedOrder, () => setSelectedOrder(null));
+  useBackLayer(showDocumentViewer, () => setShowDocumentViewer(false));
+  useBackLayer(showStockAdjustment, () => setShowStockAdjustment(false));
+  useBackLayer(showAddProduct, () => setShowAddProduct(false));
 
   const [orders, setOrders] = useState([
     {

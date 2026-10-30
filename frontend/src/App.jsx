@@ -62,6 +62,8 @@ import POS from '@/pages/POS';
 import CustomerPayment from '@/pages/CustomerPayment';
 import CustomerDelivery from '@/pages/CustomerDelivery';
 import ICANWalletPage from '@/pages/ICANWalletPage';
+import PortalHub from '@/pages/PortalHub';
+import { HUB_ROUTE } from '@/utils/phoneChrome';
 import UnifiedProfilePage from '@/pages/UnifiedProfilePage';
 import DevPanel from '@/pages/DevPanel';
 import InvoicePublicPage from '@/pages/InvoicePublicPage';
@@ -347,6 +349,9 @@ function App() {
                   use the supplier portal to receive and dispatch orders. */}
               <Route path="/supplier-portal" element={<RoleProtectedRoute minLevel={2} exactRoles={['supplier']}><SupplierPortal /></RoleProtectedRoute>} />
               <Route path="/supplier" element={<RoleProtectedRoute minLevel={2} exactRoles={['supplier']}><SupplierPortal /></RoleProtectedRoute>} />
+
+              {/* Phone home screen for accounts with more than one portal (header + a card per portal) */}
+              <Route path={HUB_ROUTE} element={<RoleProtectedRoute minLevel={0}><PortalHub /></RoleProtectedRoute>} />
 
               <Route path="/customer-portal" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />
               <Route path="/customer" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />

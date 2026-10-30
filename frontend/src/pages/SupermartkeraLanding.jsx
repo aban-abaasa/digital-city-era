@@ -45,6 +45,7 @@ import {
 import { getShowcaseProducts } from '../services/showcaseProductsService';
 import { Linkify } from '../utils/linkify';
 import ProductOfLink from '../components/ProductOfLink';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 const SHOWCASE_VISIBLE_COUNT = 6;
 const SHOWCASE_ROTATE_MS = 4500;
@@ -176,6 +177,7 @@ const SupermartkeraLanding = () => {
   const [guestReplyForm, setGuestReplyForm] = useState({ name: '', email: '' });
   const [guestLikeKey] = useState(() => getOrCreateGuestLikeKey());
   const [selectedContributor, setSelectedContributor] = useState(null);
+  useBackLayer(!!selectedContributor, () => setSelectedContributor(null));
   const [contributorBalance, setContributorBalance] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
