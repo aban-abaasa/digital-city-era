@@ -13,6 +13,7 @@ import {
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
 import { catalogItemOffer, groupBatchesByItem } from '../utils/supplierBatchExpiry';
+import { normalizeName } from '../utils/addProductSmarts';
 import '../styles/supplier-order-create.css';
 
 const initialOf = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
@@ -62,7 +63,6 @@ const OrderItemsSelector = ({
   const [unitsPerBox, setUnitsPerBox] = useState(12);
   const [unitPrice, setUnitPrice] = useState(0);
   const [buyingPrice, setBuyingPrice] = useState(0);
-  const [supplierPrices, setSupplierPrices] = useState({});
   const [supplierCatalogItems, setSupplierCatalogItems] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
 
@@ -81,7 +81,6 @@ const OrderItemsSelector = ({
 
   useEffect(() => {
     if (!supplierId) {
-      setSupplierPrices({});
       setSupplierCatalogItems([]);
       return;
     }
@@ -164,13 +163,32 @@ const OrderItemsSelector = ({
 
       const offerings = [...catalogWithOffers, ...posOfferings];
       setSupplierCatalogItems(offerings);
-      setSupplierPrices(Object.fromEntries(offerings.map(item => [item.name.trim().toLowerCase(), Number(item.price_per_unit) || 0])));
     };
     loadSupplierOfferings();
   }, [supplierId, supplierBusinessProfileId]);
 
+  // The supplier's offer for one of the store's products: matched by barcode, then SKU, then by name
+  // ignoring case, punctuation and spacing ("Rice - 1KG" is "rice 1kg").
+  const offerIndex = useMemo(() => {
+    const index = new Map();
+    const put = (key, item) => { if (key && !index.has(key)) index.set(key, item); };
+    supplierCatalogItems.forEach((item) => {
+      put(item.barcode ? `b:${item.barcode}` : null, item);
+      put(item.sku ? `s:${String(item.sku).toLowerCase()}` : null, item);
+      put(`n:${normalizeName(item.name)}`, item);
+    });
+    return index;
+  }, [supplierCatalogItems]);
+
+  const supplierOfferFor = (product) => (
+    (product.barcode && offerIndex.get(`b:${product.barcode}`))
+    || (product.sku && offerIndex.get(`s:${String(product.sku).toLowerCase()}`))
+    || offerIndex.get(`n:${normalizeName(product.name)}`)
+    || null
+  );
+
   const priceFor = (product) => pricingMode === 'supplier_price'
-    ? (supplierPrices[product.name?.trim().toLowerCase()] || 0)
+    ? (Number(supplierOfferFor(product)?.price_per_unit) || 0)
     : (Number(product.wholesale_price) || Number(product.cost_price) || 0);
 
   const addSupplierCatalogItem = (catalogItem) => {
@@ -542,13 +560,17 @@ const OrderItemsSelector = ({
   const query = searchQuery.trim().toLowerCase();
 
   const shownProducts = useMemo(() => {
-    if (!query) return products;
-    return products.filter((p) =>
+    const matching = !query ? products : products.filter((p) =>
       (p.name && p.name.toLowerCase().includes(query)) ||
       (p.sku && p.sku.toLowerCase().includes(query)) ||
       (p.barcode && p.barcode.includes(query))
     );
-  }, [products, query]);
+    if (!supplierId || supplierCatalogItems.length === 0) return matching;
+    // Products this supplier sells come first, so their prices are the first thing you see
+    const sold = matching.filter((p) => supplierOfferFor(p));
+    return [...sold, ...matching.filter((p) => !supplierOfferFor(p))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, query, supplierId, supplierCatalogItems, offerIndex]);
 
   const shownCatalog = useMemo(() => {
     if (!query) return supplierCatalogItems;
@@ -635,14 +657,22 @@ const OrderItemsSelector = ({
         <div className="ois-grid">
           {shownProducts.map((product) => {
             const price = priceFor(product);
+            const offer = supplierId ? supplierOfferFor(product) : null;
+            const offerPrice = Number(offer?.price_per_unit) || 0;
             const idx = rowIndexOfProduct(product.id);
+            const noPriceText = needsSupplierFirst ? 'Pick a supplier'
+              : pricingMode === 'supplier_price' && supplierId ? 'Not in supplier list'
+              : 'No price yet';
             return (
               <OisTile
                 key={product.id}
-                image={firstImage(product.images)}
+                image={firstImage(product.images) || offer?.image_url}
                 name={product.name}
-                price={price > 0 ? formatCurrency(price) : (needsSupplierFirst ? 'Pick a supplier' : 'No price yet')}
-                sub={`Stock ${product.current_stock || 0}`}
+                price={price > 0 ? formatCurrency(price) : noPriceText}
+                sub={pricingMode === 'admin_price' && offerPrice > 0
+                  ? `Supplier ${formatCurrency(offerPrice)} · Stock ${product.current_stock || 0}`
+                  : `Stock ${product.current_stock || 0}`}
+                note={pricingMode === 'supplier_price' && price > 0 ? 'Supplier price' : null}
                 qty={idx >= 0 ? (orderItems[idx]?.display_quantity ?? orderItems[idx]?.quantity) : null}
                 onStep={(delta) => bumpItem(idx, delta)}
                 dimmed={price <= 0}
