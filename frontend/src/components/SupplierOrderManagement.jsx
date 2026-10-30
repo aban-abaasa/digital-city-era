@@ -2228,6 +2228,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 
   // Page state: which sections are open, what is missing, and where to scroll to
   const [errors, setErrors] = useState({});
+  const [supplierQuery, setSupplierQuery] = useState('');
   const [openSections, setOpenSections] = useState({ supplier: true, delivery: false, details: false, pay: false });
   const sectionRefs = { supplier: useRef(null), items: useRef(null), delivery: useRef(null), details: useRef(null), pay: useRef(null) };
   const toggleSection = (key) => setOpenSections((previous) => ({ ...previous, [key]: !previous[key] }));
@@ -2564,33 +2565,56 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
               <CoFold
                 icon="🏢"
                 title="Supplier or wholesaler"
-                summary={chosenSupplier ? `${chosenSupplier.business_name} (${chosenSupplier.supplier_code})` : (errors.supplier || 'Tap to choose')}
+                summary={chosenSupplier ? chosenSupplier.business_name : (errors.supplier || 'Tap to choose')}
                 tone={chosenSupplier ? 'ok' : errors.supplier ? 'bad' : undefined}
                 open={openSections.supplier}
                 onToggle={() => toggleSection('supplier')}
                 hasError={Boolean(errors.supplier)}
                 sectionRef={sectionRefs.supplier}
               >
-                <select
-                  value={selectedSupplier}
-                  onChange={(e) => {
-                    setSelectedSupplier(e.target.value);
-                    setErrors((previous) => ({ ...previous, supplier: undefined }));
-                    if (e.target.value) {
-                      setOpenSections((previous) => ({ ...previous, supplier: false }));
-                      if (orderItems.length === 0) goTo('items');
-                    }
-                  }}
-                  className="co-input"
-                  aria-label="Supplier or wholesaler"
-                >
-                  <option value="">-- Choose supplier or wholesaler --</option>
-                  {suppliers.map(supplier => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.business_name} ({supplier.supplier_code})
-                    </option>
-                  ))}
-                </select>
+                {suppliers.length > 6 && (
+                  <div className="co-pick-search">
+                    <FiSearch className="co-pick-search-icon" aria-hidden="true" />
+                    <input
+                      type="search"
+                      className="co-input"
+                      value={supplierQuery}
+                      onChange={(e) => setSupplierQuery(e.target.value)}
+                      placeholder="Find a supplier"
+                      aria-label="Find a supplier"
+                    />
+                  </div>
+                )}
+                <ul className="co-pick-list" role="listbox" aria-label="Supplier or wholesaler">
+                  {[...suppliers]
+                    .filter((supplier) => (supplier.business_name || '').toLowerCase().includes(supplierQuery.trim().toLowerCase()))
+                    .sort((first, second) => (first.business_name || '').localeCompare(second.business_name || ''))
+                    .map((supplier) => {
+                      const chosen = supplier.id === selectedSupplier;
+                      return (
+                        <li key={supplier.id}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={chosen}
+                            className={`co-pick-row${chosen ? ' is-chosen' : ''}`}
+                            onClick={() => {
+                              setSelectedSupplier(supplier.id);
+                              setSupplierQuery('');
+                              setErrors((previous) => ({ ...previous, supplier: undefined }));
+                              setOpenSections((previous) => ({ ...previous, supplier: false }));
+                              if (orderItems.length === 0) goTo('items');
+                            }}
+                          >
+                            <span className="co-pick-mark" aria-hidden="true">{(supplier.business_name || '?').trim()[0]?.toUpperCase()}</span>
+                            <span className="co-pick-name">{supplier.business_name}</span>
+                            {chosen && <FiCheck className="co-pick-check" aria-hidden="true" />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  {suppliers.length === 0 && <li className="ois-empty">No suppliers available yet.</li>}
+                </ul>
               </CoFold>
 
               {/* 2. Products: a grid you tap */}

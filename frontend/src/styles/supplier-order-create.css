@@ -230,3 +230,16 @@ textarea.co-input { min-height: 4.2rem; resize: vertical; }
 .co-legacy button[class*='border-2'] { border-radius: 10px; }
 [data-theme='dark'] .co-legacy :is([class*='-700'], [class*='-800'], [class*='-900']):not(button):not([class*='bg-']) { color: var(--c-ink) !important; }
 @media (max-width: 560px) { .co-legacy .grid { grid-template-columns: minmax(0, 1fr) !important; } }
+
+/* supplier list: just names, one line each, with a brass initial */
+.co-pick-search { position: relative; margin-bottom: 0.4rem; }
+.co-pick-search-icon { position: absolute; left: 0.85rem; top: 50%; width: 1.1rem; height: 1.1rem; transform: translateY(-50%); color: var(--c-muted); pointer-events: none; }
+.co-pick-search .co-input { padding-left: 2.5rem; }
+.co-pick-list { list-style: none; max-height: min(24rem, 52dvh); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--c-line); }
+.co-pick-row { display: flex; width: 100%; min-height: 3.4rem; align-items: center; gap: 0.8rem; border: 0; border-bottom: 1px solid var(--c-line); background: none; color: var(--c-ink); padding: 0.4rem 0.4rem; text-align: left; font-size: 1rem; font-weight: 700; cursor: pointer; }
+.co-pick-row:hover { background: var(--c-gold-soft); }
+.co-pick-row.is-chosen { background: var(--c-gold-soft); }
+.co-pick-mark { display: inline-flex; width: 2.2rem; height: 2.2rem; flex: none; align-items: center; justify-content: center; border: 1px solid var(--c-gold); border-radius: 50%; color: var(--c-gold); font-family: Georgia, 'Times New Roman', serif; font-size: 1rem; font-weight: 700; }
+.co-pick-row.is-chosen .co-pick-mark { background: var(--c-gold); color: #fff; }
+.co-pick-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.co-pick-check { width: 1.2rem; height: 1.2rem; flex: none; color: var(--c-green); }
