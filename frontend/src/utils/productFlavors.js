@@ -27,7 +27,7 @@ const text = (value) => String(value ?? '').trim();
 
 // "Fanta 500ml" + "Orange" -> "Fanta 500ml - Orange"
 export const flavorProductName = (sharedName, flavor) =>
-  [text(sharedName), text(flavor)].filter(Boolean).join(' - ');
+  [text(sharedName), text(flavor)].filter(Boolean).join(' ');
 
 // A hand scanner in a text box types one code and presses Enter; a paste can carry a
 // whole column. Barcodes never contain spaces, so any whitespace, comma or semicolon splits.

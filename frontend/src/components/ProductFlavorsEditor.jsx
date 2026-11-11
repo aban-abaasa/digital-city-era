@@ -121,12 +121,12 @@ const ProductFlavorsEditor = ({
       <div>
         <h3 className="text-sm md:text-base font-bold text-emerald-900 dark:text-emerald-200">🍹 Flavors</h3>
         <p className="text-xs text-gray-600 mt-0.5">
-          Each flavor is saved as its own product with its own barcode, price and stock. Scan or type as many as you need.
+          Each flavor, type, or size is saved as its own product with its own barcode and stock. Leave prices blank to use one shared price, or enter a different price for each.
         </p>
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-gray-700 mb-1">Name shared by every flavor</label>
+        <label className="block text-xs font-semibold text-gray-700 mb-1">Shared product name (optional)</label>
         <input
           type="text"
           value={sharedName}
@@ -197,7 +197,7 @@ const ProductFlavorsEditor = ({
                       list="flavor-suggestions"
                       value={row.flavor}
                       onChange={(e) => updateRow(row.id, { flavor: e.target.value })}
-                      placeholder={`Flavor ${index + 1}`}
+                      placeholder={`Flavor / type / size ${index + 1}`}
                       className={`${inputClass} ${rowIssues.flavor ? 'border-red-400' : ''}`}
                     />
                   </div>
@@ -253,7 +253,7 @@ const ProductFlavorsEditor = ({
                     value={row.selling_price}
                     onChange={(e) => updateRow(row.id, { selling_price: e.target.value })}
                     placeholder={basePrice ? `Price ${basePrice}` : 'Price'}
-                    title="Leave blank to use the main product's selling price"
+                    title="Leave blank to use the shared selling price"
                     className={`${fieldClass} w-32`}
                   />
                   <button

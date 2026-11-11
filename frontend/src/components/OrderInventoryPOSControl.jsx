@@ -36,7 +36,7 @@ import ProductFamiliesPanel from './ProductFamiliesPanel';
 import BarcodeLabelsModal from './BarcodeLabelsModal';
 import { generateStoreBarcode, isPlaceholderBarcode } from '../utils/storeBarcodes';
 import { familyName } from '../utils/productFamilies';
-import { activeFlavorRows, checkFlavorRows, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
+import { activeFlavorRows, checkFlavorRows, flavorProductName, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 import BookingsPanel from './booking/BookingsPanel';
 import ServiceEditModal from './ServiceEditModal';
 import { serviceCoverImage } from '../services/servicePhotoService';
@@ -1467,34 +1467,59 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
     // A save is already running (double tap, or Enter held down)
     if (savingNew) return;
 
+    // A variant list creates only variant products. Use the first row for the
+    // primary insert, then create the remaining rows with the same shared prefix.
+    const listedVariants = activeFlavorRows(flavorRows);
+    const standaloneVariant = !newlyRegisteredProductId && listedVariants.length > 0
+      ? listedVariants[0]
+      : null;
+    const sharedName = (flavorSharedName ?? newProduct.name).trim();
+    const effectiveName = standaloneVariant
+      ? flavorProductName(sharedName, standaloneVariant.flavor)
+      : newProduct.name.trim() || flavorSharedName?.trim() || '';
+    const effectivePrice = standaloneVariant?.selling_price !== '' && standaloneVariant?.selling_price != null
+      ? Number(standaloneVariant.selling_price)
+      : Number(newProduct.selling_price);
+    const effectiveProduct = {
+      ...newProduct,
+      name: effectiveName,
+      selling_price: effectivePrice,
+      barcode: standaloneVariant?.barcode || newProduct.barcode
+    };
+
     // Validation
-    if (!newProduct.name.trim()) {
+    if (!effectiveName) {
       setAddErrors({ name: 'Product name is required' });
       addNameRef.current?.focus();
-      toast.error('❌ Product name is required');
+      toast.error('Add a product name or enter at least one flavor, type, or size');
       return;
     }
 
-    if (newProduct.cost_price < 0 || newProduct.selling_price < 0) {
+    if (newProduct.cost_price < 0 || effectivePrice < 0) {
       toast.error('❌ Prices cannot be negative');
       return;
     }
 
-    // A product with no price would be given away at the till
-    if (!(Number(newProduct.selling_price) > 0)) {
+    // Each variant needs either its own price or the shared product price.
+    const variantsWithoutPrice = listedVariants.filter((row) =>
+      !(Number(row.selling_price || newProduct.selling_price) > 0)
+    );
+    if (!(effectivePrice > 0) || variantsWithoutPrice.length > 0) {
       setAddErrors({ selling_price: 'Enter the selling price' });
       document.getElementById('ap-price')?.focus();
-      toast.error('❌ Enter the selling price');
+      toast.error('Enter one shared selling price or a price for every variant');
       return;
     }
 
     const startingStock = Math.max(0, Math.floor(Number(newProductStock) || 0));
-    const addedPrice = Number(newProduct.selling_price);
-    const addedName = newProduct.name.trim();
+    const addedPrice = effectivePrice;
+    const addedName = effectiveName;
 
     // Flavors listed in the form are checked before anything is saved
-    const flavorsToAdd = activeFlavorRows(flavorRows);
-    if (flavorsToAdd.length > 0 && hasFlavorIssues(checkFlavorRows(flavorRows, { mainBarcode: newProduct.barcode, products }))) {
+    const flavorsToAdd = standaloneVariant
+      ? listedVariants.filter((row) => row.id !== standaloneVariant.id)
+      : listedVariants;
+    if (listedVariants.length > 0 && hasFlavorIssues(checkFlavorRows(flavorRows, { mainBarcode: newProduct.barcode, products }))) {
       toast.error('❌ Fix the flavors marked in red first');
       return;
     }
@@ -1511,11 +1536,11 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
         const { data: updated, error: updateError } = await supabase
           .from('products')
           .update({
-            name: newProduct.name.trim(),
+            name: effectiveProduct.name,
             sku: newProduct.sku.trim() || null,
             cost_price: newProduct.cost_price,
             wholesale_price: newProduct.wholesale_price,
-            selling_price: newProduct.selling_price,
+            selling_price: effectiveProduct.selling_price,
             tax_rate: newProduct.tax_rate,
             category_id: newProduct.category_id
           })
@@ -1532,20 +1557,20 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
 
         const supermarketId = await inventoryService.getCurrentSupermarketId();
         // No barcode typed or scanned: make a real one the scanner can read, to print from Barcodes
-        if (!newProduct.barcode) generatedBarcode = generateBarcodeFor();
+        if (!effectiveProduct.barcode) generatedBarcode = generateBarcodeFor();
 
         const { data: created, error: createError } = await supabase
           .from('products')
           .insert({
-            name: newProduct.name.trim(),
+            name: effectiveProduct.name,
             sku: newProduct.sku.trim() || null,
             cost_price: newProduct.cost_price,
             wholesale_price: newProduct.wholesale_price,
-            selling_price: newProduct.selling_price,
+            selling_price: effectiveProduct.selling_price,
             tax_rate: newProduct.tax_rate,
             category_id: newProduct.category_id,
             is_active: true,
-            barcode: newProduct.barcode || generatedBarcode, // ✅ Use scanned barcode if available
+            barcode: effectiveProduct.barcode || generatedBarcode, // Use the selected variant barcode when present
             supermarket_id: supermarketId || undefined,
             // A store that offers only services has nothing to stock: what it adds here is a service
             ...(servicesOnlyStore ? { inventory_mode: 'service_item', track_inventory: false, is_service: true } : {})
@@ -1560,7 +1585,15 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       if (error) throw error;
       if (generatedBarcode) toast.info(`Barcode ${generatedBarcode} generated. Print it from 🏷️ Barcodes.`);
 
-      if (newProductImageFile && data?.id) {
+      if (standaloneVariant?.photo && data?.id) {
+        try {
+          const url = await uploadProductPhoto(data.id, standaloneVariant.photo);
+          data = { ...data, images: [url] };
+        } catch (photoError) {
+          console.warn('⚠️ Product saved but variant photo upload failed:', photoError);
+          toast.warning('Product saved, but the first variant photo failed to upload');
+        }
+      } else if (newProductImageFile && data?.id) {
         try {
           const url = await uploadProductPhoto(data.id, newProductImageFile);
           data = { ...data, images: [url] };
@@ -1642,8 +1675,8 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
           const { products: madeFlavors, stockError, photoFailures } = await registerFlavorProducts({
             supabase,
             supermarketId: flavorStoreId,
-            base: { ...newProduct, name: (flavorSharedName ?? newProduct.name).trim() },
-            rows: flavorRows,
+            base: { ...effectiveProduct, name: sharedName, selling_price: Number(newProduct.selling_price) || 0 },
+            rows: flavorsToAdd,
             uploadPhoto: uploadProductPhoto
           });
           if (photoFailures > 0) toast.warning(`${photoFailures} flavor photo${photoFailures === 1 ? '' : 's'} could not be uploaded. Add them from Flavor families.`);

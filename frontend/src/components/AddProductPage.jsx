@@ -386,7 +386,7 @@ const AddProductPage = ({
                       )}
                     </button>
                     <div className="min-w-0 flex-1">
-                      <label htmlFor="ap-name" className="ap-label">What are you selling? *</label>
+                      <label htmlFor="ap-name" className="ap-label">What are you selling? {flavorRows.length ? '(optional with variants)' : '*'}</label>
                       <input
                         id="ap-name"
                         ref={nameRef}
@@ -398,10 +398,11 @@ const AddProductPage = ({
                         value={product.name}
                         onChange={(e) => { setProduct((previous) => ({ ...previous, name: e.target.value })); clearError('name'); }}
                         onBlur={applyNameBlur}
-                        aria-required="true"
+                        aria-required={flavorRows.length === 0}
                         aria-invalid={errors.name ? 'true' : undefined}
                       />
                       {errors.name && <p role="alert" className="ap-error">{errors.name}</p>}
+                      {!product.name.trim() && flavorRows.length > 0 && <p className="ap-hint">Each flavor, type, or size will be saved as its own product.</p>}
                     </div>
                   </div>
 
