@@ -870,12 +870,24 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
 
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
       const baseColumns = 'id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, is_active, images';
-      const fetchProducts = (columns) => supabase
-        .from('products')
-        .select(columns)
-        .eq('is_active', true)
-        .eq('supermarket_id', supermarketId)
-        .order('name');
+      const fetchProducts = async (columns) => {
+        const pageSize = 200;
+        const allRows = [];
+        let from = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from('products')
+            .select(columns)
+            .eq('is_active', true)
+            .eq('supermarket_id', supermarketId)
+            .order('id')
+            .range(from, from + pageSize - 1);
+          if (error) return { data: null, error };
+          if (!data?.length) return { data: allRows, error: null };
+          allRows.push(...data);
+          from += data.length;
+        }
+      };
 
       // Expiry date + reduced-price columns. A database that has not had
       // ADD_PRODUCT_EXPIRY_CLEARANCE_PRICING.sql applied yet answers 42703
@@ -892,10 +904,25 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       if (productsError) throw productsError;
 
       // Load inventory separately
-      const { data: inventoryData, error: inventoryError } = await supabase
-        .from('inventory')
-        .select('product_id, current_stock')
-        .eq('supermarket_id', supermarketId);
+      const inventoryData = [];
+      let inventoryError = null;
+      const inventoryPageSize = 200;
+      let inventoryFrom = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('inventory')
+          .select('product_id, current_stock')
+          .eq('supermarket_id', supermarketId)
+          .order('product_id')
+          .range(inventoryFrom, inventoryFrom + inventoryPageSize - 1);
+        if (error) {
+          inventoryError = error;
+          break;
+        }
+        if (!data?.length) break;
+        inventoryData.push(...data);
+        inventoryFrom += data.length;
+      }
 
       if (inventoryError) {
         console.warn('⚠️ Could not load inventory data:', inventoryError);
@@ -925,9 +952,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       console.log('✅ Categories loaded:', categoriesData);
 
       // Transform products with inventory data
-      const productsWithInventory = (productsData || [])
-        .filter(p => invMap[p.id]) // Only show products that have inventory records
-        .map(p => ({
+      const productsWithInventory = (productsData || []).map(p => ({
           id: p.id,
           name: p.name,
           sku: p.sku,
