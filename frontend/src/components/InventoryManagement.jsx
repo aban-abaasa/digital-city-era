@@ -333,9 +333,9 @@ const InventoryManagement = ({ isOpen, onClose }) => {
   };
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         product.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const query = String(searchTerm || '').trim().toLowerCase();
+    const matchesSearch = !query || [product?.name, product?.sku, product?.barcode, product?.category]
+      .some(value => String(value || '').toLowerCase().includes(query));
     
     const matchesCategory = selectedCategory === '' || product.category === selectedCategory;
     

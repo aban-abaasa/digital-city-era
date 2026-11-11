@@ -1140,11 +1140,10 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
 
     // Search filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+      const query = String(searchQuery || '').trim().toLowerCase();
       filtered = filtered.filter(p =>
-        p.name.toLowerCase().includes(query) ||
-        p.sku.toLowerCase().includes(query) ||
-        (p.barcode && p.barcode.includes(query))
+        [p?.name, p?.sku, p?.barcode, p?.category]
+          .some(value => String(value || '').toLowerCase().includes(query))
       );
     }
 
