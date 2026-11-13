@@ -6,7 +6,7 @@
 // front and centre on a phone.
 // ===================================================
 
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy, FiChevronDown } from 'react-icons/fi';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-toastify';
@@ -16,7 +16,6 @@ import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { formatPaymentMethod } from '../utils/paymentMethod';
 import './Receipt.css';
 // The same stylesheet, as a string, for the print window.
-import receiptCss from './Receipt.css?inline';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 const ACTION_BTN = 'flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c] focus-visible:ring-offset-1';
@@ -39,7 +38,6 @@ const Section = ({ id, title, meta, open, onToggle, children }) => (
 
 const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => {
   useBackLayer(true, onClose);
-  const receiptRef = useRef();
   const loadedBranding = useSupermarketBranding();
 
   // Use branding or fallback to defaults
@@ -101,60 +99,9 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         'thermal'
       );
 
-      // Print a copy of the paper rather than the live node: every section
-      // expanded, no on-screen toggles, and QR canvases swapped for images
-      // (a canvas is blank once serialized to HTML).
-      const livePaper = receiptRef.current;
-      const paper = livePaper.cloneNode(true);
-      const liveCanvases = livePaper.querySelectorAll('canvas');
-      paper.querySelectorAll('canvas').forEach((canvas, index) => {
-        const img = document.createElement('img');
-        img.src = liveCanvases[index].toDataURL('image/png');
-        img.alt = 'QR code';
-        canvas.replaceWith(img);
-      });
-      paper.querySelectorAll('.is-collapsed').forEach((el) => el.classList.remove('is-collapsed'));
-      paper.querySelectorAll('[data-no-print]').forEach((el) => el.remove());
-
-      const printWindow = window.open('', '_blank', 'width=800,height=600');
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>${docLabel} - ${receiptData.receiptNumber}</title>
-          <style>
-            ${receiptCss}
-            @page {
-              size: 80mm 297mm; /* Thermal printer size */
-              margin: 0;
-            }
-            html, body {
-              margin: 0;
-              background: #fff;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            body { padding: 4mm 0; }
-            .rc-paper { max-width: 76mm; padding: 2mm 5mm; font-size: 11px; filter: none; }
-            .rc-paper::before, .rc-paper::after { display: none; }
-            .rc-section-head { cursor: default; }
-            .rc-section-body, .rc-chev { transition: none; }
-          </style>
-        </head>
-        <body>
-          ${paper.outerHTML}
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(() => window.close(), 100);
-            }
-          </script>
-        </body>
-        </html>
-      `);
-      
-      printWindow.document.close();
+      document.body.classList.add('rc-printing');
+      window.print();
+      document.body.classList.remove('rc-printing');
       toast.success('🖨️ Printing receipt...');
     } catch (error) {
       console.error('Print error:', error);
@@ -416,7 +363,7 @@ ${branding?.publicWebsiteUrl || ''}
 
         {/* Receipt paper */}
         <div className="min-h-0 flex-1 overflow-y-auto bg-[#ece6d6] px-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-6">
-          <div ref={receiptRef} className="rc-paper">
+          <div className="rc-paper">
             {/* Store header */}
             <header className="rc-head">
               {branding?.logoUrl && <img src={branding.logoUrl} alt={storeName} className="rc-logo" />}
@@ -570,7 +517,6 @@ ${branding?.publicWebsiteUrl || ''}
               <p className="rc-fine">Thank you for shopping with us!</p>
               <p className="rc-fine">Visit us again at {storeName}</p>
               <p className="rc-fine">VAT Inclusive • All prices in UGX</p>
-              <p className="rc-fine">Exchange &amp; Return within 7 days with receipt</p>
               {branding?.website && <p className="rc-fine">{branding.website}</p>}
               {supportEmail && <p className="rc-fine">{supportEmail}</p>}
               <p className="rc-fine">🇺🇬</p>
