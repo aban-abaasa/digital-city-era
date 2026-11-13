@@ -2739,15 +2739,6 @@ const CashierPortal = () => {
                 <span className="hidden xs:inline">Add Product</span>
               </button>
               */}
-              {showProducts && (
-                <button
-                  onClick={() => setShowBarcodeScanner(true)}
-                  className="cashier-pos-action cashier-pos-action-primary"
-                >
-                  <FiCamera />
-                  <span>Scan barcode</span>
-                </button>
-              )}
             </div>
           </div>
 
