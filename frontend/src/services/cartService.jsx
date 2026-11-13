@@ -77,6 +77,8 @@ export const cartService = {
             id,
             name,
             selling_price,
+            tax_rate,
+            tax_included,
             is_active,
             inventory (
               current_stock,
@@ -95,6 +97,8 @@ export const cartService = {
               ...item,
               name: product.name,
               price: product.selling_price,
+              tax_rate: product.tax_rate,
+              tax_included: product.tax_included,
               availableStock: availableStock,
               isValid: true
             });
@@ -105,6 +109,8 @@ export const cartService = {
               quantity: availableStock,
               name: product.name,
               price: product.selling_price,
+              tax_rate: product.tax_rate,
+              tax_included: product.tax_included,
               availableStock: availableStock,
               isValid: true,
               hasStockIssue: true,
@@ -259,18 +265,21 @@ export const cartService = {
   },
 
   // Get cart totals with Uganda-specific calculations
-  getCartTotals: (cart, taxIncluded = true) => {
+  getCartTotals: (cart, storeTaxIncluded = true) => {
+    const taxTotals = cart.reduce((totals, item) => {
+      const rate = Number(item.tax_rate ?? 18) / 100;
+      const price = (Number(item.price) || 0) * (Number(item.quantity) || 0);
+      const included = item.tax_included ?? storeTaxIncluded;
+      const tax = rate > 0 ? (included ? price - price / (1 + rate) : price * rate) : 0;
+      totals.subtotal += included ? price - tax : price;
+      totals.tax += tax;
+      totals.itemTotal += included ? price : price + tax;
+      return totals;
+    }, { subtotal: 0, tax: 0, itemTotal: 0 });
+    const { subtotal, tax } = taxTotals;
     const priceSubtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-    const tax = cart.reduce((total, item) => {
-      const rate = Number(item.tax_rate ?? 18);
-      const gross = item.price * item.quantity;
-      return total + (rate > 0
-        ? (taxIncluded ? gross - (gross / (1 + rate / 100)) : gross * rate / 100)
-        : 0);
-    }, 0);
-    const subtotal = taxIncluded ? priceSubtotal - tax : priceSubtotal;
     const deliveryFee = priceSubtotal >= 100000 ? 0 : 5000; // Free delivery over 100K UGX
-    const total = priceSubtotal + (taxIncluded ? 0 : tax) + deliveryFee;
+    const total = taxTotals.itemTotal + deliveryFee;
     
     return {
       subtotal: Math.round(subtotal),

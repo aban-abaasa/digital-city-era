@@ -265,6 +265,7 @@ const EMPTY_NEW_PRODUCT = {
   wholesale_discount_percent: 0,
   selling_price: 0,
   tax_rate: 18,
+  tax_included: null,
   category_id: null,
   batch_number: '',
   expiry_date: ''
@@ -871,7 +872,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       }
 
       // Load products with inventory data - SAME AS CASHIER & MANAGER PORTALS
-      const baseColumns = 'id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, is_active, images';
+      const baseColumns = 'id, name, sku, barcode, category_id, cost_price, wholesale_price, accepted_supplier_price, purchasing_price_source, selling_price, tax_rate, tax_included, is_active, images';
       const fetchProducts = async (columns) => {
         const pageSize = 200;
         const allRows = [];
@@ -966,6 +967,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
           purchasing_price_source: p.purchasing_price_source || 'admin',
           selling_price: p.selling_price,
           tax_rate: p.tax_rate,
+          tax_included: p.tax_included,
           is_active: p.is_active,
           images: Array.isArray(p.images) ? p.images : [],
           expiry_date: p.expiry_date || null,
@@ -1245,6 +1247,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       purchasing_price_source: product.purchasing_price_source || 'admin',
       selling_price: product.selling_price,
       tax_rate: product.tax_rate || 18,
+      tax_included: product.tax_included ?? null,
       current_stock: product.current_stock ?? 0,
       expiry_date: product.expiry_date || ''
     });
@@ -1413,6 +1416,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
               // A product on a reduced-price offer passes on its normal price, not the offer
               selling_price: onOffer ? editedProduct.clearance_original_price : editValues.selling_price,
               tax_rate: editValues.tax_rate,
+              tax_included: editValues.tax_included,
               category_id: editedProduct?.category_id
             },
             rows: editFlavorRows
@@ -1579,6 +1583,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
             wholesale_price: newProduct.wholesale_price,
             selling_price: effectiveProduct.selling_price,
             tax_rate: newProduct.tax_rate,
+            tax_included: newProduct.tax_included,
             category_id: newProduct.category_id
           })
           .eq('id', newlyRegisteredProductId)
@@ -1605,6 +1610,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
             wholesale_price: newProduct.wholesale_price,
             selling_price: effectiveProduct.selling_price,
             tax_rate: newProduct.tax_rate,
+            tax_included: newProduct.tax_included,
             category_id: newProduct.category_id,
             is_active: true,
             barcode: effectiveProduct.barcode || generatedBarcode, // Use the selected variant barcode when present
@@ -2515,6 +2521,12 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
                     <div>
                       <label className="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Tax Rate %</label>
                       <input type="number" value={editValues.tax_rate} onChange={(e) => setEditValues({ ...editValues, tax_rate: parseFloat(e.target.value) || 0 })} className="w-full px-2 md:px-3 py-2 border-2 border-yellow-300 rounded-lg focus:outline-none focus:border-yellow-500 text-sm" />
+                      <label className="block text-xs font-semibold text-yellow-800 mt-2">Selling price tax mode</label>
+                      <select value={editValues.tax_included == null ? '' : String(editValues.tax_included)} onChange={(e) => setEditValues({ ...editValues, tax_included: e.target.value === '' ? null : e.target.value === 'true' })} className="w-full px-2 md:px-3 py-2 border-2 border-yellow-300 rounded-lg focus:outline-none focus:border-yellow-500 text-sm">
+                        <option value="">Use store default</option>
+                        <option value="true">Tax included in price</option>
+                        <option value="false">Add tax at checkout</option>
+                      </select>
                     </div>
                   </div>
                   <div className="mt-3">

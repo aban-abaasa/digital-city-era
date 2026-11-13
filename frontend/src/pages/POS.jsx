@@ -4,6 +4,8 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import { createClient } from '@supabase/supabase-js';
 import { supabase as sharedSupabase, supabaseConfig } from '../services/supabase';
+import inventoryService from '../services/inventorySupabaseService';
+import { calculateTaxTotals } from '../utils/taxPricing';
 import ReceiptModal from '../components/ReceiptModal';
 import DualScannerInterface from '../components/DualScannerInterface';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
@@ -48,6 +50,17 @@ import { useBackLayer } from '../hooks/useBackLayer';
 
 const POS = () => {
   const navigate = useNavigate();
+  const [storeTaxIncluded, setStoreTaxIncluded] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    inventoryService.getCurrentSupermarketId().then(async (storeId) => {
+      if (!storeId) return;
+      const { data } = await supabase.from('supermarkets').select('tax_included').eq('id', storeId).maybeSingle();
+      if (active && data) setStoreTaxIncluded(data.tax_included !== false);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
 
@@ -286,7 +299,7 @@ const POS = () => {
         Promise.race([
           supabase
             .from('products')
-            .select('id, name, price, selling_price, cost_price, tax_rate, barcode, sku, category_id, is_active')
+          .select('id, name, price, selling_price, cost_price, tax_rate, tax_included, barcode, sku, category_id, is_active')
             .eq('is_active', true)
             .limit(100),
           new Promise((_, reject) =>
@@ -322,6 +335,7 @@ const POS = () => {
         selling_price: product.selling_price,
         cost_price: product.cost_price,
         tax_rate: product.tax_rate || 18,
+        tax_included: product.tax_included,
         barcode: product.barcode,
         sku: product.sku,
         stock: stockMap[product.id] || 0, // Get from inventory map
@@ -493,6 +507,8 @@ const POS = () => {
         productId: product._id,
         name: product.name,
         price: product.price,
+        tax_rate: product.tax_rate,
+        tax_included: product.tax_included,
         quantity: 1,
         stock: product.stock,
         addedAt: new Date(),
@@ -553,11 +569,7 @@ const POS = () => {
   };
 
   const calculateTax = () => {
-    // Tagged/shelf prices are VAT-inclusive — the customer pays exactly the
-    // price shown on the item, so this is the VAT portion already sitting
-    // inside calculateSubtotal(), not an amount added on top of it.
-    const subtotal = calculateSubtotal();
-    return subtotal - (subtotal / 1.18); // 18% VAT for Uganda, included in price
+    return calculateTaxTotals(cart, storeTaxIncluded).tax;
   };
 
   const calculateLoyaltyDiscount = () => {
@@ -569,10 +581,8 @@ const POS = () => {
   };
 
   const calculateTotal = () => {
-    // No += tax here: VAT is already included in calculateSubtotal().
-    const subtotal = calculateSubtotal();
     const discount = calculateLoyaltyDiscount();
-    return subtotal - discount;
+    return calculateTaxTotals(cart, storeTaxIncluded).total - discount;
   };
 
   const getChange = () => {
@@ -626,7 +636,7 @@ const POS = () => {
         })),
         customerId: customer?._id,
         paymentMethod,
-        subtotal: calculateSubtotal(),
+        subtotal: calculateTaxTotals(cart, storeTaxIncluded).subtotal,
         tax: calculateTax(),
         discount: calculateLoyaltyDiscount(),
         total: calculateTotal(),
@@ -1069,7 +1079,7 @@ const POS = () => {
               <span className="font-medium">${calculateSubtotal().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">VAT (18%, included):</span>
+              <span className="text-gray-600">{(cart || []).some(item => item.tax_included != null) ? 'Tax by product:' : storeTaxIncluded ? 'Tax included:' : 'Tax added:'}</span>
               <span className="font-medium">${calculateTax().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-lg font-semibold border-t border-gray-200 pt-2">

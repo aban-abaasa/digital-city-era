@@ -39,6 +39,7 @@ import {
 } from '../services/posOfflineCache';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
+import { calculateTaxTotals } from '../utils/taxPricing';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalHeader from '../components/PortalHeader';
@@ -456,7 +457,7 @@ const CashierPortal = () => {
       // Build query for products
       let productsQuery = supabase
         .from('products')
-        .select('id, name, price, selling_price, cost_price, category, barcode, sku, images, is_active, supermarket_id, inventory_mode')
+        .select('id, name, price, selling_price, cost_price, category, barcode, sku, images, is_active, supermarket_id, inventory_mode, tax_rate, tax_included')
         .eq('is_active', true);
       
       // Strict tenant isolation: only this exact supermarket's products.
@@ -541,6 +542,8 @@ const CashierPortal = () => {
             .filter(Boolean),
           price: product.price || 0,
           selling_price: product.selling_price || 0,
+          tax_rate: Number(product.tax_rate ?? 18),
+          tax_included: product.tax_included,
           cost_price: product.cost_price || 0,
           category: product.category || 'General',
           categoryName: product.category || 'General',
@@ -1687,14 +1690,7 @@ const CashierPortal = () => {
         }];
       }
 
-      const priceTotal = newItems.reduce((sum, item) => {
-        const itemPrice = item.selling_price || item.price || 0;
-        return sum + (itemPrice * item.quantity);
-      }, 0);
-      const taxIncluded = cashierProfile.tax_included !== false;
-      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
-      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
-      const total = taxIncluded ? priceTotal : priceTotal + tax;
+      const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
 
       return {
         ...prev,
@@ -1800,11 +1796,7 @@ const CashierPortal = () => {
   const removeItemFromTransaction = (cartLineId) => {
     setCurrentTransaction(prev => {
       const newItems = prev.items.filter(item => (item.cartLineId || item.id) !== cartLineId);
-      const priceTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const taxIncluded = cashierProfile.tax_included !== false;
-      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
-      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
-      const total = taxIncluded ? priceTotal : priceTotal + tax;
+      const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
 
       return {
         ...prev,
@@ -1832,11 +1824,7 @@ const CashierPortal = () => {
           : item
       );
 
-      const priceTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const taxIncluded = cashierProfile.tax_included !== false;
-      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
-      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
-      const total = taxIncluded ? priceTotal : priceTotal + tax;
+      const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
 
       return {
         ...prev,

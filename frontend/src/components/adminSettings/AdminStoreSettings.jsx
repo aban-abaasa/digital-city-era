@@ -293,7 +293,7 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         </form>
       </Section>
 
-      <Section id="tax" title="Selling price and tax" hint="Choose whether product prices include tax. This applies to new cashier and customer shop checkouts for this store." flash={flash.tax}>
+      <Section id="tax" title="General tax setting" hint="This is the store default for products set to “Use store default”. A product can override it in Add Product." flash={flash.tax}>
         <div className="ass-row">
           <div className="ass-row-text">
             <b>{store.tax_included !== false ? 'Tax included in selling price' : 'Tax added to selling price'}</b>

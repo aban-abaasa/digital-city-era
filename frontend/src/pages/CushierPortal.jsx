@@ -27,6 +27,7 @@ import ClassicNotificationList from '../components/ClassicNotificationList';
 import TillSuppliesSection from '../components/TillSuppliesSection';
 import OrderSuppliesModal from '../components/OrderSuppliesModal';
 import inventoryService from '../services/inventorySupabaseService';
+import { calculateTaxTotals } from '../utils/taxPricing';
 import BatchPickerModal from '../components/BatchPickerModal';
 import { groupBatchesByProduct, sellableBatches, batchLabel } from '../utils/productBatches';
 import transactionService from '../services/transactionService';
@@ -439,6 +440,7 @@ const CashierPortal = () => {
           barcode: row.barcode,
           inventoryMode: row.inventory_mode || 'stock_controlled',
           tax_rate: Number(row.tax_rate) || 0,
+          tax_included: row.tax_included,
           category_id: row.category_id,
           priceTiers: [],
           variants: [],
@@ -465,7 +467,7 @@ const CashierPortal = () => {
         Promise.race([
           fetchAllRows(() => supabase
             .from('products')
-            .select('id, name, price, selling_price, cost_price, barcode, sku, is_active, inventory_mode')
+        .select('id, name, price, selling_price, cost_price, barcode, sku, is_active, inventory_mode, tax_rate, tax_included')
             .eq('is_active', true)
             .eq('supermarket_id', supermarketId)),
           new Promise((_, reject) =>
@@ -549,6 +551,8 @@ const CashierPortal = () => {
         sku: p.sku || `SKU-${p.id.substring(0, 8)}`,
         selling_price: parseFloat(p.selling_price) || 0,
         price: parseFloat(p.selling_price) || 0,
+          tax_rate: Number(p.tax_rate ?? 18),
+          tax_included: p.tax_included,
         stock: stockMap[p.id]?.current_stock || 0,  // 0 if no inventory record
         available_stock: (stockMap[p.id]?.current_stock || 0) - (stockMap[p.id]?.reserved_stock || 0),
         barcode: p.barcode,
@@ -1549,14 +1553,7 @@ const CashierPortal = () => {
         }];
       }
 
-      const priceTotal = newItems.reduce((sum, item) => {
-        const itemPrice = item.selling_price || item.price || 0;
-        return sum + (itemPrice * item.quantity);
-      }, 0);
-      const taxIncluded = cashierProfile.tax_included !== false;
-      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
-      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
-      const total = taxIncluded ? priceTotal : priceTotal + tax;
+      const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
 
       return {
         ...prev,
@@ -1607,11 +1604,7 @@ const CashierPortal = () => {
   const removeItemFromTransaction = (cartLineId) => {
     setCurrentTransaction(prev => {
       const newItems = prev.items.filter(item => (item.cartLineId || item.id) !== cartLineId);
-      const priceTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const taxIncluded = cashierProfile.tax_included !== false;
-      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
-      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
-      const total = taxIncluded ? priceTotal : priceTotal + tax;
+      const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
 
       return {
         ...prev,
@@ -1639,11 +1632,7 @@ const CashierPortal = () => {
           : item
       );
 
-      const priceTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const taxIncluded = cashierProfile.tax_included !== false;
-      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
-      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
-      const total = taxIncluded ? priceTotal : priceTotal + tax;
+      const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
 
       return {
         ...prev,

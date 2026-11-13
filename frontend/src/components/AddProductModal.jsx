@@ -101,6 +101,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     selling_price: '',
     price_max: '',
     tax_rate: '18', // Uganda VAT
+    tax_included: null,
     inventory_mode: 'stock_controlled',
     generic_name: '',
     medicine_category: '',
@@ -123,6 +124,19 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     min_order_qty: '1',
     ...prefilledData
   });
+
+  const [storeTaxIncluded, setStoreTaxIncluded] = useState(true);
+  useEffect(() => {
+    if (!isOpen || isSupplierMode) return undefined;
+    let active = true;
+    (async () => {
+      const supermarketId = await inventoryService.getCurrentSupermarketId().catch(() => null);
+      if (!supermarketId) return;
+      const { data } = await supabase.from('supermarkets').select('tax_included').eq('id', supermarketId).maybeSingle();
+      if (active && data) setStoreTaxIncluded(data.tax_included !== false);
+    })();
+    return () => { active = false; };
+  }, [isOpen, isSupplierMode]);
 
   // A service has no stock, barcode, supplier or cost to track, so the form shows only what a service needs.
   // The Add Service page opens it already fixed to a service (no mode picker to flip it back).
@@ -320,6 +334,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
 
   const sellingPrice = Number(formData.selling_price) || 0;
   const taxRate = Number(formData.tax_rate) || 0;
+  const sellingPriceTaxIncluded = formData.tax_included == null || formData.tax_included === ''
+    ? storeTaxIncluded
+    : formData.tax_included === true || formData.tax_included === 'true';
   const includedTax = taxRate > 0
     ? sellingPrice - (sellingPrice / (1 + taxRate / 100))
     : 0;
@@ -551,6 +568,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         selling_price: servicePricing ? servicePricing.selling_price : (parseFloat(formData.selling_price) || 0),
         price_max: servicePricing ? servicePricing.price_max : null,
         tax_rate: parseFloat(formData.tax_rate) || 18,
+        tax_included: formData.tax_included === '' || formData.tax_included == null ? null : formData.tax_included === true || formData.tax_included === 'true',
         inventory_mode: formData.inventory_mode || 'stock_controlled',
         generic_name: formData.generic_name?.trim() || null,
         medicine_category: formData.medicine_category?.trim() || null,
@@ -588,6 +606,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           selling_price: productData.selling_price,
           ...(isServiceForm ? { price_max: productData.price_max } : {}),
           tax_rate: productData.tax_rate,
+          tax_included: productData.tax_included,
           inventory_mode: productData.inventory_mode,
           // Kept in step with the mode: the business website lists services by this flag
           is_service: productData.inventory_mode === 'service_item',
@@ -676,6 +695,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       selling_price: '',
       price_max: '',
       tax_rate: '18',
+      tax_included: null,
       inventory_mode: prefilledData?.inventory_mode || 'stock_controlled',
       generic_name: '',
       medicine_category: '',
@@ -1346,7 +1366,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {isServiceForm ? (priceMode === 'range' ? 'From (lowest price) *' : 'Price *') : 'Selling Price *'} <span className="text-xs text-gray-500">({stableMode ? 'in ICEC-S, VAT-inclusive' : isServiceForm ? 'VAT-inclusive' : 'Retail, VAT-inclusive'})</span>
+                      {isServiceForm ? (priceMode === 'range' ? 'From (lowest price) *' : 'Price *') : 'Selling Price *'} <span className="text-xs text-gray-500">({sellingPriceTaxIncluded ? 'tax included' : 'tax added at checkout'})</span>
                     </label>
                     {stableMode ? (
                       <>
@@ -1385,7 +1405,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     )}
                     {errors.selling_price && <p className="text-red-500 text-xs mt-1">{errors.selling_price}</p>}
                     <p className="text-xs text-green-700 mt-1">
-                      Includes {formData.tax_rate || 0}% VAT: UGX {includedTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {sellingPriceTaxIncluded ? 'Tax within this price' : 'Tax added at checkout'} ({formData.tax_rate || 0}%): UGX {(sellingPriceTaxIncluded ? includedTax : sellingPrice * taxRate / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </p>
                   </div>
 
@@ -1393,7 +1413,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                   {isServiceForm && priceMode === 'range' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        To (highest price) * <span className="text-xs text-gray-500">(VAT-inclusive)</span>
+                        To (highest price) * <span className="text-xs text-gray-500">({sellingPriceTaxIncluded ? 'tax included' : 'tax added at checkout'})</span>
                       </label>
                       <input
                         type="number"
@@ -1430,6 +1450,21 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                  {!isSupplierMode && <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="product-tax-mode">Selling price tax mode</label>
+                    <select
+                      id="product-tax-mode"
+                      name="tax_included"
+                      value={formData.tax_included == null ? '' : String(formData.tax_included)}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Use store default ({storeTaxIncluded ? 'tax included' : 'tax added'})</option>
+                      <option value="true">Tax included in this product price</option>
+                      <option value="false">Add tax to this product price</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">Choose a product-specific rule, or inherit the general setting from Store Settings.</p>
+                  </div>}
                 </div>
 
                 {/* Profit & Markup Display */}

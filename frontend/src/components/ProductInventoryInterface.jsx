@@ -312,6 +312,7 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
         price_unit: prod.price_unit || 'LOCAL',
         stable_price: prod.stable_price ?? null,
         tax_rate: prod.tax_rate != null ? String(prod.tax_rate) : '18',
+        tax_included: prod.tax_included ?? null,
         initial_stock: String(inv?.current_stock ?? 0),
         minimum_stock: String(inv?.minimum_stock ?? 10),
         maximum_stock: '1000',

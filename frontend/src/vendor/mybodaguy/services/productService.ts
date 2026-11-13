@@ -22,6 +22,7 @@ export interface Product {
   created_at: string;
   sku: string | null;
   tax_rate: number;
+  tax_included?: boolean | null;
   /** The selling store's customer rating (1-5) and how many customers rated it; null / 0 until someone has. */
   store_rating_avg?: number | null;
   store_rating_count?: number;
@@ -67,6 +68,7 @@ function mapProductRow(row: any, stockByProduct: Map<string, number>): Product {
     created_at: row.created_at,
     sku: row.sku ?? null,
     tax_rate: row.tax_rate != null ? Number(row.tax_rate) : 18,
+    tax_included: row.tax_included ?? null,
   };
 }
 
@@ -77,7 +79,7 @@ const ALL_STORES_PRODUCT_LIMIT = 1000;
 async function fetchProducts(supermarketId: string | null, activeOnly: boolean): Promise<Product[]> {
   let query = supabase
     .from('products')
-    .select('id, supermarket_id, name, description, selling_price, images, is_active, created_at, sku, tax_rate, categories(name)')
+    .select('id, supermarket_id, name, description, selling_price, images, is_active, created_at, sku, tax_rate, tax_included, categories(name)')
     .order('created_at', { ascending: false });
   query = supermarketId ? query.eq('supermarket_id', supermarketId) : query.limit(ALL_STORES_PRODUCT_LIMIT);
   if (activeOnly) query = query.eq('is_active', true);
@@ -104,7 +106,7 @@ async function fetchProducts(supermarketId: string | null, activeOnly: boolean):
   return products.map((p: any) => mapProductRow(p, stockByProduct));
 }
 
-const PRODUCT_COLUMNS = 'id, supermarket_id, name, description, selling_price, images, is_active, created_at, sku, tax_rate';
+const PRODUCT_COLUMNS = 'id, supermarket_id, name, description, selling_price, images, is_active, created_at, sku, tax_rate, tax_included';
 export const PRODUCT_PAGE_SIZE = 24;
 
 export interface ProductPageQuery {
@@ -393,7 +395,7 @@ export const productService = {
         images: [],
         is_active: input.is_active ?? true,
       })
-      .select('id, supermarket_id, name, description, selling_price, images, is_active, created_at, sku, tax_rate')
+      .select('id, supermarket_id, name, description, selling_price, images, is_active, created_at, sku, tax_rate, tax_included')
       .single();
     if (error) throw error;
 

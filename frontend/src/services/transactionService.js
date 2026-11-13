@@ -228,13 +228,14 @@ class TransactionService {
         unit_price: parseFloat(item.selling_price || item.price),
         quantity: parseInt(item.quantity),
         line_total: parseFloat(item.selling_price || item.price) * parseInt(item.quantity),
-        tax_included: taxIncluded,
+        tax_included: item.tax_included ?? taxIncluded,
         // For inclusive prices this is the VAT portion inside the line total;
         // otherwise it is the tax added to the pre-tax line total.
         tax_amount: (() => {
           const lineTotal = parseFloat(item.selling_price || item.price) * parseInt(item.quantity);
           const rate = Number(item.tax_rate ?? 18) / 100;
-          return taxIncluded ? lineTotal - (lineTotal / (1 + rate)) : lineTotal * rate;
+          const lineTaxIncluded = item.tax_included ?? taxIncluded;
+          return lineTaxIncluded ? lineTotal - (lineTotal / (1 + rate)) : lineTotal * rate;
         })()
       }));
 

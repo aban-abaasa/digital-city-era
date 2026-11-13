@@ -781,7 +781,8 @@ const CustomerDelivery = () => {
           product_id: item.id,
           quantity: Number(item.quantity),
           unit_price: Number(item.price),
-          tax_rate: Number(item.tax_rate ?? 18)
+          tax_rate: Number(item.tax_rate ?? 18),
+          tax_included: item.tax_included
         })),
         total_amount: totals.total,
         subtotal: totals.subtotal,
@@ -1413,7 +1414,7 @@ const CustomerDelivery = () => {
                       <span className="font-medium">{formatMoney(totals.subtotal, totals.currency)}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">{taxIncluded ? 'Tax included:' : 'Tax added:'}</span>
+                      <span className="text-gray-600">{cart.some(item => item.tax_included != null) ? 'Tax by product:' : taxIncluded ? 'Tax included:' : 'Tax added:'}</span>
                       <span className="font-medium">{formatMoney(totals.tax, totals.currency)}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-2">

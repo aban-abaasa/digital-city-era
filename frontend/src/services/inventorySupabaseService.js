@@ -384,6 +384,7 @@ class InventorySupabaseService {
         wholesale_price = 0,
         selling_price = 0,
         tax_rate = 18, // Uganda VAT
+        tax_included = null,
         initial_stock = 0,
         minimum_stock = 10,
         reorder_point = 20,
@@ -496,7 +497,6 @@ class InventorySupabaseService {
         track_inventory: !['listing_only', 'service_item'].includes(effectiveInventoryMode),
         is_service: effectiveInventoryMode === 'service_item'
       };
-
       console.log('📦 Inserting product:', productInsert);
 
       // Add optional fields
@@ -504,6 +504,7 @@ class InventorySupabaseService {
       if (category_id) productInsert.category_id = category_id;
       if (brand && String(brand).trim()) productInsert.brand = String(brand).trim();
       if (tax_rate) productInsert.tax_rate = parseFloat(tax_rate) || 18;
+      productInsert.tax_included = tax_included == null ? null : Boolean(tax_included);
       if (markup_percentage) productInsert.markup_percentage = parseFloat(markup_percentage);
       if (generic_name) productInsert.generic_name = generic_name;
       if (medicine_category) productInsert.medicine_category = medicine_category;

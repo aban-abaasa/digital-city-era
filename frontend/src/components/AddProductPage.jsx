@@ -612,6 +612,23 @@ const AddProductPage = ({
                       />
                     </div>
                     <div>
+                      <label htmlFor="ap-tax-mode" className="ap-label">Selling price tax mode</label>
+                      <select
+                        id="ap-tax-mode"
+                        className="ap-input"
+                        value={product.tax_included == null ? '' : String(product.tax_included)}
+                        onChange={(e) => setProduct((previous) => ({
+                          ...previous,
+                          tax_included: e.target.value === '' ? null : e.target.value === 'true'
+                        }))}
+                      >
+                        <option value="">Use store default (set in Store Settings)</option>
+                        <option value="true">Tax included in price</option>
+                        <option value="false">Add tax at checkout</option>
+                      </select>
+                      <p className="mt-1 text-xs" style={{ color: 'var(--ap-muted)' }}>Use the store default, or set a rule for this product only.</p>
+                    </div>
+                    <div>
                       <label htmlFor="ap-sku" className="ap-label">SKU / product code</label>
                       <input
                         id="ap-sku"

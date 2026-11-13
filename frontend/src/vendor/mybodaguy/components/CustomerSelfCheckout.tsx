@@ -32,6 +32,7 @@ interface Product {
   barcode: string;
   selling_price: number;
   tax_rate: number;
+  tax_included?: boolean | null;
   category_name: string;
   brand: string;
   images: { url: string }[] | null;
@@ -100,12 +101,19 @@ function cartTotals(cart: CartItem[], taxIncluded = true) {
   const tax = cart.reduce((s, i) => {
     const rate = Number(i.product.tax_rate ?? 18);
     const line = i.product.selling_price * i.quantity;
-    return s + (rate > 0 ? (taxIncluded ? line - (line / (1 + rate / 100)) : line * rate / 100) : 0);
+    const included = i.product.tax_included ?? taxIncluded;
+    return s + (rate > 0 ? (included ? line - (line / (1 + rate / 100)) : line * rate / 100) : 0);
   }, 0);
+  const includedTax = cart.reduce((s, i) => {
+    const rate = Number(i.product.tax_rate ?? 18);
+    const line = i.product.selling_price * i.quantity;
+    return s + ((i.product.tax_included ?? taxIncluded) ? (rate > 0 ? line - line / (1 + rate / 100) : 0) : 0);
+  }, 0);
+  const addedTax = tax - includedTax;
   return {
-    subtotal: Math.round(taxIncluded ? priceSubtotal - tax : priceSubtotal),
+    subtotal: Math.round(priceSubtotal - includedTax),
     tax: Math.round(tax),
-    total: Math.round(priceSubtotal + (taxIncluded ? 0 : tax)),
+    total: Math.round(priceSubtotal + addedTax),
   };
 }
 
@@ -1225,7 +1233,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
               <span>Subtotal</span><span>{fmt(totals.subtotal)}</span>
             </div>
               <div className="flex justify-between text-sm text-slate-500">
-              <span>{activeStore?.tax_included === false ? 'Tax added' : 'Tax included'}</span><span>{fmt(totals.tax)}</span>
+              <span>{cart.some(item => item.product.tax_included != null) ? 'Tax by product' : activeStore?.tax_included === false ? 'Tax added' : 'Tax included'}</span><span>{fmt(totals.tax)}</span>
             </div>
             <div className="flex justify-between font-bold text-slate-800 text-base border-t border-slate-200 pt-2">
               <span>Total</span>

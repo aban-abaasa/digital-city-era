@@ -45,6 +45,7 @@ const ProductFlavorsModal = ({ product, products, storeName, uploadPhoto, genera
           // A product on a reduced-price offer passes on its normal price, not the offer
           selling_price: product.clearance_original_price ?? product.selling_price,
           tax_rate: product.tax_rate,
+          tax_included: product.tax_included,
           category_id: product.category_id
         },
         rows,
