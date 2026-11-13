@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { supabase } from './supabase';
 import inventoryService from './inventorySupabaseService';
 import { getPublicBusinessPageUrl } from '../utils/publicBusinessUrl';
+import { getTaxTreatmentLabel } from '../utils/taxPricing';
 const FALLBACK_COMPANY_INFO = {
   name: 'Your Supermarket',
   address: '',
@@ -102,6 +103,7 @@ class ReceiptService {
       items,
       subtotal: saleData.subtotal || 0,
       tax: saleData.tax || 0,
+      taxLabel: saleData.taxLabel || getTaxTreatmentLabel(items, saleData.taxIncluded ?? true),
       discount: saleData.discount || 0,
       total: saleData.total || 0,
       paymentMethod: saleData.paymentMethod || 'cash',
@@ -148,7 +150,7 @@ class ReceiptService {
     message += `💰 Subtotal: ${this.formatCurrency(receipt.subtotal)}\n`;
     
     if (receipt.tax > 0) {
-      message += `📊 VAT (18%): ${this.formatCurrency(receipt.tax)}\n`;
+      message += `📊 ${receipt.taxLabel}: ${this.formatCurrency(receipt.tax)}\n`;
     }
     
     if (receipt.discount > 0) {
@@ -366,7 +368,7 @@ class ReceiptService {
             </div>
             ${receipt.tax > 0 ? `
             <div class="total-row">
-              <span><span class="emoji">📊</span> VAT (18%):</span>
+              <span><span class="emoji">📊</span> ${receipt.taxLabel}:</span>
               <span>${this.formatCurrency(receipt.tax)}</span>
             </div>
             ` : ''}
@@ -551,7 +553,7 @@ class ReceiptService {
     doc.text(`Subtotal: ${this.formatCurrency(receipt.subtotal)}`, margin, yPos);
     yPos += 4;
     if (receipt.tax > 0) {
-      doc.text(`VAT (18%): ${this.formatCurrency(receipt.tax)}`, margin, yPos);
+      doc.text(`${receipt.taxLabel}: ${this.formatCurrency(receipt.tax)}`, margin, yPos);
       yPos += 4;
     }
     if (receipt.discount > 0) {

@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { createClient } from '@supabase/supabase-js';
 import { supabase as sharedSupabase, supabaseConfig } from '../services/supabase';
 import inventoryService from '../services/inventorySupabaseService';
-import { calculateTaxTotals } from '../utils/taxPricing';
+import { calculateTaxTotals, getTaxTreatmentLabel } from '../utils/taxPricing';
 import ReceiptModal from '../components/ReceiptModal';
 import DualScannerInterface from '../components/DualScannerInterface';
 import SupplierOrderManagement from '../components/SupplierOrderManagement';
@@ -1079,7 +1079,7 @@ const POS = () => {
               <span className="font-medium">${calculateSubtotal().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">{(cart || []).some(item => item.tax_included != null) ? 'Tax by product:' : storeTaxIncluded ? 'Tax included:' : 'Tax added:'}</span>
+              <span className="text-gray-600">{getTaxTreatmentLabel(cart, storeTaxIncluded)}:</span>
               <span className="font-medium">${calculateTax().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-lg font-semibold border-t border-gray-200 pt-2">

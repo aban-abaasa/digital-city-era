@@ -14,6 +14,7 @@ import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { formatPaymentMethod } from '../utils/paymentMethod';
+import { getTaxTreatmentLabel } from '../utils/taxPricing';
 import './Receipt.css';
 // The same stylesheet, as a string, for the print window.
 import { useBackLayer } from '../hooks/useBackLayer';
@@ -66,6 +67,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const [openSections, setOpenSections] = useState({ items: true, verify: Boolean(isInvoice) });
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const items = receiptData?.receipt?.items || [];
+  const taxLabel = getTaxTreatmentLabel(items, receiptData?.taxIncluded ?? receiptData?.receipt?.taxIncluded ?? true);
   const canNativeShare = Boolean(receiptData?.id && navigator.share);
 
   const formatCurrency = (amount) => {
@@ -128,6 +130,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         })),
         subtotal: receiptData.receipt.subtotal,
         tax: receiptData.receipt.tax,
+        taxLabel,
         total: receiptData.receipt.total,
         // The PDF service falls back to 'cash' for a missing method, which
         // would mislabel a wallet sale; say so honestly instead.
@@ -165,7 +168,7 @@ ${receiptData.receipt.items.map(item =>
 ).join('\n')}
 
 Subtotal: ${formatCurrency(receiptData.receipt.subtotal)}
-VAT (18%): ${formatCurrency(receiptData.receipt.tax)}
+${taxLabel}: ${formatCurrency(receiptData.receipt.tax)}
 Total: ${formatCurrency(receiptData.receipt.total)}
 
 ${paymentLabel ? `Payment Method: ${paymentLabel}` : ''}
@@ -201,7 +204,7 @@ Visit us again at ${storeName}
   const handleWhatsApp = () => {
     const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - ${docLabel.toUpperCase()}*\n\n📄 *${docLabel}:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item =>
       `• ${item.name} x${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
-    ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *VAT (18%):* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}${paymentLabel ? `\n\n💳 *Payment:* ${paymentLabel}` : ''}${isInvoice ? `\n⚠️ *Balance Due:* ${formatCurrency(receiptData.balanceDue)}` : ''}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
+    ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *${taxLabel}:* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}${paymentLabel ? `\n\n💳 *Payment:* ${paymentLabel}` : ''}${isInvoice ? `\n⚠️ *Balance Due:* ${formatCurrency(receiptData.balanceDue)}` : ''}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
     
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
     window.open(whatsappUrl, '_blank');
@@ -232,7 +235,7 @@ ${receiptData.receipt.items.map(item => {
 
 ────────────────────────────────
 Subtotal:        ${formatCurrency(receiptData.receipt.subtotal)}
-VAT (18%):       ${formatCurrency(receiptData.receipt.tax)}
+${taxLabel}:       ${formatCurrency(receiptData.receipt.tax)}
 ════════════════════════════════
 TOTAL:           ${formatCurrency(receiptData.receipt.total)}
 ════════════════════════════════
@@ -434,7 +437,7 @@ ${branding?.publicWebsiteUrl || ''}
                 <span className="rc-value">{formatCurrency(receiptData.receipt.subtotal)}</span>
               </div>
               <div className="rc-row">
-                <span className="rc-label">VAT (18%):</span>
+                <span className="rc-label">{taxLabel}:</span>
                 <span className="rc-value">{formatCurrency(receiptData.receipt.tax)}</span>
               </div>
               <div className="rc-total">
@@ -516,7 +519,7 @@ ${branding?.publicWebsiteUrl || ''}
               <p className="rc-thanks">Webale nyo! 🙏</p>
               <p className="rc-fine">Thank you for shopping with us!</p>
               <p className="rc-fine">Visit us again at {storeName}</p>
-              <p className="rc-fine">VAT Inclusive • All prices in UGX</p>
+              <p className="rc-fine">{taxLabel} • All prices in UGX</p>
               {branding?.website && <p className="rc-fine">{branding.website}</p>}
               {supportEmail && <p className="rc-fine">{supportEmail}</p>}
               <p className="rc-fine">🇺🇬</p>

@@ -1,5 +1,12 @@
 export const taxIncludedFor = (item, storeDefault = true) => item?.tax_included ?? storeDefault;
 
+export function getTaxTreatmentLabel(items = [], storeDefault = true) {
+  const modes = new Set((Array.isArray(items) ? items : []).map((item) => Boolean(taxIncludedFor(item, storeDefault))));
+  if (modes.size > 1) return 'Tax by product';
+  const included = modes.size ? modes.has(true) : storeDefault !== false;
+  return included ? 'Tax included' : 'Tax added';
+}
+
 export function calculateTaxTotals(items = [], storeDefault = true) {
   return items.reduce((totals, item) => {
     const amount = (Number(item.price ?? item.selling_price) || 0) * (Number(item.quantity) || 0);

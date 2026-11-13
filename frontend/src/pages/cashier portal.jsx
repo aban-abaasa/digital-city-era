@@ -39,7 +39,7 @@ import {
 } from '../services/posOfflineCache';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
-import { calculateTaxTotals } from '../utils/taxPricing';
+import { calculateTaxTotals, getTaxTreatmentLabel } from '../utils/taxPricing';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import PortalHeader from '../components/PortalHeader';
@@ -672,6 +672,7 @@ const CashierPortal = () => {
         // and cached on cashierProfile, same pattern as
         // inventorySupabaseService.js's businessType lookup.
         let businessType = null;
+        let storeTaxIncluded = true;
         if (cashierData.supermarket_id) {
           const { data: store, error: storeError } = await supabase
             .from('supermarkets')
@@ -679,6 +680,7 @@ const CashierPortal = () => {
             .eq('id', cashierData.supermarket_id)
             .maybeSingle();
           businessType = store?.business_type || null;
+          storeTaxIncluded = store?.tax_included !== false;
           // Couldn't ask (flaky link) — don't downgrade a known business type
           // to "unknown", which would switch off wholesale/boutique behavior.
           if (!businessType && storeError) businessType = (await loadCachedProfile())?.businessType || null;
@@ -689,7 +691,7 @@ const CashierPortal = () => {
           user_id: user.id, // Auth user ID for wallet operations
           supermarket_id: cashierData.supermarket_id, // CRITICAL: Supermarket ID for RLS filtering
           businessType,
-          tax_included: store?.tax_included !== false,
+          tax_included: storeTaxIncluded,
           name: cashierData.full_name && cashierData.full_name.trim() ? cashierData.full_name : 'Cashier',
           phone: cashierData.phone && cashierData.phone.trim() ? cashierData.phone : '+256 XXX XXX XXX',
           email: cashierData.email || user.email || 'your.email@example.com',
@@ -1996,10 +1998,12 @@ const CashierPortal = () => {
         finalAmount: finalAmount,
         paymentMethod: paymentMethod.name,
         timestamp: new Date().toISOString(),
+        taxIncluded: cashierProfile.tax_included !== false,
         receipt: {
           items: currentTransaction.items,
           subtotal: currentTransaction.subtotal,
           tax: currentTransaction.tax,
+          taxIncluded: cashierProfile.tax_included !== false,
           total: currentTransaction.total,
           cashier: cashierProfile.name,
           register: cashierProfile.register
@@ -2422,10 +2426,12 @@ const CashierPortal = () => {
       finalAmount: sale.total,
       paymentMethod: paidMethod.name,
       timestamp: new Date().toISOString(),
+      taxIncluded: cashierProfile.tax_included !== false,
       receipt: {
         items: sale.items,
         subtotal: sale.subtotal,
         tax: sale.tax,
+        taxIncluded: cashierProfile.tax_included !== false,
         total: sale.total,
         cashier: cashierProfile.name,
         register: cashierProfile.register
@@ -2995,11 +3001,11 @@ const CashierPortal = () => {
               {/* Subtotal and Tax */}
               <div className="space-y-1 md:space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Subtotal (excl. VAT):</span>
+                  <span className="text-gray-600">Subtotal (before tax):</span>
                   <span className="font-semibold text-gray-900">{formatUGX(currentTransaction.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">VAT (18%, included):</span>
+                  <span className="text-gray-600">{getTaxTreatmentLabel(currentTransaction.items, cashierProfile.tax_included !== false)}:</span>
                   <span className="font-semibold text-gray-900">{formatUGX(currentTransaction.tax)}</span>
                 </div>
               </div>
