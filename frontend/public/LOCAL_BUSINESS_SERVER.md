@@ -56,16 +56,19 @@ Storage configuration before promising file uploads. See the official
   supermarket admin, manager, cashier, supplier, POS, and ICAN wallet screens.
   The shared account menu also exposes the same setup page across app portals,
   including the BodaGo dashboard. That owner-facing page creates one-use,
-  ten-minute pairing codes, lists paired nodes, and revokes nodes. Apply the
-  tax-setting migrations `ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql` then
+  ten-minute pairing codes, lists paired nodes, and revokes nodes. The
+  following cloud migrations are a one-time platform deployment handled by
+  the Digital City Era platform administrator; customers do not run SQL. Apply
+  the tax-setting migrations `ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql` then
   `ADD_PRODUCT_TAX_INCLUSION_OVERRIDE.sql` if not already installed. Then apply
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_CONTROL_PLANE.sql`,
   `backend/database/migrations/ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql`,
   then `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`,
   followed by `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
-  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` to the cloud project before pairing a
-  server that will sync local sales. The shared cloud project must already
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` to the cloud project. The customer setup
+  page checks readiness and directs customers to support if platform setup is
+  missing. The shared cloud project must already
   have the Digital City Era `public.products` and `public.inventory` tables;
   these sync migrations do not install the full app schema.
 - `local-server/agent` transports typed team-message and supermarket-catalog
@@ -86,9 +89,9 @@ Storage configuration before promising file uploads. See the official
   Protocol v3 acknowledges cloud events only after they are durable in the
   local inbox. Pairing checks the team-history and catalog bootstrap versions
   before it consumes a one-time pairing code.
-- The cloud migrations have not been applied to the shared Supabase project.
-  Node pairing and cash-sale cloud sync stay inactive until the included
-  migrations are applied in order.
+- If cloud migrations have not been applied to the shared Supabase project,
+  customer pairing stays unavailable and the setup page directs customers to
+  their platform administrator/support. The customer does not apply SQL.
 - The installer serves the app shell and team channel on the LAN. Supermarket
   nodes also hold a read-only mirror of product names, prices, and stock; cloud
   catalog changes flow to paired nodes. Local owner and staff PIN sign-in with
@@ -96,7 +99,7 @@ Storage configuration before promising file uploads. See the official
   checks staff identity when sending team messages and stamps the saved staff
   name and role. Cashier cash sales are stored on the shared local node, reduce
   local stock atomically, print a receipt, and sync to cloud transactions when
-  the included cash-sales migration has been applied and internet returns.
+  the platform administrator has enabled cloud sync and internet returns.
   Other app schemas, TLS, backup, and update/rollback remain to be built.
 - Digital City Era's cashier PWA caches the app and a business's product
   catalog/profile on each device, and queues cash sales in IndexedDB. It sends

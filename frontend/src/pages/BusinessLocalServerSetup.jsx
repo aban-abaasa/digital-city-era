@@ -70,6 +70,7 @@ const BusinessLocalServerSetup = () => {
           Number(protocol?.protocolVersion) >= 3
           && Number(protocol?.teamHistoryBootstrapVersion) >= 1
           && Number(protocol?.catalogBootstrapVersion) >= 1
+          && Number(protocol?.cashSalesSyncVersion) >= 1
         );
       } catch (requestError) {
         if (cancelled) return;
@@ -134,7 +135,7 @@ const BusinessLocalServerSetup = () => {
   const createPairing = async () => {
     if (!selectedBusiness) return;
     if (!protocolReady) {
-      setError('Run the latest copies of all four cloud migrations in order before creating a pairing code.');
+      setError('Digital City Era has not enabled offline server setup yet. Contact Digital City Era support; the one-time setup is handled for you.');
       return;
     }
     setWorking(true);
@@ -201,7 +202,7 @@ const BusinessLocalServerSetup = () => {
               </div>
             </div>
             <div className="bls-body">
-              <p>This local server can complete paid cash sales on its shared LAN database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. Apply the included cloud SQL migrations in order before pairing to sync sales. Other app workflows remain online-only.</p>
+              <p>This local server can complete paid cash sales on its shared LAN database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
               <div>
                 {localStaffSession ? (
                   <Link to={localStaffSession.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal'} className="bls-btn">
@@ -238,12 +239,12 @@ const BusinessLocalServerSetup = () => {
               ? 'Checking whether offline setup is available…'
               : protocolReady
                 ? 'Offline setup is ready for this business'
-                : 'Offline setup is not enabled yet'}
+                : 'Waiting for one-time platform setup'}
           </span>
         </header>
 
         <div className="bls-note">
-          <strong>Setup is in preview.</strong> Cash-only POS sales are saved to the shared local database with an atomic stock deduction and receipt, then queued for cloud sync. Apply the included cloud SQL migrations in order before pairing the server. Wallet payments and other app workflows still need an internet connection. Local team chat does not authenticate individual staff, so names can be impersonated by anyone on the business Wi-Fi.
+          <strong>Setup is in preview.</strong> Cash-only POS sales are saved to the shared local database with an atomic stock deduction and receipt, then queued for cloud sync. Digital City Era handles the one-time cloud setup; customers do not run SQL. Wallet payments and other app workflows still need an internet connection. Local team chat does not authenticate individual staff, so names can be impersonated by anyone on the business Wi-Fi.
         </div>
 
         <section className="bls-card">
@@ -273,7 +274,7 @@ const BusinessLocalServerSetup = () => {
               <li>Git</li>
             </ul>
             {!checkingProtocol && !protocolReady && (
-              <p className="bls-sub">Your platform administrator needs to finish the one-time platform setup before the download opens. You do not need to run SQL or use a terminal.</p>
+              <p className="bls-sub">The Digital City Era team needs to finish one-time setup before this download opens. Contact support; you do not need to run SQL or use a terminal.</p>
             )}
           </div>
         </section>

@@ -376,4 +376,24 @@ BEGIN
   END IF;
 END $$;
 
+-- The customer setup page and installer use this marker to confirm that cash
+-- sale cloud sync was enabled by the platform administrator before pairing.
+CREATE OR REPLACE FUNCTION public.business_local_sync_protocol_info()
+RETURNS JSONB
+LANGUAGE SQL
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'success', true,
+    'protocolVersion', 3,
+    'eventSchemaVersion', 1,
+    'teamHistoryBootstrapVersion', 1,
+    'catalogBootstrapVersion', 1,
+    'cashSalesSyncVersion', 1,
+    'minimumInstallerVersion', '0.2.0'
+  );
+$$;
+REVOKE ALL ON FUNCTION public.business_local_sync_protocol_info() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.business_local_sync_protocol_info() TO anon, authenticated;
+
 NOTIFY pgrst, 'reload schema';

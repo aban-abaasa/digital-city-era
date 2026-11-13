@@ -266,7 +266,7 @@ async function main() {
   console.log('\nOne-time local owner setup code (enter it on the first staff sign-in screen):');
   console.log(localSetupToken);
   console.log('Keep this code private. It stops working after the owner account is created.');
-  console.log('Staff accounts use local PINs and do not sync to cloud Auth. Apply the included cash-sales migration to cloud Supabase for sale sync; HTTPS and production security still need work.');
+  console.log('Staff accounts use local PINs and do not sync to cloud Auth. Digital City Era enables cloud sale sync once for the platform; contact support if pairing is unavailable. HTTPS and production security still need work.');
 }
 
 try {

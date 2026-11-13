@@ -32,17 +32,20 @@ role. Wallet payments and invoice/bill-later sales require the cloud app.
 - Internet during initial setup to download the pinned Supabase files and
   container images.
 - A fixed/reserved IPv4 address for the server on the business LAN.
-- If the cloud app does not already have its tax settings, apply
-  `backend/database/migrations/ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql`, then
-  `backend/database/migrations/ADD_PRODUCT_TAX_INCLUSION_OVERRIDE.sql`.
-- Apply the four core cloud migrations to the shared Supabase project in order:
+- **One-time platform setup is handled by Digital City Era. Customers do not
+  run SQL or change Supabase settings.** Before enabling this feature, the
+  platform administrator applies these migrations to the shared cloud project
+  in order (tax files may be skipped if already deployed):
+  `ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql`,
+  `ADD_PRODUCT_TAX_INCLUSION_OVERRIDE.sql`,
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_CONTROL_PLANE.sql`,
   `backend/database/migrations/ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`.
-- To sync local cash sales, also apply
-  `backend/database/migrations/ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
-  `backend/database/migrations/ADD_BUSINESS_LOCAL_CASH_SALES.sql` in that order.
+- The platform administrator then applies
+  `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` in that order. If the setup page says it
+  is waiting for platform setup, contact support; do not run these files.
 - The shared cloud project already has the Digital City Era `public.products`
   and `public.inventory` tables. These setup migrations add the sync layer,
   not the full business application schema.
@@ -139,7 +142,8 @@ until the cloud confirms them.
 - **Changes are sent as differences** ("+24", "-3"), never as final numbers, so
   an offline change cannot overwrite stock the cloud changed meanwhile (online
   sales, other deliveries). The cloud never lets stock drop below zero.
-- **Cloud migration (needed for the cloud to apply them).** Run
+- **Platform administrator only: cloud migration.** The platform administrator
+  applies
   `backend/database/migrations/ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` once
   in the cloud Supabase project, after the four migrations above (it is also
   served from `/local-server-migrations/`). Without it the server still keeps
@@ -203,9 +207,10 @@ history and a supermarket's current catalog; cloud product and stock changes
 continue syncing while the node is paired. Protocol v3 acknowledges an event
 only after the local inbox stores it. A cash sale updates the local receipt
 ledger, stock mirror, and outbox together; the node sync worker publishes the
-sale when internet returns. Apply all included cloud SQL migrations in the
-listed order before pairing a node that will sync sales. Unsupported event
-types are quarantined in the local inbox.
+sale when internet returns. Cloud sync is enabled by the platform administrator
+as a one-time setup. Customers do not need to run SQL; if setup is unavailable,
+contact support before pairing. Unsupported event types are quarantined in the
+local inbox.
 
 To stop the stack, run from the chosen installation folder:
 

@@ -46,7 +46,7 @@ try {
   const schemaResult = await schemaCheck.json().catch(() => null);
   if (!schemaCheck.ok || schemaResult?.success !== false
       || !String(schemaResult?.error || '').includes('credentials are invalid')) {
-    throw new Error('Apply the business-local sync control-plane and team-message migrations to cloud Supabase before pairing. The one-time code has not been used.');
+    throw new Error('Digital City Era has not enabled offline server setup yet. Contact Digital City Era support; your one-time code has not been used.');
   }
 
   const protocolCheck = await fetch(`${cloudUrl.toString().replace(/\/$/, '')}/rest/v1/rpc/business_local_sync_protocol_info`, {
@@ -64,8 +64,9 @@ try {
   if (!protocolCheck.ok || protocolInfo?.success !== true
       || Number(protocolInfo.protocolVersion) < 3
       || Number(protocolInfo.teamHistoryBootstrapVersion) < 1
-      || Number(protocolInfo.catalogBootstrapVersion) < 1) {
-    throw new Error('Run the latest four business-local migrations in cloud Supabase before pairing. The one-time code has not been used.');
+      || Number(protocolInfo.catalogBootstrapVersion) < 1
+      || Number(protocolInfo.cashSalesSyncVersion) < 1) {
+    throw new Error('Digital City Era has not enabled offline server setup yet. Contact Digital City Era support; your one-time code has not been used.');
   }
 
   const response = await fetch(`${cloudUrl.toString().replace(/\/$/, '')}/rest/v1/rpc/claim_business_local_sync_pairing`, {
