@@ -201,7 +201,7 @@ const BusinessLocalServerSetup = () => {
               </div>
             </div>
             <div className="bls-body">
-              <p>The preview supports LAN team chat, local owner and staff PIN sign-in, and a read-only supermarket catalog and stock mirror. Shared local cash sales, stock movements, and the other app workflows are not set up on this node yet.</p>
+              <p>This local server can complete paid cash sales on its shared LAN database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. Apply the included cloud SQL migrations in order before pairing to sync sales. Other app workflows remain online-only.</p>
               <div>
                 {localStaffSession ? (
                   <Link to={localStaffSession.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal'} className="bls-btn">
@@ -243,7 +243,7 @@ const BusinessLocalServerSetup = () => {
         </header>
 
         <div className="bls-note">
-          <strong>Setup is in preview.</strong> It installs the app shell, LAN team chat, local staff PIN sign-in, and a read-only supermarket product/stock mirror that syncs with the cloud. The local chat does not authenticate individual staff, so names can be impersonated by anyone on the business Wi-Fi — keep sensitive information out of it. Local sales, stock movements, and the other app workflows are not enabled offline.
+          <strong>Setup is in preview.</strong> Cash-only POS sales are saved to the shared local database with an atomic stock deduction and receipt, then queued for cloud sync. Apply the included cloud SQL migrations in order before pairing the server. Wallet payments and other app workflows still need an internet connection. Local team chat does not authenticate individual staff, so names can be impersonated by anyone on the business Wi-Fi.
         </div>
 
         <section className="bls-card">

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS public.business_local_catalog (
   price NUMERIC(15,2) NOT NULL DEFAULT 0,
   selling_price NUMERIC(15,2) NOT NULL DEFAULT 0,
   tax_rate NUMERIC(7,3) NOT NULL DEFAULT 0,
+  tax_included BOOLEAN NOT NULL DEFAULT true,
   category_id UUID,
   inventory_mode TEXT NOT NULL DEFAULT 'stock_controlled',
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -69,6 +70,9 @@ CREATE TABLE IF NOT EXISTS public.business_local_catalog (
   stock_updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (business_id, product_id)
 );
+
+ALTER TABLE public.business_local_catalog
+  ADD COLUMN IF NOT EXISTS tax_included BOOLEAN NOT NULL DEFAULT true;
 
 CREATE INDEX IF NOT EXISTS idx_business_local_catalog_active
   ON public.business_local_catalog(business_id, name)
@@ -901,3 +905,298 @@ $$;
 
 REVOKE ALL ON FUNCTION public.business_local_add_product(TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.business_local_add_product(TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC) TO authenticated;
+
+-- A LAN till records paid cash sales on the shared local database. The stock
+-- decrement and cloud-sync outbox event are part of the same transaction, so
+-- a printed receipt always represents a durable sale on this node.
+CREATE TABLE IF NOT EXISTS public.business_local_cash_sales (
+  id UUID PRIMARY KEY,
+  business_id UUID NOT NULL,
+  client_transaction_id TEXT NOT NULL,
+  receipt_number TEXT NOT NULL,
+  cashier_id UUID NOT NULL,
+  cashier_name TEXT NOT NULL,
+  register_number TEXT NOT NULL DEFAULT 'Local Till',
+  customer_name TEXT NOT NULL DEFAULT 'Walk-in Customer',
+  customer_phone TEXT,
+  subtotal NUMERIC(15,2) NOT NULL CHECK (subtotal >= 0),
+  tax_amount NUMERIC(15,2) NOT NULL CHECK (tax_amount >= 0),
+  total_amount NUMERIC(15,2) NOT NULL CHECK (total_amount >= 0),
+  amount_paid_ugx NUMERIC(15,2) NOT NULL CHECK (amount_paid_ugx >= total_amount),
+  change_given NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (change_given >= 0),
+  tax_included BOOLEAN NOT NULL DEFAULT true,
+  payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method = 'cash'),
+  payment_reference TEXT NOT NULL,
+  items_count INTEGER NOT NULL CHECK (items_count > 0),
+  items JSONB NOT NULL CHECK (jsonb_typeof(items) = 'array'),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  synced_at TIMESTAMPTZ,
+  sync_error TEXT,
+  UNIQUE (business_id, client_transaction_id),
+  UNIQUE (business_id, receipt_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_local_cash_sales_recent
+  ON public.business_local_cash_sales(business_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_business_local_cash_sales_cashier
+  ON public.business_local_cash_sales(business_id, cashier_id, created_at DESC);
+
+ALTER TABLE public.business_local_cash_sales ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.business_local_cash_sales FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.business_local_cash_sales TO authenticated;
+GRANT ALL ON TABLE public.business_local_cash_sales TO service_role;
+DROP POLICY IF EXISTS business_local_cash_sales_read ON public.business_local_cash_sales;
+CREATE POLICY business_local_cash_sales_read
+  ON public.business_local_cash_sales FOR SELECT TO authenticated
+  USING (
+    business_id = NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID
+    AND (
+      auth.jwt()->'app_metadata'->>'local_role' IN ('owner', 'manager')
+      OR (
+        auth.jwt()->'app_metadata'->>'local_role' = 'cashier'
+        AND cashier_id = auth.uid()
+      )
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.business_local_record_cash_sale(p_sale JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+  v_cashier_name TEXT := COALESCE(
+    NULLIF(trim(auth.jwt()->'user_metadata'->>'full_name'), ''),
+    NULLIF(trim(auth.jwt()->'user_metadata'->>'username'), ''),
+    'Cashier'
+  );
+  v_id UUID := gen_random_uuid();
+  v_client_transaction_id TEXT := NULLIF(trim(COALESCE(p_sale->>'clientTransactionId', '')), '');
+  v_receipt_number TEXT;
+  v_items JSONB := p_sale->'items';
+  v_item JSONB;
+  v_normalized_items JSONB := '[]'::JSONB;
+  v_product_id UUID;
+  v_quantity NUMERIC;
+  v_already_sold NUMERIC;
+  v_unit_price NUMERIC;
+  v_rate NUMERIC;
+  v_tax_included BOOLEAN;
+  v_line_gross NUMERIC;
+  v_line_tax NUMERIC;
+  v_line_total NUMERIC;
+  v_expected_subtotal NUMERIC := 0;
+  v_expected_tax NUMERIC := 0;
+  v_expected_total NUMERIC := 0;
+  v_subtotal NUMERIC;
+  v_tax NUMERIC;
+  v_total NUMERIC;
+  v_amount_paid NUMERIC;
+  v_change NUMERIC;
+  v_customer_name TEXT;
+  v_customer_phone TEXT;
+  v_register TEXT;
+  v_payment_reference TEXT;
+  v_catalog public.business_local_catalog%ROWTYPE;
+  v_existing public.business_local_cash_sales%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role IS NULL
+     OR v_role NOT IN ('owner', 'manager', 'cashier') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Sign in as local cashier, manager, or owner to record a sale.');
+  END IF;
+  IF jsonb_typeof(p_sale) <> 'object' OR v_client_transaction_id IS NULL
+     OR length(v_client_transaction_id) > 100 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'The sale details are incomplete.');
+  END IF;
+  IF COALESCE(p_sale->'paymentMethod'->>'id', '') <> 'cash_ugx' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'The local server accepts cash sales only.');
+  END IF;
+  IF jsonb_typeof(v_items) <> 'array' OR jsonb_array_length(v_items) NOT BETWEEN 1 AND 100 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Add at least one item before completing a cash sale.');
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM public.business_local_cash_sales
+  WHERE business_id = v_business_id
+    AND client_transaction_id = v_client_transaction_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'success', true, 'alreadyRecorded', true, 'id', v_existing.id,
+      'transactionId', v_existing.client_transaction_id, 'receiptNumber', v_existing.receipt_number,
+      'subtotal', v_existing.subtotal, 'tax', v_existing.tax_amount, 'total', v_existing.total_amount,
+      'amountPaid', v_existing.amount_paid_ugx, 'changeGiven', v_existing.change_given,
+      'items', v_existing.items, 'cashier', v_existing.cashier_name,
+      'register', v_existing.register_number, 'createdAt', v_existing.created_at
+    );
+  END IF;
+
+  BEGIN
+    v_subtotal := round((p_sale->>'subtotal')::NUMERIC, 2);
+    v_tax := round((p_sale->>'tax')::NUMERIC, 2);
+    v_total := round((p_sale->>'total')::NUMERIC, 2);
+    v_amount_paid := round((p_sale->>'amountPaid')::NUMERIC, 2);
+    v_change := round(COALESCE((p_sale->>'changeGiven')::NUMERIC, 0), 2);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', 'The sale totals are not valid numbers.');
+  END;
+  IF v_subtotal IS NULL OR v_tax IS NULL OR v_total IS NULL OR v_amount_paid IS NULL
+     OR v_subtotal < 0 OR v_tax < 0 OR v_total <= 0 OR v_amount_paid < v_total
+     OR v_change < 0 OR abs(v_change - (v_amount_paid - v_total)) > 0.02 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'A local cash sale must be paid in full with valid change.');
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(v_items)
+  LOOP
+    BEGIN
+      v_product_id := COALESCE(NULLIF(v_item->>'product_id', ''), NULLIF(v_item->>'id', ''))::UUID;
+      v_quantity := (v_item->>'quantity')::NUMERIC;
+      v_unit_price := COALESCE(NULLIF(v_item->>'selling_price', '')::NUMERIC, NULLIF(v_item->>'price', '')::NUMERIC);
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('success', false, 'error', 'A sale item has an invalid product, price, or quantity.');
+    END;
+    IF v_product_id IS NULL OR v_quantity IS NULL OR v_quantity <= 0 OR v_quantity > 1000000
+       OR v_unit_price IS NULL OR v_unit_price < 0 OR v_unit_price > 1000000000000 THEN
+      RETURN jsonb_build_object('success', false, 'error', 'A sale item has an invalid product, price, or quantity.');
+    END IF;
+
+    SELECT * INTO v_catalog
+    FROM public.business_local_catalog
+    WHERE business_id = v_business_id AND product_id = v_product_id AND is_active
+    FOR UPDATE;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('success', false, 'error', 'A product in this sale is no longer active on the local server. Refresh the catalog and try again.');
+    END IF;
+    IF v_catalog.inventory_mode = 'batch_controlled' THEN
+      RETURN jsonb_build_object('success', false, 'error', 'This item needs a live batch selection and cannot be sold from the local till yet.');
+    END IF;
+    IF v_catalog.inventory_mode NOT IN ('stock_controlled', 'listing_only', 'service_item') THEN
+      RETURN jsonb_build_object('success', false, 'error', 'This item type is not supported for a local cash sale.');
+    END IF;
+    IF abs(round(v_unit_price, 2) - round(v_catalog.selling_price, 2)) > 0.01 THEN
+      RETURN jsonb_build_object('success', false, 'error', format('The price for %s changed. Refresh the catalog before taking payment.', v_catalog.name));
+    END IF;
+    IF v_catalog.inventory_mode = 'stock_controlled' THEN
+      SELECT COALESCE(sum((line->>'quantity')::NUMERIC), 0)
+      INTO v_already_sold
+      FROM jsonb_array_elements(v_normalized_items) AS prior(line)
+      WHERE line->>'product_id' = v_product_id::TEXT;
+      IF v_catalog.current_stock - v_catalog.reserved_stock - v_already_sold < v_quantity THEN
+        RETURN jsonb_build_object('success', false, 'error', format('Not enough local stock for %s. Refresh the catalog.', v_catalog.name));
+      END IF;
+    END IF;
+
+    v_rate := COALESCE(v_catalog.tax_rate, 0) / 100;
+    v_tax_included := COALESCE(v_catalog.tax_included, true);
+    v_line_gross := v_unit_price * v_quantity;
+    v_line_tax := CASE
+      WHEN v_rate <= 0 THEN 0
+      WHEN v_tax_included THEN v_line_gross - (v_line_gross / (1 + v_rate))
+      ELSE v_line_gross * v_rate
+    END;
+    v_line_total := CASE WHEN v_tax_included THEN v_line_gross ELSE v_line_gross + v_line_tax END;
+    v_expected_subtotal := v_expected_subtotal + CASE WHEN v_tax_included THEN v_line_gross - v_line_tax ELSE v_line_gross END;
+    v_expected_tax := v_expected_tax + v_line_tax;
+    v_expected_total := v_expected_total + v_line_total;
+
+    v_normalized_items := v_normalized_items || jsonb_build_array(
+      v_item || jsonb_build_object(
+        'id', v_product_id,
+        'product_id', v_product_id,
+        'name', v_catalog.name,
+        'price', v_unit_price,
+        'selling_price', v_unit_price,
+        'tax_rate', v_catalog.tax_rate,
+        'tax_included', v_tax_included,
+        'tax_amount', v_line_tax,
+        'line_total', v_line_total,
+        'inventoryMode', v_catalog.inventory_mode
+      )
+    );
+
+  END LOOP;
+
+  v_expected_subtotal := round(v_expected_subtotal, 2);
+  v_expected_tax := round(v_expected_tax, 2);
+  v_expected_total := round(v_expected_total, 2);
+  IF abs(v_subtotal - v_expected_subtotal) > 0.02
+     OR abs(v_tax - v_expected_tax) > 0.02
+     OR abs(v_total - v_expected_total) > 0.02 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'The cart total changed. Recheck the receipt before taking cash.');
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(v_normalized_items)
+  LOOP
+    IF v_item->>'inventoryMode' = 'stock_controlled' THEN
+      UPDATE public.business_local_catalog
+      SET current_stock = current_stock - (v_item->>'quantity')::NUMERIC,
+          stock_updated_at = now()
+      WHERE business_id = v_business_id
+        AND product_id = (v_item->>'product_id')::UUID;
+    END IF;
+  END LOOP;
+
+  v_customer_name := left(NULLIF(trim(COALESCE(p_sale->'customer'->>'name', '')), ''), 255);
+  v_customer_name := COALESCE(v_customer_name, 'Walk-in Customer');
+  v_customer_phone := NULLIF(left(trim(COALESCE(p_sale->'customer'->>'phone', '')), 80), '');
+  v_register := COALESCE(NULLIF(left(trim(COALESCE(p_sale->>'register', '')), 80), ''), 'Local Till');
+  v_payment_reference := COALESCE(NULLIF(left(trim(COALESCE(p_sale->>'paymentReference', '')), 120), ''), v_client_transaction_id);
+  v_receipt_number := 'LOCAL-' || to_char(clock_timestamp(), 'YYYYMMDD-HH24MISS') || '-' || upper(substr(replace(v_id::TEXT, '-', ''), 1, 8));
+
+  INSERT INTO public.business_local_cash_sales (
+    id, business_id, client_transaction_id, receipt_number, cashier_id, cashier_name,
+    register_number, customer_name, customer_phone, subtotal, tax_amount, total_amount,
+    amount_paid_ugx, change_given, tax_included, payment_method, payment_reference,
+    items_count, items, created_at
+  ) VALUES (
+    v_id, v_business_id, v_client_transaction_id, v_receipt_number, auth.uid(), v_cashier_name,
+    v_register, v_customer_name, v_customer_phone, v_expected_subtotal, v_expected_tax,
+    v_expected_total, v_amount_paid, v_change, COALESCE((p_sale->>'taxIncluded')::BOOLEAN, true),
+    'cash', v_payment_reference, jsonb_array_length(v_normalized_items), v_normalized_items,
+    COALESCE(NULLIF(p_sale->>'soldAt', '')::TIMESTAMPTZ, now())
+  );
+
+  INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
+  VALUES (
+    v_id,
+    'sale.cash.v1',
+    1,
+    jsonb_build_object(
+      'client_transaction_id', v_client_transaction_id,
+      'receipt_number', v_receipt_number,
+      'cashier_name', v_cashier_name,
+      'register_number', v_register,
+      'customer_name', v_customer_name,
+      'customer_phone', v_customer_phone,
+      'subtotal', v_expected_subtotal,
+      'tax_amount', v_expected_tax,
+      'total_amount', v_expected_total,
+      'amount_paid_ugx', v_amount_paid,
+      'change_given', v_change,
+      'tax_included', COALESCE((p_sale->>'taxIncluded')::BOOLEAN, true),
+      'payment_method', 'cash',
+      'payment_provider', 'Cash (UGX)',
+      'payment_reference', v_payment_reference,
+      'items_count', jsonb_array_length(v_normalized_items),
+      'items', v_normalized_items,
+      'created_at', COALESCE(NULLIF(p_sale->>'soldAt', '')::TIMESTAMPTZ, now())
+    ),
+    COALESCE(NULLIF(p_sale->>'soldAt', '')::TIMESTAMPTZ, now())
+  );
+
+  RETURN jsonb_build_object(
+    'success', true, 'id', v_id, 'transactionId', v_client_transaction_id,
+    'receiptNumber', v_receipt_number, 'subtotal', v_expected_subtotal,
+    'tax', v_expected_tax, 'total', v_expected_total, 'amountPaid', v_amount_paid,
+    'changeGiven', v_change, 'items', v_normalized_items, 'cashier', v_cashier_name,
+    'register', v_register, 'createdAt', COALESCE(NULLIF(p_sale->>'soldAt', '')::TIMESTAMPTZ, now())
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.business_local_record_cash_sale(JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.business_local_record_cash_sale(JSONB) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

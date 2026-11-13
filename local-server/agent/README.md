@@ -10,6 +10,8 @@ one-time-provisioned node secret inside the server container environment.
 
 The agent applies version-1 team-message events and supermarket catalog events
 to local tables, and quarantines unsupported event types or schema versions.
+Cash sales use the local database's versioned outbox and sync to cloud
+transactions when `ADD_BUSINESS_LOCAL_CASH_SALES.sql` has been applied there.
 It omits product cost from the LAN catalog. Catalog rows are read-only to LAN
 clients; only the agent can change the replicated data.
 

@@ -178,6 +178,7 @@ AS $$
     'price', COALESCE(p.price, p.selling_price, 0),
     'selling_price', COALESCE(p.selling_price, p.price, 0),
     'tax_rate', COALESCE(p.tax_rate, 0),
+    'tax_included', COALESCE(p.tax_included, s.tax_included, TRUE),
     'category_id', p.category_id,
     'inventory_mode', COALESCE(p.inventory_mode, 'stock_controlled'),
     'is_active', COALESCE(p.is_active, true),
@@ -189,6 +190,7 @@ AS $$
     'stock_updated_at', COALESCE(i.updated_at, i.created_at, p.created_at, now())
   )
   FROM public.products p
+  JOIN public.supermarkets s ON s.id = p.supermarket_id
   LEFT JOIN public.inventory i
     ON i.product_id = p.id
    AND i.supermarket_id = p_supermarket_id

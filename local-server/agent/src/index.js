@@ -104,6 +104,7 @@ async function pushLocalEvents() {
   });
   if (!applied?.success) throw new Error(applied?.error || 'Cloud could not apply the local sync batch.');
   const cloudErrors = Array.isArray(applied.errors) ? applied.errors : [];
+  const rejectedEventIds = new Set(cloudErrors.map((entry) => String(entry.event_id || '')));
   if (cloudErrors.length) {
     console.warn(`[local-sync] cloud quarantined ${cloudErrors.length} outbound event(s):`, cloudErrors.slice(0, 5));
   }
@@ -123,6 +124,37 @@ async function pushLocalEvents() {
       prefer: 'return=minimal',
     }
   );
+
+  const localSales = events.filter((event) => event.event_type === 'sale.cash.v1');
+  const syncedSaleIds = localSales
+    .filter((event) => !rejectedEventIds.has(String(event.event_id)))
+    .map((event) => event.event_id);
+  for (const eventId of syncedSaleIds) {
+    await request(
+      localBaseUrl,
+      localKey,
+      `business_local_cash_sales?id=eq.${encodeURIComponent(eventId)}`,
+      {
+        method: 'PATCH',
+        body: { synced_at: new Date().toISOString(), sync_error: null },
+        prefer: 'return=minimal',
+      }
+    );
+  }
+  for (const rejection of cloudErrors) {
+    const rejectedSale = localSales.find((event) => String(event.event_id) === String(rejection.event_id));
+    if (!rejectedSale) continue;
+    await request(
+      localBaseUrl,
+      localKey,
+      `business_local_cash_sales?id=eq.${encodeURIComponent(rejectedSale.event_id)}`,
+      {
+        method: 'PATCH',
+        body: { sync_error: String(rejection.error || 'Cloud rejected this sale.').slice(0, 500) },
+        prefer: 'return=minimal',
+      }
+    );
+  }
   return acknowledgedIds.length;
 }
 
@@ -274,6 +306,7 @@ async function applyLocalCatalogEvent(event) {
     price: numeric(payload.price, 'price'),
     selling_price: numeric(payload.selling_price, 'selling price'),
     tax_rate: numeric(payload.tax_rate, 'tax rate'),
+    tax_included: payload.tax_included !== false,
     category_id: payload.category_id || null,
     inventory_mode: inventoryMode,
     is_active: payload.is_active !== false,

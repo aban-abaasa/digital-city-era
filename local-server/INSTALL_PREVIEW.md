@@ -13,11 +13,13 @@ or an installable PWA.
 sync to the cloud when internet returns. Supermarket nodes also receive current
 product names, selling prices, and stock, plus cloud product/stock updates.
 That mirror is read-only except for owner/manager stock corrections (see
-**Inventory** below): local cash sales, purchasing, ICAN, BodaGoEra,
-attachments, and the rest of the business database are not enabled offline.
+**Inventory** below). Cashier cash sales are saved to the shared local database,
+deduct local stock atomically, print a receipt, and queue a cloud transaction.
+Purchasing, ICAN, BodaGoEra, attachments, and the rest of the business database
+are not enabled offline.
 Local owner/cashier/manager PIN accounts are installed. The local database
 validates staff for team-message writes and supplies the saved sender name and
-role. Cash sales and stock movements are not enabled.
+role. Wallet payments and invoice/bill-later sales require the cloud app.
 
 ## Requirements
 
@@ -30,11 +32,17 @@ role. Cash sales and stock movements are not enabled.
 - Internet during initial setup to download the pinned Supabase files and
   container images.
 - A fixed/reserved IPv4 address for the server on the business LAN.
-- All four cloud migrations applied to the shared Supabase project in order:
+- If the cloud app does not already have its tax settings, apply
+  `backend/database/migrations/ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql`, then
+  `backend/database/migrations/ADD_PRODUCT_TAX_INCLUSION_OVERRIDE.sql`.
+- Apply the four core cloud migrations to the shared Supabase project in order:
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_CONTROL_PLANE.sql`,
   `backend/database/migrations/ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`.
+- To sync local cash sales, also apply
+  `backend/database/migrations/ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
+  `backend/database/migrations/ADD_BUSINESS_LOCAL_CASH_SALES.sql` in that order.
 - The shared cloud project already has the Digital City Era `public.products`
   and `public.inventory` tables. These setup migrations add the sync layer,
   not the full business application schema.
@@ -131,7 +139,7 @@ until the cloud confirms them.
 - **Changes are sent as differences** ("+24", "-3"), never as final numbers, so
   an offline change cannot overwrite stock the cloud changed meanwhile (online
   sales, other deliveries). The cloud never lets stock drop below zero.
-- **Cloud migration (optional but needed for the cloud to apply them).** Run
+- **Cloud migration (needed for the cloud to apply them).** Run
   `backend/database/migrations/ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` once
   in the cloud Supabase project, after the four migrations above (it is also
   served from `/local-server-migrations/`). Without it the server still keeps
@@ -193,8 +201,11 @@ local database while offline, pushed to the cloud when it is reachable, and
 pulled back to other paired nodes. Pairing queues existing team-message
 history and a supermarket's current catalog; cloud product and stock changes
 continue syncing while the node is paired. Protocol v3 acknowledges an event
-only after the local inbox stores it. Unsupported event types are quarantined
-in the local inbox. Sales and local stock deductions are not implemented.
+only after the local inbox stores it. A cash sale updates the local receipt
+ledger, stock mirror, and outbox together; the node sync worker publishes the
+sale when internet returns. Apply all included cloud SQL migrations in the
+listed order before pairing a node that will sync sales. Unsupported event
+types are quarantined in the local inbox.
 
 To stop the stack, run from the chosen installation folder:
 
@@ -205,9 +216,9 @@ docker compose --env-file .env --env-file .env.local-sync \
 
 This command stops containers but keeps the database and Storage data. Do not
 use `down -v` unless you intend to delete them. Automated backup, restore,
-updates, rollback, TLS certificates, shared cash sales, stock movements, and
-the rest of the business app schema/workflows still need to be added before
-production use. Local staff PINs currently control app access only.
+updates, rollback, TLS certificates, and the rest of the business app
+schema/workflows still need work before production use. Local staff PINs
+currently control app access only.
 
 To rebuild the downloadable package from the repository, build the frontend
 from `frontend` with `npm run build`, then run `local-server/package-preview.ps1`

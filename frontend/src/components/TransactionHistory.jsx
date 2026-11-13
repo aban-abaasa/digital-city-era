@@ -13,12 +13,20 @@ import Receipt from './Receipt';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { formatPaymentMethod, paymentMethodKind } from '../utils/paymentMethod';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { supabaseConfig } from '../services/supabase';
+import { getLocalCashSales } from '../services/localCashSaleService';
 
 const PAYMENT_BADGE = {
   cash: 'bg-green-100 text-green-800',
   mtn: 'bg-yellow-100 text-yellow-800',
   airtel: 'bg-red-100 text-red-800'
 };
+
+const localSyncCopy = (status) => status === 'synced'
+  ? 'Cloud synced'
+  : status === 'error'
+    ? 'Sync needs attention'
+    : 'Waiting to sync';
 
 const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId = null, viewMode = 'cashier', savedReceipts = [], classicLayout = false }) => {
   const branding = useSupermarketBranding();
@@ -76,6 +84,56 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   const loadTransactions = async () => {
     setLoading(true);
     try {
+      if (supabaseConfig.localBusinessServer) {
+        const now = new Date();
+        const from = new Date(now);
+        if (dateFilter === 'today') from.setHours(0, 0, 0, 0);
+        else if (dateFilter === 'week') from.setDate(from.getDate() - 7);
+        else if (dateFilter === 'month') from.setDate(1);
+        else if (dateFilter === 'year') from.setMonth(0, 1);
+        from.setHours(0, 0, 0, 0);
+        const localSales = await getLocalCashSales({
+          from: from.toISOString(),
+          cashierId: viewMode === 'cashier' ? cashierId : null,
+        });
+        const rows = localSales.map((sale) => ({
+          ...sale,
+          id: sale.id,
+          receipt_number: sale.receipt_number,
+          transaction_id: sale.client_transaction_id,
+          transaction_date: sale.created_at,
+          payment_method: sale.payment_method || 'cash',
+          payment_provider: 'Cash (UGX)',
+          total_amount: Number(sale.total_amount) || 0,
+          tax_amount: Number(sale.tax_amount) || 0,
+          amount_paid_ugx: Number(sale.amount_paid_ugx) || Number(sale.total_amount) || 0,
+          balance_due_ugx: 0,
+          payment_status: 'paid',
+          items_count: Number(sale.items_count) || sale.items?.length || 0,
+          receiptNumber: sale.receipt_number,
+          transactionId: sale.client_transaction_id,
+          timestamp: sale.created_at,
+          total: Number(sale.total_amount) || 0,
+          tax: Number(sale.tax_amount) || 0,
+          subtotal: Number(sale.subtotal) || 0,
+          paymentMethod: 'Cash (UGX)',
+          cashier: sale.cashier_name,
+          register: sale.register_number,
+          localServerSyncStatus: sale.synced_at ? 'synced' : sale.sync_error ? 'error' : 'pending',
+        }));
+        setTransactions(rows);
+        setFilteredTransactions(rows);
+        const totalAmount = rows.reduce((sum, sale) => sum + sale.total_amount, 0);
+        setStatsData({
+          totalTransactions: rows.length,
+          totalSales: totalAmount,
+          averageBasket: rows.length ? totalAmount / rows.length : 0,
+          totalItems: rows.reduce((sum, sale) => sum + sale.items_count, 0),
+        });
+        setLoading(false);
+        return;
+      }
+
       let result;
       
       // Only filter by cashier in cashier view mode; only filter by manager
@@ -255,6 +313,33 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
 
   const handleViewReceipt = async (transaction) => {
     try {
+      if (supabaseConfig.localBusinessServer) {
+        setSelectedTransaction({
+          id: null,
+          receiptNumber: transaction.receipt_number,
+          transactionId: transaction.transaction_id,
+          timestamp: transaction.created_at,
+          amount: transaction.total_amount,
+          paymentMethod: transaction.payment_provider,
+          paymentStatus: 'paid',
+          amountPaid: transaction.amount_paid_ugx,
+          balanceDue: 0,
+          taxIncluded: transaction.tax_included,
+          localServerSale: true,
+          receipt: {
+            items: transaction.items || [],
+            subtotal: transaction.subtotal,
+            tax: transaction.tax_amount,
+            total: transaction.total_amount,
+            cashier: transaction.cashier_name || 'Local cashier',
+            register: transaction.register_number || 'Local Till',
+            location: 'Business LAN',
+          },
+        });
+        setShowReceipt(true);
+        return;
+      }
+
       // Get full transaction with items
       const filterManagerId = viewMode === 'manager' ? managerId : null;
       const result = await transactionService.getTransaction(transaction.id, supermarketId, filterManagerId);
@@ -297,7 +382,8 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   const handleDownloadReceipt = async (item) => {
     try {
       let receipt = item;
-      if (!localReceiptsOnly && !Array.isArray(item.items)) {
+      const isBusinessLocalSale = supabaseConfig.localBusinessServer;
+      if (!localReceiptsOnly && !isBusinessLocalSale && !Array.isArray(item.items)) {
         const result = await transactionService.getTransaction(
           item.id,
           supermarketId,
@@ -307,7 +393,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
         receipt = { ...item, items: result.transaction?.items || [] };
       }
 
-      const isLocal = localReceiptsOnly;
+      const isLocal = localReceiptsOnly || isBusinessLocalSale;
       const sourceItems = receipt.items || [];
       await receiptGeneratorService.downloadPDFReceipt({
         id: receipt.id,
@@ -699,6 +785,20 @@ ${branding?.publicWebsiteUrl || ''}
                           ? new Date(item.timestamp).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' })
                           : new Date(item.created_at || item.transaction_date).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' })}
                       </p>
+                      {supabaseConfig.localBusinessServer && (
+                        <span
+                          className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            item.localServerSyncStatus === 'synced'
+                              ? 'bg-emerald-50 text-emerald-800'
+                              : item.localServerSyncStatus === 'error'
+                                ? 'bg-rose-50 text-rose-800'
+                                : 'bg-amber-50 text-amber-800'
+                          }`}
+                          title={item.sync_error || undefined}
+                        >
+                          {localSyncCopy(item.localServerSyncStatus)}
+                        </span>
+                      )}
                     </div>
                     <button
                       onClick={() => {
@@ -885,6 +985,20 @@ ${branding?.publicWebsiteUrl || ''}
                       <span className={`text-sm font-medium ${localReceiptsOnly ? 'text-orange-600' : 'text-gray-900'}`}>
                         {localReceiptsOnly ? item.receiptNumber : item.receipt_number}
                       </span>
+                      {supabaseConfig.localBusinessServer && (
+                        <div
+                          className={`mt-1 text-[10px] font-semibold ${
+                            item.localServerSyncStatus === 'synced'
+                              ? 'text-emerald-700'
+                              : item.localServerSyncStatus === 'error'
+                                ? 'text-rose-700'
+                                : 'text-amber-700'
+                          }`}
+                          title={item.sync_error || undefined}
+                        >
+                          {localSyncCopy(item.localServerSyncStatus)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">

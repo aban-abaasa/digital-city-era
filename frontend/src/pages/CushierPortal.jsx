@@ -46,7 +46,10 @@ import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
 import { findProductByBarcode } from '../utils/barcodeHelper';
+import { recordLocalCashSale } from '../services/localCashSaleService';
 import '../styles/supermartkera-portals.css';
+import '../components/adminDashboard/AdminDashboardHome.css';
+import './CushierPortal.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 const CashierPortal = () => {
@@ -73,6 +76,7 @@ const CashierPortal = () => {
     customer: null
   });
   const [paymentModal, setPaymentModal] = useState(false);
+  const localSaleAttemptIdRef = useRef(null);
   useBackLayer(paymentModal, () => setPaymentModal(false));
   const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
@@ -413,7 +417,7 @@ const CashierPortal = () => {
         const catalogResult = await fetchAllRows(
           () => supabase
             .from('business_local_catalog')
-            .select('product_id, name, sku, barcode, price, selling_price, tax_rate, category_id, inventory_mode, is_active, current_stock, reserved_stock')
+            .select('product_id, name, sku, barcode, price, selling_price, tax_rate, tax_included, category_id, inventory_mode, is_active, current_stock, reserved_stock')
             .eq('business_id', supermarketId)
             .eq('is_active', true),
           'product_id'
@@ -1490,6 +1494,7 @@ const CashierPortal = () => {
   // line is keyed by product+variant so different variants of the same
   // product stack as separate lines instead of merging into one.
   const addItemToTransaction = (product, variant = null, batch = null) => {
+    localSaleAttemptIdRef.current = null;
     // Services and listing-only items deliberately carry no POS inventory
     // row (see inventorySupabaseService.js) — their availability is
     // controlled by is_active, not stock, so skip the stock check for them.
@@ -1604,6 +1609,7 @@ const CashierPortal = () => {
   };
 
   const removeItemFromTransaction = (cartLineId) => {
+    localSaleAttemptIdRef.current = null;
     setCurrentTransaction(prev => {
       const newItems = prev.items.filter(item => (item.cartLineId || item.id) !== cartLineId);
       const { subtotal, tax, total } = calculateTaxTotals(newItems, cashierProfile.tax_included !== false);
@@ -1622,6 +1628,7 @@ const CashierPortal = () => {
   };
 
   const updateItemQuantity = (cartLineId, newQuantity) => {
+    localSaleAttemptIdRef.current = null;
     if (newQuantity <= 0) {
       removeItemFromTransaction(cartLineId);
       return;
@@ -1651,7 +1658,100 @@ const CashierPortal = () => {
 
   const processPayment = async (paymentMethodId) => {
     if (supabaseConfig.localBusinessServer) {
-      toast.error('Sales are not enabled on this local server yet. Do not take payment through this preview.');
+      if (paymentMethodId !== 'cash_ugx') {
+        toast.error('This business server currently accepts cash sales only.');
+        return;
+      }
+
+      const paymentMethod = paymentMethods.find((method) => method.id === paymentMethodId);
+      const amountPaid = cashReceived ? Number(cashReceived) : Number(currentTransaction.total);
+      if (!Number.isFinite(amountPaid) || amountPaid < currentTransaction.total) {
+        setPaymentResult({
+          success: false,
+          error: `Enter at least ${formatUGX(currentTransaction.total)} in cash received.`,
+          paymentMethod: paymentMethod?.name || 'Cash (UGX)',
+        });
+        return;
+      }
+
+      if (!localSaleAttemptIdRef.current) localSaleAttemptIdRef.current = generateTransactionId();
+      setPaymentProcessing(true);
+      try {
+        const soldAt = new Date().toISOString();
+        const items = currentTransaction.items.map((item) => ({
+          ...item,
+          // The cart's `price` is the effective price after batch, variant or
+          // quantity-tier adjustments; send it explicitly for server validation.
+          selling_price: Number(item.price ?? item.selling_price),
+          product_id: item.id,
+          tax_included: item.tax_included ?? (cashierProfile.tax_included !== false),
+        }));
+        const savedSale = await recordLocalCashSale({
+          items,
+          subtotal: currentTransaction.subtotal,
+          tax: currentTransaction.tax,
+          taxIncluded: cashierProfile.tax_included !== false,
+          total: currentTransaction.total,
+          paymentMethod: { id: 'cash_ugx', name: paymentMethod?.name || 'Cash (UGX)' },
+          paymentReference: localSaleAttemptIdRef.current,
+          amountPaid,
+          changeGiven: Math.max(0, amountPaid - currentTransaction.total),
+          customer: currentTransaction.customer || { name: 'Walk-in Customer' },
+          cashier: cashierProfile,
+          register: cashierProfile.register,
+          location: cashierProfile.location || 'Business LAN',
+          clientTransactionId: localSaleAttemptIdRef.current,
+          soldAt,
+        });
+
+        const receiptItems = savedSale.items || items;
+        const completedSale = {
+          success: true,
+          id: null,
+          localServerSale: true,
+          transactionId: savedSale.transactionId,
+          receiptNumber: savedSale.receiptNumber,
+          amount: Number(savedSale.total) || currentTransaction.total,
+          fee: 0,
+          finalAmount: Number(savedSale.total) || currentTransaction.total,
+          paymentMethod: 'Cash (UGX)',
+          timestamp: savedSale.createdAt || soldAt,
+          taxIncluded: cashierProfile.tax_included !== false,
+          amountPaid: Number(savedSale.amountPaid) || amountPaid,
+          changeGiven: Number(savedSale.changeGiven) || 0,
+          paymentStatus: 'paid',
+          balanceDue: 0,
+          receipt: {
+            items: receiptItems,
+            subtotal: Number(savedSale.subtotal) || currentTransaction.subtotal,
+            tax: Number(savedSale.tax) || currentTransaction.tax,
+            total: Number(savedSale.total) || currentTransaction.total,
+            cashier: savedSale.cashier || cashierProfile.name,
+            register: savedSale.register || cashierProfile.register,
+            location: cashierProfile.location || 'Business LAN',
+          },
+        };
+
+        setPaymentResult(completedSale);
+        setReceiptData(completedSale);
+        localSaleAttemptIdRef.current = null;
+        setTimeout(() => setShowReceiptModal(true), 250);
+        toast.success(`Cash sale saved on this server. Receipt: ${savedSale.receiptNumber}`);
+        loadProductsFromSupabase();
+
+        setTimeout(() => {
+          setPaymentModal(false);
+          setPaymentResult(null);
+        }, 3000);
+      } catch (error) {
+        setPaymentResult({
+          success: false,
+          error: error.message || 'Could not save the local cash sale.',
+          paymentMethod: paymentMethod?.name || 'Cash (UGX)',
+        });
+      } finally {
+        setPaymentProcessing(false);
+      }
       return;
     }
 
@@ -2032,7 +2132,7 @@ const CashierPortal = () => {
   const hasServiceItem = currentTransaction.items.some(item => item.inventoryMode === 'service_item');
 
   const renderPOS = () => (
-    <div className="space-y-4 md:space-y-6 animate-fadeInUp container-glass shadow-xl rounded-lg md:rounded-2xl p-4 md:p-8 border border-yellow-200">
+    <div className="adh animate-fadeInUp cashier-pos">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 h-screen md:h-auto flex flex-col md:flex-row">
         {/* Product Selection - Optimized for mobile */}
         <div className="lg:col-span-2 bg-white rounded-lg md:rounded-xl p-3 md:p-6 shadow-lg flex flex-col">
@@ -2043,7 +2143,7 @@ const CashierPortal = () => {
             <div className="flex items-center gap-1 md:gap-2">
               <button
                 onClick={() => setShowDualScanner(true)}
-                className="px-2 md:px-4 py-1 md:py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg text-xs md:text-sm font-bold hover:from-cyan-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 flex items-center gap-1 md:gap-2 shadow-lg animate-pulse"
+                className="px-2 md:px-4 py-1 md:py-2 bg-indigo-800 text-white rounded-xl text-xs md:text-sm font-bold hover:bg-indigo-900 transition-all duration-200 flex items-center gap-1 md:gap-2 shadow-sm"
                 title="Smart dual scanner"
               >
                 <FiZap className="h-4 md:h-5 w-4 md:w-5" />
@@ -2190,7 +2290,7 @@ const CashierPortal = () => {
               </div>
               
               {/* Service Job Status - laundry/service tickets only */}
-              {hasServiceItem && (
+              {hasServiceItem && !supabaseConfig.localBusinessServer && (
                 <div className="bg-purple-50 border-2 border-purple-200 rounded-lg md:rounded-xl p-2 md:p-4 space-y-2">
                   <label className="block text-xs md:text-sm font-semibold text-purple-900">
                     🧺 Job Status
@@ -2332,8 +2432,8 @@ const CashierPortal = () => {
               {/* Process Payment Button */}
               {(() => {
                 const cashOk = billLater || !cashReceived || parseFloat(cashReceived) >= currentTransaction.total;
-                const jobOk = !hasServiceItem || billLater || jobStatus === 'ready_for_collection';
-                const canProceed = cashOk && jobOk && !supabaseConfig.localBusinessServer;
+                const jobOk = supabaseConfig.localBusinessServer || !hasServiceItem || billLater || jobStatus === 'ready_for_collection';
+                const canProceed = currentTransaction.items.length > 0 && cashOk && jobOk;
                 return (
                   <button
                     onClick={() => setPaymentModal(true)}
@@ -2345,7 +2445,7 @@ const CashierPortal = () => {
                     }`}
                   >
                     {supabaseConfig.localBusinessServer ? (
-                      <>Local sales are not enabled yet</>
+                      <>Complete local cash sale</>
                     ) : billLater ? (
                       <>🧾 Create Invoice</>
                     ) : cashReceived && parseFloat(cashReceived) >= currentTransaction.total ? (
@@ -2364,18 +2464,19 @@ const CashierPortal = () => {
   );
 
   const renderDashboard = () => (
-    <div className="space-y-3 md:space-y-6 animate-slideInLeft container-3d bg-white rounded-lg md:rounded-2xl p-4 md:p-8 shadow-2xl">
+    <div className="adh cashier-dashboard animate-fadeInUp">
       {/* Ugandan-themed Welcome Section - Responsive */}
-      <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-lg md:rounded-xl p-3 md:p-6 text-white shadow-lg">
+      <div className="adh-hero cashier-dashboard-hero">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-6">
           <div className="flex-1">
-            <h1 className="text-xl md:text-3xl font-bold mb-1 md:mb-2">
+            <p className="adh-eyebrow">Cashier portal</p>
+            <h1 className="adh-hero-title">
               {getGreeting()}, {cashierProfile.name}! 🇺🇬
             </h1>
-            <p className="text-yellow-100 text-sm md:text-lg mb-2 md:mb-4">
+            <p className="adh-hero-sub">
               Welcome to your cashier portal - Ready to serve customers!
             </p>
-            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 md:gap-6 text-xs md:text-base">
+            <div className="adh-hero-meta text-xs md:text-sm">
               <div className="flex items-center gap-1 md:gap-2">
                 <FiClock className="h-4 md:h-5 w-4 md:w-5 flex-shrink-0" />
                 <span>{currentTime.toLocaleTimeString('en-UG')}</span>
@@ -2416,93 +2517,82 @@ const CashierPortal = () => {
               )}
             </div>
           </div>
-          <div className="text-center md:text-right flex-shrink-0">
-            <div className="text-4xl md:text-6xl mb-1 md:mb-2">🏪</div>
-            <p className="text-yellow-100 font-semibold text-sm md:text-base">{branding.name}</p>
-            <p className="text-yellow-200 text-xs md:text-sm">Supermarket</p>
+          <div className="cashier-dashboard-brand flex w-full flex-col gap-2 sm:max-w-xs">
+            <p className="adh-hero-store"><span className="adh-hero-store-name">{branding.name}</span></p>
+            <p className="adh-hero-sub">Supermarket</p>
             
             {/* Quick Scanner Access */}
             <button
               onClick={() => setShowBarcodeScanner(true)}
-              className="mt-2 md:mt-4 px-3 md:px-6 py-2 md:py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-lg md:rounded-xl font-bold transition-all duration-300 transform hover:scale-105 flex items-center justify-center md:justify-start gap-1 md:gap-2 shadow-lg border border-white/30 text-sm md:text-base w-full md:w-auto"
+              type="button"
+              className="adh-hero-add cashier-scan-button"
             >
-              <FiCamera className="h-4 md:h-6 w-4 md:w-6" />
-              <span className="hidden sm:inline">📱 Quick Scan</span>
-              <span className="sm:hidden">Scan</span>
+              <span className="adh-hero-add-icon"><FiCamera /></span>
+              <span className="adh-hero-add-text"><strong>Quick scan</strong><small>Scan or enter a barcode</small></span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Hardware Scanner Banner */}
-      <div className="bg-gradient-to-r from-green-500 via-blue-500 to-purple-600 rounded-xl p-6 shadow-2xl animate-pulse">
-
-      </div>
-
       {/* Ugandan Performance Metrics - Responsive Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-4 lg:gap-6">
         {[
-          { title: 'Today\'s Sales', value: formatUGX(performanceMetrics.todaySales), icon: FiDollarSign, color: 'from-green-500 to-green-600', change: '+15.2%', desc: 'vs yesterday' },
-          { title: 'Customers', value: performanceMetrics.customersServed, icon: FiUsers, color: 'from-blue-500 to-blue-600', change: '+12.3%', desc: 'customers' },
-          { title: 'Avg Basket', value: formatUGX(performanceMetrics.averageBasketSize), icon: FiShoppingBag, color: 'from-purple-500 to-purple-600', change: '+8.2%', desc: 'per customer' },
-          { title: 'Mobile Money', value: `${performanceMetrics.mobileMoneyTransactions}`, icon: FiPhone, color: 'from-orange-500 to-orange-600', change: '+18.7%', desc: 'transactions' },
-          { title: 'Efficiency', value: `${performanceMetrics.efficiency}%`, icon: FiTarget, color: 'from-indigo-500 to-indigo-600', change: '+2.1%', desc: 'accuracy' },
-          { title: 'Loyalty', value: performanceMetrics.loyaltySignups, icon: FiAward, color: 'from-pink-500 to-pink-600', change: '+6', desc: 'new members' },
-          { title: 'Returns', value: `${performanceMetrics.returnRate}%`, icon: FiRefreshCw, color: 'from-red-500 to-red-600', change: '-0.5%', desc: 'returns' },
+          { title: 'Today\'s Sales', value: formatUGX(performanceMetrics.todaySales), icon: FiDollarSign, tone: 'emerald', change: '+15.2%', desc: 'vs yesterday' },
+          { title: 'Customers', value: performanceMetrics.customersServed, icon: FiUsers, tone: 'indigo', change: '+12.3%', desc: 'customers' },
+          { title: 'Avg Basket', value: formatUGX(performanceMetrics.averageBasketSize), icon: FiShoppingBag, tone: 'gold', change: '+8.2%', desc: 'per customer' },
+          { title: 'Mobile Money', value: `${performanceMetrics.mobileMoneyTransactions}`, icon: FiPhone, tone: 'amber', change: '+18.7%', desc: 'transactions' },
+          { title: 'Efficiency', value: `${performanceMetrics.efficiency}%`, icon: FiTarget, tone: 'teal', change: '+2.1%', desc: 'accuracy' },
+          { title: 'Loyalty', value: performanceMetrics.loyaltySignups, icon: FiAward, tone: 'plum', change: '+6', desc: 'new members' },
+          { title: 'Returns', value: `${performanceMetrics.returnRate}%`, icon: FiRefreshCw, tone: 'rose', change: '-0.5%', desc: 'returns' },
           { 
             title: 'Quick Scan', 
             value: '📱', 
             icon: FiCamera, 
-            color: 'from-green-500 to-blue-600', 
+            tone: 'indigo',
             change: 'Ready', 
             desc: 'Tap to scan',
             isButton: true,
             onClick: () => setShowBarcodeScanner(true)
           }
-        ].map((metric, index) => (
-          <div 
-            key={index} 
-            className={`bg-white rounded-lg md:rounded-xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 ${
-              metric.isButton ? 'cursor-pointer border-2 border-green-200 hover:border-green-400' : ''
-            }`}
-            onClick={metric.onClick || (() => {})}
-          >
-            <div className="flex flex-col items-start gap-1 md:gap-3">
-              <p className="text-gray-600 text-xs md:text-sm font-medium">{metric.title}</p>
-              <p className={`text-lg md:text-2xl font-bold text-gray-900 ${metric.isButton ? 'text-center w-full' : ''}`}>
-                {metric.value}
-              </p>
-              <div className="flex flex-col gap-0.5 w-full">
-                <span className={`text-xs md:text-sm font-medium ${
-                  metric.isButton ? 'text-green-600' : 'text-green-600'
-                }`}>
-                  {metric.change}
-                </span>
-                <span className="text-gray-500 text-xs">{metric.desc}</span>
+        ].map((metric) => {
+          const cardClass = `adh-card tone-${metric.tone} cashier-stat-card${metric.isButton ? ' cashier-stat-action' : ''}`;
+          const contents = (
+            <>
+              <div className="adh-card-top">
+                <span className="adh-card-icon"><metric.icon aria-hidden="true" /></span>
+                <span className="adh-card-go">{metric.change}</span>
               </div>
-              <div className={`p-2 md:p-3 rounded-lg bg-gradient-to-r ${metric.color} w-full flex justify-center md:block ${
-                metric.isButton ? 'animate-pulse' : ''
-              }`}>
-                <metric.icon className="h-4 md:h-6 w-4 md:w-6 text-white" />
-              </div>
-            </div>
-          </div>
-        ))}
+              <span className="adh-card-label">{metric.title}</span>
+              <span className="adh-card-value">{metric.isButton ? 'Open' : metric.value}</span>
+              <span className="adh-card-sub">{metric.desc}</span>
+            </>
+          );
+
+          return metric.isButton ? (
+            <button key={metric.title} type="button" className={cardClass} onClick={metric.onClick}>
+              {contents}
+            </button>
+          ) : (
+            <article key={metric.title} className={cardClass}>
+              {contents}
+            </article>
+          );
+        })}
       </div>
 
       {/* Payment Methods - Ugandan Focus - Responsive */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
         {[
-          { title: 'MTN Mobile Money', count: performanceMetrics.mobileMoneyTransactions, icon: '📱', color: 'bg-yellow-600 hover:bg-yellow-700' },
-          { title: 'Cash (UGX)', count: performanceMetrics.cashTransactions, icon: '💵', color: 'bg-green-600 hover:bg-green-700' },
-          { title: 'Airtel Money', count: performanceMetrics.mobileMoneyTransactions, icon: '📲', color: 'bg-red-600 hover:bg-red-700' },
-          { title: 'Card Payments', count: performanceMetrics.cardTransactions, icon: '💳', color: 'bg-blue-600 hover:bg-blue-700' }
-        ].map((method, index) => (
-          <div key={index} className={`${method.color} text-white p-3 md:p-4 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105`}>
-            <div className="text-center">
-              <div className="text-2xl md:text-3xl mb-1 md:mb-2">{method.icon}</div>
-              <div className="text-xl md:text-2xl font-bold">{method.count}</div>
-              <div className="text-xs md:text-sm opacity-90">{method.title}</div>
+          { title: 'MTN Mobile Money', count: performanceMetrics.mobileMoneyTransactions, icon: '📱', tone: 'amber' },
+          { title: 'Cash (UGX)', count: performanceMetrics.cashTransactions, icon: '💵', tone: 'emerald' },
+          { title: 'Airtel Money', count: performanceMetrics.mobileMoneyTransactions, icon: '📲', tone: 'rose' },
+          { title: 'Card Payments', count: performanceMetrics.cardTransactions, icon: '💳', tone: 'indigo' }
+        ].map((method) => (
+          <div key={method.title} className={`adh-panel cashier-payment-method tone-${method.tone}`}>
+            <span className="adh-card-icon cashier-payment-icon" aria-hidden="true">{method.icon}</span>
+            <div className="cashier-payment-copy">
+              <div className="cashier-payment-count">{method.count}</div>
+              <div className="cashier-payment-label">{method.title}</div>
             </div>
           </div>
         ))}
@@ -2643,9 +2733,9 @@ const CashierPortal = () => {
   const renderProfile = () => {
     console.log('🎨 Rendering profile header - profilePicUrl:', profilePicUrl ? 'exists' : 'null', 'cashierProfile.avatar_url:', cashierProfile.avatar_url ? 'exists' : 'null');
     return (
-    <div className="space-y-6 animate-fadeInUp">
+    <div className="adh animate-fadeInUp">
       {/* Profile Header Card */}
-      <div className="bg-gradient-to-r from-yellow-500 via-red-600 to-black rounded-2xl shadow-2xl overflow-hidden">
+      <div className="adh-hero cashier-profile-hero">
         <div className="p-8">
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-6">
@@ -2725,7 +2815,7 @@ const CashierPortal = () => {
             <div className="flex flex-col space-y-2">
               <button 
                 onClick={openEditProfileModal}
-                className="px-4 py-2 bg-white text-red-600 rounded-lg hover:bg-gray-100 transition-all flex items-center space-x-2 font-medium"
+                className="px-4 py-2 bg-white text-indigo-800 rounded-xl hover:bg-[#faf8f3] transition-all flex items-center space-x-2 font-semibold border border-[#c4a052]/30"
               >
                 <FiEdit className="h-4 w-4" />
                 <span>Edit Profile</span>
@@ -3153,7 +3243,7 @@ const CashierPortal = () => {
               title: 'Price Check', 
               Icon: FiTag, 
               iconBg: 'bg-blue-500',
-              color: 'bg-blue-600 hover:bg-blue-700', 
+              tone: 'indigo',
               action: () => {
                 toast.info('🏷️ Price check scanner activated');
                 setShowBarcodeScanner(true);
@@ -3163,7 +3253,7 @@ const CashierPortal = () => {
               title: 'Stock Alert', 
               Icon: FiAlertCircle, 
               iconBg: 'bg-yellow-500',
-              color: 'bg-yellow-600 hover:bg-yellow-700', 
+              tone: 'amber',
               action: () => {
                 const lowStockItems = products.filter(p => p.stock <= p.minStock);
                 if (lowStockItems.length > 0) {
@@ -3177,7 +3267,7 @@ const CashierPortal = () => {
               title: 'Request Restock', 
               Icon: FiPhone, 
               iconBg: 'bg-green-500',
-              color: 'bg-green-600 hover:bg-green-700', 
+              tone: 'emerald',
               action: () => {
                 toast.success('📞 Restock request sent to manager');
               }
@@ -3186,7 +3276,7 @@ const CashierPortal = () => {
               title: 'Report Issue', 
               Icon: FiAlertCircle, 
               iconBg: 'bg-red-500',
-              color: 'bg-red-600 hover:bg-red-700', 
+              tone: 'rose',
               action: () => {
                 toast.info('🚨 Issue reporting system opened');
               }
@@ -3292,14 +3382,6 @@ const CashierPortal = () => {
             background-size: 200% 100%;
             animation: shimmer 2s infinite;
           }
-          .container-3d {
-            transform-style: preserve-3d;
-            perspective: 1000px;
-            transition: transform 0.5s;
-          }
-          .container-3d:hover {
-            transform: rotateY(5deg) rotateX(5deg);
-          }
           .container-glass {
             background: rgba(255, 255, 255, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -3387,11 +3469,17 @@ const CashierPortal = () => {
 
             {!paymentProcessing && !paymentResult && (
               <div className="space-y-3">
-                {paymentMethods.map((method) => (
+                {paymentMethods
+                  .filter((method) => !supabaseConfig.localBusinessServer || method.id === 'cash_ugx')
+                  .map((method) => (
                   <button
                     key={method.id}
                     onClick={() => processPayment(method.id)}
-                    className={`w-full p-4 rounded-lg text-white font-semibold transition-all duration-300 transform hover:scale-105 ${method.color}`}
+                    className={`w-full p-4 rounded-xl font-semibold transition-all duration-200 ${
+                      supabaseConfig.localBusinessServer
+                        ? 'border border-[#c4a052]/40 bg-[#1e1b4b] text-white shadow-sm hover:bg-[#312e81]'
+                        : `text-white ${method.color}`
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">

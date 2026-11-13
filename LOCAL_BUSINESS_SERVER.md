@@ -56,12 +56,16 @@ Storage configuration before promising file uploads. See the official
   supermarket admin, manager, cashier, supplier, POS, and ICAN wallet screens.
   The shared account menu also exposes the same setup page across app portals,
   including the BodaGo dashboard. That owner-facing page creates one-use,
-  ten-minute pairing codes, lists paired nodes, and revokes nodes. Apply
+  ten-minute pairing codes, lists paired nodes, and revokes nodes. Apply the
+  tax-setting migrations `ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql` then
+  `ADD_PRODUCT_TAX_INCLUSION_OVERRIDE.sql` if not already installed. Then apply
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_CONTROL_PLANE.sql`,
   `backend/database/migrations/ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql`,
-  then `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql` to the
-  cloud project before pairing a server. The shared cloud project must already
+  then `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`,
+  followed by `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` to the cloud project before pairing a
+  server that will sync local sales. The shared cloud project must already
   have the Digital City Era `public.products` and `public.inventory` tables;
   these sync migrations do not install the full app schema.
 - `local-server/agent` transports typed team-message and supermarket-catalog
@@ -83,21 +87,24 @@ Storage configuration before promising file uploads. See the official
   local inbox. Pairing checks the team-history and catalog bootstrap versions
   before it consumes a one-time pairing code.
 - The cloud migrations have not been applied to the shared Supabase project.
-  The new workflow stays inactive in the hosted app until all four are applied.
+  Node pairing and cash-sale cloud sync stay inactive until the included
+  migrations are applied in order.
 - The installer serves the app shell and team channel on the LAN. Supermarket
   nodes also hold a read-only mirror of product names, prices, and stock; cloud
   catalog changes flow to paired nodes. Local owner and staff PIN sign-in with
   owner-managed cashier/manager accounts is available. The local database
   checks staff identity when sending team messages and stamps the saved staff
-  name and role. Cash sales, local stock movements, other app schemas, TLS,
-  backup, and update/rollback remain to be built.
+  name and role. Cashier cash sales are stored on the shared local node, reduce
+  local stock atomically, print a receipt, and sync to cloud transactions when
+  the included cash-sales migration has been applied and internet returns.
+  Other app schemas, TLS, backup, and update/rollback remain to be built.
 - Digital City Era's cashier PWA caches the app and a business's product
   catalog/profile on each device, and queues cash sales in IndexedDB. It sends
   queued sales directly to the configured Supabase endpoint when reachable.
-- The cashier browser queue is device-specific and does not provide a shared
-  till or stock ledger on the LAN. The local server now supplies the current
-  read-only catalog and stock mirror, but it does not yet record shared local
-  sales or stock movements.
+- The cashier browser queue is device-specific in cloud mode. Local-server
+  cash sales instead use the shared LAN database and update the node's stock
+  mirror before a receipt is shown. Sale records wait in the node outbox until
+  the sync worker can reach cloud Supabase.
 - Other features call Supabase directly. They do not automatically use the
   cashier queue, and payment/authentication flows that require a live service
   remain online-dependent.
@@ -105,9 +112,9 @@ Storage configuration before promising file uploads. See the official
 The repository has a downloadable **business-server preview**. Team chat works
 over the LAN and syncs after reconnection; supermarket catalog and stock data
 bootstrap to the node and receive cloud updates. It is not a complete offline
-business system: cash sales, stock movements, full app schemas, TLS, backup,
-and update/rollback are still missing. Local PIN sign-in is available for app
-access, but does not yet enable shared till transactions.
+business system: other app workflows, full app schemas, TLS, backup, and
+update/rollback are still missing. Local PIN sign-in plus the cash-sales RPC
+enables shared LAN cash receipts; wallet payments still need the internet.
 
 ## What the Supabase installer does
 
@@ -207,9 +214,9 @@ business node. Build an explicit business-scoped sync protocol:
 2. Add node enrollment, business-scoped bootstrap, revocation, and the
    idempotent event/outbox protocol in the cloud backend.
 3. Add the local node agent and versioned migrations. Team messaging,
-   cloud-to-node supermarket catalog updates, and local PIN accounts are
-   implemented in preview. Next add shared local cash sales and stock
-   movements with explicit idempotency and conflict handling.
+   cloud-to-node supermarket catalog updates, local PIN accounts, and shared
+   LAN cash sales are implemented in preview. Continue appending other local
+   workflows with explicit idempotency and conflict handling.
 4. Finish converting all frontend Supabase client creation to a single
    validated runtime config supplied by the LAN deployment. The primary
    shared client and POS local-mode branch use runtime settings; other direct
@@ -228,9 +235,9 @@ business node. Build an explicit business-scoped sync protocol:
 
 | Capability | Current repository | Target local server |
 | --- | --- | --- |
-| Cashier cash sale during outage | Queued on that browser/device | Accepted by the LAN node and synced once |
-| POS catalog during outage | Cached on that browser/device | Read-only catalog and current stock mirrored to the supermarket node; local stock updates are not enabled |
+| Cashier cash sale during outage | Queued on that browser/device | Cash sale saved to the LAN ledger, local stock reduced, then synced once |
+| POS catalog during outage | Cached on that browser/device | Read-only product mirror with atomic stock deduction for local cash sales |
 | Team messages during outage | Text-only LAN preview with cloud sync | Authenticated team messaging over a secure LAN |
 | Other business tables/features | Mostly direct cloud Supabase calls | Enabled only after a table-specific sync path exists |
-| Per-business Supabase download | App-shell/server preview with local PIN accounts; full app schema and sales workflows are absent | Guided node enrollment/install with app bootstrap |
-| Cloud/local database sync | Business-scoped team text events after both cloud migrations are applied | Sync for sales, inventory, messages, and other workflows |
+| Per-business Supabase download | App-shell/server preview with local PIN accounts, mirrored catalog, and cash-sale ledger | Guided node enrollment/install with app bootstrap |
+| Cloud/local database sync | Business-scoped team text, catalog, stock, product, and cash-sale events after included migrations are applied | Sync for sales, inventory, messages, and other workflows |

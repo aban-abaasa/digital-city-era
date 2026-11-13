@@ -110,7 +110,7 @@ async function ask(label, fallback = '') {
 async function main() {
   console.log('\nDigital City Era local business server preview');
   console.log('This installs a local app shell, self-hosted Supabase, business-scoped team-message sync, and local owner/staff PIN sign-in.');
-  console.log('Shared local sales, stock movements, TLS, backups, and other offline app workflows are not included yet.');
+  console.log('Local cash sales are included; purchasing, wallet payments, TLS, backups, and other offline workflows are not.');
   console.log('The app and API use HTTP on your private LAN. Team messages are not private from other LAN users.\n');
 
   const { composeVer, shell } = checkRequirements();
@@ -262,11 +262,11 @@ async function main() {
   console.log(`Install directory: ${targetDir}`);
   console.log(`Docker Compose: ${composeVer}`);
   console.log('Keep this server on the business LAN. Do not forward its ports from the internet.');
-  console.log('The app shell, local team chat, and read-only supermarket catalog/stock mirror are installed. Use them from devices on this trusted LAN.');
+  console.log('The app shell, local team chat, supermarket catalog/stock mirror, and shared cash-sales ledger are installed. Use them from devices on this trusted LAN.');
   console.log('\nOne-time local owner setup code (enter it on the first staff sign-in screen):');
   console.log(localSetupToken);
   console.log('Keep this code private. It stops working after the owner account is created.');
-  console.log('Staff accounts use local PINs and do not sync to cloud Auth. Cash sales, stock movements, HTTPS, and production security still need work.');
+  console.log('Staff accounts use local PINs and do not sync to cloud Auth. Apply the included cash-sales migration to cloud Supabase for sale sync; HTTPS and production security still need work.');
 }
 
 try {

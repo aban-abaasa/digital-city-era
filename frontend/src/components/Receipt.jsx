@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import transactionService from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { supabaseConfig } from '../services/supabase';
 import { formatPaymentMethod } from '../utils/paymentMethod';
 import { getTaxTreatmentLabel } from '../utils/taxPricing';
 import './Receipt.css';
@@ -93,13 +94,16 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // ===================================================
   const handlePrint = async () => {
     try {
-      // Log print action
-      await transactionService.logReceiptPrint(
-        transaction?.id,
-        receiptData?.receiptNumber,
-        'customer_copy',
-        'thermal'
-      );
+      // The local server keeps its own cash-sale ledger; its staff token must
+      // not try to write a cloud-only print log table.
+      if (!supabaseConfig.localBusinessServer) {
+        await transactionService.logReceiptPrint(
+          transaction?.id,
+          receiptData?.receiptNumber,
+          'customer_copy',
+          'thermal'
+        );
+      }
 
       document.body.classList.add('rc-printing');
       window.print();
@@ -304,6 +308,12 @@ ${branding?.publicWebsiteUrl || ''}
         {receiptData.pendingSync && (
           <p className="bg-amber-100 px-4 py-1.5 text-xs font-semibold text-amber-900 sm:px-6">
             📴 Recorded offline — a real receipt number is assigned once this syncs automatically.
+          </p>
+        )}
+
+        {receiptData.localServerSale && (
+          <p className="bg-[#eef2ff] px-4 py-1.5 text-xs font-semibold text-[#312e81] sm:px-6">
+            Saved on this business server. The cloud copy will sync when internet returns.
           </p>
         )}
 

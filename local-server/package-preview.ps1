@@ -21,12 +21,17 @@ New-Item -ItemType Directory -Path $cloudMigrationsDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $distMigrationsDirectory -Force | Out-Null
 
 $migrationFiles = @(
+  # Tax settings used to label catalog prices consistently on every local till
+  'ADD_SUPERMARKET_TAX_INCLUSION_SETTING.sql',
+  'ADD_PRODUCT_TAX_INCLUSION_OVERRIDE.sql',
   'ADD_BUSINESS_LOCAL_SYNC_CONTROL_PLANE.sql',
   'ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql',
   'ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql',
   'ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql',
-  # Optional fifth migration: lets owner/manager stock changes made on a server reach cloud inventory
-  'ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql'
+  # Cloud stock correction migration: lets owner/manager changes made on a server reach cloud inventory
+  'ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql',
+  # Shared LAN cash receipts, stock deduction, and cloud transaction sync
+  'ADD_BUSINESS_LOCAL_CASH_SALES.sql'
 )
 foreach ($migrationFile in $migrationFiles) {
   $migrationPath = Join-Path $projectRoot "backend\database\migrations\$migrationFile"
