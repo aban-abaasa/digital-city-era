@@ -18,6 +18,9 @@ export const newFlavorRow = (fields = {}) => ({
   flavor: '',
   barcode: '',
   selling_price: '', // blank = same price as the main product
+  stock: '',
+  batch_number: '',
+  expiry_date: '',
   photo: null, // optional image file, uploaded once the flavor's product exists
   photoPreview: '',
   ...fields
@@ -140,6 +143,7 @@ export const buildFlavorProducts = ({ supermarketId, base, rows }) =>
       cost_price: Number(base.cost_price) || 0,
       wholesale_price: wholesalePrice,
       selling_price: sellingPrice,
+      ...(row.expiry_date ? { expiry_date: row.expiry_date } : {}),
       tax_rate: base.tax_rate ?? 18,
       category_id: base.category_id || null,
       is_active: true,
@@ -186,7 +190,7 @@ export const registerFlavorProducts = async ({ supabase, supermarketId, base, ro
     .insert(created.map((product) => ({
       product_id: product.id,
       supermarket_id: supermarketId,
-      current_stock: 0,
+      current_stock: Math.max(0, Math.floor(Number(activeFlavorRows(rows).find((row) => barcodesMatch(row.barcode, product.barcode))?.stock || base.initial_stock) || 0)),
       reserved_stock: 0,
       minimum_stock: 10,
       reorder_point: 20,

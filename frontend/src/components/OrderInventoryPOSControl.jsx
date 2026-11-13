@@ -265,7 +265,9 @@ const EMPTY_NEW_PRODUCT = {
   wholesale_discount_percent: 0,
   selling_price: 0,
   tax_rate: 18,
-  category_id: null
+  category_id: null,
+  batch_number: '',
+  expiry_date: ''
 };
 
 // openAddSignal: a number that goes up each time something outside (the dashboard's Add button, the phone
@@ -1511,6 +1513,16 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       selling_price: effectivePrice,
       barcode: standaloneVariant?.barcode || newProduct.barcode
     };
+    const effectiveStock = Math.max(0, Math.floor(Number(standaloneVariant?.stock === '' || standaloneVariant?.stock == null ? newProductStock : standaloneVariant.stock) || 0));
+    const batchRowsToAdd = listedVariants.length > 0
+      ? listedVariants
+      : [{ batch_number: effectiveProduct.batch_number, expiry_date: effectiveProduct.expiry_date, stock: newProductStock, id: 'main' }];
+    const primaryBatch = standaloneVariant || (listedVariants.length === 0 ? batchRowsToAdd[0] : null);
+    const incompleteBatch = batchRowsToAdd.find((row) => Boolean(row.batch_number?.trim()) && !row.expiry_date);
+    if (incompleteBatch) {
+      toast.error('For batch tracking, enter both the batch number and expiry date.');
+      return;
+    }
 
     // Validation
     if (!effectiveName) {
@@ -1536,7 +1548,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       return;
     }
 
-    const startingStock = Math.max(0, Math.floor(Number(newProductStock) || 0));
+    const startingStock = effectiveStock;
     const addedPrice = effectivePrice;
     const addedName = effectiveName;
 
@@ -1610,6 +1622,16 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       if (error) throw error;
       if (generatedBarcode) toast.info(`Barcode ${generatedBarcode} generated. Print it from 🏷️ Barcodes.`);
 
+      const primaryExpiry = standaloneVariant?.expiry_date || (!standaloneVariant ? newProduct.expiry_date : '');
+      if (primaryExpiry && !primaryBatch?.batch_number?.trim()) {
+        const { error: expiryError } = await supabase.from('products').update({ expiry_date: primaryExpiry }).eq('id', data.id);
+        if (expiryError) {
+          console.warn('Could not save product expiry date:', expiryError);
+          toast.warning(`Product saved, but its expiry date could not be recorded: ${expiryError.message || 'check expiry tracking setup'}`);
+        }
+        else data = { ...data, expiry_date: primaryExpiry };
+      }
+
       if (standaloneVariant?.photo && data?.id) {
         try {
           const url = await uploadProductPhoto(data.id, standaloneVariant.photo);
@@ -1669,6 +1691,17 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
         }
       }
 
+      if (data?.id && primaryBatch?.batch_number?.trim() && primaryBatch.expiry_date) {
+        const { error: batchError } = await supabase.rpc('add_product_batch', {
+          p_product_id: data.id,
+          p_batch_number: primaryBatch.batch_number.trim(),
+          p_expiry_date: primaryBatch.expiry_date,
+          p_quantity: startingStock,
+          p_add_to_stock: false
+        });
+        if (batchError) toast.warning(`Product saved, but its batch could not be recorded: ${batchError.message || 'check batch tracking setup'}`);
+      }
+
       // The stock the shop already holds is money spent: record it once for the Financial Summary,
       // the same way a product created with stock elsewhere is.
       if (data?.id && startingStock > 0 && Number(newProduct.cost_price) > 0 && !stockLedgerRecorded.current.has(data.id)) {
@@ -1700,7 +1733,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
           const { products: madeFlavors, stockError, photoFailures } = await registerFlavorProducts({
             supabase,
             supermarketId: flavorStoreId,
-            base: { ...effectiveProduct, name: sharedName, selling_price: Number(newProduct.selling_price) || 0 },
+            base: { ...effectiveProduct, name: sharedName, selling_price: Number(newProduct.selling_price) || 0, initial_stock: newProductStock },
             rows: flavorsToAdd,
             uploadPhoto: uploadProductPhoto
           });
@@ -1709,6 +1742,19 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
           updatedProducts = [...updatedProducts, ...shapedFlavors];
           updatedFiltered = [...updatedFiltered, ...shapedFlavors];
           flavorCount = shapedFlavors.length;
+          for (const row of flavorsToAdd) {
+            if (!row.batch_number?.trim() || !row.expiry_date) continue;
+            const variantProduct = madeFlavors.find((item) => barcodesMatch(item.barcode, row.barcode));
+            if (!variantProduct) continue;
+            const { error: batchError } = await supabase.rpc('add_product_batch', {
+              p_product_id: variantProduct.id,
+              p_batch_number: row.batch_number.trim(),
+              p_expiry_date: row.expiry_date,
+              p_quantity: Math.max(0, Math.floor(Number(row.stock === '' || row.stock == null ? newProductStock : row.stock) || 0)),
+              p_add_to_stock: false
+            });
+            if (batchError) toast.warning(`Saved ${variantProduct.name}, but its batch could not be recorded.`);
+          }
           if (stockError) {
             console.warn('⚠️ Could not create inventory records for the flavors:', stockError);
             toast.warning('Flavors were added, but their stock records could not be created. Press Refresh to retry.');

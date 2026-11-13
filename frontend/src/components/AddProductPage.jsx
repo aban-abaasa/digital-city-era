@@ -549,6 +549,22 @@ const AddProductPage = ({
                   <p className="ap-hint">Not sure yet? Leave it empty and add stock later from the product list.</p>
                 </section>
 
+                {flavorRows.length === 0 && (
+                  <Fold icon="📦" title="Batch and expiry (optional)" subtitle="Use this only when you track lots or expiry dates">
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="ap-label">Batch number (optional)
+                        <input className="ap-input mt-1" value={product.batch_number || ''} placeholder="e.g. LOT-2026-01"
+                          onChange={(e) => setProduct((previous) => ({ ...previous, batch_number: e.target.value }))} />
+                      </label>
+                      <label className="ap-label">Expiry date (optional)
+                        <input type="date" className="ap-input mt-1" value={product.expiry_date || ''}
+                          onChange={(e) => setProduct((previous) => ({ ...previous, expiry_date: e.target.value }))} />
+                      </label>
+                      <p className="ap-hint sm:col-span-2">Quantity above is the opening quantity. When variants are listed, enter a separate quantity and optional batch details on each variant.</p>
+                    </div>
+                  </Fold>
+                )}
+
                 {/* Everything else, folded away */}
                 <Fold
                   icon="🏷️"

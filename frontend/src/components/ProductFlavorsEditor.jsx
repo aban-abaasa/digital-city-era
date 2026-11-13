@@ -254,7 +254,17 @@ const ProductFlavorsEditor = ({
                     onChange={(e) => updateRow(row.id, { selling_price: e.target.value })}
                     placeholder={basePrice ? `Price ${basePrice}` : 'Price'}
                     title="Leave blank to use the shared selling price"
-                    className={`${fieldClass} w-32`}
+                    className={`${fieldClass} w-28`}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={row.stock ?? ''}
+                    onChange={(e) => updateRow(row.id, { stock: e.target.value })}
+                    placeholder="Qty"
+                    title="Opening quantity for this variant; blank uses the shared stock quantity"
+                    className={`${fieldClass} w-20`}
                   />
                   <button
                     type="button"
@@ -264,6 +274,15 @@ const ProductFlavorsEditor = ({
                   >
                     <FiTrash2 className="h-4 w-4" />
                   </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <label className="text-[11px] font-medium text-gray-500">Batch number (optional)
+                    <input value={row.batch_number ?? ''} onChange={(e) => updateRow(row.id, { batch_number: e.target.value })} placeholder="e.g. LOT-01" className={`${inputClass} mt-1`} />
+                  </label>
+                  <label className="text-[11px] font-medium text-gray-500">Expiry date (optional)
+                    <input type="date" value={row.expiry_date ?? ''} onChange={(e) => updateRow(row.id, { expiry_date: e.target.value })} className={`${inputClass} mt-1`} />
+                  </label>
+                  <p className="col-span-2 self-end text-[11px] text-gray-500 sm:col-span-1">Quantity is for this variant only. Leave blank to use the shared stock count above.</p>
                 </div>
                 {(rowIssues.flavor || rowIssues.barcode) ? (
                   <p className="mt-1 text-xs text-red-600 dark:text-red-300">{[rowIssues.flavor, rowIssues.barcode].filter(Boolean).join(' · ')}</p>
