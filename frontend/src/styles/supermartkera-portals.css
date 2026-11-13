@@ -1722,7 +1722,19 @@
 .cashier-pos-view-toggle button:hover { color: var(--pos-ink); }
 .cashier-pos-view-toggle button.is-active { background: var(--pos-accent); color: var(--pos-accent-contrast); }
 .cashier-pos-columns.is-scan-mode { grid-template-columns: minmax(0, 1.25fr) minmax(340px, 440px); }
-.cashier-pos-scan-stage { height: clamp(26rem, calc(100vh - 16rem), 54rem); }
+.cashier-pos-scan-stage { display: flex; height: clamp(26rem, calc(100vh - 16rem), 54rem); min-height: 0; flex-direction: column; gap: 0.65rem; }
+.cashier-pos-scan-sale { flex: 0 0 auto; padding: 0.75rem 0.9rem; border: 1px solid var(--pos-line); border-radius: 0.65rem; background: var(--pos-panel); color: var(--pos-ink); box-shadow: 0 5px 18px rgba(0, 0, 0, 0.08); }
+.cashier-pos-scan-sale-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.cashier-pos-scan-sale-heading .classic-eyebrow { margin: 0 0 0.15rem; }
+.cashier-pos-scan-sale-heading strong { font-size: 0.95rem; }
+.cashier-pos-scan-sale-total { color: var(--pos-success, #187248); white-space: nowrap; }
+.cashier-pos-scan-sale-items { display: grid; gap: 0.35rem; margin: 0.6rem 0 0; padding: 0; list-style: none; }
+.cashier-pos-scan-sale-items li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; padding-top: 0.35rem; border-top: 1px solid var(--pos-line); font-size: 0.82rem; }
+.cashier-pos-scan-sale-quantity { color: var(--pos-muted); font-weight: 700; }
+.cashier-pos-scan-sale-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.cashier-pos-scan-sale-price { color: var(--pos-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cashier-pos-scan-sale-empty { margin: 0.55rem 0 0; color: var(--pos-muted); font-size: 0.82rem; }
+.cashier-pos-scan-stage > .h-full { min-height: 0; flex: 1 1 auto; }
 @media (max-width: 900px) {
   .cashier-pos-columns.is-scan-mode { grid-template-columns: minmax(0, 1fr); }
   .cashier-pos-scan-stage { height: clamp(22rem, 62dvh, 38rem); }

@@ -2746,6 +2746,28 @@ const CashierPortal = () => {
             /* Scan mode: the scanner fills the catalogue area; the basket stays on the right. Paused while a
                payment or picker is open so a stray barcode cannot add items to a sale being paid. */
             <div className="cashier-pos-scan-stage">
+              <div className="cashier-pos-scan-sale" aria-live="polite">
+                <div className="cashier-pos-scan-sale-heading">
+                  <div>
+                    <p className="classic-eyebrow">Current sale</p>
+                    <strong>{currentTransaction.items.length ? `${currentTransaction.items.length} product${currentTransaction.items.length === 1 ? '' : 's'} in basket` : 'Basket is ready'}</strong>
+                  </div>
+                  <strong className="cashier-pos-scan-sale-total">{formatUGX(currentTransaction.total)}</strong>
+                </div>
+                {currentTransaction.items.length ? (
+                  <ul className="cashier-pos-scan-sale-items">
+                    {currentTransaction.items.slice(-3).reverse().map((item) => (
+                      <li key={item.cartLineId || item.id}>
+                        <span className="cashier-pos-scan-sale-quantity">{item.quantity}×</span>
+                        <span className="cashier-pos-scan-sale-name">{item.name}</span>
+                        <span className="cashier-pos-scan-sale-price">{formatUGX((item.selling_price || item.price || 0) * item.quantity)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="cashier-pos-scan-sale-empty">Scan a product to add it to this sale.</p>
+                )}
+              </div>
               <DualScannerInterface
                 embedded
                 context="cashier"
