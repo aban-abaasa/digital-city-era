@@ -98,6 +98,7 @@ const POS = () => {
   // Barcode Scanner State
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
+  const [lastScannedProduct, setLastScannedProduct] = useState(null);
   
   // Search Tab State
   const [showSearchTab, setShowSearchTab] = useState(false);
@@ -419,64 +420,33 @@ const POS = () => {
     }
   };
 
-  const searchByBarcode = async (barcode) => {
-    if (!barcode.trim()) return;
-    
-    try {
-      // Try to find product by barcode in current products
-      let product = products.find(p => 
-        p.sku === barcode || 
-        p.barcode === barcode || 
-        p._id === barcode ||
-        p.name.toLowerCase().includes(barcode.toLowerCase())
-      );
-      
-      // If not found locally, try API search
-      if (!product) {
-        try {
-          const response = await axios.get(`/api/products/barcode/${barcode}`);
-          product = response.data.product;
-        } catch (apiError) {
-          // If API fails, create a demo product for testing
-          const demoProduct = {
-            _id: `demo_${Date.now()}`,
-            name: `Scanned Product ${barcode}`,
-            price: Math.floor(Math.random() * 50000) + 5000, // Random price 5k-55k UGX
-            stock: Math.floor(Math.random() * 100) + 10,
-            sku: barcode,
-            category: 'Scanned Items',
-            isActive: true
-          };
-          product = demoProduct;
-          
-          // Add to products list for future reference
-          setProducts(prev => [...prev, demoProduct]);
-        }
-      }
-      
-      if (product) {
-        addToCart(product);
-        playSound('scan_success');
-        toast.success(`🎯 ${product.name} scanned and added to cart!`, {
-          position: "top-center",
-          autoClose: 2000,
-          icon: "📦"
-        });
-      }
-    } catch (error) {
+  const searchByBarcode = (barcode) => {
+    const code = String(barcode || '').trim().toLowerCase();
+    if (!code) return false;
+
+    const product = products.find((item) =>
+      [item.barcode, item.sku, item._id, item.id]
+        .some((value) => String(value || '').trim().toLowerCase() === code)
+    );
+
+    if (!product) {
       playSound('error');
-      toast.error(`❌ Product not found with barcode: ${barcode}`, {
-        position: "top-center",
-        autoClose: 3000
-      });
+      toast.error(`Product not found for barcode ${barcode}`, { autoClose: 2500 });
+      return false;
     }
+
+    addToCart(product);
+    setLastScannedProduct(product);
+    playSound('scan_success');
+    return true;
   };
 
-  const handleBarcodeScanned = (barcode) => {
-    searchByBarcode(barcode);
-    setShowBarcodeScanner(false);
-  };
+  const handleBarcodeScanned = (barcode) => searchByBarcode(barcode);
 
+  const submitBarcode = () => {
+    if (searchByBarcode(barcodeInput)) setBarcodeInput('');
+    barcodeRef.current?.focus();
+  };
   const addQuickItem = (quickItem) => {
     // Find product by name or create a quick sale item
     const existingProduct = products.find(p => 
@@ -501,20 +471,25 @@ const POS = () => {
   const addToCart = (product) => {
     if (product.stock <= 0) {
       playSound('error');
-      toast.error('⚠️ Product out of stock');
+      toast.error('Product out of stock');
       return;
     }
 
-    const existingItem = (cart || []).find(item => item.productId === product._id);
-    if (existingItem) {
-      if (existingItem.quantity >= product.stock) {
-        playSound('error');
-        toast.error('⚠️ Not enough stock available');
-        return;
+    let addedNewItem = false;
+    setCart((currentCart) => {
+      const existingItem = currentCart.find((item) => item.productId === product._id);
+      if (existingItem) {
+        if (existingItem.quantity >= product.stock) {
+          toast.error('Not enough stock available');
+          return currentCart;
+        }
+        return currentCart.map((item) => item.productId === product._id
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
+        );
       }
-      updateCartQuantity(product._id, existingItem.quantity + 1);
-    } else {
-      setCart([...cart, {
+      addedNewItem = true;
+      return [...currentCart, {
         productId: product._id,
         name: product.name,
         price: product.price,
@@ -522,10 +497,10 @@ const POS = () => {
         stock: product.stock,
         addedAt: new Date(),
         emoji: getProductEmoji(product.category)
-      }]);
-      playSound('add_to_cart');
-      toast.success(`✅ ${product.name} added to cart!`);
-    }
+      }];
+    });
+    if (addedNewItem) toast.success(`${product.name} added to cart!`);
+    playSound('add_to_cart');
   };
 
   const getProductEmoji = (category) => {
@@ -795,7 +770,7 @@ const POS = () => {
 
             {/* Advanced Hardware Scanner */}
             <button
-              onClick={() => setShowBarcodeScanner(true)}
+              onClick={() => { setShowBarcodeScanner((value) => !value); setTimeout(() => barcodeRef.current?.focus(), 0); }}
               className="relative px-6 py-3 rounded-xl font-bold transition-all flex items-center space-x-2 bg-gradient-to-r from-green-600 via-blue-600 to-purple-600 text-white shadow-xl transform hover:scale-105 hover:shadow-2xl animate-pulse"
             >
               <div className="relative">
@@ -867,22 +842,18 @@ const POS = () => {
                 <input
                   ref={barcodeRef}
                   type="text"
-                  placeholder="📷 Scan or enter barcode..."
+                  placeholder="Scan barcode; product is added to this sale"
                   value={barcodeInput}
                   onChange={(e) => setBarcodeInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && barcodeInput.trim()) {
-                      searchByBarcode(barcodeInput.trim());
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitBarcode(); } }}
                   className="flex-1 px-4 py-2 border-2 border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-lg"
                 />
                 <button
-                  onClick={() => searchByBarcode(barcodeInput.trim())}
+                  onClick={submitBarcode}
                   disabled={!barcodeInput.trim()}
                   className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-bold"
                 >
-                  🔍 Scan
+                  Add to sale
                 </button>
               </div>
             </div>
@@ -930,6 +901,19 @@ const POS = () => {
           </div>
         </div>
 
+        {showBarcodeScanner ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-3 bg-slate-50 p-3 lg:flex-row">
+            <div className="min-h-[320px] flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:min-h-0">
+              <DualScannerInterface embedded context="cashier" inventoryProducts={products} onScanHandled onBarcodeScanned={handleBarcodeScanned} onClose={() => setShowBarcodeScanner(false)} />
+            </div>
+            <div className="flex flex-col justify-center rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950 lg:w-64">
+              <div className="flex items-center gap-3"><span className="rounded-full bg-emerald-100 p-3"><FiCamera className="h-6 w-6 text-emerald-700" /></span><div><p className="font-bold">Scan to add</p><p className="text-sm text-emerald-800">Scanned items go straight into this sale.</p></div></div>
+              {lastScannedProduct ? <div className="mt-5 rounded-lg border border-emerald-200 bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Last added</p><p className="mt-1 font-bold">{lastScannedProduct.name}</p><p className="text-sm text-slate-600">{formatCurrency(lastScannedProduct.price)}</p></div> : <p className="mt-5 text-sm text-emerald-800">Point the scanner at a product barcode. Each scan adds one to the cart.</p>}
+              <button type="button" onClick={() => setShowBarcodeScanner(false)} className="mt-5 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100">Done scanning</button>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Creative Products Grid - Compact Mobile Format */}
         <div className="flex-1 overflow-y-auto p-4">
           {filteredProducts.length > 0 ? (
@@ -976,6 +960,8 @@ const POS = () => {
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
 
       {/* Cart and Checkout */}
@@ -1119,13 +1105,7 @@ const POS = () => {
         saleData={lastSale}
       />
 
-      {/* Dual Scanner Interface */}
-      {showBarcodeScanner && (
-        <DualScannerInterface
-          onBarcodeScanned={handleBarcodeScanned}
-          onClose={() => setShowBarcodeScanner(false)}
-        />
-      )}
+      {/* Inline scanner is shown beside the cart in the product area. */}
 
       {/* Supplier Order Management Modal */}
       {showOrderManagement && (

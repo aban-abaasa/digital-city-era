@@ -12,7 +12,7 @@ import { useBackLayer } from '../hooks/useBackLayer';
 // embedded: render inline, filling whatever box the parent gives it, instead of as a full-screen modal — the POS
 // "scan mode" uses this so scanning gets the big catalogue area next to the cashier's own basket (which replaces the
 // scanner's private receipt panel). paused: ignore scans (a payment is in progress and must not gain items).
-const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0, keepOpen = false, embedded = false, paused = false }) => {
+const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [], context = 'cashier', autoCloseDelay = 0, keepOpen = false, embedded = false, paused = false, onScanHandled = false }) => {
   useBackLayer(!embedded, () => onClose?.());
   const [scanMode, setScanMode] = useState('camera'); // 'smart', 'camera', 'gun' - CAMERA ACTIVE BY DEFAULT
   const [cameraActive, setCameraActive] = useState(false);
@@ -1102,6 +1102,15 @@ const DualScannerInterface = ({ onBarcodeScanned, onClose, inventoryProducts = [
       return;
     }
 
+    // The POS parent owns the real sale cart; avoid updating this scanner's private transaction.
+    if (onScanHandled) {
+      onBarcodeScanned(barcode);
+      setScanStats(prev => ({ ...prev, total: prev.total + 1, gunScans: source === 'gun' ? prev.gunScans + 1 : prev.gunScans, cameraScans: source === 'camera' ? prev.cameraScans + 1 : prev.cameraScans }));
+      setRecentScans(prev => [{ id: Date.now(), barcode: barcode.toUpperCase(), source, timestamp, detected: true }, ...prev.slice(0, 9)]);
+      flashScan('ok');
+      if (gunInputRef.current && (scanMode === 'gun' || scanMode === 'smart')) setTimeout(() => gunInputRef.current?.focus(), 200);
+      return;
+    }
     // ----- Cashier / POS flow below -----
     // IMMEDIATELY check if product exists in inventory (FAST FEEDBACK < 2 SECONDS)
     const product = findProductInInventory(barcode);
