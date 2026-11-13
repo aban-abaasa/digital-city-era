@@ -683,7 +683,7 @@ const CashierPortal = () => {
         if (cashierData.supermarket_id) {
           const { data: store, error: storeError } = await supabase
             .from('supermarkets')
-            .select('business_type')
+            .select('business_type, tax_included')
             .eq('id', cashierData.supermarket_id)
             .maybeSingle();
           businessType = store?.business_type || null;
@@ -697,6 +697,7 @@ const CashierPortal = () => {
           user_id: user.id, // Auth user ID for wallet operations
           supermarket_id: cashierData.supermarket_id,
           businessType,
+          tax_included: store?.tax_included !== false,
           name: cashierData.full_name || 'Cashier',
           phone: cashierData.phone || '+256 XXX XXX XXX',
           email: cashierData.email || user.email || 'your.email@example.com',
@@ -1548,16 +1549,14 @@ const CashierPortal = () => {
         }];
       }
 
-      // Tagged/shelf prices are VAT-inclusive — the customer pays exactly the
-      // price shown on the item, no VAT added on top. "total" is that summed
-      // price; "tax" is the VAT portion already sitting inside it (shown on
-      // the receipt for accounting only) and "subtotal" is the pre-VAT base.
-      const total = newItems.reduce((sum, item) => {
+      const priceTotal = newItems.reduce((sum, item) => {
         const itemPrice = item.selling_price || item.price || 0;
         return sum + (itemPrice * item.quantity);
       }, 0);
-      const tax = total - (total / 1.18); // 18% VAT in Uganda, included in price
-      const subtotal = total - tax;
+      const taxIncluded = cashierProfile.tax_included !== false;
+      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
+      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
+      const total = taxIncluded ? priceTotal : priceTotal + tax;
 
       return {
         ...prev,
@@ -1608,11 +1607,11 @@ const CashierPortal = () => {
   const removeItemFromTransaction = (cartLineId) => {
     setCurrentTransaction(prev => {
       const newItems = prev.items.filter(item => (item.cartLineId || item.id) !== cartLineId);
-      // VAT-inclusive tagged price — see addItemToTransaction for why total
-      // comes first and tax/subtotal are derived from it, not added to it.
-      const total = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const tax = total - (total / 1.18);
-      const subtotal = total - tax;
+      const priceTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const taxIncluded = cashierProfile.tax_included !== false;
+      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
+      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
+      const total = taxIncluded ? priceTotal : priceTotal + tax;
 
       return {
         ...prev,
@@ -1640,11 +1639,11 @@ const CashierPortal = () => {
           : item
       );
 
-      // VAT-inclusive tagged price — see addItemToTransaction for why total
-      // comes first and tax/subtotal are derived from it, not added to it.
-      const total = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const tax = total - (total / 1.18);
-      const subtotal = total - tax;
+      const priceTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const taxIncluded = cashierProfile.tax_included !== false;
+      const tax = taxIncluded ? priceTotal - (priceTotal / 1.18) : priceTotal * 0.18;
+      const subtotal = taxIncluded ? priceTotal - tax : priceTotal;
+      const total = taxIncluded ? priceTotal : priceTotal + tax;
 
       return {
         ...prev,
@@ -1769,6 +1768,7 @@ const CashierPortal = () => {
         items: currentTransaction.items,
         subtotal: currentTransaction.subtotal,
         tax: currentTransaction.tax,
+        taxIncluded: cashierProfile.tax_included !== false,
         total: currentTransaction.total,
         paymentMethod: paymentMethod,
         paymentReference: result.transactionId,

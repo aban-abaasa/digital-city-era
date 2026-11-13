@@ -259,16 +259,18 @@ export const cartService = {
   },
 
   // Get cart totals with Uganda-specific calculations
-  getCartTotals: (cart) => {
-    const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+  getCartTotals: (cart, taxIncluded = true) => {
+    const priceSubtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
     const tax = cart.reduce((total, item) => {
       const rate = Number(item.tax_rate ?? 18);
       const gross = item.price * item.quantity;
-      return total + (rate > 0 ? gross - (gross / (1 + rate / 100)) : 0);
+      return total + (rate > 0
+        ? (taxIncluded ? gross - (gross / (1 + rate / 100)) : gross * rate / 100)
+        : 0);
     }, 0);
-    const deliveryFee = subtotal >= 100000 ? 0 : 5000; // Free delivery over 100K UGX
-    // Cart prices are tax-inclusive; only delivery is added to the amount due.
-    const total = subtotal + deliveryFee;
+    const subtotal = taxIncluded ? priceSubtotal - tax : priceSubtotal;
+    const deliveryFee = priceSubtotal >= 100000 ? 0 : 5000; // Free delivery over 100K UGX
+    const total = priceSubtotal + (taxIncluded ? 0 : tax) + deliveryFee;
     
     return {
       subtotal: Math.round(subtotal),

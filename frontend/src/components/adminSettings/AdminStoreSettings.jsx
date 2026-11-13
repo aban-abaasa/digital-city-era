@@ -293,6 +293,31 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         </form>
       </Section>
 
+      <Section id="tax" title="Selling price and tax" hint="Choose whether product prices include tax. This applies to new cashier and customer shop checkouts for this store." flash={flash.tax}>
+        <div className="ass-row">
+          <div className="ass-row-text">
+            <b>{store.tax_included !== false ? 'Tax included in selling price' : 'Tax added to selling price'}</b>
+            <span>{store.tax_included !== false
+              ? 'The customer pays the displayed price. Tax is calculated from within that price.'
+              : 'The displayed price is before tax. Tax is added to the amount due at checkout.'}</span>
+          </div>
+          <Switch
+            label="Include tax in selling price"
+            checked={store.tax_included !== false}
+            disabled={busy === 'tax'}
+            onChange={async (value) => {
+              setBusy('tax');
+              try {
+                await patch({ tax_included: value });
+                say('tax', 'Tax pricing saved');
+              } catch (err) {
+                say('tax', err.message || 'Could not save', 'bad');
+              } finally { setBusy(''); }
+            }}
+          />
+        </div>
+      </Section>
+
       <Section id="logo" title="Store logo" hint={`Shown in the portal header and printed on receipts. Under ${LOGO_MAX_MB}MB.`} flash={flash.logo}>
         <div className="ass-media">
           <div className="ass-thumb ass-thumb-logo">

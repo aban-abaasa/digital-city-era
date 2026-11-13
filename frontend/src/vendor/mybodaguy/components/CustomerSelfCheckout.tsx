@@ -65,6 +65,7 @@ interface SupermarketRow {
   business_type: string;
   price_currency?: string | null;
   owner_user_id: string | null;
+  tax_included?: boolean | null;
 }
 
 // Extend Window for BarcodeDetector (not in standard TS lib yet)
@@ -94,15 +95,18 @@ async function getIcanPrice(currency: string): Promise<number | null> {
   return price;
 }
 
-function cartTotals(cart: CartItem[]) {
-  const subtotal = cart.reduce((s, i) => s + i.product.selling_price * i.quantity, 0);
-  const includedTax = cart.reduce((s, i) => {
+function cartTotals(cart: CartItem[], taxIncluded = true) {
+  const priceSubtotal = cart.reduce((s, i) => s + i.product.selling_price * i.quantity, 0);
+  const tax = cart.reduce((s, i) => {
     const rate = Number(i.product.tax_rate ?? 18);
-    const gross = i.product.selling_price * i.quantity;
-    return s + (rate > 0 ? gross - (gross / (1 + rate / 100)) : 0);
+    const line = i.product.selling_price * i.quantity;
+    return s + (rate > 0 ? (taxIncluded ? line - (line / (1 + rate / 100)) : line * rate / 100) : 0);
   }, 0);
-  // Selling prices already include tax. Tax is shown for transparency only.
-  return { subtotal: Math.round(subtotal), tax: Math.round(includedTax), total: Math.round(subtotal) };
+  return {
+    subtotal: Math.round(taxIncluded ? priceSubtotal - tax : priceSubtotal),
+    tax: Math.round(tax),
+    total: Math.round(priceSubtotal + (taxIncluded ? 0 : tax)),
+  };
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -220,7 +224,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
   useEffect(() => {
     supabase
       .from('supermarkets')
-      .select('id, name, location, business_type, owner_user_id, price_currency')
+      .select('id, name, location, business_type, owner_user_id, price_currency, tax_included')
       .eq('is_active', true)
       .order('name')
       .then(({ data, error }: { data: SupermarketRow[] | null; error: unknown }) => {
@@ -478,7 +482,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
         return;
       }
 
-      const total = cartTotals(items).total;
+      const total = cartTotals(items, store.tax_included !== false).total;
       // The store is paid in ICAN at the price of its own currency.
       const storeCurrency = (store.price_currency || 'UGX').toUpperCase();
       const storeIcanPrice = await getIcanPrice(storeCurrency);
@@ -488,8 +492,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
       const cartPayload = items.map(i => ({
         product_id: i.product.product_id,
         quantity: i.quantity,
-        // The RPC prices every line from products.selling_price (tax-inclusive)
-        // and derives the tax from it, so the shelf price is sent as-is.
+        // The RPC reads the store's tax mode and calculates the charged total.
         unit_price: i.product.selling_price,
         tax_rate: Number(i.product.tax_rate ?? 18),
       }));
@@ -703,7 +706,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
     else window.location.href = target;
   }
 
-  const totals = cartTotals(cart);
+  const totals = cartTotals(cart, supermarkets.find(sm => sm.id === selectedSupermarketId)?.tax_included !== false);
   // Everything is shown in the store's own currency, and ICAN is converted at that currency's price.
   const cartStoreId = cart[0]?.product.supermarket_id || selectedSupermarketId;
   const currency = (supermarkets.find(sm => sm.id === cartStoreId)?.price_currency || 'UGX').toUpperCase();
@@ -1222,7 +1225,7 @@ export default function CustomerSelfCheckout({ user, shopMode: shopModeProp, onS
               <span>Subtotal</span><span>{fmt(totals.subtotal)}</span>
             </div>
               <div className="flex justify-between text-sm text-slate-500">
-                <span>Tax included</span><span>{fmt(totals.tax)}</span>
+              <span>{activeStore?.tax_included === false ? 'Tax added' : 'Tax included'}</span><span>{fmt(totals.tax)}</span>
             </div>
             <div className="flex justify-between font-bold text-slate-800 text-base border-t border-slate-200 pt-2">
               <span>Total</span>

@@ -28,7 +28,7 @@ export const productService = {
 
       const options = {
         filters: queryFilters,
-        select: 'id,name,description,sku,selling_price,cost_price,category_id,brand,weight,dimensions,is_active,created_at,categories(id,name,description),product_images(id,image_url,alt_text,is_primary,sort_order),inventory(current_stock,reserved_stock,available_stock)',
+        select: 'id,supermarket_id,name,description,sku,selling_price,cost_price,tax_rate,category_id,brand,weight,dimensions,is_active,created_at,categories(id,name,description),product_images(id,image_url,alt_text,is_primary,sort_order),inventory(current_stock,reserved_stock,available_stock)',
         page: filters.page || 1,
         limit: filters.limit || 20,
         orderBy: { column: 'created_at', ascending: false }

@@ -30,6 +30,7 @@ const CustomerDelivery = () => {
   const [priceRange, setPriceRange] = useState([0, 2000]);
   const [selectedRating, setSelectedRating] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [taxIncluded, setTaxIncluded] = useState(true);
   const [wishlist, setWishlist] = useState(new Set());
   const [categories, setCategories] = useState([]);
   const [error, setError] = useState(null);
@@ -43,6 +44,15 @@ const CustomerDelivery = () => {
     deliveryTime: '',
     specialInstructions: ''
   });
+
+  useEffect(() => {
+    const storeIds = [...new Set(cart.map((item) => item.supermarket_id).filter(Boolean))];
+    if (storeIds.length !== 1) { setTaxIncluded(true); return undefined; }
+    let active = true;
+    supabase.from('supermarkets').select('tax_included').eq('id', storeIds[0]).maybeSingle()
+      .then(({ data }) => { if (active) setTaxIncluded(data?.tax_included !== false); });
+    return () => { active = false; };
+  }, [cart]);
 
   // Load products and categories from API
   useEffect(() => {
@@ -735,8 +745,8 @@ const CustomerDelivery = () => {
 
 
   const getCartTotals = useCallback(() => {
-    return cartService.getCartTotals(cart);
-  }, [cart]);
+    return cartService.getCartTotals(cart, taxIncluded);
+  }, [cart, taxIncluded]);
 
   // Use categories from API or fallback to comprehensive categories
   const displayCategories = categories.length > 0 ? categories : [
@@ -770,7 +780,6 @@ const CustomerDelivery = () => {
         items: cart.map(item => ({
           product_id: item.id,
           quantity: Number(item.quantity),
-          // Tax-inclusive shelf price; checkout derives the tax from it.
           unit_price: Number(item.price),
           tax_rate: Number(item.tax_rate ?? 18)
         })),
@@ -1396,7 +1405,7 @@ const CustomerDelivery = () => {
 
             <div className="border-t pt-4 mb-4">
               {(() => {
-                const totals = getCartTotals();
+      const totals = getCartTotals();
                 return (
                   <>
                     <div className="flex justify-between text-sm mb-2">
@@ -1404,7 +1413,7 @@ const CustomerDelivery = () => {
                       <span className="font-medium">{formatMoney(totals.subtotal, totals.currency)}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">Tax included:</span>
+                      <span className="text-gray-600">{taxIncluded ? 'Tax included:' : 'Tax added:'}</span>
                       <span className="font-medium">{formatMoney(totals.tax, totals.currency)}</span>
                     </div>
                     <div className="flex justify-between text-sm mb-2">

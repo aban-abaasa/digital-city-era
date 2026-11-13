@@ -57,6 +57,7 @@ class TransactionService {
         expenditureType = null,  // business or personal
         expenditureCategory = null,  // Category classification
         jobStatus = null,  // Service-ticket progress (e.g. laundry): pending/in_progress/ready_for_collection/collected
+        taxIncluded = true,
         dueDate = null,  // Optional invoice due date when the sale is not fully paid
         clientTransactionId = null,  // Set by the offline queue (posOfflineQueue.js) so a replay can't double-insert
         soldAt = null  // Original sale time when replaying a sale recorded offline
@@ -227,10 +228,14 @@ class TransactionService {
         unit_price: parseFloat(item.selling_price || item.price),
         quantity: parseInt(item.quantity),
         line_total: parseFloat(item.selling_price || item.price) * parseInt(item.quantity),
-        tax_included: true,
-        // line_total is VAT-inclusive (tax_included above), so the VAT
-        // portion is derived out of it, not added on top of it.
-        tax_amount: (parseFloat(item.selling_price || item.price) * parseInt(item.quantity)) - ((parseFloat(item.selling_price || item.price) * parseInt(item.quantity)) / 1.18)
+        tax_included: taxIncluded,
+        // For inclusive prices this is the VAT portion inside the line total;
+        // otherwise it is the tax added to the pre-tax line total.
+        tax_amount: (() => {
+          const lineTotal = parseFloat(item.selling_price || item.price) * parseInt(item.quantity);
+          const rate = Number(item.tax_rate ?? 18) / 100;
+          return taxIncluded ? lineTotal - (lineTotal / (1 + rate)) : lineTotal * rate;
+        })()
       }));
 
       const { error: itemsError } = await supabase
