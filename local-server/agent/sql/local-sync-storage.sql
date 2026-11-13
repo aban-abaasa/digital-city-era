@@ -1057,6 +1057,9 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       RETURN jsonb_build_object('success', false, 'error', 'A sale item has an invalid product, price, or quantity.');
     END;
+    IF v_quantity IS NOT NULL AND v_quantity <> trunc(v_quantity) THEN
+      RETURN jsonb_build_object('success', false, 'error', 'This local till currently supports whole-number quantities only.');
+    END IF;
     IF v_product_id IS NULL OR v_quantity IS NULL OR v_quantity <= 0 OR v_quantity > 1000000
        OR v_unit_price IS NULL OR v_unit_price < 0 OR v_unit_price > 1000000000000 THEN
       RETURN jsonb_build_object('success', false, 'error', 'A sale item has an invalid product, price, or quantity.');

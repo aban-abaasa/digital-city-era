@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.sales_transaction_items (
   product_barcode TEXT,
   category_name TEXT,
   unit_price NUMERIC(15,2) NOT NULL CHECK (unit_price >= 0),
-  quantity NUMERIC(12,3) NOT NULL CHECK (quantity > 0),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
   line_total NUMERIC(15,2) NOT NULL,
   tax_included BOOLEAN NOT NULL DEFAULT true,
   tax_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
@@ -58,8 +58,8 @@ ALTER TABLE public.sales_transaction_items
   ADD COLUMN IF NOT EXISTS tax_included BOOLEAN NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(15,2) NOT NULL DEFAULT 0;
 
-ALTER TABLE public.sales_transaction_items
-  ALTER COLUMN quantity TYPE NUMERIC(12,3) USING quantity::NUMERIC;
+-- Keep the deployed integer type: customer_transaction_history and other
+-- views depend on it, and this till currently sells whole-unit quantities.
 
 CREATE TABLE IF NOT EXISTS public.business_local_cash_sale_sync (
   event_id UUID PRIMARY KEY,
@@ -199,7 +199,11 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       RETURN 'A local sale line has invalid product, price, quantity or tax details.';
     END;
-    IF v_product_id IS NULL OR v_quantity IS NULL OR v_quantity <= 0 OR v_quantity > 1000000
+    IF v_quantity IS NOT NULL AND v_quantity <> trunc(v_quantity) THEN
+      RETURN 'A synced local cash sale must use whole-unit quantities.';
+    END IF;
+    IF v_product_id IS NULL OR v_quantity IS NULL OR v_quantity <= 0
+       OR v_quantity > 1000000
        OR v_unit_price IS NULL OR v_unit_price < 0 OR v_line_total IS NULL OR v_line_tax IS NULL
        OR v_line_total < 0 OR v_line_tax < 0
        OR v_line_tax > v_line_total THEN
