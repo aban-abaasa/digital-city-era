@@ -461,6 +461,7 @@ const POS = () => {
     if (searchByBarcode(barcodeInput)) setBarcodeInput('');
     barcodeRef.current?.focus();
   };
+
   const addQuickItem = (quickItem) => {
     // Find product by name or create a quick sale item
     const existingProduct = products.find(p => 
@@ -778,9 +779,9 @@ const POS = () => {
               ))}
             </select>
 
-            {/* Advanced Hardware Scanner */}
+            {/* Scan */}
             <button
-              onClick={() => { setShowBarcodeScanner((value) => !value); setTimeout(() => barcodeRef.current?.focus(), 0); }}
+              onClick={() => setShowBarcodeScanner((value) => !value)}
               className="relative px-6 py-3 rounded-xl font-bold transition-all flex items-center space-x-2 bg-gradient-to-r from-green-600 via-blue-600 to-purple-600 text-white shadow-xl transform hover:scale-105 hover:shadow-2xl animate-pulse"
             >
               <div className="relative">
@@ -788,8 +789,8 @@ const POS = () => {
                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-ping"></div>
               </div>
               <div className="flex flex-col items-start">
-                <span className="text-sm font-bold">📱 Hardware Scanner</span>
-                <span className="text-xs opacity-80">Mobile • USB • Bluetooth</span>
+                <span className="text-sm font-bold">Scan</span>
+                <span className="text-xs opacity-80">Camera or barcode gun</span>
               </div>
               <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 to-orange-400/20 rounded-xl animate-pulse"></div>
             </button>
@@ -844,30 +845,6 @@ const POS = () => {
             </button>
           </div>
 
-          {/* Barcode Scanner Input */}
-          {showBarcodeScanner && (
-            <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-200 rounded-xl p-4">
-              <div className="flex items-center space-x-3">
-                <FiCamera className="h-6 w-6 text-green-600" />
-                <input
-                  ref={barcodeRef}
-                  type="text"
-                  placeholder="Scan barcode; product is added to this sale"
-                  value={barcodeInput}
-                  onChange={(e) => setBarcodeInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitBarcode(); } }}
-                  className="flex-1 px-4 py-2 border-2 border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-lg"
-                />
-                <button
-                  onClick={submitBarcode}
-                  disabled={!barcodeInput.trim()}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-bold"
-                >
-                  Add to sale
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Quick Items Bar */}
           <div className="mt-4">
@@ -911,6 +888,21 @@ const POS = () => {
           </div>
         </div>
 
+        {/* Barcode entry stays available alongside the single Scan control. */}
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <FiPackage className="h-5 w-5 text-slate-500" aria-hidden="true" />
+          <input
+            ref={barcodeRef}
+            type="text"
+            value={barcodeInput}
+            onChange={(event) => setBarcodeInput(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submitBarcode(); } }}
+            placeholder="Enter or scan a barcode to add a product"
+            aria-label="Barcode entry"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+          />
+          <button type="button" onClick={submitBarcode} disabled={!barcodeInput.trim()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Add</button>
+        </div>
         {showBarcodeScanner ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 bg-slate-50 p-3 lg:flex-row">
             <div className="min-h-[320px] flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:min-h-0">
