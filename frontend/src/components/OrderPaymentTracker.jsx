@@ -13,13 +13,15 @@ import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
+  const quotePaymentOnly = Boolean(order?.supplier_quote_status && order.supplier_quote_status !== 'not_requested');
+  const quoteAccepted = order?.supplier_quote_status === 'accepted';
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   useBackLayer(showPaymentModal, () => setShowPaymentModal(false));
   const [paymentTransactions, setPaymentTransactions] = useState([]);
   const [unconfirmedCount, setUnconfirmedCount] = useState(0);
   const [paymentData, setPaymentData] = useState({
     amount: '',
-    method: 'cash',
+    method: quotePaymentOnly ? 'ican_wallet' : 'cash',
     reference: '',
     notes: ''
   });
@@ -117,6 +119,15 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
       return;
     }
 
+    if (quotePaymentOnly && !quoteAccepted) {
+      alert('The manager must approve the supplier proposal before payment can be requested.');
+      return;
+    }
+    if (quotePaymentOnly && paymentData.method !== 'ican_wallet') {
+      alert('Quote-based supply orders must use the business-wallet admin approval flow.');
+      return;
+    }
+
     if (order.status === 'pending_approval' && paymentData.method !== 'ican_wallet') {
       alert('A pending purchase order can only be submitted as an ICAN business-wallet approval request. Select ICANera Wallet to notify the authorized administrator.');
       return;
@@ -207,7 +218,7 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
       // Reset form
       setPaymentData({
         amount: '',
-        method: 'cash',
+        method: quotePaymentOnly ? 'ican_wallet' : 'cash',
         reference: '',
         notes: ''
       });
@@ -237,7 +248,7 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
           <FiDollarSign className="text-blue-600 text-lg sm:text-xl" />
           Payment Progress
         </h3>
-        {showAddPayment && order.balance_due_ugx > 0 && (
+        {showAddPayment && (!quotePaymentOnly || quoteAccepted) && order.balance_due_ugx > 0 && (
           <button
             onClick={() => setShowPaymentModal(true)}
             className="flex items-center justify-center gap-2 px-4 py-2.5 sm:px-3 sm:py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors text-sm sm:text-xs font-semibold shadow-md w-full sm:w-auto"
@@ -439,11 +450,13 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
               <select
                 value={paymentData.method}
                 onChange={(e) => setPaymentData({ ...paymentData, method: e.target.value })}
+                disabled={quotePaymentOnly}
                 className="w-full px-4 py-3 sm:py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm bg-white"
               >
                 <option value="cash">💵 Cash</option>
                 <option value="ican_wallet">🪙 IcanEra Wallet</option>
               </select>
+              {quotePaymentOnly && <p className="mt-2 text-xs text-indigo-700">Admin approval with the business-wallet PIN is required for these orders.</p>}
             </div>
 
             {/* ICAN Wallet Balance — shown only when paying with ICAN */}

@@ -76,7 +76,8 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
   const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [busy, setBusy] = useState(''); // details | logo | background | offers | pickup
+  const [busy, setBusy] = useState(''); // details | logo | background | offers | pickup | supplier-visibility
+  const [supplierLimitDraft, setSupplierLimitDraft] = useState('5');
   const [flash, setFlash] = useState({}); // { [sectionId]: { tone, text } }
   const [pinEditing, setPinEditing] = useState(false);
   const [pin, setPin] = useState(null); // the draft pickup point being placed on the map
@@ -102,6 +103,7 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         if (error) { setLoadError(error.message || 'Could not load your store'); return; }
         setStore(data);
         setForm(formFrom(data));
+        setSupplierLimitDraft(String(data?.metadata?.supplier_inventory_limit ?? 5));
       })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -185,6 +187,72 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
     } finally {
       setBusy('');
     }
+  };
+
+  const saveSupplierInventorySettings = async ({ enabled, mode, limit, message }) => {
+    setBusy('supplier-visibility');
+    try {
+      const metadata = store?.metadata && typeof store.metadata === 'object' && !Array.isArray(store.metadata)
+        ? store.metadata
+        : {};
+      const { error } = await supabase.rpc('set_supplier_store_inventory_visibility_v1', {
+        p_supermarket_id: supermarketId,
+        p_enabled: enabled,
+        p_visibility_mode: mode,
+        p_inventory_limit: Number(limit)
+      });
+      if (error) throw error;
+      setStore((current) => ({
+        ...current,
+        metadata: {
+          ...metadata,
+          supplier_inventory_visibility: enabled,
+          supplier_inventory_visibility_mode: mode,
+          supplier_inventory_limit: Number(limit)
+        },
+        updated_at: new Date().toISOString()
+      }));
+      setSupplierLimitDraft(String(limit));
+      if (onSaved) onSaved();
+      say('supplier-visibility', message || (enabled ? 'Supplier visibility enabled' : 'Supplier visibility disabled'));
+    } catch (err) {
+      say('supplier-visibility', err.message || 'Could not save', 'bad');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const currentSupplierSettings = () => {
+    const metadata = store?.metadata && typeof store.metadata === 'object' && !Array.isArray(store.metadata)
+      ? store.metadata
+      : {};
+    return {
+      enabled: metadata.supplier_inventory_visibility === true,
+      mode: metadata.supplier_inventory_visibility_mode === 'limited' ? 'limited' : 'full',
+      limit: metadata.supplier_inventory_limit ?? 5
+    };
+  };
+
+  const setSupplierInventoryVisibility = (enabled) => saveSupplierInventorySettings({
+    ...currentSupplierSettings(), enabled,
+    message: enabled ? 'Supplier visibility enabled' : 'Supplier visibility disabled'
+  });
+
+  const setSupplierInventoryMode = (mode) => saveSupplierInventorySettings({
+    ...currentSupplierSettings(), mode,
+    message: mode === 'limited' ? 'Limited supplier inventory view saved' : 'Full supplier inventory view saved'
+  });
+
+  const saveSupplierInventoryLimit = () => {
+    const limit = Number(supplierLimitDraft);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10000) {
+      say('supplier-visibility', 'Enter a whole number from 1 to 10000 units', 'bad');
+      return;
+    }
+    saveSupplierInventorySettings({
+      ...currentSupplierSettings(), limit,
+      message: `Limited supplier view set to ${limit} units`
+    });
   };
 
   // Rider delivery needs real coordinates; a street address alone is not enough to route a rider here.
@@ -374,6 +442,71 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
             </div>
             <Switch label="Offer bookable services" checked={Boolean(store.offers_services)} disabled={busy === 'offers'} onChange={(v) => setOffer('offers_services', v)} />
           </li>
+        </ul>
+      </Section>
+
+      <Section id="supplier-stock" title="Supplier stock visibility" hint="Choose whether suppliers linked to your products can see this store’s stock and recent sales." flash={flash['supplier-visibility']}>
+        <ul className="ass-rows">
+          <li className="ass-row">
+            <span className="ass-row-icon"><FiUsers aria-hidden="true" /></span>
+            <div className="ass-row-text">
+              <b>Share stock and sales with linked suppliers</b>
+              <span>Suppliers see only products assigned to them, and only after stock decreases. Reductions stay visible for 30 days. Suppliers cannot change your inventory.</span>
+            </div>
+            <Switch
+              label="Share store stock and sales with linked suppliers"
+              checked={store?.metadata?.supplier_inventory_visibility === true}
+              disabled={Boolean(busy)}
+              onChange={setSupplierInventoryVisibility}
+            />
+          </li>
+          <li className="ass-row">
+            <span className="ass-row-icon"><FiPackage aria-hidden="true" /></span>
+            <div className="ass-row-text">
+              <b>Supplier inventory amount</b>
+              <span>Full shows all linked products with reductions. Limited shows only products whose on-hand stock is at or below your unit cap.</span>
+            </div>
+            <select
+              aria-label="Supplier inventory amount"
+              value={store?.metadata?.supplier_inventory_visibility_mode === 'limited' ? 'limited' : 'full'}
+              disabled={Boolean(busy)}
+              onChange={(event) => setSupplierInventoryMode(event.target.value)}
+              className="max-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60"
+            >
+              <option value="full">Full · unlimited</option>
+              <option value="limited">Limited · low stock</option>
+            </select>
+          </li>
+          {store?.metadata?.supplier_inventory_visibility_mode === 'limited' && (
+            <li className="ass-row">
+              <span className="ass-row-icon"><FiPackage aria-hidden="true" /></span>
+              <div className="ass-row-text">
+                <b>Maximum stock suppliers can see</b>
+                <span>Suppliers see only linked products with on-hand stock at or below this amount.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label="Supplier inventory unit cap"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  step="1"
+                  value={supplierLimitDraft}
+                  disabled={Boolean(busy)}
+                  onChange={(event) => setSupplierLimitDraft(event.target.value)}
+                  className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  className="ass-btn ass-btn-primary"
+                  disabled={Boolean(busy) || Number(supplierLimitDraft) === Number(store?.metadata?.supplier_inventory_limit ?? 5)}
+                  onClick={saveSupplierInventoryLimit}
+                >
+                  Save cap
+                </button>
+              </div>
+            </li>
+          )}
         </ul>
       </Section>
 

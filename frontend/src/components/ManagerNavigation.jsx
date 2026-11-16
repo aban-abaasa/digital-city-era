@@ -16,10 +16,10 @@ const ManagerNavigation = ({ activeTab, setActiveTab, name, email }) => {
       ugandaEmoji: '📊'
     },
     {
-      id: 'orders',
-      label: 'Orders',
+      id: 'supplies',
+      label: 'Supplies',
       icon: FiTruck,
-      description: 'Order management',
+      description: 'Supplier proposals and deliveries',
       color: 'from-orange-500 to-orange-600',
       ugandaEmoji: '📦'
     },
@@ -53,7 +53,7 @@ const ManagerNavigation = ({ activeTab, setActiveTab, name, email }) => {
       initial={(name || 'M').charAt(0).toUpperCase()}
       bottomTabs={[
         { id: 'overview', label: 'Dashboard' },
-        { id: 'orders', label: 'Orders' },
+        { id: 'supplies', label: 'Supplies' },
         { id: 'business-operations', label: 'Payroll' },
         { id: 'ican-wallet', label: 'Wallet' }
       ]}

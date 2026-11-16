@@ -28,13 +28,15 @@ import SupplierPaymentConfirmations from '../components/SupplierPaymentConfirmat
 import SupplierPaymentsPanel from '../components/SupplierPaymentsPanel';
 import SupplierDeliveries from '../components/SupplierDeliveries';
 import OrderPaymentTracker from '../components/OrderPaymentTracker';
+import PurchaseOrderQuoteEditor from '../components/PurchaseOrderQuoteEditor';
 import { SupplierCatalogTab } from '../components/SupplierMarketplace';
 import SupplierPriceAnalyst from '../components/SupplierPriceAnalyst';
 import SupplierNetwork from '../components/SupplierNetwork';
+import SupplierStoreInventory from '../components/SupplierStoreInventory';
 import FarmProduceBoard from '../components/FarmProduceBoard';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
-import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
+import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds, submitSupplierPurchaseOrderQuote } from '../services/supplierOrdersService';
 import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 import { useTheme } from '../contexts/ThemeContext';
 import PortalHeader from '../components/PortalHeader';
@@ -125,6 +127,7 @@ const SupplierPortal = () => {
   const [orderHistory, setOrderHistory] = useState([]);
 
   const [pendingOrders, setPendingOrders] = useState([]);
+  const [quoteSubmittingOrderId, setQuoteSubmittingOrderId] = useState(null);
 
   const [productCatalog, setProductCatalog] = useState([]);
 
@@ -997,20 +1000,28 @@ const SupplierPortal = () => {
       }
 
       const formatted = filteredOrders.map(order => {
+        const quoteItems = Array.isArray(order.supplier_quote_items) ? order.supplier_quote_items : [];
+        const displayItems = order.supplier_quote_status === 'accepted' || order.supplier_quote_status === 'not_requested'
+          ? (order.items || [])
+          : quoteItems.length ? quoteItems : (order.items || []);
+        const quoteSubtotal = quoteItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || item.unitPrice || 0)), 0);
+        const displayedAmount = ['submitted', 'changes_requested'].includes(order.supplier_quote_status)
+          ? quoteSubtotal * 1.18
+          : (parseFloat(order.total_amount) || 0);
         return {
           id: order.po_number || order.id,
           orderId: order.id,
           storeName: storeNameById[order.supermarket_id] || 'Unknown Store',
           date: new Date(order.ordered_at).toLocaleDateString(),
-          items: order.items?.length || 0,
-          amount: parseFloat(order.total_amount) || 0,
+          items: displayItems.length,
+          amount: displayedAmount,
           status: order.status === 'sent_to_supplier' ? 'processing' :
                   order.status === 'confirmed' ? 'confirmed' :
                   order.status === 'received' ? 'received' :
                   order.status === 'completed' ? 'completed' : 'processing',
           expectedDelivery: order.expected_delivery_date ?
             new Date(order.expected_delivery_date).toLocaleDateString() : 'TBD',
-          products: order.items?.map(item => item.product_name).join(', ') || 'Various items',
+          products: displayItems.map(item => item.product_name || item.productName || item.name).filter(Boolean).join(', ') || 'Supplier to propose products',
           priority: order.priority || 'normal',
           deliveryAddress: order.delivery_address,
           notes: order.notes,
@@ -2038,6 +2049,8 @@ const SupplierPortal = () => {
         ))}
       </div>
 
+      <SupplierStoreInventory compact onViewAll={() => setActiveTab('orders')} />
+
       {/* Payment Summary Bar */}
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-3 sm:p-6 shadow-md border border-purple-100">
         <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4">💳 Payment Summary</h3>
@@ -2269,8 +2282,45 @@ const SupplierPortal = () => {
     }
   };
 
+  const handleSubmitSupplyQuote = async (orderId, items, notes) => {
+    setQuoteSubmittingOrderId(orderId);
+    try {
+      const result = await submitSupplierPurchaseOrderQuote({ orderId, items, notes });
+      if (!result.success) {
+        alert(`Could not send proposal: ${result.error}`);
+        return;
+      }
+      alert('Supply proposal sent to the store manager for review.');
+      await loadSupplierData();
+    } finally {
+      setQuoteSubmittingOrderId(null);
+    }
+  };
+
   const renderOrders = () => (
     <div className="space-y-6 animate-fadeInUp">
+      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-emerald-50 p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-700">Supply</p>
+            <h2 className="mt-1 text-xl font-extrabold text-gray-900">Proposals and delivery preparation</h2>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">Propose only products you can provide, set your quantities and prices, and prepare approved supplies for delivery.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[
+              { label: 'Proposal needed', count: pendingOrders.filter((item) => ['awaiting_supplier_quote', 'changes_requested'].includes(item.fullOrder?.supplier_quote_status)).length, tone: 'text-amber-700' },
+              { label: 'Manager review', count: pendingOrders.filter((item) => item.fullOrder?.supplier_quote_status === 'submitted').length, tone: 'text-blue-700' },
+              { label: 'Approved', count: pendingOrders.filter((item) => item.fullOrder?.supplier_quote_status === 'accepted').length, tone: 'text-green-700' },
+            ].map((stat) => (
+              <div key={stat.label} className="min-w-[82px] rounded-xl bg-white px-2 py-2 ring-1 ring-gray-200">
+                <p className={`text-xl font-extrabold ${stat.tone}`}>{stat.count}</p>
+                <p className="text-[10px] font-semibold text-gray-600 sm:text-xs">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      <SupplierStoreInventory />
       {/* Pending Orders */}
       <div className="bg-white rounded-xl p-6 shadow-lg">
         <div className="flex items-center justify-between mb-6">
@@ -2309,7 +2359,12 @@ const SupplierPortal = () => {
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-sm md:text-base text-gray-900">{order.id}</h4>
                           <p className="text-xs md:text-sm font-semibold text-blue-700 mt-0.5">🏬 {order.storeName}</p>
-                          <p className="text-xs md:text-sm text-gray-600 mt-0.5">{order.items} items • {order.date}</p>
+                          <p className="text-xs md:text-sm text-gray-600 mt-0.5">{order.items} items · {order.date}</p>
+                          {order.fullOrder?.supplier_quote_status && order.fullOrder.supplier_quote_status !== 'not_requested' && (
+                            <p className="mt-1 text-xs font-semibold text-indigo-700">
+                              {order.fullOrder.supplier_quote_status === 'awaiting_supplier_quote' ? 'Your proposal is needed' : String(order.fullOrder.supplier_quote_status).replaceAll('_', ' ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       {/* Expand/Collapse Icon */}
@@ -2361,6 +2416,48 @@ const SupplierPortal = () => {
                 {/* Expanded View - Order Details */}
                 {expandedOrderId === order.orderId && (
                   <div className="border-t-2 border-blue-200 p-4 bg-white animate-fadeInUp">
+                    {['awaiting_supplier_quote', 'changes_requested'].includes(order.fullOrder?.supplier_quote_status) && (
+                      <div className="mb-4">
+                        {order.fullOrder?.supplier_quote_status === 'changes_requested' && order.fullOrder?.supplier_quote_review_notes && (
+                          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            <strong>Manager requested changes:</strong> {order.fullOrder.supplier_quote_review_notes}
+                          </div>
+                        )}
+                        <PurchaseOrderQuoteEditor
+                          mode="supplier"
+                          catalog={productCatalog}
+                          initialItems={order.fullOrder?.supplier_quote_status === 'changes_requested'
+                            ? order.fullOrder?.supplier_quote_items
+                            : (order.fullOrder?.supplier_quote_items?.length ? order.fullOrder.supplier_quote_items : order.fullOrder?.items || [])}
+                          initialNotes={order.fullOrder?.supplier_quote_notes || ''}
+                          busy={quoteSubmittingOrderId === order.orderId}
+                          onSubmit={(items, notes) => handleSubmitSupplyQuote(order.orderId, items, notes)}
+                        />
+                      </div>
+                    )}
+
+                    {order.fullOrder?.supplier_quote_status === 'submitted' && (
+                      <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                        <p className="font-semibold text-blue-900">Proposal sent · waiting for manager review</p>
+                        <p className="mt-1 text-sm text-blue-800">The manager can adjust the products and quantities before approving the final supply list.</p>
+                        {(order.fullOrder?.supplier_quote_items || []).length > 0 && (
+                          <ul className="mt-3 space-y-1 text-sm text-blue-900">
+                            {order.fullOrder.supplier_quote_items.map((item, index) => (
+                              <li key={`${item.product_id || item.product_name || 'quote'}-${index}`}>
+                                {item.product_name || item.name} × {item.quantity} · UGX {Number(item.unit_price || item.unitPrice || 0).toLocaleString()} each
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+
+                    {order.fullOrder?.supplier_quote_status === 'accepted' && (
+                      <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-900">
+                        Manager approved the supply list. Prepare these products for the delivery date.
+                      </div>
+                    )}
+
                     {/* Order Items */}
                     <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
                       <p className="text-sm font-semibold text-gray-700 mb-1">Products:</p>
@@ -2416,7 +2513,7 @@ const SupplierPortal = () => {
                     )}
 
                     {/* Action Buttons */}
-                    {order.status === 'processing' && (
+                    {order.status === 'processing' && (order.fullOrder?.supplier_quote_status === 'not_requested' || order.fullOrder?.supplier_quote_status === 'accepted') && (
                       <div className="flex items-center space-x-3 pt-4 border-t">
                         <button
                           onClick={() => setVehicleChoiceOrderId(order.orderId)}
@@ -2651,7 +2748,7 @@ const SupplierPortal = () => {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: FiBarChart },
     { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
-    { id: 'orders', label: 'Orders', icon: FiPackage },
+    { id: 'orders', label: 'Supply', icon: FiPackage },
     { id: 'deliveries', label: 'Deliveries', icon: FiTruck },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
@@ -2713,7 +2810,7 @@ const SupplierPortal = () => {
         initial={(supplierProfile.contactPerson || supplierProfile.name || 'S').charAt(0).toUpperCase()}
         bottomTabs={[
           { id: 'overview', label: 'Overview' },
-          { id: 'orders', label: 'Orders' },
+          { id: 'orders', label: 'Supply' },
           { id: 'payments', label: 'Payments' },
           { id: 'ican-wallet', label: 'Wallet' }
         ]}

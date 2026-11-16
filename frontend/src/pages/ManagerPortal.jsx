@@ -9362,7 +9362,7 @@ _Automated Business Report System_`)}`;
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {[
                 { title: 'New Supplier', icon: FiCheckCircle, color: 'bg-green-500 hover:bg-green-600', action: () => setActiveTab('suppliers') },
-                { title: 'Check Orders', icon: FiTruck, color: 'bg-orange-500 hover:bg-orange-600', action: () => setActiveTab('orders') },
+                { title: 'Review Supplies', icon: FiTruck, color: 'bg-orange-500 hover:bg-orange-600', action: () => setActiveTab('supplies') },
                 { title: 'View Stock', icon: FiPackage, color: 'bg-purple-500 hover:bg-purple-600', action: () => setShowInventoryModal(true) },
                 { title: 'Analytics', icon: FiBarChart, color: 'bg-cyan-500 hover:bg-cyan-600', action: () => setActiveTab('analytics') },
                 { title: 'Team Schedule', icon: FiCalendar, color: 'bg-pink-500 hover:bg-pink-600', action: () => setActiveTab('team') }
@@ -10158,12 +10158,12 @@ SUPERMARTKERA Uganda Management Team
   // supplier-wallet approval bell, and the avatar-menu entries.
   // Dashboard shortcuts: a tab id opens that tab; a few ids are actions instead
   // Only tabs that exist in ManagerNavigation can be opened
-  const MANAGER_NAV_TABS = ['overview', 'orders', 'business-operations', 'ican-wallet'];
+  const MANAGER_NAV_TABS = ['overview', 'supplies', 'business-operations', 'ican-wallet'];
   const openManagerSection = (target) => {
     if (target === 'inventory-modal') { setShowInventoryModal(true); return; }
-    if (target === 'new-order') {
-      setActiveTab('orders');
-      setOrderCreateSignal((n) => n + 1);
+    if (target === 'new-order' || target === 'orders' || target === 'supplies') {
+      setActiveTab('supplies');
+      if (target === 'new-order') setOrderCreateSignal((n) => n + 1);
     } else if (MANAGER_NAV_TABS.includes(target)) {
       setActiveTab(target);
     }
@@ -10559,7 +10559,7 @@ SUPERMARTKERA Uganda Management Team
               />
             )}
 
-          {activeTab === 'orders' && (
+          {activeTab === 'supplies' && (
             <div className="animate-fadeInUp">
               <SupplierOrderManagement businessProfileId={branding.pichinBusinessProfileId} openCreateSignal={orderCreateSignal} onPosUpdated={(addedProducts) => {
                 if (addedProducts && addedProducts.length > 0) {

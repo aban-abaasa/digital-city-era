@@ -344,7 +344,7 @@ export const createPurchaseOrder = async (orderData) => {
     const insertPayload = {
       po_number:             poNumber,
       supplier_id:           supplierId,
-       manager_id:            managerId,
+       manager_id:            managerRow?.id || managerId,
        supermarket_id:        managerRow?.supermarket_id || orderData.supermarketId || orderData.supermarket_id || null,
       items:                 orderData.items || [],
       notes:                 orderData.notes || '',
@@ -354,6 +354,7 @@ export const createPurchaseOrder = async (orderData) => {
       delivery_instructions: deliveryInstructions,
       priority:              orderData.priority || 'normal',
       status:                'pending_approval',
+      supplier_quote_status: 'awaiting_supplier_quote',
       subtotal:              subtotal,
       tax_amount:            taxAmount,
       total_amount:          totalAmount,
@@ -382,6 +383,37 @@ export const createPurchaseOrder = async (orderData) => {
   } catch (error) {
     console.error('Error creating purchase order:', error);
     return { success: false, error: error.message };
+  }
+};
+
+export const submitSupplierPurchaseOrderQuote = async ({ orderId, items, notes = '' }) => {
+  try {
+    const { data, error } = await supabase.rpc('supplier_submit_purchase_order_quote_v1', {
+      p_order_id: orderId,
+      p_items: items,
+      p_notes: notes,
+    });
+    if (error) throw error;
+    return { success: true, result: data };
+  } catch (error) {
+    console.error('Error submitting supplier quote:', error);
+    return { success: false, error: error.message || 'Could not submit the supply proposal.' };
+  }
+};
+
+export const reviewSupplierPurchaseOrderQuote = async ({ orderId, decision, items = [], notes = '' }) => {
+  try {
+    const { data, error } = await supabase.rpc('manager_review_purchase_order_quote_v1', {
+      p_order_id: orderId,
+      p_decision: decision,
+      p_items: items,
+      p_notes: notes,
+    });
+    if (error) throw error;
+    return { success: true, result: data };
+  } catch (error) {
+    console.error('Error reviewing supplier quote:', error);
+    return { success: false, error: error.message || 'Could not review the supplier proposal.' };
   }
 };
 
@@ -770,6 +802,8 @@ const supplierOrdersService = {
   getOrderHistory,
   getOrdersByPaymentStatus,
   createPurchaseOrder,
+  submitSupplierPurchaseOrderQuote,
+  reviewSupplierPurchaseOrderQuote,
   rejectPurchaseOrder,
   sendOrderToSupplier,
   getSupplierOrderStats,

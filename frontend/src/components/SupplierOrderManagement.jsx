@@ -20,8 +20,8 @@ import supplierOrdersService, { getBusinessWalletBalance, resolveBusinessProfile
 import { dispatchDeliveryForPurchaseOrder, checkRouteNeedsSeaLeg } from '../services/deliveryDispatchService';
 import { supabase } from '../services/supabase';
 import { ugxToICAN, formatICAN } from '../services/icanWalletService';
-import { verifyPin } from '../services/pinService';
 import OrderPaymentTracker from './OrderPaymentTracker';
+import PurchaseOrderQuoteEditor from './PurchaseOrderQuoteEditor';
 import OrderItemsSelector from './OrderItemsSelector';
 import '../styles/supplier-order-create.css';
 import { useBackLayer } from '../hooks/useBackLayer';
@@ -58,6 +58,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
   // State Management
   const [orders, setOrders] = useState([]);
+  const loadAllDataRef = useRef(null);
   const [suppliers, setSuppliers] = useState([]);
   const [stats, setStats] = useState({});
   const [products, setProducts] = useState([]); // Products in POS inventory
@@ -103,6 +104,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [quoteReviewBusy, setQuoteReviewBusy] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -190,6 +192,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         supabase.removeChannel(subscription);
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const subscription = supabase
+      .channel('manager_purchase_order_supplies_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => {
+        loadAllDataRef.current?.();
+      })
+      .subscribe();
+    return () => { if (subscription) supabase.removeChannel(subscription); };
   }, []);
 
   /**
@@ -287,10 +299,17 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         }
         
         // Add unconfirmed counts to orders
-        const ordersWithUnconfirmed = ordersResponse.orders.map(order => ({
-          ...order,
-          unconfirmedPaymentsCount: unconfirmedMap[order.id] || 0
-        }));
+        const ordersWithUnconfirmed = ordersResponse.orders.map(order => {
+          const total = Number(order.total_amount_ugx ?? order.total_amount ?? 0);
+          const paid = Number(order.amount_paid_ugx ?? order.amount_paid ?? 0);
+          return {
+            ...order,
+            total_amount_ugx: total,
+            amount_paid_ugx: paid,
+            balance_due_ugx: Number(order.balance_due_ugx ?? Math.max(0, total - paid)),
+            unconfirmedPaymentsCount: unconfirmedMap[order.id] || 0,
+          };
+        });
         
         setOrders(ordersWithUnconfirmed);
       } else {
@@ -310,6 +329,45 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+  loadAllDataRef.current = loadAllData;
+
+  const handleQuoteReview = async (orderId, items, notes, decision) => {
+    setQuoteReviewBusy(true);
+    try {
+      const result = await supplierOrdersService.reviewSupplierPurchaseOrderQuote({
+        orderId,
+        decision,
+        items,
+        notes,
+      });
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(decision === 'accepted'
+        ? 'Final supply list approved. Payment can now be submitted for admin approval.'
+        : 'Changes requested. The supplier can update and resubmit the proposal.');
+      await loadAllData();
+      const { data: refreshedOrder, error: refreshError } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+      if (!refreshError && refreshedOrder) {
+        const total = Number(refreshedOrder.total_amount_ugx ?? refreshedOrder.total_amount ?? 0);
+        const paid = Number(refreshedOrder.amount_paid_ugx ?? refreshedOrder.amount_paid ?? 0);
+        setSelectedOrder({
+          ...refreshedOrder,
+          total_amount_ugx: total,
+          amount_paid_ugx: paid,
+          balance_due_ugx: Number(refreshedOrder.balance_due_ugx ?? Math.max(0, total - paid)),
+          supplierName: orders.find((item) => item.id === orderId)?.supplierName || selectedOrder?.supplierName,
+        });
+      }
+    } finally {
+      setQuoteReviewBusy(false);
     }
   };
 
@@ -648,7 +706,6 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
           let successMsg = `✅ ORDER RECEIVED & INVENTORY UPDATED!\n\n`;
           successMsg += `${result.message}\n\n`;
           successMsg += `📦 Products Updated:\n`;
-          
           const products = result.updated_products;
           if (Array.isArray(products)) {
             products.forEach(product => {
@@ -657,7 +714,6 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               successMsg += `  Stock: ${product.previous_stock} → ${product.new_stock}\n`;
             });
           }
-
           alert(successMsg);
         } else {
           alert(`⚠️ ${result.message}`);
@@ -1491,7 +1547,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
   const hasActiveFilters = statusFilter !== 'all' || priorityFilter !== 'all' || paymentFilter !== 'all' || Boolean(searchTerm);
   const pricingLabel = wholesalePricingMode === 'admin_price' ? 'Admin-set price' : 'Supplier price';
-  const PAGE_TITLES = { active: 'Active orders', history: 'Order history', pos: 'POS inventory' };
+  const PAGE_TITLES = { active: 'Supply requests', history: 'Supply history', pos: 'POS inventory' };
 
   const openPage = (page) => {
     if (page === 'active' || page === 'history') setViewMode(page);
@@ -1500,10 +1556,24 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
   return (
     <div className="manager-supplier-orders animate-fadeInUp">
+      <section className="mb-4 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-emerald-50 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-700">Supplies</p>
+            <h1 className="mt-1 text-xl font-extrabold text-gray-900">Supplier proposals and deliveries</h1>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">Choose a supplier, optionally add a starter list, review their proposed products, then approve the final supply list. Payments go to the admin wallet approval queue.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-gray-700">
+            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-gray-200">1 · Supplier proposes</span>
+            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-gray-200">2 · Manager approves</span>
+            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-gray-200">3 · Admin approves payment</span>
+          </div>
+        </div>
+      </section>
       {/* Home: one button to order, a line for each tab (each opens a full page), the rest folded away */}
       <div className="so-home">
         <button type="button" className="so-new" onClick={() => setShowCreateModal(true)}>
-          <FiPlus className="h-5 w-5" /> <span>New order</span>
+          <FiPlus className="h-5 w-5" /> <span>New supply request</span>
         </button>
 
         <nav className="so-links" aria-label="Orders">
@@ -1579,7 +1649,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             </button>
             <h2 className="so-page-title">{PAGE_TITLES[ordersPage]}</h2>
             <button type="button" className="so-new so-new-small" onClick={() => setShowCreateModal(true)}>
-              <FiPlus className="h-4 w-4" /> <span>New order</span>
+              <FiPlus className="h-4 w-4" /> <span>New supply request</span>
             </button>
           </header>
           <main className="so-page-body">
@@ -1945,14 +2015,28 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                       </button>
                     )}
 
-                    {/* Add Payment Button - Show for approved orders and beyond (not fully paid) */}
+                    {order.supplier_quote_status === 'submitted' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveTab('details');
+                          setSelectedOrder(order);
+                        }}
+                        className="flex-1 min-w-[180px] bg-indigo-700 px-4 py-3 font-bold text-white shadow-lg transition-all hover:bg-indigo-800"
+                      >
+                        <FiCheckCircle className="mr-2 inline h-5 w-5" />Review supplier proposal
+                      </button>
+                    )}
+
+                    {/* Add Payment Button - quote-based orders unlock only after the manager accepts the final list */}
                     {(order.status === 'pending_approval' ||
                       order.status === 'approved' || 
                       order.status === 'sent_to_supplier' || 
                       order.status === 'confirmed' || 
                       order.status === 'received' || 
                       order.status === 'received') && 
-                      order.payment_status !== 'paid' && (
+                      order.payment_status !== 'paid' &&
+                      (order.supplier_quote_status === 'not_requested' || order.supplier_quote_status === 'accepted') && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2035,12 +2119,15 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
       {/* Order Detail Modal */}
       {selectedOrder && !showPaymentModal && (() => {
-        const detailTotal = Number(selectedOrder.total_amount_ugx || 0);
+        const detailTotal = Number(selectedOrder.total_amount_ugx ?? selectedOrder.total_amount ?? 0);
         const detailPaid = Number(selectedOrder.amount_paid_ugx ?? selectedOrder.amount_paid ?? 0);
         const storedBalance = Number(selectedOrder.balance_due_ugx ?? selectedOrder.balance_due ?? 0);
         const detailBalance = storedBalance > 0 ? storedBalance : Math.max(0, detailTotal - detailPaid);
+        const quoteEnabled = selectedOrder.supplier_quote_status && selectedOrder.supplier_quote_status !== 'not_requested';
+        const quoteAccepted = selectedOrder.supplier_quote_status === 'accepted';
         const canPay = ['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'].includes(selectedOrder.status)
-          && selectedOrder.payment_status !== 'paid';
+          && selectedOrder.payment_status !== 'paid'
+          && (!quoteEnabled || quoteAccepted);
         const closeDetail = () => { setSelectedOrder(null); setActiveTab('details'); };
         const lines = Array.isArray(selectedOrder.items) ? selectedOrder.items : [];
         return (
@@ -2065,6 +2152,34 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               <div className="co-wrap">
                 {activeTab === 'details' && (
                   <>
+                    {quoteEnabled && (
+                      <section className="mb-4">
+                        {selectedOrder.supplier_quote_status === 'submitted' ? (
+                          <PurchaseOrderQuoteEditor
+                            mode="manager"
+                            catalog={products}
+                            taxRate={selectedOrder.tax_rate ?? 18}
+                            initialItems={selectedOrder.supplier_quote_items || []}
+                            initialNotes={selectedOrder.supplier_quote_review_notes || ''}
+                            busy={quoteReviewBusy}
+                            onSubmit={(items, notes, decision) => handleQuoteReview(selectedOrder.id, items, notes, decision)}
+                          />
+                        ) : (
+                          <div className={`rounded-xl border p-4 ${quoteAccepted ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+                            <p className={`font-semibold ${quoteAccepted ? 'text-green-900' : 'text-amber-900'}`}>
+                              {quoteAccepted ? 'Final supply list approved' : selectedOrder.supplier_quote_status === 'awaiting_supplier_quote' ? 'Waiting for supplier proposal' : 'Waiting for supplier to update the proposal'}
+                            </p>
+                            <p className={`mt-1 text-sm ${quoteAccepted ? 'text-green-800' : 'text-amber-800'}`}>
+                              {quoteAccepted
+                                ? 'The agreed order total is ready for an ICAN business-wallet payment request. Admin PIN approval completes payment.'
+                                : 'The supplier can propose products, quantities, and prices. Payment remains locked until you approve the final list.'}
+                            </p>
+                            {selectedOrder.supplier_quote_review_notes && <p className="mt-2 text-sm"><strong>Review note:</strong> {selectedOrder.supplier_quote_review_notes}</p>}
+                          </div>
+                        )}
+                      </section>
+                    )}
+
                     <dl className="co-facts">
                       <div><dt>Total</dt><dd className="co-big">{formatUGX(detailTotal)}</dd></div>
                       <div><dt>Balance due</dt><dd className={`co-big ${detailBalance > 0 ? 'co-bad' : 'co-good'}`}>{formatUGX(detailBalance)}</dd></div>
@@ -2081,13 +2196,13 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
 
                     <div className="co-head-row">
                       <h2 className="co-open-title" style={{ padding: 0 }}>Items <span className="ois-tab-count">{lines.length}</span></h2>
-                      <button
+                      {!quoteEnabled ? <button
                         type="button"
                         className="co-btn-sm"
                         onClick={() => { setSelectedOrderForProduct(selectedOrder); setShowAddProductModal(true); }}
                       >
                         <FiPlus className="h-4 w-4" /> Add product
-                      </button>
+                      </button> : <span className="text-xs text-gray-500">{quoteAccepted ? 'Final supply list is locked after approval' : 'Edit products in the proposal above'}</span>}
                     </div>
                     {lines.length === 0 ? (
                       <p className="ois-empty">No items on this order.</p>
@@ -2119,7 +2234,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
                         const updatedOrder = orders.find(o => o.id === selectedOrder.id);
                         if (updatedOrder) setSelectedOrder(updatedOrder);
                       }}
-                      showAddPayment={true}
+                      showAddPayment={!quoteEnabled || quoteAccepted}
                       userRole="manager"
                     />
                   </div>
@@ -2208,7 +2323,7 @@ const CoFold = ({ icon, title, summary, tone, open, onToggle, hasError, sectionR
   </section>
 );
 
-const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplier_price', onClose, onSuccess }) => {
+const CreateOrderModal = ({ suppliers, pricingMode = 'supplier_price', onClose, onSuccess }) => {
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [orderItems, setOrderItems] = useState([]);
   const [newItem, setNewItem] = useState({
@@ -2223,24 +2338,11 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
-  // NEW: Payment fields for cash paid at order creation
-  const [cashPaidNow, setCashPaidNow] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [paymentReference, setPaymentReference] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [icanBalance, setIcanBalance] = useState(null);
-  const [icanBalanceLoading, setIcanBalanceLoading] = useState(false);
-  const [showPinPrompt, setShowPinPrompt] = useState(false);
-  useBackLayer(showPinPrompt, () => setShowPinPrompt(false));
-  const [walletPin, setWalletPin] = useState('');
-  const [pinError, setPinError] = useState('');
-  const [verifyingPin, setVerifyingPin] = useState(false);
-
   // Page state: which sections are open, what is missing, and where to scroll to
   const [errors, setErrors] = useState({});
   const [supplierQuery, setSupplierQuery] = useState('');
-  const [openSections, setOpenSections] = useState({ supplier: true, delivery: false, details: false, pay: false });
-  const sectionRefs = { supplier: useRef(null), items: useRef(null), delivery: useRef(null), details: useRef(null), pay: useRef(null) };
+  const [openSections, setOpenSections] = useState({ supplier: true, delivery: false, details: false });
+  const sectionRefs = { supplier: useRef(null), items: useRef(null), delivery: useRef(null), details: useRef(null) };
   const toggleSection = (key) => setOpenSections((previous) => ({ ...previous, [key]: !previous[key] }));
 
   const requestClose = () => {
@@ -2261,17 +2363,6 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
     if (key !== 'items') setOpenSections((previous) => ({ ...previous, [key]: true }));
     setTimeout(() => sectionRefs[key]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
-
-  // Load the manager's live ICAN balance when they switch to the ICAN Wallet method
-  useEffect(() => {
-    if (paymentMethod !== 'ican_wallet' || icanBalance !== null || icanBalanceLoading) return;
-
-    setIcanBalanceLoading(true);
-    getBusinessWalletBalance(businessProfileId)
-      .then((bal) => setIcanBalance(bal))
-      .catch(() => setIcanBalance(null))
-      .finally(() => setIcanBalanceLoading(false));
-  }, [paymentMethod, icanBalance, icanBalanceLoading, businessProfileId]);
 
   const handleAddItem = () => {
     if (!newItem.productName || newItem.quantity <= 0 || newItem.unitPrice <= 0) {
@@ -2314,64 +2405,18 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 
     const found = {};
     if (!selectedSupplier) found.supplier = 'Choose a supplier';
-    if (orderItems.length === 0) found.items = 'Add at least one product';
     if (!expectedDeliveryDate) found.date = 'Pick a delivery date';
     if (!deliveryAddress.trim()) found.address = 'Add a delivery address';
     setErrors(found);
-    const first = found.supplier ? 'supplier' : found.items ? 'items' : (found.date || found.address) ? 'delivery' : null;
+    const first = found.supplier ? 'supplier' : (found.date || found.address) ? 'delivery' : null;
     if (first) {
       goTo(first);
       return;
     }
 
-    // An ICAN selection creates only a purchase order. Once the order is
-    // approved, the manager submits the separate wallet request and the
-    // authorized business-wallet administrator approves it with the PIN.
-    if (paymentMethod === 'ican_wallet') {
-      await createOrder(null);
-      return;
-    }
-
-    setWalletPin('');
-    setPinError('');
-    setShowPinPrompt(true);
-  };
-
-  const confirmCreateOrder = async () => {
-    if (!/^\d{4,6}$/.test(walletPin)) {
-      setPinError('Enter your 4-6 digit IcanEra Wallet PIN.');
-      return;
-    }
-
-    setVerifyingPin(true);
-    setPinError('');
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) {
-        setPinError('Your session has expired. Please log in again.');
-        return;
-      }
-
-      // This is the manager's personal confirmation PIN for a cash order.
-      // It never authorizes a business-wallet transfer.
-      if (paymentMethod !== 'ican_wallet') {
-        const pinCheck = await verifyPin(user.id, walletPin);
-        if (!pinCheck.success) {
-          setPinError(pinCheck.error || 'PIN verification failed. Order was not sent.');
-          return;
-        }
-      }
-
-      setShowPinPrompt(false);
-      setWalletPin('');
-      await createOrder();
-    } catch (err) {
-      console.error('PIN verification failed:', err);
-      setPinError('PIN verification failed. Order was not sent.');
-    } finally {
-      setVerifyingPin(false);
-    }
+    // A request can start without products. The supplier proposes the list,
+    // then the manager approves it before payment can be submitted.
+    await createOrder();
   };
 
   const createOrder = async () => {
@@ -2407,43 +2452,7 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
       const response = await supplierOrdersService.createPurchaseOrder(orderData);
 
       if (response.success) {
-        let successMsg = '✅ Purchase order created successfully!';
-        
-        // New orders remain pending approval. Cash can be recorded now, but an
-        // ICAN business-wallet request must wait for approval; the authorized
-        // wallet administrator is notified only after that request is created.
-        if (cashPaidNow && parseFloat(cashPaidNow) > 0 && response.order?.id) {
-          try {
-            if (paymentMethod === 'ican_wallet') {
-              const payResult = await supplierOrdersService.payOrderWithICAN({ orderId: response.order.id, ugxAmount: parseFloat(cashPaidNow) });
-              if (!payResult.success) throw new Error(payResult.error);
-              successMsg += `\n\n🪙 ICAN PAYMENT REQUEST SENT.` +
-                `\nThe authorized business-wallet administrator has been notified and must open the request in ICANera Wallet or CMMS, then enter the business-wallet PIN to approve payment.`;
-            } else {
-              const payResult = await supplierOrdersService.recordPayment({
-                orderId:          response.order.id,
-                amountPaid:       parseFloat(cashPaidNow),
-                paymentMethod:    paymentMethod,
-                paymentReference: paymentReference || `ORDER-CREATE-${response.order.id.substring(0, 8)}`,
-                notes:            `Payment made at order creation. ${paymentNotes}`,
-                paidBy:           managerId
-              });
-
-              if (!payResult.success) {
-                console.error('⚠️ Payment recording error:', payResult.error);
-                successMsg += `\n\n⚠️ Warning: Order created but payment tracking failed: ${payResult.error || 'table may not exist yet — run CREATE_PAYMENT_TRANSACTIONS_TABLE.sql'}`;
-              } else {
-                successMsg += `\n\n💵 CASH PAID: ${formatUGX(cashPaidNow)}`;
-                successMsg += `\n⏳ Awaiting supplier confirmation`;
-              }
-            }
-          } catch (paymentErr) {
-            console.error('⚠️ Payment recording error:', paymentErr);
-            successMsg += '\n\n⚠️ Order created but payment recording failed';
-          }
-        }
-        
-        successMsg = successMsg.replace('no confirmation needed', 'awaiting supplier confirmation');
+        const successMsg = 'Supply request sent. The supplier can now propose products and quantities. Payment unlocks after manager approval and requires administrator PIN approval.';
         alert(successMsg);
         onSuccess();
       } else {
@@ -2472,87 +2481,32 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
   const supplierDone = Boolean(selectedSupplier);
   const itemsDone = orderItems.length > 0;
   const deliveryDone = Boolean(expectedDeliveryDate) && Boolean(deliveryAddress.trim());
-  const nextStep = !supplierDone ? 'supplier' : !itemsDone ? 'items' : !deliveryDone ? 'delivery' : null;
+  const nextStep = !supplierDone ? 'supplier' : !deliveryDone ? 'delivery' : null;
   const ctaLabel = nextStep === 'supplier' ? 'Choose a supplier'
-    : nextStep === 'items' ? 'Add products'
     : nextStep === 'delivery' ? (expectedDeliveryDate ? 'Add delivery address' : 'Set delivery date')
-    : `Create order · ${formatUGX(totals.total)}`;
+    : 'Send supply request';
   const unitCount = orderItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const prettyDate = expectedDeliveryDate
     ? new Date(`${expectedDeliveryDate}T00:00:00`).toLocaleDateString('en-UG', { weekday: 'short', day: 'numeric', month: 'short' })
     : '';
   const priorityLabel = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }[priority];
-  const payingNow = Number(cashPaidNow) > 0;
-
   return (
     <>
-      {showPinPrompt && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-gray-900">Confirm Purchase Order</h3>
-            <p className="mt-2 text-sm text-gray-600">
-                Enter your personal IcanEra confirmation PIN to submit this cash order. This PIN cannot approve or spend from the store business wallet.
-              </p>
-              <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-                <strong>Business-wallet protection:</strong> ICAN supplier payments are requested only after the purchase order is approved. The authorized business-wallet administrator receives the notification in ICANera Wallet or CMMS and must enter the business-wallet PIN to approve payment.
-              </div>
-            <form
-              onSubmit={(e) => { e.preventDefault(); if (!verifyingPin) confirmCreateOrder(); }}
-              className="mt-5"
-            >
-              <label className="block text-sm font-semibold text-gray-700 mb-2" htmlFor="purchase-order-wallet-pin">
-                Personal confirmation PIN
-              </label>
-              <input
-                id="purchase-order-wallet-pin"
-                type="password"
-                inputMode="numeric"
-                autoComplete="current-password"
-                maxLength={6}
-                value={walletPin}
-                onChange={(e) => setWalletPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full rounded-lg border-2 border-gray-300 px-4 py-3 text-lg tracking-[0.35em] focus:border-blue-500 focus:outline-none"
-                placeholder="••••••"
-                autoFocus
-              />
-              {pinError && <p className="mt-2 text-sm font-medium text-red-600">{pinError}</p>}
-              <div className="mt-5 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setShowPinPrompt(false); setWalletPin(''); setPinError(''); }}
-                  disabled={verifyingPin}
-                  className="rounded-lg border-2 border-gray-300 px-5 py-2.5 font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={verifyingPin || walletPin.length < 4}
-                  className="rounded-lg bg-gradient-to-r from-green-600 to-blue-600 px-5 py-2.5 font-bold text-white hover:from-green-700 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {verifyingPin ? 'Verifying...' : 'Verify & Submit Cash Order'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <div className="co-root" role="dialog" aria-modal="true" aria-label="Create New Purchase Order">
+      <div className="co-root" role="dialog" aria-modal="true" aria-label="Create Supply Request">
         <header className="co-bar">
           <div className="co-bar-top">
             <button type="button" className="co-back" onClick={requestClose} disabled={submitting} aria-label="Back to orders">
               <FiArrowLeft className="h-5 w-5" />
             </button>
             <div className="co-title">
-              <h1>🇺🇬 Create New Purchase Order</h1>
+              <h1>Create Supply Request</h1>
               <p>{chosenSupplier ? chosenSupplier.business_name : 'SUPERMARTKERA Uganda · Supplier Order System'}</p>
             </div>
           </div>
           <div className="co-steps" role="list" aria-label="Progress">
             {[
               { key: 'supplier', label: 'Supplier', done: supplierDone },
-              { key: 'items', label: 'Products', done: itemsDone },
+              { key: 'items', label: 'Products (optional)', done: itemsDone || !orderItems.length },
               { key: 'delivery', label: 'Delivery', done: deliveryDone }
             ].map((step, index) => (
               <button
@@ -2629,8 +2583,8 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 
               {/* 2. Products: a grid you tap */}
               <section className={`co-section${errors.items ? ' has-error' : ''}`} ref={sectionRefs.items}>
-                <h2 className="co-open-title"><span aria-hidden="true">🛒</span> Products</h2>
-                {errors.items && <p className="co-error" role="alert">{errors.items}</p>}
+                <h2 className="co-open-title"><span aria-hidden="true">🛒</span> Starter products <span className="ml-2 text-xs font-medium text-gray-500">Optional</span></h2>
+                <p className="mb-3 text-sm text-gray-600">Add a suggested list or leave it empty and let the supplier propose what they can provide.</p>
                 <OrderItemsSelector
                   orderItems={orderItems}
                   onItemsChange={(items) => { setOrderItems(items); setErrors((previous) => ({ ...previous, items: undefined })); }}
@@ -2710,67 +2664,10 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
                 <textarea id="co-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything the supplier should know" rows="2" className="co-input" />
               </CoFold>
 
-              {/* 5. Pay now, optional */}
-              <CoFold
-                icon="💵"
-                title="Pay now"
-                summary={payingNow ? `${formatUGX(cashPaidNow)} · ${paymentMethod === 'ican_wallet' ? 'IcanEra Wallet' : 'Cash'}` : 'Optional'}
-                tone={payingNow ? 'ok' : undefined}
-                open={openSections.pay}
-                onToggle={() => toggleSection('pay')}
-                sectionRef={sectionRefs.pay}
-              >
-                <label className="co-label" htmlFor="co-cash">Amount paid now (UGX)</label>
-                <input
-                  id="co-cash"
-                  type="number"
-                  inputMode="numeric"
-                  value={cashPaidNow}
-                  onChange={(e) => setCashPaidNow(e.target.value)}
-                  min="0"
-                  max={totals.total}
-                  step="1000"
-                  placeholder="0"
-                  className="co-input"
-                />
-                {itemsDone && (
-                  <div className="co-chips">
-                    <button type="button" className="co-chip" onClick={() => setCashPaidNow(Math.round(totals.total / 2))}>Half</button>
-                    <button type="button" className="co-chip" onClick={() => setCashPaidNow(Math.round(totals.total))}>Full amount</button>
-                    {payingNow && <button type="button" className="co-chip" onClick={() => setCashPaidNow(0)}>Clear</button>}
-                  </div>
-                )}
-                {payingNow && (
-                  <>
-                    <p className="co-balance is-due"><span>Balance due</span><span>{formatUGX(Math.max(0, totals.total - parseFloat(cashPaidNow || 0)))}</span></p>
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                <strong>Payment comes after quote approval.</strong> The manager approves the final supply list first. Then payment is submitted from the store business wallet for administrator PIN approval.
+              </div>
 
-                    <p className="co-label">Pay with</p>
-                    <div className="co-seg two" role="group" aria-label="Payment method">
-                      <button type="button" aria-pressed={paymentMethod === 'cash'} onClick={() => setPaymentMethod('cash')}>💵 Cash</button>
-                      <button type="button" aria-pressed={paymentMethod === 'ican_wallet'} onClick={() => setPaymentMethod('ican_wallet')}>🪙 IcanEra Wallet</button>
-                    </div>
-
-                    {paymentMethod === 'ican_wallet' ? (
-                      <div className="co-note">
-                        {icanBalanceLoading ? 'Loading balance…' : (
-                          <>
-                            Store balance <b>{formatICAN(icanBalance?.ican || 0)} ICAN</b>. This payment needs ≈ <b>{formatICAN(ugxToICAN(parseFloat(cashPaidNow)))} ICAN</b>
-                            {icanBalance && icanBalance.ican < ugxToICAN(parseFloat(cashPaidNow)) && <b style={{ color: 'var(--c-red)' }}> — not enough</b>}.
-                          </>
-                        )}
-                        <br />No ICAN moves now. After the order is approved, the wallet administrator approves the payment with the business-wallet PIN.
-                      </div>
-                    ) : (
-                      <>
-                        <label className="co-label" htmlFor="co-ref">Payment reference (optional)</label>
-                        <input id="co-ref" type="text" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Receipt or transaction number" className="co-input" />
-                      </>
-                    )}
-                    <label className="co-label" htmlFor="co-paynotes">Payment notes (optional)</label>
-                    <textarea id="co-paynotes" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} rows="2" className="co-input" />
-                  </>
-                )}
-              </CoFold>
             </div>
           </main>
 
@@ -2806,7 +2703,8 @@ const CreateOrderModal = ({ suppliers, businessProfileId, pricingMode = 'supplie
 // =====================================================================
 const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
   const [amountPaid, setAmountPaid] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const quotePaymentOnly = Boolean(order?.supplier_quote_status && order.supplier_quote_status !== 'not_requested');
+  const [paymentMethod, setPaymentMethod] = useState(quotePaymentOnly ? 'ican_wallet' : 'cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -2852,6 +2750,15 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
 
     if (order.status === 'pending_approval' && paymentMethod !== 'ican_wallet') {
       alert('A pending purchase order can only be submitted as an ICAN business-wallet approval request. Select ICANera Wallet to notify the authorized administrator.');
+      return;
+    }
+
+    if (quotePaymentOnly && order.supplier_quote_status !== 'accepted') {
+      alert('The manager must approve the supplier proposal before payment can be requested.');
+      return;
+    }
+    if (quotePaymentOnly && paymentMethod !== 'ican_wallet') {
+      alert('Quote-based supply orders must use the business-wallet admin approval flow.');
       return;
     }
 
@@ -2983,11 +2890,15 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
               </div>
             )}
 
+            {!quotePaymentOnly && (
+            <>
             <p className="co-label">Pay with</p>
             <div className="co-seg two" role="group" aria-label="Payment method">
               <button type="button" aria-pressed={paymentMethod === 'cash'} onClick={() => setPaymentMethod('cash')}>💵 Cash</button>
               <button type="button" aria-pressed={paymentMethod === 'ican_wallet'} onClick={() => setPaymentMethod('ican_wallet')}>🪙 IcanEra Wallet</button>
             </div>
+            </>
+            )}
 
             {paymentMethod === 'ican_wallet' && (
               <div className="co-note">
