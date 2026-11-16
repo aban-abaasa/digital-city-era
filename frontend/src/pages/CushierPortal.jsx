@@ -137,6 +137,7 @@ const CashierPortal = () => {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false); // Start as false, set to true only when actively loading
   const [searchTerm, setSearchTerm] = useState('');
+  const productSearchInputRef = useRef(null);
   const searchTermRef = useRef(searchTerm);
   searchTermRef.current = searchTerm;
   const hardwareScannerRef = useRef({ buffer: '', startedAt: 0, lastKeyAt: 0, searchInput: false, previousSearch: '' });
@@ -150,7 +151,7 @@ const CashierPortal = () => {
     stockStatus: 'all'
   });
   useBackLayer(showSearchTab, () => setShowSearchTab(false));
-  
+
   // Payment methods - IcanEra Wallet primary with full transaction control
   const paymentMethods = [
     {
@@ -223,10 +224,26 @@ const CashierPortal = () => {
   const [settingsForm, setSettingsForm] = useState({
     notifications: true,
     soundEffects: true,
+    quickSearchShortcut: true,
     receiptPrinting: 'auto',
     theme: 'light',
     language: 'en'
   });
+  // Quick POS search for admins using the cashier counter, and cashiers who
+  // enable it in Settings: Ctrl+F on Windows/Linux, Cmd+F on Mac.
+  useEffect(() => {
+    if (!settingsForm.quickSearchShortcut || activeTab !== 'pos' || paymentModal || showIcanReceiveModal || showBarcodeScanner || showSearchTab || showReceiptModal || showSettingsModal || showEditProfileModal || variantPickerProduct || batchPickerProduct) {
+      return undefined;
+    }
+    const focusProductSearch = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== 'f') return;
+      event.preventDefault();
+      productSearchInputRef.current?.focus();
+      productSearchInputRef.current?.select();
+    };
+    window.addEventListener('keydown', focusProductSearch);
+    return () => window.removeEventListener('keydown', focusProductSearch);
+  }, [settingsForm.quickSearchShortcut, activeTab, paymentModal, showIcanReceiveModal, showBarcodeScanner, showSearchTab, showReceiptModal, showSettingsModal, showEditProfileModal, variantPickerProduct, batchPickerProduct]);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -926,7 +943,7 @@ const CashierPortal = () => {
       const savedSettings = localStorage.getItem('cashier_settings');
       if (savedSettings) {
         const settings = JSON.parse(savedSettings);
-        setSettingsForm(settings);
+        setSettingsForm((current) => ({ ...current, ...settings, quickSearchShortcut: settings.quickSearchShortcut !== false }));
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -2297,8 +2314,10 @@ const CashierPortal = () => {
             <div className="relative min-w-0 flex-1">
               <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" aria-hidden="true" />
               <input
+                ref={productSearchInputRef}
                 type="text"
                 aria-label="Search products by name, SKU, or barcode"
+                aria-keyshortcuts="Control+F Meta+F"
                 placeholder="Search products, SKU, or scan barcode..."
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
@@ -2338,6 +2357,7 @@ const CashierPortal = () => {
           <p className="mb-2 text-xs text-gray-500" aria-live="polite">
             Showing {filteredProducts.length} of {products.length} products
             <span className="ml-2 font-semibold text-emerald-700">· Hand scanner ready</span>
+            {settingsForm.quickSearchShortcut && <span className="ml-2 text-gray-400">· Press Ctrl+F / ⌘F to search</span>}
           </p>
 
           {/* Products Grid - Optimized for mobile */}
@@ -4328,6 +4348,29 @@ const CashierPortal = () => {
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       settingsForm.soundEffects ? 'translate-x-6' : 'translate-x-1'
                     }`}
+                  />
+                </button>
+              </div>
+
+              {/* POS Quick Search */}
+              <div className="flex items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-3">
+                  <FiSearch className="h-5 w-5 text-gray-600" aria-hidden="true" />
+                  <div>
+                    <h3 className="font-semibold text-gray-900">POS Quick Search</h3>
+                    <p className="text-sm text-gray-600">Press Ctrl+F or ⌘F to jump to product search.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settingsForm.quickSearchShortcut}
+                  aria-label="Enable POS quick search keyboard shortcut"
+                  onClick={() => setSettingsForm((current) => ({ ...current, quickSearchShortcut: !current.quickSearchShortcut }))}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${settingsForm.quickSearchShortcut ? 'bg-red-600' : 'bg-gray-300'}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settingsForm.quickSearchShortcut ? 'translate-x-6' : 'translate-x-1'}`}
                   />
                 </button>
               </div>
