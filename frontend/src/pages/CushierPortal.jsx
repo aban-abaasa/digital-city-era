@@ -137,6 +137,19 @@ const CashierPortal = () => {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false); // Start as false, set to true only when actively loading
   const [searchTerm, setSearchTerm] = useState('');
+  const searchTermRef = useRef(searchTerm);
+  searchTermRef.current = searchTerm;
+  const hardwareScannerRef = useRef({ buffer: '', startedAt: 0, lastKeyAt: 0, searchInput: false, previousSearch: '' });
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [showSearchTab, setShowSearchTab] = useState(false);
+  const [searchFilters, setSearchFilters] = useState({
+    name: '',
+    category: '',
+    minPrice: '',
+    maxPrice: '',
+    stockStatus: 'all'
+  });
+  useBackLayer(showSearchTab, () => setShowSearchTab(false));
   
   // Payment methods - IcanEra Wallet primary with full transaction control
   const paymentMethods = [
@@ -1607,6 +1620,89 @@ const CashierPortal = () => {
     chooseProductToAdd(product);
     return true;
   };
+  const handleBarcodeScannedRef = useRef(handleBarcodeScanned);
+  handleBarcodeScannedRef.current = handleBarcodeScanned;
+
+  // USB and wireless handheld scanners act like a keyboard and send the barcode
+  // as a fast burst followed by Enter. Listen on the Products tab so a scan
+  // adds to the sale even when the camera scanner panel is closed.
+  useEffect(() => {
+    const scanState = hardwareScannerRef.current;
+    scanState.buffer = '';
+    if (activeTab !== 'pos' || paymentModal || showIcanReceiveModal || showBarcodeScanner || showReceiptModal || variantPickerProduct || batchPickerProduct) {
+      return undefined;
+    }
+
+    const clearBuffer = () => {
+      scanState.buffer = '';
+      scanState.startedAt = 0;
+      scanState.lastKeyAt = 0;
+      scanState.searchInput = false;
+      scanState.previousSearch = '';
+    };
+
+    const handleHardwareScannerKey = (event) => {
+      if (['Shift', 'CapsLock', 'NumLock'].includes(event.key)) return;
+      if (event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.repeat) {
+        clearBuffer();
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target : null;
+      // The embedded scanner already owns its explicit manual-entry and hidden
+      // gun inputs. Let those fields process their own Enter key exactly once.
+      if (target?.matches('input[name="manualBarcode"], input[aria-hidden="true"]')) {
+        clearBuffer();
+        return;
+      }
+
+      const isSearchInput = target?.matches('input[aria-label="Search products by name, SKU, or barcode"]') || false;
+      const isEditable = target?.matches('input, textarea, select, [contenteditable="true"]') || false;
+      if (isEditable && !isSearchInput) {
+        clearBuffer();
+        return;
+      }
+
+      const now = Date.now();
+      const terminator = event.key === 'Enter' || event.key === 'Tab';
+      if (terminator) {
+        const barcode = scanState.buffer.trim();
+        const fastScan = barcode.length >= 3
+          && now - scanState.startedAt <= 2500
+          && now - scanState.lastKeyAt <= 180;
+        const restoreSearch = scanState.searchInput;
+        const previousSearch = scanState.previousSearch;
+        clearBuffer();
+        if (fastScan) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (restoreSearch) setSearchTerm(previousSearch);
+          handleBarcodeScannedRef.current(barcode);
+        }
+        return;
+      }
+
+      if (event.key.length !== 1 || /\s/.test(event.key)) {
+        clearBuffer();
+        return;
+      }
+
+      if (scanState.buffer && now - scanState.lastKeyAt > 120) clearBuffer();
+      if (!scanState.buffer) {
+        scanState.startedAt = now;
+        scanState.searchInput = isSearchInput;
+        scanState.previousSearch = isSearchInput ? searchTermRef.current : '';
+      }
+      scanState.buffer += event.key;
+      scanState.lastKeyAt = now;
+    };
+
+    window.addEventListener('keydown', handleHardwareScannerKey, true);
+    return () => {
+      window.removeEventListener('keydown', handleHardwareScannerKey, true);
+      clearBuffer();
+    };
+  }, [activeTab, paymentModal, showIcanReceiveModal, showBarcodeScanner, showReceiptModal, variantPickerProduct, batchPickerProduct]);
 
   const removeItemFromTransaction = (cartLineId) => {
     localSaleAttemptIdRef.current = null;
@@ -2131,7 +2227,36 @@ const CashierPortal = () => {
   // + invoice/receipt flow instead of a simple paid-in-full sale.
   const hasServiceItem = currentTransaction.items.some(item => item.inventoryMode === 'service_item');
 
-  const renderPOS = () => (
+  const renderPOS = () => {
+    const getProductPrice = (product) => Number(product.selling_price ?? product.price ?? 0);
+    const getProductStock = (product) => Number(product.stock ?? product.available_stock ?? 0);
+    const getProductCategory = (product) => product.categoryName || product.category || 'General';
+    const productCategories = Array.from(new Set(products.map(getProductCategory))).sort((a, b) => a.localeCompare(b));
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const filteredProducts = products.filter((product) => {
+      const fields = [product.name, product.sku, product.barcode, getProductCategory(product)];
+      const matchesSearch = !normalizedSearch || fields.some((field) => String(field || '').toLowerCase().includes(normalizedSearch));
+      return matchesSearch && (!selectedCategory || getProductCategory(product) === selectedCategory);
+    });
+    const normalizedAdvancedSearch = searchFilters.name.trim().toLowerCase();
+    const searchResults = products.filter((product) => {
+      const price = getProductPrice(product);
+      const stock = getProductStock(product);
+      const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
+      const fields = [product.name, product.sku, product.barcode];
+      const matchesName = !normalizedAdvancedSearch || fields.some((field) => String(field || '').toLowerCase().includes(normalizedAdvancedSearch));
+      const matchesCategory = !searchFilters.category || getProductCategory(product) === searchFilters.category;
+      const matchesMinPrice = !searchFilters.minPrice || price >= Number(searchFilters.minPrice);
+      const matchesMaxPrice = !searchFilters.maxPrice || price <= Number(searchFilters.maxPrice);
+      const matchesStock = searchFilters.stockStatus === 'all'
+        || (searchFilters.stockStatus === 'in-stock' && (isUnlimitedItem || stock > 10))
+        || (searchFilters.stockStatus === 'low-stock' && !isUnlimitedItem && stock > 0 && stock <= 10)
+        || (searchFilters.stockStatus === 'out-of-stock' && !isUnlimitedItem && stock === 0);
+      return matchesName && matchesCategory && matchesMinPrice && matchesMaxPrice && matchesStock;
+    });
+
+    return (
+    <>
     <div className="adh animate-fadeInUp cashier-pos">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 h-screen md:h-auto flex flex-col md:flex-row">
         {/* Product Selection - Optimized for mobile */}
@@ -2142,16 +2267,79 @@ const CashierPortal = () => {
             </h3>
             <div className="flex items-center gap-1 md:gap-2">
               <button
-                onClick={() => setShowDualScanner(true)}
-                className="px-2 md:px-4 py-1 md:py-2 bg-indigo-800 text-white rounded-xl text-xs md:text-sm font-bold hover:bg-indigo-900 transition-all duration-200 flex items-center gap-1 md:gap-2 shadow-sm"
-                title="Smart dual scanner"
+                type="button"
+                onClick={() => setShowDualScanner((isOpen) => !isOpen)}
+                aria-pressed={showDualScanner}
+                className={`px-2 md:px-4 py-1 md:py-2 ${showDualScanner ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-800 hover:bg-indigo-900'} text-white rounded-xl text-xs md:text-sm font-bold transition-all duration-200 flex items-center gap-1 md:gap-2 shadow-sm`}
+                title={showDualScanner ? 'Close the scanner and return to product browsing' : 'Open the scanner while keeping products visible'}
               >
-                <FiZap className="h-4 md:h-5 w-4 md:w-5" />
-                <span className="hidden md:inline">Scan</span>
+                {showDualScanner ? <FiX className="h-4 md:h-5 w-4 md:w-5" /> : <FiZap className="h-4 md:h-5 w-4 md:w-5" />}
+                <span className="hidden md:inline">{showDualScanner ? 'Close Scanner' : 'Scan'}</span>
               </button>
             </div>
           </div>
+
+          {showDualScanner && (
+            <div className="mb-3 h-[min(48vh,28rem)] min-h-[18rem] overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
+              <DualScannerInterface
+                embedded
+                context="cashier"
+                inventoryProducts={products}
+                onScanHandled
+                onBarcodeScanned={handleBarcodeScanned}
+                onClose={() => setShowDualScanner(false)}
+                paused={paymentModal || showIcanReceiveModal || showBarcodeScanner || showSearchTab || showReceiptModal || !!variantPickerProduct || !!batchPickerProduct}
+              />
+            </div>
+          )}
           
+          <div className="mb-2 flex flex-col gap-2 border-b border-gray-100 pb-3 md:mb-4 md:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+              <input
+                type="text"
+                aria-label="Search products by name, SKU, or barcode"
+                placeholder="Search products, SKU, or scan barcode..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                className="w-full rounded-xl border-2 border-gray-300 bg-gray-50 py-2.5 pl-10 pr-10 text-sm focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-200 md:py-3 md:text-base"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  aria-label="Clear product search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                >
+                  <FiX className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <select
+              aria-label="Filter products by category"
+              value={selectedCategory}
+              onChange={(event) => setSelectedCategory(event.target.value)}
+              className="min-h-11 rounded-xl border-2 border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 md:min-w-44"
+            >
+              <option value="">All Categories</option>
+              {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowSearchTab(true)}
+              aria-pressed={showSearchTab}
+              className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:from-indigo-700 hover:to-cyan-700 md:text-base"
+              title="Filter by product name, price, category, and stock status"
+            >
+              <FiSearch className="h-5 w-5" aria-hidden="true" />
+              <span>Search Products</span>
+            </button>
+          </div>
+          <p className="mb-2 text-xs text-gray-500" aria-live="polite">
+            Showing {filteredProducts.length} of {products.length} products
+            <span className="ml-2 font-semibold text-emerald-700">· Hand scanner ready</span>
+          </p>
+
           {/* Products Grid - Optimized for mobile */}
           <div className="flex-1 overflow-y-auto">
             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-4">
@@ -2171,8 +2359,20 @@ const CashierPortal = () => {
                     Reload
                   </button>
                 </div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="col-span-3 py-10 text-center md:col-span-4">
+                  <FiSearch className="mx-auto mb-3 h-9 w-9 text-gray-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold text-gray-700">No products found{normalizedSearch ? ` for “${searchTerm}”` : ''}.</p>
+                  <button
+                    type="button"
+                    onClick={() => { setSearchTerm(''); setSelectedCategory(''); }}
+                    className="mt-3 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+                  >
+                    Clear Search
+                  </button>
+                </div>
               ) : (
-                products.map((product) => {
+                filteredProducts.map((product) => {
                   const productPrice = product.selling_price || product.price || 0;
                   const productStock = product.stock || product.available_stock || 0;
                   const categoryName = product.categoryName || product.category || 'General';
@@ -2461,7 +2661,166 @@ const CashierPortal = () => {
         </div>
       </div>
     </div>
+    {showSearchTab && createPortal(
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cashier-advanced-search-title"
+          className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        >
+          <header className="flex items-center justify-between bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 p-5 text-white md:p-6">
+            <div className="flex items-center gap-3">
+              <FiSearch className="h-7 w-7" aria-hidden="true" />
+              <div>
+                <h2 id="cashier-advanced-search-title" className="text-xl font-bold md:text-2xl">Advanced Product Search</h2>
+                <p className="text-sm text-blue-100">Find products by name, price, category, or stock status.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSearchTab(false)}
+              className="rounded-lg p-2 transition-colors hover:bg-white/20"
+              aria-label="Close advanced product search"
+            >
+              <FiX className="h-6 w-6" />
+            </button>
+          </header>
+
+          <div className="overflow-y-auto bg-gray-50">
+            <div className="sticky top-0 z-10 border-b border-gray-200 bg-white p-4 md:p-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <label className="block text-sm font-medium text-gray-700">
+                  Product Name / SKU
+                  <input
+                    type="text"
+                    value={searchFilters.name}
+                    onChange={(event) => setSearchFilters((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Enter product name..."
+                    className="mt-2 w-full rounded-lg border-2 border-gray-300 px-3 py-2 font-normal focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Category
+                  <select
+                    value={searchFilters.category}
+                    onChange={(event) => setSearchFilters((current) => ({ ...current, category: event.target.value }))}
+                    className="mt-2 w-full rounded-lg border-2 border-gray-300 bg-white px-3 py-2 font-normal focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">All Categories</option>
+                    {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Min Price
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={searchFilters.minPrice}
+                    onChange={(event) => setSearchFilters((current) => ({ ...current, minPrice: event.target.value }))}
+                    placeholder="Min..."
+                    className="mt-2 w-full rounded-lg border-2 border-gray-300 px-3 py-2 font-normal focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Max Price
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={searchFilters.maxPrice}
+                    onChange={(event) => setSearchFilters((current) => ({ ...current, maxPrice: event.target.value }))}
+                    placeholder="Max..."
+                    className="mt-2 w-full rounded-lg border-2 border-gray-300 px-3 py-2 font-normal focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Stock Status
+                  <select
+                    value={searchFilters.stockStatus}
+                    onChange={(event) => setSearchFilters((current) => ({ ...current, stockStatus: event.target.value }))}
+                    className="mt-2 w-full rounded-lg border-2 border-gray-300 bg-white px-3 py-2 font-normal focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Stock</option>
+                    <option value="in-stock">In Stock (&gt;10)</option>
+                    <option value="low-stock">Low Stock (1-10)</option>
+                    <option value="out-of-stock">Out of Stock</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <p className="text-sm text-gray-600" aria-live="polite">
+                  <strong className="text-indigo-600">{searchResults.length}</strong> products found
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSearchFilters({ name: '', category: '', minPrice: '', maxPrice: '', stockStatus: 'all' })}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 md:p-6">
+              {searchResults.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {searchResults.map((product) => {
+                    const price = getProductPrice(product);
+                    const stock = getProductStock(product);
+                    const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
+                    const isOutOfStock = !isUnlimitedItem && stock <= 0;
+                    return (
+                      <article key={product.id} className="overflow-hidden rounded-xl border-2 border-gray-200 bg-white shadow-sm transition hover:border-indigo-500 hover:shadow-lg">
+                        <div className="border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50 p-4">
+                          <h3 className="line-clamp-2 text-sm font-bold text-gray-900">{product.name}</h3>
+                          <p className="mt-1 text-xs text-gray-500">SKU: {product.sku || 'N/A'} · {getProductCategory(product)}</p>
+                        </div>
+                        <div className="space-y-3 p-4">
+                          <div>
+                            <p className="text-xs text-gray-500">Price</p>
+                            <p className="text-xl font-bold text-gray-900">{formatUGX(price)}</p>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm text-gray-600">{isUnlimitedItem ? 'Service item' : `${stock} units`}</span>
+                            <span className={`rounded-full px-3 py-1 text-xs font-bold ${isOutOfStock ? 'bg-red-100 text-red-700' : stock > 10 || isUnlimitedItem ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {isOutOfStock ? 'Out of Stock' : stock > 10 || isUnlimitedItem ? 'In Stock' : 'Low Stock'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isOutOfStock}
+                            onClick={() => {
+                              setShowSearchTab(false);
+                              chooseProductToAdd(product);
+                            }}
+                            className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 py-2 font-bold text-white transition hover:from-green-600 hover:to-emerald-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+                          >
+                            <FiPlus className="h-4 w-4" aria-hidden="true" />
+                            <span>{isOutOfStock ? 'Out of Stock' : 'Add to Sale'}</span>
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-16 text-center">
+                  <FiSearch className="mx-auto mb-4 h-12 w-12 text-gray-400" aria-hidden="true" />
+                  <h3 className="text-xl font-bold text-gray-600">No products found</h3>
+                  <p className="mt-2 text-gray-400">Try adjusting your search filters or clear them to see all available products.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>,
+      document.body
+    )}
+    </>
   );
+  };
 
   const renderDashboard = () => (
     <div className="adh cashier-dashboard animate-fadeInUp">
@@ -3554,17 +3913,6 @@ const CashierPortal = () => {
             )}
           </div>
         </div>
-      )}
-
-      {/* Dual Scanner Interface - Camera + Hand Gun Scanner */}
-      {showDualScanner && (
-        <DualScannerInterface
-          inventoryProducts={products}
-          onBarcodeScanned={(barcode) => {
-            if (handleBarcodeScanned(barcode)) setShowDualScanner(false);
-          }}
-          onClose={() => setShowDualScanner(false)}
-        />
       )}
 
       {/* Barcode Scanner - Using Dual Scanner Mode */}
