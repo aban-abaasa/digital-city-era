@@ -41,7 +41,7 @@ const SERVICE_SUGGESTIONS = [
   'Consultation', 'Installation', 'Delivery / errand'
 ];
 
-const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null }) => {
+const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null, enableCatalogProductSuggestions = false }) => {
   useBackLayer(isOpen, onClose);
   const isSupplierMode = mode === 'supplier';
   const [loading, setLoading] = useState(false);
@@ -87,6 +87,9 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   
   // Scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [barcodeMatches, setBarcodeMatches] = useState([]);
+  const [searchingBarcodeMatches, setSearchingBarcodeMatches] = useState(false);
+  const [catalogLookupMode, setCatalogLookupMode] = useState(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -142,6 +145,74 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   // The Add Service page opens it already fixed to a service (no mode picker to flip it back).
   const isServiceForm = !isSupplierMode && formData.inventory_mode === 'service_item';
   const serviceLocked = isServiceForm && prefilledData?.inventory_mode === 'service_item';
+
+  // Let admins and suppliers find active catalog products by either name or
+  // barcode. Reuse only the product name and barcode; store pricing and stock
+  // must be entered independently.
+  useEffect(() => {
+    const searchValue = String(catalogLookupMode === 'barcode' ? formData.barcode : formData.name || '').trim();
+    const enoughInput = catalogLookupMode === 'barcode' ? searchValue.length >= 4 : searchValue.length >= 2;
+    if (!enableCatalogProductSuggestions || !isOpen || isEditMode || isServiceForm || !catalogLookupMode || !enoughInput) {
+      setBarcodeMatches([]);
+      setSearchingBarcodeMatches(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      setSearchingBarcodeMatches(true);
+      try {
+        const supermarketId = isSupplierMode ? null : await inventoryService.getCurrentSupermarketId().catch(() => null);
+        let query = supabase
+          .from('products')
+          .select('id, name, barcode, brand, supermarket_id')
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+          .limit(100);
+
+        if (catalogLookupMode === 'barcode') {
+          query = query.in('barcode', barcodeVariants(searchValue));
+        } else {
+          query = query.ilike('name', `%${searchValue}%`);
+        }
+
+        if (!isSupplierMode && supermarketId) query = query.neq('supermarket_id', supermarketId);
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        if (active) {
+          const seenNames = new Set();
+          const matches = (data || []).filter((product) => {
+            if (!product.name?.trim()) return false;
+            if (!isSupplierMode && (!product.supermarket_id || product.supermarket_id === supermarketId)) return false;
+            const key = `${product.name.trim().toLocaleLowerCase()}\u0000${String(product.barcode || '').trim()}`;
+            if (seenNames.has(key)) return false;
+            seenNames.add(key);
+            return true;
+          });
+          setBarcodeMatches(matches.slice(0, 6));
+        }
+      } catch (error) {
+        console.warn('Could not find matching products in other stores:', error);
+        if (active) setBarcodeMatches([]);
+      } finally {
+        if (active) setSearchingBarcodeMatches(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [formData.name, formData.barcode, catalogLookupMode, isOpen, isSupplierMode, isServiceForm, isEditMode, enableCatalogProductSuggestions]);
+
+  const useBarcodeMatch = (product) => {
+    setFormData((prev) => ({ ...prev, name: product.name, barcode: product.barcode || '' }));
+    setErrors((prev) => ({ ...prev, name: '' }));
+    setCatalogLookupMode(null);
+    setBarcodeMatches([]);
+  };
 
   // Products and services have their own category lists (categories.kind, ADD_CATEGORY_KINDS.sql).
   // A database that has not had that migration yet has no kind on any row: show the whole list then.
@@ -372,6 +443,12 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'barcode' || name === 'name') {
+      setCatalogLookupMode(name);
+      setBarcodeMatches([]);
+      setSearchingBarcodeMatches(false);
+    }
     
     // Clear error for this field
     if (errors[name]) {
@@ -382,8 +459,11 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   // Handle barcode scanned from scanner
   const handleBarcodeScanned = async (barcode) => {
     setShowBarcodeScanner(false);
+    setBarcodeMatches([]);
+    setSearchingBarcodeMatches(false);
 
     if (isSupplierMode) {
+      setCatalogLookupMode('barcode');
       setFormData(prev => ({ ...prev, barcode }));
       toast.success(`✅ Barcode scanned: ${barcode}`);
       return;
@@ -417,6 +497,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       }
 
       // Product doesn't exist - auto-fill the barcode
+      setCatalogLookupMode('barcode');
       setFormData(prev => ({
         ...prev,
         barcode: barcode,
@@ -946,6 +1027,32 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                         <span className="text-xs sm:text-sm">Scan</span>
                       </button>
                     </div>
+                    {enableCatalogProductSuggestions && catalogLookupMode === 'barcode' && searchingBarcodeMatches && (
+                      <p className="sr-only" role="status">Checking product names from other stores…</p>
+                    )}
+                    {enableCatalogProductSuggestions && catalogLookupMode === 'barcode' && barcodeMatches.length > 0 && (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm" role="group" aria-label="Matching products from other stores">
+                        <p className="border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
+                          Choose a match to fill its name and exact barcode. You can edit both:
+                        </p>
+                        {barcodeMatches.map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onClick={() => useBarcodeMatch(product)}
+                            className="flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-gray-900">{product.name}</span>
+                              <span className="block truncate text-xs text-gray-500">
+                                {[product.brand, product.barcode ? `Barcode: ${product.barcode}` : null].filter(Boolean).join(' · ') || 'No barcode'}
+                              </span>
+                            </span>
+                            <span className="flex-shrink-0 text-xs text-blue-700">Use product</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   </>)}
@@ -966,6 +1073,32 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       placeholder={isServiceForm ? 'e.g., Wash & fold laundry (per kg)' : 'e.g., iPhone 15 Pro Max 256GB'}
                     />
                     {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+                    {enableCatalogProductSuggestions && catalogLookupMode === 'name' && searchingBarcodeMatches && (
+                      <p className="sr-only" role="status">Searching matching products…</p>
+                    )}
+                    {enableCatalogProductSuggestions && catalogLookupMode === 'name' && barcodeMatches.length > 0 && (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm" role="group" aria-label="Matching catalog products">
+                        <p className="border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
+                          Select a match to fill its name and exact barcode. You can edit both:
+                        </p>
+                        {barcodeMatches.map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onClick={() => useBarcodeMatch(product)}
+                            className="flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-gray-900">{product.name}</span>
+                              <span className="block truncate text-xs text-gray-500">
+                                {[product.brand, product.barcode ? `Barcode: ${product.barcode}` : null].filter(Boolean).join(' · ') || 'No barcode'}
+                              </span>
+                            </span>
+                            <span className="flex-shrink-0 text-xs text-blue-700">Use product</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Brand */}

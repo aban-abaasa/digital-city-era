@@ -2884,6 +2884,7 @@ const SupplierPortal = () => {
         isOpen={showAddProductModal}
         onClose={() => setShowAddProductModal(false)}
         mode="supplier"
+        enableCatalogProductSuggestions
         supplierUserId={supplierProfile.auth_id || supplierProfile.id}
         onProductAdded={() => {
           setShowAddProductModal(false);

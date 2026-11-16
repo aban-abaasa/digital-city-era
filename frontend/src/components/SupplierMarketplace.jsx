@@ -279,6 +279,7 @@ export function SupplierCatalogTab({ userId }) {
         isOpen={modal.open}
         onClose={closeModal}
         mode="supplier"
+        enableCatalogProductSuggestions
         supplierUserId={userId}
         editingProductId={modal.item?.id || null}
         prefilledData={modal.item ? catalogItemToFormData(modal.item) : {}}

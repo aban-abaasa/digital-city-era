@@ -16,7 +16,7 @@ import {
 import { useBackLayer } from '../hooks/useBackLayer';
 // import PurchaseOrderManager from './PurchaseOrderManager'; // COMMENTED OUT - Using order system instead
 
-const ProductInventoryInterface = ({ defaultView = 'all' }) => {
+const ProductInventoryInterface = ({ defaultView = 'all', enableCatalogProductSuggestions = false }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewFilter, setViewFilter] = useState(defaultView); // 'all' | 'products' | 'services'
@@ -1107,6 +1107,7 @@ const ProductInventoryInterface = ({ defaultView = 'all' }) => {
         key={editingProduct?.id || 'add-product'}
         isOpen={showAddProductModal}
         onClose={closeProductModal}
+        enableCatalogProductSuggestions={enableCatalogProductSuggestions}
         prefilledData={editingProduct || (viewFilter === 'services' ? { inventory_mode: 'service_item' } : {})}
         editingProductId={editingProduct?.id || null}
         onProductAdded={async (savedProduct) => {

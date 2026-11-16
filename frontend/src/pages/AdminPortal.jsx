@@ -3722,7 +3722,10 @@ const AdminPortal = () => {
             {/* Enhanced Product Interface */}
             <div className="px-3 md:px-4 lg:px-6 pb-3 md:pb-4 lg:pb-6">
               <div className="bg-white rounded-lg md:rounded-xl shadow-inner border-2 border-gray-100 overflow-hidden">
-                <ProductInventoryInterface defaultView={currentAdmin.business_type === 'laundry' ? 'services' : 'all'} />
+                <ProductInventoryInterface
+                  defaultView={currentAdmin.business_type === 'laundry' ? 'services' : 'all'}
+                  enableCatalogProductSuggestions
+                />
               </div>
             </div>
           </div>
