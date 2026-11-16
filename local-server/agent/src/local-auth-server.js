@@ -152,7 +152,7 @@ const server = createServer(async (request, response) => {
     const body = await readJson(request);
     if (request.url === '/bootstrap-owner') {
       if (!safeEqual(body.setupToken, setupToken)) {
-        sendJson(response, 401, { success: false, error: 'The one-time owner setup code is invalid.' });
+        sendJson(response, 401, { success: false, error: 'The one-time Admin setup code is invalid.' });
         return;
       }
       const result = await rpc('business_local_bootstrap_owner', {

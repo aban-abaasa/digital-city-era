@@ -92,15 +92,18 @@ Storage configuration before promising file uploads. See the official
 - If cloud migrations have not been applied to the shared Supabase project,
   customer pairing stays unavailable and the setup page directs customers to
   their platform administrator/support. The customer does not apply SQL.
-- The installer serves the app shell and team channel on the LAN. Supermarket
-  nodes also hold a read-only mirror of product names, prices, and stock; cloud
-  catalog changes flow to paired nodes. Local owner and staff PIN sign-in with
-  owner-managed cashier/manager accounts is available. The local database
-  checks staff identity when sending team messages and stamps the saved staff
-  name and role. Cashier cash sales are stored on the shared local node, reduce
-  local stock atomically, print a receipt, and sync to cloud transactions when
-  the platform administrator has enabled cloud sync and internet returns.
-  Other app schemas, TLS, backup, and update/rollback remain to be built.
+- The installer offers Full (the existing 4 GB option) and Lite (2 GB minimum
+  option). Full serves the LAN team channel, mirrors this supermarket's
+  products, prices, and stock, and supports Admin stock corrections. Lite runs
+  the database, sign-in, API, app, and sync agent for local product additions
+  and cash sales; it leaves optional services and team chat stopped. Neither
+  edition searches or loads other stores' product names. Cross-store product
+  suggestions are available only in connected online add forms. Both use local
+  Admin/Cashier PIN accounts, with the first setup account as Admin. Cash sales
+  are stored on the shared local node, reduce local stock atomically, print a
+  receipt, and sync to cloud transactions when the platform administrator has
+  enabled cloud sync and internet returns. Other app schemas, TLS, backup, and
+  update/rollback remain to be built.
 - Digital City Era's cashier PWA caches the app and a business's product
   catalog/profile on each device, and queues cash sales in IndexedDB. It sends
   queued sales directly to the configured Supabase endpoint when reachable.
@@ -112,12 +115,13 @@ Storage configuration before promising file uploads. See the official
   cashier queue, and payment/authentication flows that require a live service
   remain online-dependent.
 
-The repository has a downloadable **business-server preview**. Team chat works
-over the LAN and syncs after reconnection; supermarket catalog and stock data
-bootstrap to the node and receive cloud updates. It is not a complete offline
-business system: other app workflows, full app schemas, TLS, backup, and
-update/rollback are still missing. Local PIN sign-in plus the cash-sales RPC
-enables shared LAN cash receipts; wallet payments still need the internet.
+The repository has a downloadable **business-server preview** with Full and
+Lite installer choices. Team chat works over the LAN in Full and syncs after
+reconnection; the Lite option focuses on local product additions and cash sales.
+The server catalog is scoped to the paired store and never suggests products
+from other stores. It is not a complete offline business system: other app
+workflows, full app schemas, TLS, backup, and update/rollback are still missing.
+Wallet payments still need the internet.
 
 ## What the Supabase installer does
 
@@ -156,24 +160,25 @@ Official references:
 3. The operator downloads and runs the business-server preview package on a
    Windows, macOS, or Linux host with Node.js, Git, Docker, and recent Docker
    Compose. Windows also requires Git Bash. The installer pins Supabase
-   `self-hosted/v0.8.1`, generates local secrets, and binds its API gateway to
-   a reserved business-LAN IPv4 address.
+   `self-hosted/v0.8.1`, offers Full (4 GB) or Lite (2 GB) service sets,
+   generates local secrets, and binds its API gateway to a reserved business-
+   LAN IPv4 address. At startup it creates a desktop shortcut on the host
+   computer to open the local app.
 4. The installer claims the pairing code, enrolls one node for that business,
    and stores its credential in `.env.local-sync` on the server. It also
    removes host-published Postgres/Supavisor ports and persists Storage in a
    named Docker volume.
-5. The installer serves the built app shell and configures the business-scoped
-   text team channel, creates a one-use owner setup code, and installs local
-   staff sign-in with owner-managed cashier/manager accounts. It does not load
-   the full app schema or sales data.
+5. The installer serves the built app shell, creates a one-use Admin setup
+   code, and installs local staff sign-in with Admin/Cashier accounts. Full
+   configures the business-scoped text team channel; Lite omits Realtime and
+   other optional services. It does not load the full app schema or sales data.
 6. Staff devices open `http://<reserved-lan-ip>:8080` on the same LAN. The
-   owner uses the setup code once, creates local staff PIN accounts, then each
-   worker signs in locally. The local database validates staff identity for
-   team-message writes and stamps their saved name and role.
-7. When internet returns, the agent pushes and applies `team.message.v1`
-   events. The team widget reports pending outbound items, last successful
-   sync, and whether the agent reports an error. Unsupported types are
-   quarantined; sales/inventory sync and operator resolution still need work.
+   Admin uses the setup code once, creates local PIN accounts, then each worker
+   signs in locally. The local database validates staff identity for local
+   operations.
+7. When internet returns, the agent syncs supported local catalog, stock,
+   cash-sale, and (in Full) team-message events for the paired business.
+   Unsupported event types are quarantined.
 
 The generated server must have a supported local HTTPS/address strategy for
 the app origin, Supabase API, and authentication redirects. A service worker

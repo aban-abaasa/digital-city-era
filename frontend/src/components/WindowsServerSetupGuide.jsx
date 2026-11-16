@@ -61,7 +61,8 @@ const phases = [
         hint: 'Windows version, memory, disk space',
         body: (
           <>
-            <p>Windows 10 (version 22H2) or Windows 11, at least <strong>4 GB of memory</strong>, <strong>2 processor cores</strong> and internet during setup. Leave the computer switched on at the business afterwards.</p>
+            <p>Windows 10 (version 22H2) or Windows 11, <strong>2 GB of memory for Lite</strong> or <strong>4 GB for Full</strong>, <strong>2 processor cores</strong> and internet during setup. Lite is intended for local product additions and cash sales; Docker Desktop shares the computer’s memory, so more than 2 GB is recommended on Windows.</p>
+            <p>The installer offers both editions and uses the same pairing and Admin/Cashier setup steps for either one.</p>
             <p>The installer needs <strong>40 GB free</strong> on the drive you install to, and Docker keeps its own data on drive <strong>C:</strong>, so leave C: some room too. See how much each drive has:</p>
             <Command where="PowerShell — look at the FreeGB column" text="Get-PSDrive C,D | Select-Object Name, @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}" />
             <p className="bls-tip">If no drive shows 40 or more, free up space first (empty the Recycle Bin, run <strong>Disk Cleanup</strong> from the Start menu, remove programs you do not use). If you only have a C: drive, install to C:. Do not start another big download while the installer runs.</p>
@@ -193,7 +194,7 @@ const phases = [
         hint: 'Open the address on your phones',
         body: (
           <>
-            <p>The installer prints the address of the local app, like <code>http://192.168.1.13:8080</code>, and a <strong>one-time local owner setup code</strong> to enter on the first staff sign-in screen. Write both down. On any phone, tablet or computer on the same business Wi-Fi, open that address in the browser.</p>
+            <p>The installer adds a <strong>Digital City Era Local Server</strong> shortcut to the server computer’s desktop. It also prints the app address, like <code>http://192.168.1.13:8080</code>, and a <strong>one-time local Admin setup code</strong> for the first staff sign-in. On phones and tablets on the same business Wi-Fi, open the printed address in a browser.</p>
             <p>If Windows asks whether to let Docker through the firewall, allow it on <strong>Private networks</strong>.</p>
             <p>Stop the computer from sleeping while plugged in, so the server stays reachable:</p>
             <Command where="PowerShell" text="powercfg /change standby-timeout-ac 0" />

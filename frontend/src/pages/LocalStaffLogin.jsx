@@ -94,10 +94,10 @@ const LocalStaffLogin = () => {
 
         <header className="bls-hero">
           <p className="bls-eyebrow">Business LAN</p>
-          <h1>{checking ? 'Local server' : setupMode ? 'Create the owner account' : 'Staff sign in'}</h1>
+          <h1>{checking ? 'Local server' : setupMode ? 'Create the Admin account' : 'Staff sign in'}</h1>
           <p className="bls-lead">
             {setupMode
-              ? 'This server has no owner yet. Create it once with the setup code from the installer — then you can add your staff.'
+              ? 'This server has no Admin yet. Create the first Admin account with the setup code from the installer — then you can add Admin or Cashier accounts.'
               : 'Sign in with your username and PIN. Accounts live on this business server, so the internet is not needed.'}
           </p>
         </header>
@@ -115,7 +115,7 @@ const LocalStaffLogin = () => {
                 {setupMode && (
                   <>
                     <div className="bls-field">
-                      <label htmlFor="ls-code">One-time owner setup code<small>{setupToken.length}/64</small></label>
+                      <label htmlFor="ls-code">One-time Admin setup code<small>{setupToken.length}/64</small></label>
                       <input
                         id="ls-code"
                         className="bls-input is-mono"
@@ -175,24 +175,24 @@ const LocalStaffLogin = () => {
                 {error && <p role="alert" className="bls-err">{error}</p>}
 
                 <button type="submit" disabled={working || (setupMode && !setupReady)} className="bls-btn is-block">
-                  <FiServer /> {working ? 'Please wait…' : setupMode ? 'Create owner account' : 'Sign in'}
+                  <FiServer /> {working ? 'Please wait…' : setupMode ? 'Create Admin account' : 'Sign in'}
                 </button>
               </form>
             )}
 
             {canToggle && (
               <button type="button" className="bls-linkbtn" onClick={() => { setSetupMode((value) => !value); setError(''); }}>
-                {setupMode ? 'Return to staff sign in' : 'First time setting up this server? Create its owner account'}
+                {setupMode ? 'Return to staff sign in' : 'First time setting up this server? Create its Admin account'}
               </button>
             )}
             {!checking && !setupMode && ownerExists === true && (
-              <p className="bls-sub">Forgot your username or PIN? Ask the server’s owner — staff accounts are managed under <strong>Manage local staff</strong>.</p>
+              <p className="bls-sub">Forgot your username or PIN? Ask the server Admin — staff accounts are managed under <strong>Manage local staff</strong>.</p>
             )}
           </div>
         </section>
 
         <p className="bls-sub" style={{ textAlign: 'center' }}>
-          The local staff login is separate from your cloud account. Keep the one-time owner setup code private until the owner account exists.
+          The local staff login is separate from your cloud account. Keep the one-time Admin setup code private until the first Admin account exists.
         </p>
       </div>
     </main>

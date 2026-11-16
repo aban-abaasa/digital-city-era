@@ -1,0 +1,42 @@
+# Low-memory local business server option. Compose only starts these services;
+# the Lite overlay removes api-gw's default Studio dependency and omits every
+# optional Supabase service (Realtime, Storage, Functions, Studio, and pooler).
+# Docker Compose 2.24.4+ is required for !override.
+services:
+  db:
+    command: !override
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - max_connections=50
+    mem_limit: 512m
+  auth:
+    mem_limit: 192m
+  rest:
+    mem_limit: 192m
+  api-gw:
+    depends_on: !override
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+    mem_limit: 192m
+  business-local-sync-agent:
+    depends_on: !override
+      api-gw:
+        condition: service_healthy
+    mem_limit: 128m
+  business-local-app:
+    depends_on: !override
+      api-gw:
+        condition: service_healthy
+      business-local-sync-agent:
+        condition: service_started
+    mem_limit: 48m

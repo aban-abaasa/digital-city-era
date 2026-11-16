@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { FiArrowLeft, FiCheck, FiClock, FiPackage, FiPlus, FiRefreshCw, FiSearch, FiX } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
-import { supabaseConfig } from '../services/supabase';
+import { supabase, supabaseConfig } from '../services/supabase';
 import { REASON_LABELS, STOCK_REASONS, addProduct, adjustStock, getPendingStock, getStockHistory, listInventory } from '../services/localInventoryService';
 import './BusinessLocalServerSetup.css';
 
@@ -147,7 +147,68 @@ const AddProductSheet = ({ pairedToProfile, onClose, onAdded }) => {
   const [form, setForm] = useState({ name: '', price: '', stock: '', sku: '', barcode: '', tax: '18', low: '10' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const [suggestionMode, setSuggestionMode] = useState(null);
+  const [catalogMatches, setCatalogMatches] = useState([]);
+  const [searchingCatalog, setSearchingCatalog] = useState(false);
+  const [selectedCatalogProduct, setSelectedCatalogProduct] = useState(null);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
+  const set = (key) => (event) => {
+    setForm((current) => ({ ...current, [key]: event.target.value }));
+    if (key === 'name' || key === 'barcode') setSuggestionMode(key);
+  };
+
+  useEffect(() => {
+    const searchValue = String(suggestionMode === 'barcode' ? form.barcode : form.name).trim();
+    const enoughInput = suggestionMode === 'barcode' ? searchValue.length >= 4 : searchValue.length >= 2;
+    if (!suggestionMode || !enoughInput || !supabaseConfig.businessId) {
+      setCatalogMatches([]);
+      setSearchingCatalog(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      setSearchingCatalog(true);
+      try {
+        let query = supabase
+          .from('business_local_catalog')
+          .select('product_id, name, barcode')
+          .eq('business_id', supabaseConfig.businessId)
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+          .limit(6);
+        if (suggestionMode === 'barcode') {
+          query = query.eq('barcode', searchValue);
+        } else {
+          const escapedName = searchValue.replace(/[\\%_]/g, '\\$&');
+          query = query.ilike('name', `%${escapedName}%`);
+        }
+
+        const { data, error: queryError } = await query;
+        if (queryError) throw queryError;
+        if (active) setCatalogMatches((data || []).filter((product) => product.name?.trim()));
+      } catch (lookupError) {
+        console.warn('Could not find a product in this local store catalog:', lookupError);
+        if (active) setCatalogMatches([]);
+      } finally {
+        if (active) setSearchingCatalog(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [suggestionMode, form.name, form.barcode]);
+
+  const selectLocalProduct = (product) => {
+    setForm((current) => ({ ...current, name: product.name, barcode: product.barcode || '' }));
+    setSelectedCatalogProduct(product);
+    if (product.barcode) setShowMoreDetails(true);
+    setSuggestionMode(null);
+    setCatalogMatches([]);
+    setError('');
+  };
 
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape') onClose(); };
@@ -168,6 +229,10 @@ const AddProductSheet = ({ pairedToProfile, onClose, onAdded }) => {
   const save = async (event) => {
     event.preventDefault();
     if (!valid) return;
+    if (selectedCatalogProduct?.barcode && form.barcode.trim() === selectedCatalogProduct.barcode.trim()) {
+      setError('That barcode is already used in this store. Change it before saving this as a separate product.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -208,7 +273,21 @@ const AddProductSheet = ({ pairedToProfile, onClose, onAdded }) => {
 
         <div className="bls-field">
           <label htmlFor="np-name">Product name</label>
-          <input id="np-name" className="bls-input" autoFocus maxLength={255} autoComplete="off" value={form.name} onChange={set('name')} />
+          <div className="bls-product-suggest-wrap">
+            <input id="np-name" className="bls-input" autoFocus maxLength={255} autoComplete="off" value={form.name} onFocus={() => setSuggestionMode('name')} onBlur={() => setSuggestionMode((mode) => mode === 'name' ? null : mode)} onChange={set('name')} aria-autocomplete="list" aria-expanded={suggestionMode === 'name' && catalogMatches.length > 0} />
+            {suggestionMode === 'name' && searchingCatalog && <div className="bls-product-suggest-status" role="status">Searching this store’s catalog…</div>}
+            {suggestionMode === 'name' && !searchingCatalog && form.name.trim().length >= 2 && catalogMatches.length === 0 && <div className="bls-product-suggest-status">No match in this store. You can add the product normally.</div>}
+            {suggestionMode === 'name' && catalogMatches.length > 0 && (
+              <div className="bls-product-suggestions" role="listbox" aria-label="Products in this store">
+                {catalogMatches.map((product) => (
+                  <button key={product.product_id} type="button" role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => selectLocalProduct(product)}>
+                    <b>{product.name}</b><small>{product.barcode || 'No barcode'}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <small className="bls-sub">Suggestions come from this store’s local catalog only.</small>
         </div>
         <div className="bls-two">
           <div className="bls-field">
@@ -221,12 +300,25 @@ const AddProductSheet = ({ pairedToProfile, onClose, onAdded }) => {
           </div>
         </div>
 
-        <details className="bls-trouble">
+        <details className="bls-trouble" open={showMoreDetails} onToggle={(event) => setShowMoreDetails(event.currentTarget.open)}>
           <summary><span>More details (barcode, SKU, tax, low-stock level)</span><span className="bls-chev" aria-hidden="true" /></summary>
           <div className="bls-form" style={{ padding: '0 14px 14px' }}>
             <div className="bls-field">
               <label htmlFor="np-barcode">Barcode<small>blank = we generate one</small></label>
-              <input id="np-barcode" className="bls-input is-mono" maxLength={100} autoComplete="off" value={form.barcode} onChange={set('barcode')} />
+              <div className="bls-product-suggest-wrap">
+                <input id="np-barcode" className="bls-input is-mono" maxLength={100} autoComplete="off" value={form.barcode} onFocus={() => setSuggestionMode('barcode')} onBlur={() => setSuggestionMode((mode) => mode === 'barcode' ? null : mode)} onChange={set('barcode')} aria-autocomplete="list" aria-expanded={suggestionMode === 'barcode' && catalogMatches.length > 0} />
+                {suggestionMode === 'barcode' && searchingCatalog && <div className="bls-product-suggest-status" role="status">Searching this store’s catalog…</div>}
+                {suggestionMode === 'barcode' && catalogMatches.length > 0 && (
+                  <div className="bls-product-suggestions" role="listbox" aria-label="Products in this store">
+                    {catalogMatches.map((product) => (
+                      <button key={product.product_id} type="button" role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => selectLocalProduct(product)}>
+                        <b>{product.name}</b><small>{product.barcode || 'No barcode'}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedCatalogProduct?.barcode && form.barcode.trim() === selectedCatalogProduct.barcode.trim() && <small className="bls-sub">This barcode is already used here. Change it to save a separate product.</small>}
             </div>
             <div className="bls-field">
               <label htmlFor="np-sku">SKU<small>optional</small></label>
@@ -304,9 +396,11 @@ const LocalInventory = () => {
     });
   }, [items, query, filter]);
 
+  const isLite = supabaseConfig.localServerEdition === 'lite';
+  const isAdmin = user?.localRole === 'owner' || user?.localRole === 'admin';
   if (!supabaseConfig.localBusinessServer) return <Navigate to="/" replace />;
   if (!user) return <Navigate to="/local-staff-login" replace />;
-  if (user.localRole !== 'owner' && user.localRole !== 'manager') return <Navigate to="/local-home" replace />;
+  if (!isAdmin) return <Navigate to="/local-home" replace />;
 
   const onSaved = async (item, result) => {
     setSelected(null);
@@ -331,7 +425,7 @@ const LocalInventory = () => {
         <header className="bls-hero">
           <p className="bls-eyebrow">Local server</p>
           <h1>Inventory</h1>
-          <p className="bls-lead">Add products and correct stock on this server — receive deliveries, record damage and count shelves. Changes work offline and reach the cloud when the internet is back.</p>
+          <p className="bls-lead">{isLite ? 'Add products to this store’s local catalog. Product names are not searched across other stores.' : 'Add products and manage this store’s local stock. Changes work offline and reach the cloud when the internet is back.'}</p>
           <div className="bls-stats">
             <span>{items.length} {items.length === 1 ? 'product' : 'products'}</span>
             <span>{counts.low} low</span>
@@ -397,9 +491,9 @@ const LocalInventory = () => {
                         <span className={`bls-badge ${state === 'ok' ? 'is-ok' : state === 'low' ? 'is-gold' : 'is-off'}`}>{state === 'ok' ? 'In stock' : state === 'low' ? 'Low' : 'Out'}</span>
                         {wait && <span className="bls-badge is-gold" title="Changed on this server; the cloud has not confirmed it yet"><FiClock style={{ verticalAlign: '-1px' }} /> {fmtSigned(wait.delta)} waiting</span>}
                       </div>
-                      {item.inventory_mode === 'stock_controlled' ? (
+                      {!isLite && item.inventory_mode === 'stock_controlled' ? (
                         <button type="button" className="bls-btn is-small" onClick={() => setSelected(item)}>Change</button>
-                      ) : (
+                      ) : !isLite && (
                         <span className="bls-sub" title="Only stock-controlled products can be changed here">Not tracked</span>
                       )}
                     </li>

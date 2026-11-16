@@ -1,25 +1,28 @@
 # Local business server installer preview
 
 This package installs a local copy of the Digital City Era app shell, a
-business-specific self-hosted Supabase stack, a team text-chat workflow, a
-read-only catalog mirror for supermarket nodes, and the cloud pairing/sync
-worker. The stack is pinned to Supabase's
+business-specific self-hosted Supabase stack, and the cloud pairing/sync
+worker. During setup, choose **Full** or **Lite**. Full keeps the existing
+services, including team text chat and stock corrections. Lite starts only the
+database, sign-in, API, app, and sync services for local product additions and
+cash sales. The stack is pinned to Supabase's
 `self-hosted/v0.8.1` Docker release. Android, iPhone/iPad, Windows, macOS, and
 Linux devices use a web browser to connect to the LAN app; only Windows/macOS/Linux
 computers host the Docker stack. The HTTP preview is not a native phone package
 or an installable PWA.
 
-**This is preview software.** Team text messages queue on the local server and
-sync to the cloud when internet returns. Supermarket nodes also receive current
-product names, selling prices, and stock, plus cloud product/stock updates.
-That mirror is read-only except for owner/manager stock corrections (see
-**Inventory** below). Cashier cash sales are saved to the shared local database,
-deduct local stock atomically, print a receipt, and queue a cloud transaction.
-Purchasing, ICAN, BodaGoEra, attachments, and the rest of the business database
-are not enabled offline.
-Local owner/cashier/manager PIN accounts are installed. The local database
-validates staff for team-message writes and supplies the saved sender name and
-role. Wallet payments and invoice/bill-later sales require the cloud app.
+**This is preview software.** A paired supermarket server receives that
+supermarket's product names, prices, and stock, plus updates to that store's
+catalog. A local server does not search or read other stores' product names.
+Cross-store product suggestions are available only in connected online add
+forms. Cash sales are saved to the shared local database, deduct local stock
+atomically, print a receipt, and queue a cloud transaction. Full also queues
+local team messages and supports Admin stock corrections. Lite is limited to
+local product additions and cash sales; team chat and optional services are
+not started. Purchasing, ICAN, BodaGoEra, attachments, and other offline
+workflows are not enabled. Local accounts use only **Admin** and **Cashier**
+roles; the first setup account is an Admin. Wallet payments and invoice/bill-later
+sales require the cloud app.
 
 ## Requirements
 
@@ -28,7 +31,9 @@ role. Wallet payments and invoice/bill-later sales require the cloud app.
   Linux host with Docker Engine and Compose.
 - Node.js 20 or newer, Git, a running Docker engine, and Docker Compose 2.24.4
   or newer.
-- At least 4 GB RAM, 2 CPU cores, and 40 GB free disk space.
+- Full: at least 4 GB RAM. Lite: at least 2 GB RAM. Both need 2 CPU cores and
+  40 GB free disk space. On Windows/macOS, Docker Desktop shares host memory,
+  so more than 2 GB is recommended for Lite.
 - Internet during initial setup to download the pinned Supabase files and
   container images.
 - A fixed/reserved IPv4 address for the server on the business LAN.
@@ -92,6 +97,10 @@ role. Wallet payments and invoice/bill-later sales require the cloud app.
      server settings page only when the installer asks for it: it works once
      and expires after 10 minutes.
 
+When startup finishes, the installer creates a **Digital City Era Local
+Server** desktop shortcut on the host computer. Phones and tablets on the same
+Wi-Fi can open the printed LAN address in their browser.
+
 ## Before you start (Windows)
 
 The Offline server settings page has a step-by-step guide with copy buttons for
@@ -110,28 +119,33 @@ Start Docker Desktop, wait for **Engine running**, and check that
 ## First sign-in
 
 Open `http://<reserved-lan-ip>:8080`. On a new server the sign-in page opens on
-**Create the owner account**. Enter the one-time owner setup code (the
+**Create the Admin account**. Enter the one-time Admin setup code (the
 installer prints it; to show it again, run
 `Select-String LOCAL_SETUP_TOKEN .env.local-sync` in the install folder), your
 name, a username (3-64 letters, numbers, `.`, `_` or `-`, no spaces) and a PIN
 of 6-12 digits, typed twice. There is no PIN recovery email on a local server,
-so keep a written copy somewhere safe. After the owner exists the setup code
+so keep a written copy somewhere safe. After the Admin exists the setup code
 stops working and the page shows only the normal staff sign-in.
 
-After signing in, the **Home** page links to the cashier station (catalog
-view), and — for the owner — **Manage local staff** (add cashiers and
-managers, generate and hand over their PINs, disable accounts) and the server
-settings. Owners and managers also get **Inventory**.
+After signing in, the **Home** page links to the cashier station for cash sales.
+Admins can manage local Admin/Cashier accounts and open product setup. The
+same pairing, first Admin setup, and PIN sign-in flow is used for both editions.
 
-## Inventory (owner and managers)
+## Products and stock
 
-The **Inventory** page lists the store's products with their stock. The owner
-or a manager can **add a new product** (name, selling price, opening stock and,
-optionally, barcode, SKU, tax rate and low-stock level), add received stock,
-remove damaged or lost stock, or set a counted total, with a reason and an
-optional note. Everything is saved on the server immediately (it works without
-internet) and queued for the cloud; stock changes show as "waiting to sync"
-until the cloud confirms them.
+Admins can add a new product (name, selling price, opening stock and, optionally,
+barcode, SKU, tax rate and low-stock level). Product additions are saved locally
+and queued for this store's cloud catalog when internet returns. Full also lets
+Admins correct stock with a reason and optional note. Lite keeps product setup
+and cash sales available and does not expose stock correction tools.
+
+While adding, the local form can suggest matching names and barcodes from this
+server's own catalog. Choosing one copies its name and barcode into a new
+product form; it does not link or edit the existing product. If the barcode is
+already used in this store, change it before saving the separate product.
+
+The local product source is limited to this store's own catalog. A product from
+another store is never suggested or loaded by the local server.
 
 - **Pair the server to the supermarket entry.** Only a supermarket's products
   and stock are copied to a server. On the Offline server settings page, the
@@ -166,7 +180,7 @@ Once the installer has printed `Paired node ...` the pairing code is used up and
 the configuration is saved. If it then stops (for example `unexpected EOF`
 while pulling images because the internet dropped), do not re-run the
 installer: it refuses an existing folder. Resume from PowerShell in the
-install folder:
+install folder. For a Full install, use:
 
 ```powershell
 cd D:\Servers\DigitalCityLocalServer
@@ -177,17 +191,29 @@ Get-Content local-server\agent\sql\local-sync-storage.sql -Raw | docker @c exec 
 docker @c up -d --build --wait
 ```
 
-`up -d --wait` can report studio or storage as unhealthy on a first start;
-they normally become healthy within a minute, so run the last command again.
+`up -d --wait` can report a service as still starting on a first run; wait a
+minute and run the last command again.
+
+For Lite, include the Lite overlay in every Compose command and start only the
+Lite services (a bare `up -d` starts the Full service set):
+
+```powershell
+cd D:\Servers\DigitalCityLocalServer
+$c = @('compose','--env-file','.env','--env-file','.env.local-sync','-f','docker-compose.yml','-f','docker-compose.local-business.yml','-f','docker-compose.lite.yml')
+docker @c pull db api-gw auth rest
+docker @c up -d --wait db auth
+Get-Content local-server\agent\sql\local-sync-storage.sql -Raw | docker @c exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1
+docker @c up -d --build --wait api-gw rest business-local-sync-agent business-local-app
+```
 If the installer fails **before** pairing (wrong prompt, bad folder), delete
 the half-made install folder and start again with a new folder name.
 
-The installer generates unique local keys, creates a one-time local owner setup
-code, installs local staff PIN sign-in and owner-managed cashier/manager
-accounts, keeps the local app and API gateway bound to the selected LAN
-interface, removes Supavisor and Studio host ports,
-uses a persistent Docker volume for Storage, installs the local message/outbox
-tables, and starts the local stack, app shell, and transport agent. The generated
+The installer generates unique local keys, creates a one-time Admin setup
+code, installs local Admin/Cashier PIN sign-in, keeps the local app and API
+gateway bound to the selected LAN interface, and starts the chosen service
+set, app shell, and transport agent. Lite omits Realtime, Storage, Functions,
+Studio, and Supavisor and caps the services' combined memory budgets near
+1.3 GB. Full also runs the optional services and local team chat. The generated
 `.env` and `.env.local-sync` files contain private server credentials; keep
 them on the server computer and restrict the Windows account or POSIX file
 permissions that can read them.
@@ -200,11 +226,12 @@ uses HTTP, and any LAN device can read/write its local team messages.
 
 The local app is at `http://<reserved-lan-ip>:8080`; the local Supabase API is
 at `http://<reserved-lan-ip>:8000`. The local node is registered to one
-business in cloud control-plane metadata. Team messages are written to the
-local database while offline, pushed to the cloud when it is reachable, and
+business in cloud control-plane metadata. In Full, team messages are written to
+the local database while offline, pushed to the cloud when it is reachable, and
 pulled back to other paired nodes. Pairing queues existing team-message
-history and a supermarket's current catalog; cloud product and stock changes
-continue syncing while the node is paired. Protocol v3 acknowledges an event
+history and this supermarket's current catalog; cloud product and stock changes
+continue syncing while the node is paired. Lite does not start team chat or
+Realtime. Protocol v3 acknowledges an event
 only after the local inbox stores it. A cash sale updates the local receipt
 ledger, stock mirror, and outbox together; the node sync worker publishes the
 sale when internet returns. Cloud sync is enabled by the platform administrator

@@ -20,8 +20,8 @@ clients; only the agent can change the replicated data.
 The same container hosts a LAN-only local staff authentication endpoint behind
 the app's Nginx proxy. It verifies locally stored PIN hashes and issues short-
 lived JWTs signed with the local Supabase JWT secret. The installer creates a
-one-use owner setup code; the owner can then add or disable local cashier and
-manager accounts. Local staff accounts do not synchronize with cloud Auth.
+one-use Admin setup code; the Admin can then add or disable local Admin and
+Cashier accounts. Local staff accounts do not synchronize with cloud Auth.
 
 ## Local database setup
 

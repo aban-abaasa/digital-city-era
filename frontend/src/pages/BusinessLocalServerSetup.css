@@ -199,6 +199,19 @@ details[open] > summary .bls-chev { transform: rotate(-135deg); margin-bottom: -
 .bls-input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15); }
 .bls-input.is-mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 14px; }
 .bls-input.is-pin { letter-spacing: 0.3em; }
+.bls-product-suggest-wrap { position: relative; }
+.bls-product-suggest-status { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.bls-product-suggestions {
+  position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; right: 0; max-height: 240px; overflow: auto;
+  padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); box-shadow: var(--shadow);
+}
+.bls-product-suggestions button {
+  display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px;
+  border: 0; border-radius: 8px; background: transparent; text-align: left; color: var(--ink);
+}
+.bls-product-suggestions button:hover, .bls-product-suggestions button:focus-visible { background: var(--tint); }
+.bls-product-suggestions button b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.bls-product-suggestions button small { flex: none; color: var(--muted); font: 11px ui-monospace, "Cascadia Mono", Consolas, monospace; }
 .bls-pwrow { position: relative; }
 .bls-pwrow .bls-input { padding-right: 76px; }
 .bls-pwtoggle {

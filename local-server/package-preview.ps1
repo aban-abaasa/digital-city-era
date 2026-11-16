@@ -28,7 +28,7 @@ $migrationFiles = @(
   'ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql',
   'ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql',
   'ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql',
-  # Cloud stock correction migration: lets owner/manager changes made on a server reach cloud inventory
+  # Cloud stock correction migration: lets Admin changes made on a server reach cloud inventory
   'ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql',
   # Shared LAN cash receipts, stock deduction, and cloud transaction sync
   'ADD_BUSINESS_LOCAL_CASH_SALES.sql'

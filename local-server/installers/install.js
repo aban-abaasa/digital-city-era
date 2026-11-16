@@ -60,7 +60,7 @@ function isIpv4Address(value) {
   return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
 }
 
-function checkRequirements() {
+function checkRequirements(edition) {
   const currentNode = Number(process.versions.node.split('.')[0]);
   if (currentNode < 20) throw new Error('Node.js 20 or newer is required.');
   failIf('git', ['--version'], 'Git is required');
@@ -71,7 +71,10 @@ function checkRequirements() {
   }
   const shell = shellCommand();
   failIf('docker', ['info'], 'Docker is installed but its engine is not running');
-  if (totalmem() < 4 * 1024 ** 3) throw new Error('This Supabase stack needs at least 4 GB RAM.');
+  const minimumMemoryBytes = edition === 'lite' ? 2 : 4;
+  if (totalmem() < minimumMemoryBytes * 1024 ** 3) {
+    throw new Error(`The ${edition === 'lite' ? 'Lite' : 'Full'} server option needs at least ${minimumMemoryBytes} GB RAM.`);
+  }
   if (availableParallelism() < 2) throw new Error('This Supabase stack needs at least 2 CPU cores.');
   return { composeVer, shell };
 }
@@ -102,6 +105,45 @@ function runCompose(projectDir, envFiles, files, args, { input, inherit = true }
   });
 }
 
+function createDesktopShortcut(lanHost) {
+  const appUrl = `http://${lanHost}:8080`;
+  if (platform() === 'win32') {
+    const script = `
+$desktop = [Environment]::GetFolderPath('Desktop')
+if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'Could not find the Desktop folder.' }
+$shortcutPath = Join-Path $desktop 'Digital City Era Local Server.lnk'
+$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+$shortcut.TargetPath = Join-Path $env:SystemRoot 'explorer.exe'
+$shortcut.Arguments = '${appUrl}'
+$shortcut.Description = 'Open the Digital City Era local business server'
+$shortcut.IconLocation = (Join-Path $env:SystemRoot 'System32\\shell32.dll') + ',220'
+$shortcut.Save()
+Write-Output $shortcutPath
+`;
+    const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
+    return failIf('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodedScript], 'Could not create the Windows desktop shortcut', { showError: true });
+  }
+
+  const desktop = join(homedir(), 'Desktop');
+  mkdirSync(desktop, { recursive: true });
+  if (platform() === 'darwin') {
+    const shortcutPath = join(desktop, 'Digital City Era Local Server.webloc');
+    writeFileSync(shortcutPath,
+      `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>URL</key><string>${appUrl}</string></dict></plist>\n`,
+      'utf8'
+    );
+    return shortcutPath;
+  }
+
+  const shortcutPath = join(desktop, 'Digital City Era Local Server.desktop');
+  writeFileSync(shortcutPath,
+    `[Desktop Entry]\nType=Application\nName=Digital City Era Local Server\nComment=Open the local business server\nExec=xdg-open ${appUrl}\nIcon=web-browser\nTerminal=false\nCategories=Network;Utility;\n`,
+    'utf8'
+  );
+  chmodSync(shortcutPath, 0o755);
+  return shortcutPath;
+}
+
 async function ask(label, fallback = '') {
   const answer = (await prompt.question(fallback ? `${label} [${fallback}]: ` : `${label}: `)).trim();
   return answer || fallback;
@@ -109,11 +151,17 @@ async function ask(label, fallback = '') {
 
 async function main() {
   console.log('\nDigital City Era local business server preview');
-  console.log('This installs a local app shell, self-hosted Supabase, business-scoped team-message sync, and local owner/staff PIN sign-in.');
-  console.log('Local cash sales are included; purchasing, wallet payments, TLS, backups, and other offline workflows are not.');
-  console.log('The app and API use HTTP on your private LAN. Team messages are not private from other LAN users.\n');
+  console.log('Choose an edition: Full (existing 4 GB setup) or Lite (2 GB option for local product additions and cash sales).');
+  console.log('Both editions use the same pairing and Admin/Cashier account setup.');
+  console.log('The local server only uses its own store catalog; it does not search other stores for product names.');
+  console.log('Purchasing, wallet payments, TLS, backups, and other offline workflows are not included.');
+  console.log('The app and API use HTTP on your private LAN. In Full, team messages are not private from other LAN users.\n');
 
-  const { composeVer, shell } = checkRequirements();
+  const suggestedEdition = totalmem() < 4 * 1024 ** 3 ? '2' : '1';
+  const editionChoice = await ask('Choose server edition (1 = Full, 2 = Lite)', suggestedEdition);
+  if (!['1', '2'].includes(editionChoice)) throw new Error('Choose 1 for Full or 2 for Lite.');
+  const edition = editionChoice === '2' ? 'lite' : 'full';
+  const { composeVer, shell } = checkRequirements(edition);
   const defaultDir = join(homedir(), 'DigitalCityLocalServer');
   const targetDir = resolve(await ask('Install folder', defaultDir));
   const lanHost = await ask('Server LAN IPv4 address (reserve this address in your router)');
@@ -171,6 +219,9 @@ async function main() {
   const installedWeb = join(targetDir, 'local-server', 'web');
   cpSync(packagedWeb, installedWeb, { recursive: true, errorOnExist: true, force: false });
   copyFileSync(join(packagedAgent, 'docker-compose.override.yml'), join(targetDir, 'docker-compose.local-business.yml'));
+  if (edition === 'lite') {
+    copyFileSync(join(packagedAgent, 'docker-compose.lite.yml'), join(targetDir, 'docker-compose.lite.yml'));
+  }
   copyFileSync(join(targetDir, '.env.example'), join(targetDir, '.env'));
 
   console.log('\nGenerating unique local Supabase keys and passwords...');
@@ -192,7 +243,7 @@ async function main() {
   writeFileSync(join(targetDir, '.env'), envText, 'utf8');
   if (platform() !== 'win32') chmodSync(join(targetDir, '.env'), 0o600);
 
-  console.log('\nClaim the one-time code created on the owner setup page.');
+  console.log('\nClaim the one-time pairing code created in the cloud Offline server settings.');
   const claim = spawnSync(process.execPath, [join(installedAgent, 'src', 'claim-node.js'), '.env.local-sync'], {
     cwd: targetDir,
     stdio: 'inherit',
@@ -218,6 +269,7 @@ async function main() {
     supabaseUrl: `http://${lanHost}:8000`,
     supabaseAnonKey: localAnonKey,
     localBusinessServer: true,
+    localServerEdition: edition,
     businessType,
     businessId,
   };
@@ -230,10 +282,18 @@ async function main() {
   const baseCompose = join(targetDir, 'docker-compose.yml');
   const localCompose = join(targetDir, 'docker-compose.local-business.yml');
   const envFiles = [join(targetDir, '.env'), join(targetDir, '.env.local-sync')];
-  const composeFiles = [baseCompose, localCompose];
+  const composeFiles = edition === 'lite'
+    ? [baseCompose, localCompose, join(targetDir, 'docker-compose.lite.yml')]
+    : [baseCompose, localCompose];
+  const upstreamServices = edition === 'lite'
+    ? ['db', 'api-gw', 'auth', 'rest']
+    : ['db', 'api-gw', 'auth', 'rest', 'realtime', 'storage', 'imgproxy', 'meta', 'functions', 'studio', 'supavisor'];
+  const appServices = edition === 'lite'
+    ? ['api-gw', 'rest', 'business-local-sync-agent', 'business-local-app']
+    : undefined;
 
-  console.log('\nPulling the pinned Supabase services and starting the local database...');
-  runCompose(targetDir, envFiles, composeFiles, ['pull', 'db', 'api-gw', 'auth', 'rest', 'realtime', 'storage', 'imgproxy', 'meta', 'functions', 'studio', 'supavisor']);
+  console.log(`\nPulling the pinned ${edition === 'lite' ? 'Lite' : 'Full'} server services and starting the local database...`);
+  runCompose(targetDir, envFiles, composeFiles, ['pull', ...upstreamServices]);
   // The sync SQL uses auth.jwt(), which the auth service (GoTrue) only creates the first time it starts,
   // so auth must be up and healthy before the SQL runs.
   runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--wait', 'db', 'auth']);
@@ -246,26 +306,34 @@ async function main() {
   );
 
   console.log('\nStarting the local Supabase stack and sync transport...');
+  const startArgs = ['up', '-d', '--build', '--wait', ...(appServices || [])];
   try {
-    runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--build', '--wait']);
+    runCompose(targetDir, envFiles, composeFiles, startArgs);
   } catch {
-    // On a first start some services (studio, storage) can take longer than --wait allows; they are
-    // usually healthy a minute later, so give them a moment and try once more before giving up.
+    // On a first start some services can take longer than --wait allows; give
+    // them a moment and retry once before giving up.
     console.log('\nSome services were slow to start. Waiting a moment and trying once more...');
     spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},30000)'], { windowsHide: true });
-    runCompose(targetDir, envFiles, composeFiles, ['up', '-d', '--build', '--wait']);
+    runCompose(targetDir, envFiles, composeFiles, startArgs);
   }
 
-  console.log('\nLocal business server preview is running.');
+  console.log(`\nLocal business server ${edition === 'lite' ? 'Lite' : 'Full'} preview is running.`);
   console.log(`Local business app: http://${lanHost}:8080`);
   console.log(`Local Supabase API: http://${lanHost}:8000`);
   console.log(`Install directory: ${targetDir}`);
   console.log(`Docker Compose: ${composeVer}`);
   console.log('Keep this server on the business LAN. Do not forward its ports from the internet.');
-  console.log('The app shell, local team chat, supermarket catalog/stock mirror, and shared cash-sales ledger are installed. Use them from devices on this trusted LAN.');
-  console.log('\nOne-time local owner setup code (enter it on the first staff sign-in screen):');
+  try {
+    console.log(`Desktop shortcut: ${createDesktopShortcut(lanHost)}`);
+  } catch (shortcutError) {
+    console.warn(`Could not create a desktop shortcut automatically: ${shortcutError.message || shortcutError}`);
+  }
+  console.log(edition === 'lite'
+    ? 'Lite includes this store\'s local catalog, product additions, and cash sales. Team chat and other optional services are not started.'
+    : 'Full includes the app shell, local team chat, this store\'s catalog/stock mirror, and the shared cash-sales ledger.');
+  console.log('\nOne-time local Admin setup code (enter it on the first staff sign-in screen):');
   console.log(localSetupToken);
-  console.log('Keep this code private. It stops working after the owner account is created.');
+  console.log('Keep this code private. It stops working after the Admin account is created.');
   console.log('Staff accounts use local PINs and do not sync to cloud Auth. Digital City Era enables cloud sale sync once for the platform; contact support if pairing is unavailable. HTTPS and production security still need work.');
 }
 

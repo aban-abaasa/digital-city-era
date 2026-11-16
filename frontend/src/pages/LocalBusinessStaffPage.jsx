@@ -55,7 +55,7 @@ const LocalBusinessStaffPage = () => {
   }, [notice, error]);
 
   if (!supabaseConfig.localBusinessServer) return <Navigate to="/" replace />;
-  if (user?.localRole !== 'owner') return <Navigate to="/cashier-portal" replace />;
+  if (user?.localRole !== 'owner' && user?.localRole !== 'admin') return <Navigate to="/cashier-portal" replace />;
 
   const activeCount = staff.filter((member) => member.isActive).length;
   const usernameOk = USERNAME_OK.test(form.username.trim());
@@ -117,7 +117,7 @@ const LocalBusinessStaffPage = () => {
         <header className="bls-hero">
           <p className="bls-eyebrow">Local server settings</p>
           <h1>Manage local staff</h1>
-          <p className="bls-lead">Add or disable the accounts that can sign in to this business server without internet. PINs are stored as password hashes here, and these accounts do not create or change cloud accounts.</p>
+          <p className="bls-lead">Create or disable Admin and Cashier accounts for this server. PINs are stored as password hashes here, and these accounts do not create or change cloud accounts.</p>
           <div className="bls-stats">
             <span>{staff.length} {staff.length === 1 ? 'account' : 'accounts'}</span>
             <span>{activeCount} active</span>
@@ -162,8 +162,8 @@ const LocalBusinessStaffPage = () => {
                 <div className="bls-field">
                   <label id="st-role-label">Role</label>
                   <div className="bls-seg" role="group" aria-labelledby="st-role-label">
+                    <button type="button" aria-pressed={form.role === 'admin'} onClick={() => setForm({ ...form, role: 'admin' })}>Admin</button>
                     <button type="button" aria-pressed={form.role === 'cashier'} onClick={() => setForm({ ...form, role: 'cashier' })}>Cashier</button>
-                    <button type="button" aria-pressed={form.role === 'manager'} onClick={() => setForm({ ...form, role: 'manager' })}>Manager</button>
                   </div>
                 </div>
                 <PinField
@@ -215,10 +215,10 @@ const LocalBusinessStaffPage = () => {
                       <div className="bls-staffinfo">
                         <b>
                           {member.displayName}
-                          {member.isOwner && <span className="bls-badge is-gold">Owner</span>}
+                          {member.isOwner && <span className="bls-badge is-gold">Admin</span>}
                           <span className={`bls-badge ${member.isActive ? 'is-ok' : 'is-off'}`}>{member.isActive ? 'Active' : 'Disabled'}</span>
                         </b>
-                        <small>{member.username} · {member.isOwner ? 'owner' : member.role}</small>
+                        <small>{member.username} · {member.isOwner ? 'admin' : member.role}</small>
                       </div>
                       {!member.isOwner && (
                         <button

@@ -21,7 +21,7 @@ import inventoryService from '../services/inventorySupabaseService';
 import DualScannerInterface from './DualScannerInterface';
 import ProductPhotoSource from './ProductPhotoSource';
 import { attachExistingProductImage } from '../services/productImageLibrary';
-import { supabase } from '../services/supabase';
+import { supabase, supabaseConfig } from '../services/supabase';
 import { barcodeVariants } from '../utils/barcodeHelper';
 import { compressImageFile } from '../utils/imageCompression';
 import {
@@ -44,6 +44,7 @@ const SERVICE_SUGGESTIONS = [
 const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null, enableCatalogProductSuggestions = false }) => {
   useBackLayer(isOpen, onClose);
   const isSupplierMode = mode === 'supplier';
+  const canSuggestCatalogProducts = enableCatalogProductSuggestions && !supabaseConfig.localBusinessServer;
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -152,7 +153,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   useEffect(() => {
     const searchValue = String(catalogLookupMode === 'barcode' ? formData.barcode : formData.name || '').trim();
     const enoughInput = catalogLookupMode === 'barcode' ? searchValue.length >= 4 : searchValue.length >= 2;
-    if (!enableCatalogProductSuggestions || !isOpen || isEditMode || isServiceForm || !catalogLookupMode || !enoughInput) {
+    if (!canSuggestCatalogProducts || !isOpen || isEditMode || isServiceForm || !catalogLookupMode || !enoughInput) {
       setBarcodeMatches([]);
       setSearchingBarcodeMatches(false);
       return undefined;
@@ -205,7 +206,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
       active = false;
       clearTimeout(timeout);
     };
-  }, [formData.name, formData.barcode, catalogLookupMode, isOpen, isSupplierMode, isServiceForm, isEditMode, enableCatalogProductSuggestions]);
+  }, [formData.name, formData.barcode, catalogLookupMode, isOpen, isSupplierMode, isServiceForm, isEditMode, canSuggestCatalogProducts]);
 
   const useBarcodeMatch = (product) => {
     setFormData((prev) => ({ ...prev, name: product.name, barcode: product.barcode || '' }));
@@ -1027,10 +1028,10 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                         <span className="text-xs sm:text-sm">Scan</span>
                       </button>
                     </div>
-                    {enableCatalogProductSuggestions && catalogLookupMode === 'barcode' && searchingBarcodeMatches && (
+                    {canSuggestCatalogProducts && catalogLookupMode === 'barcode' && searchingBarcodeMatches && (
                       <p className="sr-only" role="status">Checking product names from other stores…</p>
                     )}
-                    {enableCatalogProductSuggestions && catalogLookupMode === 'barcode' && barcodeMatches.length > 0 && (
+                    {canSuggestCatalogProducts && catalogLookupMode === 'barcode' && barcodeMatches.length > 0 && (
                       <div className="mt-2 overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm" role="group" aria-label="Matching products from other stores">
                         <p className="border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
                           Choose a match to fill its name and exact barcode. You can edit both:
@@ -1073,10 +1074,10 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                       placeholder={isServiceForm ? 'e.g., Wash & fold laundry (per kg)' : 'e.g., iPhone 15 Pro Max 256GB'}
                     />
                     {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
-                    {enableCatalogProductSuggestions && catalogLookupMode === 'name' && searchingBarcodeMatches && (
+                    {canSuggestCatalogProducts && catalogLookupMode === 'name' && searchingBarcodeMatches && (
                       <p className="sr-only" role="status">Searching matching products…</p>
                     )}
-                    {enableCatalogProductSuggestions && catalogLookupMode === 'name' && barcodeMatches.length > 0 && (
+                    {canSuggestCatalogProducts && catalogLookupMode === 'name' && barcodeMatches.length > 0 && (
                       <div className="mt-2 overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm" role="group" aria-label="Matching catalog products">
                         <p className="border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
                           Select a match to fill its name and exact barcode. You can edit both:

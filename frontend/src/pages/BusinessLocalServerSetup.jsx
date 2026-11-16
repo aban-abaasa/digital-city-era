@@ -202,11 +202,11 @@ const BusinessLocalServerSetup = () => {
               </div>
             </div>
             <div className="bls-body">
-              <p>This local server can complete paid cash sales on its shared LAN database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
+              <p>This local server can add products from this store’s own catalog and complete cash sales on its shared LAN database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. It does not search other stores’ product names. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
               <div>
                 {localStaffSession ? (
-                  <Link to={localStaffSession.user.localRole === 'owner' ? '/local-staff' : '/cashier-portal'} className="bls-btn">
-                    {localStaffSession.user.localRole === 'owner' ? 'Manage local staff' : 'Open cashier portal'}
+                  <Link to={['owner', 'admin'].includes(localStaffSession.user.localRole) ? '/local-staff' : '/cashier-portal'} className="bls-btn">
+                    {['owner', 'admin'].includes(localStaffSession.user.localRole) ? 'Manage local staff' : 'Open cashier portal'}
                   </Link>
                 ) : (
                   <Link to="/local-staff-login" className="bls-btn">Local staff sign in</Link>

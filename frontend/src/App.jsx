@@ -1,5 +1,5 @@
 import React, { useEffect, Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AppProvider } from '@/contexts/AppContext';
@@ -78,6 +78,28 @@ import { getLocalStaffSession } from '@/services/localBusinessStaffService';
 
 // Styles
 import 'react-toastify/dist/ReactToastify.css';
+
+const LITE_LOCAL_ROUTES = new Set([
+  '/',
+  '/local-staff-login',
+  '/local-home',
+  '/local-inventory',
+  '/local-staff',
+  '/business-local-server',
+  '/cashier-portal',
+  '/cashier',
+]);
+
+const LiteLocalRouteGate = ({ children }) => {
+  const location = useLocation();
+  if (!supabaseConfig.localBusinessServer || supabaseConfig.localServerEdition !== 'lite') return children;
+
+  const pathname = location.pathname.replace(/\/+$/, '') || '/';
+  if (LITE_LOCAL_ROUTES.has(pathname)) return children;
+
+  const session = getLocalStaffSession();
+  return <Navigate to={session?.user ? '/local-home' : '/local-staff-login'} replace />;
+};
 
 // ============================================================
 // CRITICAL: Prevent redirect to Farm Agent
@@ -218,6 +240,7 @@ function App() {
               <ScrollToTop />
               <CountryGate>
               <Suspense fallback={<PortalPageFallback />}>
+              <LiteLocalRouteGate>
               <Routes>
               {/* Main landing with portal selection - but check for OAuth callback first */}
               <Route 
@@ -386,10 +409,11 @@ function App() {
                 } 
               />
               </Routes>
+              </LiteLocalRouteGate>
               </Suspense>
               </CountryGate>
 
-              <ChatWidget />
+              {!(supabaseConfig.localBusinessServer && supabaseConfig.localServerEdition === 'lite') && <ChatWidget />}
 
               <ToastContainer
                 position="top-right"

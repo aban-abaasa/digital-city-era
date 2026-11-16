@@ -293,6 +293,10 @@ const CashierPortal = () => {
     loadProductsFromSupabase();
     
     if (supabaseConfig.localBusinessServer) {
+      if (supabaseConfig.localServerEdition === 'lite') {
+        const refreshTimer = window.setInterval(() => loadProductsFromSupabase(), 15000);
+        return () => window.clearInterval(refreshTimer);
+      }
       const localCatalogChannel = supabase
         .channel(`local_catalog_${supabaseConfig.businessId}`)
         .on(

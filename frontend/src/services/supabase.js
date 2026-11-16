@@ -17,6 +17,7 @@ export const supabaseConfig = Object.freeze({
   supabaseUrl,
   supabaseAnonKey,
   localBusinessServer: runtimeConfig.localBusinessServer === true,
+  localServerEdition: runtimeConfig.localServerEdition === 'lite' ? 'lite' : 'full',
   businessType: runtimeConfig.businessType || null,
   businessId: runtimeConfig.businessId || null,
 });

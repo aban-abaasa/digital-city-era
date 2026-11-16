@@ -345,7 +345,7 @@ CREATE TABLE IF NOT EXISTS public.business_local_staff (
   business_id UUID NOT NULL,
   username TEXT NOT NULL,
   display_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'cashier')),
   is_owner BOOLEAN NOT NULL DEFAULT false,
   pin_hash TEXT NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -354,6 +354,14 @@ CREATE TABLE IF NOT EXISTS public.business_local_staff (
   CHECK (length(username) BETWEEN 3 AND 64),
   CHECK (length(display_name) BETWEEN 1 AND 120)
 );
+
+-- Local accounts have only two selectable roles. Existing manager accounts are
+-- safely downgraded to cashier when this setup SQL is reapplied.
+ALTER TABLE public.business_local_staff
+  DROP CONSTRAINT IF EXISTS business_local_staff_role_check;
+UPDATE public.business_local_staff SET role = 'cashier' WHERE role = 'manager';
+ALTER TABLE public.business_local_staff
+  ADD CONSTRAINT business_local_staff_role_check CHECK (role IN ('admin', 'cashier'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS business_local_staff_username_key
   ON public.business_local_staff(business_id, lower(username));
@@ -385,7 +393,7 @@ CREATE POLICY business_local_staff_self_or_owner_read
     id = auth.uid()
     OR (
       business_id::TEXT = auth.jwt()->'app_metadata'->>'business_id'
-      AND auth.jwt()->'app_metadata'->>'local_role' = 'owner'
+      AND auth.jwt()->'app_metadata'->>'local_role' IN ('owner', 'admin')
     )
   );
 
@@ -418,7 +426,7 @@ BEGIN
     SELECT 1 FROM public.business_local_staff
     WHERE business_id = p_business_id AND is_owner
   ) THEN
-    RETURN jsonb_build_object('success', false, 'error', 'This local server already has an owner account.');
+    RETURN jsonb_build_object('success', false, 'error', 'This local server already has its Admin account.');
   END IF;
 
   INSERT INTO public.business_local_staff (
@@ -521,8 +529,8 @@ DECLARE
   v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
   v_staff JSONB;
 BEGIN
-  IF auth.uid() IS NULL OR auth.jwt()->'app_metadata'->>'local_role' <> 'owner' THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the local server owner can manage staff.');
+  IF auth.uid() IS NULL OR auth.jwt()->'app_metadata'->>'local_role' NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can manage staff.');
   END IF;
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
     'id', id, 'username', username, 'displayName', display_name,
@@ -551,13 +559,13 @@ DECLARE
   v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
   v_staff public.business_local_staff%ROWTYPE;
 BEGIN
-  IF auth.uid() IS NULL OR auth.jwt()->'app_metadata'->>'local_role' <> 'owner' THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the local server owner can add staff.');
+  IF auth.uid() IS NULL OR auth.jwt()->'app_metadata'->>'local_role' NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can add staff.');
   END IF;
   IF v_business_id IS NULL
      OR COALESCE(trim(p_username), '') !~ '^[A-Za-z0-9._-]{3,64}$'
      OR length(trim(COALESCE(p_display_name, ''))) NOT BETWEEN 1 AND 120
-     OR COALESCE(p_role, '') NOT IN ('manager', 'cashier')
+     OR COALESCE(p_role, '') NOT IN ('admin', 'cashier')
      OR COALESCE(p_pin, '') !~ '^[0-9]{6,12}$' THEN
     RETURN jsonb_build_object('success', false, 'error', 'Enter a valid username, name, role, and 6–12 digit PIN.');
   END IF;
@@ -590,8 +598,8 @@ AS $$
 DECLARE
   v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
 BEGIN
-  IF auth.uid() IS NULL OR auth.jwt()->'app_metadata'->>'local_role' <> 'owner' THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the local server owner can update staff.');
+  IF auth.uid() IS NULL OR auth.jwt()->'app_metadata'->>'local_role' NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can update staff.');
   END IF;
   IF p_staff_id IS NULL OR p_staff_id = auth.uid() THEN
     RETURN jsonb_build_object('success', false, 'error', 'You cannot disable your own account.');
@@ -618,9 +626,9 @@ GRANT EXECUTE ON FUNCTION public.business_local_create_staff(TEXT, TEXT, TEXT, T
 GRANT EXECUTE ON FUNCTION public.business_local_set_staff_active(UUID, BOOLEAN) TO authenticated;
 
 -- ============================================================================
--- Stock adjustments (owner / manager)
+-- Stock adjustments (Admin)
 -- ============================================================================
--- The local catalog above is a mirror of the cloud store. Owners and managers can correct stock on
+-- The local catalog above is a mirror of this business's cloud store. Admins can correct stock on
 -- this server while offline. Each change is recorded here, applied to the local catalog straight
 -- away, and queued in the sync outbox as a stock.adjustment.v1 event carrying the DIFFERENCE
 -- ("+24", "-3"), not the final number — so an offline change can never overwrite stock the cloud
@@ -670,8 +678,8 @@ DECLARE
   v_id UUID := gen_random_uuid();
   v_note TEXT := NULLIF(trim(COALESCE(p_note, '')), '');
 BEGIN
-  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can change stock.');
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can change stock.');
   END IF;
   IF p_mode NOT IN ('add', 'remove', 'set')
      OR p_quantity IS NULL
@@ -751,8 +759,8 @@ DECLARE
   v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
   v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
 BEGIN
-  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can view stock changes.');
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can view stock changes.');
   END IF;
   RETURN jsonb_build_object('success', true, 'pending', COALESCE((
     SELECT jsonb_agg(jsonb_build_object('product_id', product_id, 'delta', delta, 'changes', changes))
@@ -782,8 +790,8 @@ DECLARE
   v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
   v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
 BEGIN
-  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can view stock changes.');
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can view stock changes.');
   END IF;
   RETURN jsonb_build_object('success', true, 'history', COALESCE((
     SELECT jsonb_agg(row_to_json(h) ORDER BY h.created_at DESC)
@@ -808,7 +816,7 @@ GRANT EXECUTE ON FUNCTION public.business_local_adjust_stock(UUID, TEXT, NUMERIC
 GRANT EXECUTE ON FUNCTION public.business_local_pending_stock() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.business_local_stock_history(UUID, INTEGER) TO authenticated;
 
--- Add a new product on this server (owner / manager). It appears in the local catalog immediately with
+-- Add a new product on this server (Admin). It appears in the local catalog immediately with
 -- its opening stock and is queued as a product.create.v1 event so the cloud store gets the same
 -- product (same id) when the server is next online. Returns {success, product_id} or {success:false, error}.
 CREATE OR REPLACE FUNCTION public.business_local_add_product(
@@ -840,8 +848,8 @@ DECLARE
   v_reorder NUMERIC := round(COALESCE(p_reorder_point, 0), 2);
   v_id UUID := gen_random_uuid();
 BEGIN
-  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'manager') THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Only the owner or a manager can add products.');
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can add products.');
   END IF;
   IF length(v_name) NOT BETWEEN 1 AND 255 THEN
     RETURN jsonb_build_object('success', false, 'error', 'Enter the product name (255 characters at most).');
@@ -951,7 +959,7 @@ CREATE POLICY business_local_cash_sales_read
   USING (
     business_id = NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID
     AND (
-      auth.jwt()->'app_metadata'->>'local_role' IN ('owner', 'manager')
+      auth.jwt()->'app_metadata'->>'local_role' IN ('owner', 'admin')
       OR (
         auth.jwt()->'app_metadata'->>'local_role' = 'cashier'
         AND cashier_id = auth.uid()
@@ -1004,8 +1012,8 @@ DECLARE
   v_existing public.business_local_cash_sales%ROWTYPE;
 BEGIN
   IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role IS NULL
-     OR v_role NOT IN ('owner', 'manager', 'cashier') THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Sign in as local cashier, manager, or owner to record a sale.');
+     OR v_role NOT IN ('owner', 'admin', 'cashier') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Sign in as a local Admin or Cashier to record a sale.');
   END IF;
   IF jsonb_typeof(p_sale) <> 'object' OR v_client_transaction_id IS NULL
      OR length(v_client_transaction_id) > 100 THEN
