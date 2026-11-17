@@ -81,6 +81,34 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
     }).format(amount);
   };
 
+  const getTransactionDate = (transaction) => {
+    const candidates = [
+      transaction?.transaction_date,
+      transaction?.created_at,
+      transaction?.timestamp,
+      transaction?.date,
+      transaction?.sale_date,
+    ];
+
+    for (const value of candidates) {
+      if (value === null || value === undefined || value === '') continue;
+      const date = value instanceof Date ? value : new Date(value);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+
+    return null;
+  };
+
+  const formatTransactionDate = (transaction, options) => {
+    const date = getTransactionDate(transaction);
+    return date ? date.toLocaleDateString('en-UG', options) : '—';
+  };
+
+  const formatTransactionTime = (transaction, options) => {
+    const date = getTransactionDate(transaction);
+    return date ? date.toLocaleTimeString('en-UG', options) : '—';
+  };
+
   const loadTransactions = async () => {
     setLoading(true);
     try {
@@ -777,13 +805,9 @@ ${branding?.publicWebsiteUrl || ''}
                         {localReceiptsOnly ? item.receiptNumber : item.receipt_number}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {localReceiptsOnly
-                          ? new Date(item.timestamp).toLocaleDateString('en-UG', { month: 'short', day: 'numeric' })
-                          : new Date(item.created_at || item.transaction_date).toLocaleDateString('en-UG', { month: 'short', day: 'numeric' })}
+                        {formatTransactionDate(item, { month: 'short', day: 'numeric' })}
                         {' at '}
-                        {localReceiptsOnly
-                          ? new Date(item.timestamp).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' })
-                          : new Date(item.created_at || item.transaction_date).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' })}
+                        {formatTransactionTime(item, { hour: '2-digit', minute: '2-digit' })}
                       </p>
                       {supabaseConfig.localBusinessServer && (
                         <span
@@ -1002,14 +1026,10 @@ ${branding?.publicWebsiteUrl || ''}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {localReceiptsOnly
-                          ? new Date(item.timestamp).toLocaleDateString('en-UG')
-                          : new Date(item.transaction_date).toLocaleDateString('en-UG')}
+                        {formatTransactionDate(item)}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {localReceiptsOnly
-                          ? new Date(item.timestamp).toLocaleTimeString('en-UG')
-                          : new Date(item.transaction_date).toLocaleTimeString('en-UG')}
+                        {formatTransactionTime(item)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
