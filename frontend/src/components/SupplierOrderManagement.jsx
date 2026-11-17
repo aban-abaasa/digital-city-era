@@ -7,6 +7,7 @@
 // =====================================================================
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   FiTruck, FiCheckCircle, FiXCircle, FiSend, FiEdit, FiPlus,
   FiPackage, FiDollarSign, FiClock, FiAlertTriangle, FiSearch,
@@ -42,7 +43,7 @@ const SoFold = ({ title, badge, startOpen = false, children }) => {
   );
 };
 
-const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => {
+const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, supermarketId: assignedSupermarketId = null }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
   const activeBusinessProfileId = businessProfileId || resolvedBusinessProfileId;
 
@@ -59,24 +60,44 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   // State Management
   const [orders, setOrders] = useState([]);
   const loadAllDataRef = useRef(null);
+  const loadAllDataRequestRef = useRef(0);
+  const loadProductsRequestRef = useRef(0);
   const [suppliers, setSuppliers] = useState([]);
   const [stats, setStats] = useState({});
   const [products, setProducts] = useState([]); // Products in POS inventory
   const [wholesalePricingMode, setWholesalePricingMode] = useState('supplier_price');
-  const [storeId, setStoreId] = useState(null);
+  const [storeId, setStoreId] = useState(assignedSupermarketId || null);
 
   useEffect(() => {
+    let cancelled = false;
+    if (assignedSupermarketId && assignedSupermarketId !== storeId) {
+      loadAllDataRequestRef.current += 1;
+      loadProductsRequestRef.current += 1;
+      setOrders([]);
+      setStats({});
+      setProducts([]);
+      setStoreId(assignedSupermarketId);
+    }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: userRow } = await supabase.from('users').select('supermarket_id').or(`auth_id.eq.${user.id},id.eq.${user.id}`).maybeSingle();
-      const id = userRow?.supermarket_id;
-      if (!id) return;
+      let cachedStoreId = null;
+      try {
+        cachedStoreId = JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null;
+      } catch { /* Use the database assignment below. */ }
+      const id = userRow?.supermarket_id || assignedSupermarketId || cachedStoreId;
+      if (!id) {
+        if (!cancelled) setStoreId(null);
+        return;
+      }
       const { data: store } = await supabase.from('supermarkets').select('id, business_type, wholesale_pricing_mode').eq('id', id).maybeSingle();
-      setStoreId(store?.id || null);
+      if (cancelled) return;
+      setStoreId(store?.id || id);
       if (store?.business_type === 'wholesale') setWholesalePricingMode(store.wholesale_pricing_mode || 'supplier_price');
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [assignedSupermarketId]);
 
   const saveWholesalePricingMode = async (mode) => {
     setWholesalePricingMode(mode);
@@ -167,7 +188,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   useEffect(() => {
     loadAllData();
     loadProducts();
-  }, [statusFilter, priorityFilter, paymentFilter, viewMode]);
+  }, [statusFilter, priorityFilter, paymentFilter, viewMode, storeId]);
 
   // Real-time subscription to products
   useEffect(() => {
@@ -208,11 +229,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
    * Load products from Supabase
    */
   const loadProducts = async () => {
+    const requestId = ++loadProductsRequestRef.current;
     try {
-      // Every store's active products are readable by any signed-in user (the
-      // customer showcase needs that), so the manager's list must be filtered
-      // to his own store here.
-      const supermarketId = await inventoryService.getCurrentSupermarketId();
+      // Keep this inventory list bound to the same assigned store as Supplies.
+      const supermarketId = storeId;
       if (!supermarketId) {
         setProducts([]);
         return;
@@ -231,17 +251,27 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
           inventory (
             id,
             current_stock,
-            minimum_stock
+            minimum_stock,
+            supermarket_id
           )
         `)
-        .eq('supermarket_id', supermarketId);
+        .eq('supermarket_id', supermarketId)
+        .or(`supermarket_id.eq.${supermarketId},supermarket_id.is.null`, { referencedTable: 'inventory' });
 
       if (error) throw error;
+      if (requestId !== loadProductsRequestRef.current) return;
 
-      setProducts(data || []);
+      setProducts((data || []).map((product) => ({
+        ...product,
+        inventory: Array.isArray(product.inventory)
+          ? product.inventory
+          : product.inventory ? [product.inventory] : []
+      })));
       console.log('✅ Manager Portal - Products loaded:', data?.length);
     } catch (err) {
+      if (requestId !== loadProductsRequestRef.current) return;
       console.error('Error loading products:', err);
+      setProducts([]);
     }
   };
 
@@ -249,7 +279,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
    * Load all supplier order data from Supabase
    */
   const loadAllData = async () => {
+    const requestId = ++loadAllDataRequestRef.current;
     setLoading(true);
+    if (!storeId) {
+      setOrders([]);
+      setStats({});
+      setError('This manager account is not assigned to a store.');
+      if (requestId === loadAllDataRequestRef.current) setLoading(false);
+      return;
+    }
+    setError(null);
     try {
       let ordersResponse;
       
@@ -257,21 +296,24 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       if (viewMode === 'history') {
         ordersResponse = await supplierOrdersService.getOrderHistory({
           status: statusFilter === 'all' ? null : statusFilter,
-          priority: priorityFilter === 'all' ? null : priorityFilter
+          priority: priorityFilter === 'all' ? null : priorityFilter,
+          supermarketId: storeId
         });
       } else if (paymentFilter !== 'all') {
-        ordersResponse = await supplierOrdersService.getOrdersByPaymentStatus(paymentFilter);
+        ordersResponse = await supplierOrdersService.getOrdersByPaymentStatus(paymentFilter, storeId);
       } else {
         ordersResponse = await supplierOrdersService.getAllPurchaseOrders({
           status: statusFilter === 'all' ? null : statusFilter,
-          priority: priorityFilter === 'all' ? null : priorityFilter
+          priority: priorityFilter === 'all' ? null : priorityFilter,
+          supermarketId: storeId
         });
       }
 
       const [suppliersResponse, statsResponse] = await Promise.all([
         supplierOrdersService.getActiveSuppliers(),
-        supplierOrdersService.getSupplierOrderStats()
+        supplierOrdersService.getSupplierOrderStats(storeId)
       ]);
+      if (requestId !== loadAllDataRequestRef.current) return;
 
       if (ordersResponse.success) {
         // OPTIMIZED: Fetch all unconfirmed payments in single query instead of N+1
@@ -313,6 +355,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         
         setOrders(ordersWithUnconfirmed);
       } else {
+        setOrders([]);
         setError(ordersResponse.error);
       }
 
@@ -325,10 +368,12 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       }
 
     } catch (err) {
+      if (requestId !== loadAllDataRequestRef.current) return;
       console.error('Error loading supplier data:', err);
+      setOrders([]);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (requestId === loadAllDataRequestRef.current) setLoading(false);
     }
   };
   loadAllDataRef.current = loadAllData;
@@ -1555,7 +1600,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
   };
 
   return (
-    <div className="manager-supplier-orders animate-fadeInUp">
+    <div className="manager-supplier-orders">
       <section className="mb-4 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-emerald-50 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -1641,11 +1686,12 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
       </div>
 
       {/* Full page for whichever tab was opened */}
-      {ordersPage && (
+      {ordersPage && createPortal((
         <div className="so-page fixed inset-0 z-[45] flex flex-col" role="dialog" aria-modal="true" aria-label={PAGE_TITLES[ordersPage]}>
           <header className="so-page-bar">
             <button type="button" className="so-back" onClick={closePage} aria-label="Back to orders">
               <FiArrowLeft className="h-5 w-5" />
+              <span>Back</span>
             </button>
             <h2 className="so-page-title">{PAGE_TITLES[ordersPage]}</h2>
             <button type="button" className="so-new so-new-small" onClick={() => setShowCreateModal(true)}>
@@ -1660,7 +1706,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
         {products && products.length > 0 ? (
           <div>
             {products.map((product) => {
-              const stock = product.inventory?.[0]?.quantity || 0;
+              const stock = Number(product.inventory?.[0]?.current_stock ?? product.inventory?.[0]?.quantity ?? 0) || 0;
               const stockStatus = stock > 10 ? 'text-green-600' : stock > 0 ? 'text-yellow-600' : 'text-red-600';
               
               return (
@@ -1700,7 +1746,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
               <p className="text-gray-600">Total Products</p>
             </div>
             <div className="p-2">
-              <p className="font-bold text-gray-800">{products.reduce((sum, p) => sum + (p.inventory?.[0]?.quantity || 0), 0)}</p>
+              <p className="font-bold text-gray-800">{products.reduce((sum, p) => sum + (Number(p.inventory?.[0]?.current_stock ?? p.inventory?.[0]?.quantity ?? 0) || 0), 0)}</p>
               <p className="text-gray-600">Total Stock</p>
             </div>
             <div className="p-2">
@@ -2101,7 +2147,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null }) => 
             )}
           </main>
         </div>
-      )}
+      ), document.body)}
 
       {/* Create Order Modal */}
       {showCreateModal && (

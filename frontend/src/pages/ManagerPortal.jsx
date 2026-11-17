@@ -10560,8 +10560,8 @@ SUPERMARTKERA Uganda Management Team
             )}
 
           {activeTab === 'supplies' && (
-            <div className="animate-fadeInUp">
-              <SupplierOrderManagement businessProfileId={branding.pichinBusinessProfileId} openCreateSignal={orderCreateSignal} onPosUpdated={(addedProducts) => {
+            <div>
+              <SupplierOrderManagement supermarketId={managerProfile.supermarket_id} businessProfileId={branding.pichinBusinessProfileId} openCreateSignal={orderCreateSignal} onPosUpdated={(addedProducts) => {
                 if (addedProducts && addedProducts.length > 0) {
                   setPosItems(prevItems => {
                     const itemMap = new Map(prevItems.map(i => [i.name, i]));

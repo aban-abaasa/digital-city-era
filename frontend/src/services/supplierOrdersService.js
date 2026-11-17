@@ -215,11 +215,13 @@ export const getActiveSuppliers = async () => {
 // Actual DB columns: manager_id, ordered_at, total_amount, subtotal, tax_amount
 // ---------------------------------------------------------------------------
 
-export const getAllPurchaseOrders = async ({ status = null } = {}) => {
+export const getAllPurchaseOrders = async ({ status = null, supermarketId = null } = {}) => {
   try {
+    if (!supermarketId) throw new Error('A store assignment is required to load purchase orders');
     let query = supabase
       .from('purchase_orders')
       .select('*')
+      .eq('supermarket_id', supermarketId)
       .order('created_at', { ascending: false });
 
     if (status) query = query.eq('status', status);
@@ -234,11 +236,13 @@ export const getAllPurchaseOrders = async ({ status = null } = {}) => {
   }
 };
 
-export const getOrderHistory = async ({ status = null } = {}) => {
+export const getOrderHistory = async ({ status = null, supermarketId = null } = {}) => {
   try {
+    if (!supermarketId) throw new Error('A store assignment is required to load purchase order history');
     let query = supabase
       .from('purchase_orders')
       .select('*')
+      .eq('supermarket_id', supermarketId)
       .in('status', ['received', 'completed', 'cancelled'])
       .order('created_at', { ascending: false });
 
@@ -254,12 +258,18 @@ export const getOrderHistory = async ({ status = null } = {}) => {
   }
 };
 
-export const getOrdersByPaymentStatus = async (paymentStatus) => {
+export const getOrdersByPaymentStatus = async (paymentStatus, supermarketId = null) => {
   try {
-    const { data: orders, error } = await supabase
+    if (!supermarketId) throw new Error('A store assignment is required to load purchase orders');
+    let query = supabase
       .from('purchase_orders')
       .select('*')
+      .eq('supermarket_id', supermarketId)
       .order('created_at', { ascending: false });
+
+    if (paymentStatus) query = query.eq('payment_status', paymentStatus);
+
+    const { data: orders, error } = await query;
 
     if (error) throw error;
     return { success: true, orders: orders || [] };
@@ -455,11 +465,13 @@ export const sendOrderToSupplier = async (orderId, managerId) => {
 // Stats
 // ---------------------------------------------------------------------------
 
-export const getSupplierOrderStats = async () => {
+export const getSupplierOrderStats = async (supermarketId = null) => {
   try {
+    if (!supermarketId) throw new Error('A store assignment is required to load supplier order statistics');
     const { data: orders, error } = await supabase
       .from('purchase_orders')
-      .select('*');
+      .select('*')
+      .eq('supermarket_id', supermarketId);
 
     if (error) throw error;
 

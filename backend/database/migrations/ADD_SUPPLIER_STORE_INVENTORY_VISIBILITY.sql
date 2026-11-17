@@ -2,6 +2,12 @@
 -- stock and sales for products assigned to them. The supplier read is exposed
 -- through a scoped RPC so customer and transaction details are never returned.
 
+-- Older deployments do not have a metadata column on supermarkets. Keep the
+-- visibility settings on the store row while allowing this migration to run on
+-- both the older and newer store schemas.
+ALTER TABLE public.supermarkets
+  ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::JSONB;
+
 DROP FUNCTION IF EXISTS public.set_supplier_store_inventory_visibility_v1(UUID, BOOLEAN);
 
 CREATE OR REPLACE FUNCTION public.set_supplier_store_inventory_visibility_v1(
@@ -55,7 +61,8 @@ BEGIN
       updated_at = NOW()
   WHERE s.id = p_supermarket_id
     AND (
-      s.admin_id IN (v_user_id, auth.uid())
+      COALESCE(to_jsonb(s)->>'admin_id' IN (v_user_id::TEXT, auth.uid()::TEXT), FALSE)
+      OR COALESCE(to_jsonb(s)->>'owner_user_id' = auth.uid()::TEXT, FALSE)
       OR EXISTS (
         SELECT 1
         FROM public.users store_admin
@@ -110,7 +117,8 @@ BEGIN
      OR v_role IS NULL
      OR v_role NOT IN ('admin', 'super_admin')
      OR NOT COALESCE((
-       OLD.admin_id IN (v_user_id, auth.uid())
+       COALESCE(to_jsonb(OLD)->>'admin_id' IN (v_user_id::TEXT, auth.uid()::TEXT), FALSE)
+       OR COALESCE(to_jsonb(OLD)->>'owner_user_id' = auth.uid()::TEXT, FALSE)
        OR EXISTS (
          SELECT 1
          FROM public.users store_admin
