@@ -5,6 +5,45 @@
 
 import { supabase } from './supabase';
 
+/**
+ * POS cart lines and saved receipt lines use slightly different column names.
+ * Keep one shape for the transaction JSON, receipt UI, and PDF/email exports.
+ */
+export const normalizeTransactionItems = (items) => (Array.isArray(items) ? items : []).map((item = {}) => {
+  const name = item.name || item.product_name || item.productName || item.item_name || item.title || item.product?.name || 'Item';
+  const rawPrice = item.selling_price || item.unit_price || item.price || item.unitPrice || 0;
+  const parsedPrice = Number(rawPrice);
+  const rawQuantity = item.quantity ?? item.qty ?? 1;
+  const parsedQuantity = Number(rawQuantity);
+  const price = Number.isFinite(parsedPrice) ? parsedPrice : 0;
+
+  return {
+    ...item,
+    id: item.id ?? item.product_id ?? null,
+    name,
+    product_name: item.product_name || name,
+    price,
+    selling_price: price,
+    quantity: Number.isFinite(parsedQuantity) ? parsedQuantity : 1
+  };
+});
+
+const transactionItemsWithFallback = (transaction, savedItems) => {
+  const cartItems = normalizeTransactionItems(transaction?.items);
+  if (!Array.isArray(savedItems) || savedItems.length === 0) return cartItems;
+
+  return savedItems.map((savedItem, index) => {
+    const fallback = cartItems.find((item) => item.id != null && item.id === savedItem.product_id)
+      || cartItems[index]
+      || {};
+    return normalizeTransactionItems([{
+      ...fallback,
+      ...savedItem,
+      name: savedItem.name || savedItem.product_name || fallback.name || fallback.product_name
+    }])[0];
+  });
+};
+
 class TransactionService {
 
   // ===================================================
@@ -33,7 +72,7 @@ class TransactionService {
   async saveTransaction(transactionData) {
     try {
       const {
-        items,
+        items: rawItems,
         subtotal,
         tax,
         total,
@@ -62,6 +101,7 @@ class TransactionService {
         clientTransactionId = null,  // Set by the offline queue (posOfflineQueue.js) so a replay can't double-insert
         soldAt = null  // Original sale time when replaying a sale recorded offline
       } = transactionData;
+      const items = normalizeTransactionItems(rawItems);
 
       // Generate transaction ID and receipt number
       const transactionId = clientTransactionId || `TXN_${Date.now()}_${Math.random().toString(36).substring(7).toUpperCase()}`;
@@ -220,7 +260,7 @@ class TransactionService {
       // Insert transaction items
       const transactionItems = items.map(item => ({
         transaction_id: transaction.id,
-        product_id: item.id,
+        product_id: item.id || item.product_id || null,
         product_name: item.name,
         product_sku: item.sku || null,
         product_barcode: item.barcode || null,
@@ -458,7 +498,7 @@ class TransactionService {
 
       if (transactionError) throw transactionError;
 
-      const { data: items, error: itemsError } = await supabase
+      const { data: savedItems, error: itemsError } = await supabase
         .from('sales_transaction_items')
         .select('*')
         .eq('transaction_id', transactionId);
@@ -472,7 +512,7 @@ class TransactionService {
           success: true,
           transaction: {
             ...transaction,
-            items: Array.isArray(transaction.items) ? transaction.items : []
+            items: normalizeTransactionItems(transaction.items)
           }
         };
       }
@@ -481,7 +521,7 @@ class TransactionService {
         success: true,
         transaction: {
           ...transaction,
-          items
+          items: transactionItemsWithFallback(transaction, savedItems)
         }
       };
     } catch (error) {
@@ -521,7 +561,7 @@ class TransactionService {
 
       if (transactionError) throw transactionError;
 
-      const { data: items, error: itemsError } = await supabase
+      const { data: savedItems, error: itemsError } = await supabase
         .from('sales_transaction_items')
         .select('*')
         .eq('transaction_id', transaction.id);
@@ -532,7 +572,7 @@ class TransactionService {
           success: true,
           transaction: {
             ...transaction,
-            items: Array.isArray(transaction.items) ? transaction.items : []
+            items: normalizeTransactionItems(transaction.items)
           }
         };
       }
@@ -541,7 +581,7 @@ class TransactionService {
         success: true,
         transaction: {
           ...transaction,
-          items
+          items: transactionItemsWithFallback(transaction, savedItems)
         }
       };
     } catch (error) {

@@ -90,6 +90,11 @@
 .bls-btn.is-bad { background: transparent; color: var(--bad) !important; border-color: rgba(220, 38, 38, 0.4); box-shadow: none; min-height: 36px; padding: 6px 12px; }
 .bls-btn.is-small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
 
+.bls-download-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.bls-download-option { justify-content: flex-start; align-items: flex-start; min-height: 92px; text-align: left; }
+.bls-download-option > span { display: flex; flex-direction: column; gap: 3px; }
+.bls-download-option small { font-size: 12px; font-weight: 500; line-height: 1.35; }
+
 /* ---------- Requirement chips ---------- */
 .bls-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .bls-chips li { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--paper-2); border: 1px solid var(--line); color: var(--ink); }

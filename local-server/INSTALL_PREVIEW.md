@@ -2,14 +2,17 @@
 
 This package installs a local copy of the Digital City Era app shell, a
 business-specific self-hosted Supabase stack, and the cloud pairing/sync
-worker. During setup, choose **Full** or **Lite**. Full keeps the existing
-services, including team text chat and stock corrections. Lite starts only the
+worker. Choose a ZIP for the computer: Lite supports 2 GB RAM with either a
+20 GB or 40 GB free-disk requirement; Full needs 4 GB RAM and 40 GB free disk.
+The two Lite ZIPs have the same features. Full keeps the existing services,
+including team text chat and stock corrections. Lite starts only the
 database, sign-in, API, app, and sync services for local product additions and
 cash sales. The stack is pinned to Supabase's
-`self-hosted/v0.8.1` Docker release. Android, iPhone/iPad, Windows, macOS, and
-Linux devices use a web browser to connect to the LAN app; only Windows/macOS/Linux
-computers host the Docker stack. The HTTP preview is not a native phone package
-or an installable PWA.
+`self-hosted/v0.8.1` Docker release. The app and API bind to `127.0.0.1` by
+default, so only the computer running Docker can open the app. During setup,
+you can choose LAN access for phones, tablets, and other computers on a trusted
+business network. The HTTP preview is not a native phone package or an
+installable PWA.
 
 **This is preview software.** A paired supermarket server receives that
 supermarket's product names, prices, and stock, plus updates to that store's
@@ -31,12 +34,15 @@ sales require the cloud app.
   Linux host with Docker Engine and Compose.
 - Node.js 20 or newer, Git, a running Docker engine, and Docker Compose 2.24.4
   or newer.
-- Full: at least 4 GB RAM. Lite: at least 2 GB RAM. Both need 2 CPU cores and
-  40 GB free disk space. On Windows/macOS, Docker Desktop shares host memory,
-  so more than 2 GB is recommended for Lite.
+- All ZIPs need 2 CPU cores. Choose either 2 GB RAM Lite ZIP: one needs
+  20 GB free disk and the other needs 40 GB. The 4 GB RAM Full ZIP needs
+  40 GB free disk. On Windows/macOS, Docker Desktop shares host memory, so
+  more than 2 GB is recommended for Lite.
 - Internet during initial setup to download the pinned Supabase files and
   container images.
-- A fixed/reserved IPv4 address for the server on the business LAN.
+- Local-only access needs no LAN address or router changes. If you choose LAN
+  access, use the server computer's fixed/reserved IPv4 address on the business
+  network.
 - **One-time platform setup is handled by Digital City Era. Customers do not
   run SQL or change Supabase settings.** Before enabling this feature, the
   platform administrator applies these migrations to the shared cloud project
@@ -60,8 +66,13 @@ sales require the cloud app.
 1. While signed in as the business owner, open **Offline server settings** in
    the business app (also available from Profile) and create a one-time pairing
    code.
-2. Download and extract this package on the server computer. It includes the
-   built app shell, so the build/package process must be run again after app
+2. Download one of these ZIPs and extract it on the server computer:
+   `business-local-server-2gb-ram-lite-20gb-disk.zip` for 2 GB RAM and at least
+   20 GB free disk; `business-local-server-2gb-ram-lite-40gb-disk.zip` for the
+   same Lite features with 40 GB free disk; or
+   `business-local-server-4gb-ram-full-40gb-disk.zip` for 4 GB RAM and 40 GB
+   free disk. Each ZIP preselects its edition and checks both minimums. The
+   package includes the built app shell, so it must be rebuilt after app
    updates.
 3. On Windows, use File Explorer's **Extract All** on the downloaded ZIP, then
    double-click `local-server/installers/install-windows.cmd` inside the
@@ -76,30 +87,30 @@ sales require the cloud app.
    node local-server/installers/install.js
    ```
 
-4. Enter a new installation folder, the server's reserved LAN IPv4 address,
-   and type `YES` after reviewing the preview limitations. The installer asks
-   for the cloud Supabase project URL, public anon/publishable key, and the
-   one-time pairing code. It checks for cloud protocol v3, team-history
-   bootstrap, and supermarket-catalog support before consuming the code.
+4. Enter a new installation folder, choose local-only or LAN access, and type
+   `YES` after reviewing the preview limitations. The installer asks for the
+   cloud Supabase project URL, public anon/publishable key, and the one-time
+   pairing code. It checks for cloud protocol v3, team-history bootstrap, and
+   supermarket-catalog support before consuming the code.
 
    - **Folder:** type a full path that starts with the drive and a backslash and
      sits one folder inside the drive, for example
      `D:\Servers\DigitalCityLocalServer`. It must not exist yet — the installer
-     never overwrites an existing folder — and its drive needs 40 GB free.
-   - **Address:** the computer's own IPv4 address from `ipconfig` (the Wi-Fi or
-     Ethernet adapter, not a `vEthernet`/WSL/Docker one, and not the router's
-     address). Reserve it in the router, or set it as a fixed address on the
-     computer, **before** installing: the installer records it, and phones
-     stop reaching the server if it changes later.
+     never overwrites an existing folder — and its drive needs the free-space
+     amount listed for the selected ZIP.
+   - **Access:** local-only (the default) keeps the app on `127.0.0.1`. Choose
+     LAN only if other devices need access; then provide the server's LAN IPv4
+     address and reserve it in the router. LAN mode uses HTTP, so keep it on a
+     trusted business network and do not forward its ports to the internet.
    - **Cloud values:** copy and paste **one value at a time** (URL, then key,
      then pairing code). A multi-line paste presses Enter for you and puts
      answers in the wrong prompts. Create the pairing code on the Offline
      server settings page only when the installer asks for it: it works once
      and expires after 10 minutes.
 
-When startup finishes, the installer creates a **Digital City Era Local
-Server** desktop shortcut on the host computer. Phones and tablets on the same
-Wi-Fi can open the printed LAN address in their browser.
+When startup finishes, the installer creates a **STIMA** desktop shortcut on
+the host computer. It opens the chosen local or LAN address. In local-only
+mode, open `http://127.0.0.1:8080` on the server computer.
 
 ## Before you start (Windows)
 
@@ -118,7 +129,9 @@ Start Docker Desktop, wait for **Engine running**, and check that
 
 ## First sign-in
 
-Open `http://<reserved-lan-ip>:8080`. On a new server the sign-in page opens on
+Open the STIMA desktop shortcut or the app address printed by the installer.
+Local-only mode uses `http://127.0.0.1:8080`; LAN mode uses the selected server
+IPv4 address. On a new server the sign-in page opens on
 **Create the Admin account**. Enter the one-time Admin setup code (the
 installer prints it; to show it again, run
 `Select-String LOCAL_SETUP_TOKEN .env.local-sync` in the install folder), your
@@ -210,7 +223,7 @@ the half-made install folder and start again with a new folder name.
 
 The installer generates unique local keys, creates a one-time Admin setup
 code, installs local Admin/Cashier PIN sign-in, keeps the local app and API
-gateway bound to the selected LAN interface, and starts the chosen service
+gateway bound to loopback only, and starts the chosen service
 set, app shell, and transport agent. Lite omits Realtime, Storage, Functions,
 Studio, and Supavisor and caps the services' combined memory budgets near
 1.3 GB. Full also runs the optional services and local team chat. The generated
@@ -218,15 +231,18 @@ Studio, and Supavisor and caps the services' combined memory budgets near
 them on the server computer and restrict the Windows account or POSIX file
 permissions that can read them.
 
-Do not forward ports 8000 or 8080 from the business router to the public
-internet. Keep the machine and Wi-Fi on a trusted business LAN. The preview
-uses HTTP, and any LAN device can read/write its local team messages.
+By default the app and API bind only to `127.0.0.1`. LAN mode binds only to the
+selected server address, uses HTTP, and should stay on a trusted business
+network. In Full/LAN mode, team messages are not private from other LAN users.
+Cloud synchronization uses a separate outbound connection and continues when
+internet is available in either mode.
 
 ## After installation
 
-The local app is at `http://<reserved-lan-ip>:8080`; the local Supabase API is
-at `http://<reserved-lan-ip>:8000`. The local node is registered to one
-business in cloud control-plane metadata. In Full, team messages are written to
+In local-only mode, the app is at `http://127.0.0.1:8080` and the API is at
+`http://127.0.0.1:8000`. In LAN mode, use the server IPv4 address shown by the
+installer instead of `127.0.0.1`. The local node is registered to one business
+in cloud control-plane metadata. In Full, team messages are written to
 the local database while offline, pushed to the cloud when it is reachable, and
 pulled back to other paired nodes. Pairing queues existing team-message
 history and this supermarket's current catalog; cloud product and stock changes
@@ -252,6 +268,6 @@ updates, rollback, TLS certificates, and the rest of the business app
 schema/workflows still need work before production use. Local staff PINs
 currently control app access only.
 
-To rebuild the downloadable package from the repository, build the frontend
+To rebuild the downloadable packages from the repository, build the frontend
 from `frontend` with `npm run build`, then run `local-server/package-preview.ps1`
-from PowerShell. The owner page links to the resulting ZIP.
+from PowerShell. The owner page links to all three ZIPs.

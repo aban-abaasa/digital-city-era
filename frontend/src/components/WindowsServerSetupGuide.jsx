@@ -62,10 +62,10 @@ const phases = [
         body: (
           <>
             <p>Windows 10 (version 22H2) or Windows 11, <strong>2 GB of memory for Lite</strong> or <strong>4 GB for Full</strong>, <strong>2 processor cores</strong> and internet during setup. Lite is intended for local product additions and cash sales; Docker Desktop shares the computer’s memory, so more than 2 GB is recommended on Windows.</p>
-            <p>The installer offers both editions and uses the same pairing and Admin/Cashier setup steps for either one.</p>
-            <p>The installer needs <strong>40 GB free</strong> on the drive you install to, and Docker keeps its own data on drive <strong>C:</strong>, so leave C: some room too. See how much each drive has:</p>
+            <p>Choose one of three ZIPs: 2 GB RAM Lite with <strong>20 GB free disk</strong>, 2 GB RAM Lite with <strong>40 GB free disk</strong>, or 4 GB RAM Full with <strong>40 GB free disk</strong>. Both Lite ZIPs have the same features. All use the same pairing and Admin/Cashier setup steps.</p>
+            <p>Docker keeps its own data on drive <strong>C:</strong>, so leave C: some room too. See how much space each drive has:</p>
             <Command where="PowerShell — look at the FreeGB column" text="Get-PSDrive C,D | Select-Object Name, @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}" />
-            <p className="bls-tip">If no drive shows 40 or more, free up space first (empty the Recycle Bin, run <strong>Disk Cleanup</strong> from the Start menu, remove programs you do not use). If you only have a C: drive, install to C:. Do not start another big download while the installer runs.</p>
+            <p className="bls-tip">If no drive shows enough for the selected ZIP (20 GB for the low-disk Lite ZIP; 40 GB for the other two), free up space first (empty the Recycle Bin, run <strong>Disk Cleanup</strong> from the Start menu, remove programs you do not use). If you only have a C: drive, install to C:. Do not start another big download while the installer runs.</p>
           </>
         ),
       },
@@ -126,14 +126,13 @@ const phases = [
     steps: [
       {
         id: 'address',
-        title: 'Find this computer’s address — and keep it fixed',
-        hint: 'Phones will connect to this number',
+        title: 'Choose local-only or LAN access',
+        hint: 'Local is default; LAN is optional',
         body: (
           <>
-            <p>Open a Command Prompt and run:</p>
-            <Command where="Command Prompt or PowerShell" text="ipconfig" />
-            <p>Under your <strong>Wi-Fi</strong> or <strong>Ethernet</strong> adapter, copy the <strong>IPv4 Address</strong> (for example <code>192.168.1.13</code>). Ignore adapters that say “Media disconnected” and anything called <em>vEthernet (WSL)</em> or <em>Docker</em> — phones cannot reach those. The <strong>Default Gateway</strong> (often <code>192.168.1.1</code>) is your router, not this computer.</p>
-            <p className="bls-tip"><strong>Keep the address from changing before you install.</strong> The installer records it, and phones stop reaching the server if it changes later. Either ask whoever manages the router to <strong>reserve</strong> it for this computer’s MAC address, or set a fixed address on the computer itself: Start → <em>View network connections</em> → right-click Wi-Fi/Ethernet → <strong>Properties</strong> → <strong>Internet Protocol Version 4</strong> → <strong>Use the following IP address</strong>. Use a high number the router is unlikely to hand out (such as <code>192.168.1.240</code>), the same subnet mask <code>255.255.255.0</code>, your router as the gateway and <code>8.8.8.8</code> as DNS. Check the number is free first with <code>ping 192.168.1.240</code> — you want “Request timed out”.</p>
+            <p>The installer defaults to local-only access, binding the app and API to <code>127.0.0.1</code>. Choose LAN access only if other devices need to connect. For LAN mode, run <code>ipconfig</code> and use the IPv4 address under the active Wi-Fi or Ethernet adapter; do not use the router, WSL, or Docker address.</p>
+            <Command where="Command Prompt or PowerShell, only if you choose LAN access" text="ipconfig" />
+            <p className="bls-tip">Reserve the LAN address in the router. LAN mode uses HTTP and should stay on a trusted private network; never forward ports 8000 or 8080 to the internet. Cloud sync uses a separate outbound connection in either mode.</p>
           </>
         ),
       },
@@ -143,7 +142,7 @@ const phases = [
         hint: 'Run install-windows.cmd — not install.js',
         body: (
           <>
-            <p>Press <strong>Download setup package</strong> at the top of this page. In File Explorer, right-click the ZIP and choose <strong>Extract All</strong> — never run it from inside the ZIP. Open the extracted <code>local-server → installers</code> folder and double-click <strong>install-windows.cmd</strong> (the one with the gear icon).</p>
+            <p>Choose one of the three ZIPs at the top of this page. In File Explorer, right-click the ZIP and choose <strong>Extract All</strong> — never run it from inside the ZIP. Open the extracted <code>local-server → installers</code> folder and double-click <strong>install-windows.cmd</strong> (the one with the gear icon).</p>
             <p className="bls-tip">Do not double-click <code>install.js</code>. Windows cannot run it and shows “Invalid character … 800A03F6”.</p>
             <p>The window closes when you press a key at the end. To keep the messages on screen, open a Command Prompt first and drag <code>install-windows.cmd</code> into it.</p>
           </>
@@ -151,17 +150,17 @@ const phases = [
       },
       {
         id: 'questions',
-        title: 'Answer the first three questions',
-        hint: 'Folder, address, YES — one at a time',
+        title: 'Answer the install prompts',
+        hint: 'Folder, access mode, optional LAN IP, then YES',
         body: (
           <>
             <p>The installer asks one question at a time. Wait for each to appear, type the answer, press Enter:</p>
             <ol>
               <li><strong>Install folder</strong> — type a full path that starts with the drive and a backslash, and sits <strong>one folder inside</strong> the drive. Copy the example, or press Enter to accept the suggested folder on C:.</li>
-              <li><strong>Server LAN IPv4 address</strong> — the address from the previous step.</li>
+              <li><strong>Server access</strong> — choose <code>1</code> for local-only or <code>2</code> for LAN devices. If you choose LAN, enter the IPv4 address from the previous step.</li>
               <li><strong>Continue? Type YES</strong> — type <code>YES</code> in capital letters.</li>
             </ol>
-            <Command where="Example install folder (needs 40 GB free on that drive)" text="D:\Servers\DigitalCityLocalServer" />
+            <Command where="Example install folder (needs the free space shown for your ZIP)" text="D:\Servers\DigitalCityLocalServer" />
             <p className="bls-tip">The folder must not exist yet — the installer never overwrites an existing one. Do not put it straight in the drive’s root (<code>D:\Name</code> can fail with “EPERM … mkdir”), and do not leave out the backslash after <code>D:</code>.</p>
           </>
         ),
@@ -191,11 +190,11 @@ const phases = [
       {
         id: 'finish',
         title: 'After the installer finishes',
-        hint: 'Open the address on your phones',
+        hint: 'Open STIMA on the server computer',
         body: (
           <>
-            <p>The installer adds a <strong>Digital City Era Local Server</strong> shortcut to the server computer’s desktop. It also prints the app address, like <code>http://192.168.1.13:8080</code>, and a <strong>one-time local Admin setup code</strong> for the first staff sign-in. On phones and tablets on the same business Wi-Fi, open the printed address in a browser.</p>
-            <p>If Windows asks whether to let Docker through the firewall, allow it on <strong>Private networks</strong>.</p>
+            <p>The installer adds a <strong>STIMA</strong> shortcut to the server computer’s desktop. It opens the address selected during setup and prints a <strong>one-time local Admin setup code</strong> for the first staff sign-in. In local-only mode, only the server computer can connect. In LAN mode, devices on the trusted network can connect. Supported queued changes sync to the cloud when internet returns.</p>
+            <p>If Windows asks to let Docker through the firewall, allow access on <strong>Private networks only</strong> if you chose LAN mode. For local-only mode, do not allow incoming connections on Private or Public networks.</p>
             <p>Stop the computer from sleeping while plugged in, so the server stays reachable:</p>
             <Command where="PowerShell" text="powercfg /change standby-timeout-ac 0" />
             <p className="bls-sub">Keep the server on the business network. Never forward its ports from the internet.</p>
@@ -236,16 +235,16 @@ const problems = [
     fix: <>Right-click the Docker whale in the system tray and choose <strong>Switch to Linux containers</strong>, wait for Docker to restart, then run setup again.</>,
   },
   {
-    seen: '“At least 40 GB of free disk space is required”',
-    fix: <>Free up space, or type an install folder on another drive that has 40 GB free (for example <code>D:\Servers\DigitalCityLocalServer</code>).</>,
+    seen: '“Not enough free disk space”',
+    fix: <>The ZIP needs the minimum shown on its download button: 20 GB for the low-disk Lite ZIP, 40 GB for the other two. Free up space or choose an install folder on a drive with enough room (for example <code>D:\Servers\DigitalCityLocalServer</code>).</>,
   },
   {
     seen: "“EPERM: operation not permitted, mkdir 'D:\\'”",
     fix: <>The install folder was placed directly in the root of a drive. Use one folder level inside it, for example <code>D:\Servers\DigitalCityLocalServer</code>.</>,
   },
   {
-    seen: '“Enter the server computer IPv4 address” or “Invalid URL”',
-    fix: <>An answer went into the wrong prompt, usually because several lines were pasted at once. <strong>Delete the half-made install folder</strong> in File Explorer (it is only partly filled and nothing is running), then start again with a <em>new</em> folder name and paste one value at a time.</>,
+    seen: '“Invalid URL” or “Enter the server computer IPv4 address”',
+    fix: <>The cloud Supabase URL was not accepted, or several lines were pasted at once. <strong>Delete the half-made install folder</strong> in File Explorer (it is only partly filled and nothing is running), then start again with a <em>new</em> folder name and paste one value at a time.</>,
   },
   {
     seen: '“Install folder already exists”',

@@ -1,7 +1,7 @@
 # Merge this file with Supabase's official self-hosted docker-compose.yml.
 # Run Compose from the Supabase project directory so the default network and
-# existing .env variables are shared with the Supabase services. The LAN app
-# and gateway use HTTP in this preview; keep both ports on a trusted LAN only.
+# existing .env variables are shared with the Supabase services. The app and
+# gateway use HTTP and bind to loopback by default, or a selected LAN IP.
 services:
   business-local-app:
     image: nginx:stable-alpine3.24
@@ -10,22 +10,22 @@ services:
       - api-gw
       - business-local-sync-agent
     ports:
-      - "${LOCAL_SERVER_BIND_IP:?Set the server LAN IPv4 address}:8080:80/tcp"
+      - "${LOCAL_SERVER_BIND_IP:?Set the server bind IPv4 address}:8080:80/tcp"
     volumes:
       - ./local-server/web/app:/usr/share/nginx/html:ro
       - ./local-server/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./local-server/web/runtime-config.js:/usr/share/nginx/html/runtime-config.js:ro
   api-gw:
     # Expose the REST/Auth/Realtime/Storage gateway only on the selected
-    # business LAN interface; never bind it to every host interface.
+    # host interface; never bind it to every host interface.
     ports: !override
-      - "${LOCAL_SERVER_BIND_IP:?Set the server LAN IPv4 address}:8000:8000/tcp"
+      - "${LOCAL_SERVER_BIND_IP:?Set the server bind IPv4 address}:8000:8000/tcp"
   # Only the gateway is reachable by client devices. Database access remains
   # inside the Compose network; Supavisor's default public ports are removed.
   supavisor:
     ports: !reset []
   # Supabase Studio is an administration interface and is not needed by staff
-  # clients; do not publish its upstream default host port on the business LAN.
+  # clients; do not publish its upstream default host port.
   studio:
     ports: !reset []
   # A Docker named volume avoids macOS bind-mount permission/xattr problems

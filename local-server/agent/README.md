@@ -14,11 +14,12 @@ Cash sales use the local database's versioned outbox and sync to cloud
 transactions after the platform administrator applies
 `ADD_BUSINESS_LOCAL_CASH_SALES.sql` once to the shared cloud project. Customers
 do not run cloud SQL migrations.
-It omits product cost from the LAN catalog. Catalog rows are read-only to LAN
-clients; only the agent can change the replicated data.
+It omits product cost from the local catalog. Catalog rows are read-only in
+the local app; only the agent can change the replicated data.
 
-The same container hosts a LAN-only local staff authentication endpoint behind
-the app's Nginx proxy. It verifies locally stored PIN hashes and issues short-
+The same container hosts a staff authentication endpoint behind the app's
+Nginx proxy. The installer binds the app and API to loopback by default or to
+a selected LAN IP when LAN access is enabled. The endpoint verifies locally stored PIN hashes and issues short-
 lived JWTs signed with the local Supabase JWT secret. The installer creates a
 one-use Admin setup code; the Admin can then add or disable local Admin and
 Cashier accounts. Local staff accounts do not synchronize with cloud Auth.

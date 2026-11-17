@@ -1,5 +1,11 @@
 # Optional local server for a business
 
+> **Current preview behavior:** the installer binds the app and API to
+> `127.0.0.1` by default, so only the server computer can connect. Businesses
+> that need other devices to connect can choose LAN access during setup. In
+> either mode, the sync agent connects outbound to the cloud and uploads
+> supported queued changes when internet is available.
+
 ## Goal
 
 Let a business opt into a server on its own premises. Staff devices on that
@@ -75,12 +81,12 @@ Storage configuration before promising file uploads. See the official
   events, writes incoming rows to local tables, and quarantines event types it
   does not understand. Pairing seeds existing team history and catalog data;
   reapplying the latest migration also backfills active nodes paired earlier.
-- `local-server/installers/install.js` and
-  `frontend/public/downloads/business-local-server-installer.zip` provide a
-  cross-platform installer preview. It packages the app shell, pins the
-  upstream Supabase Docker release, creates local keys, claims the owner
-  pairing code, binds app/API ports to one LAN IPv4 interface, blocks host
-  ports for Postgres, Supavisor, and Studio, and starts the transport worker.
+- `local-server/installers/install.js` and `local-server/package-preview.ps1`
+  build three cross-platform installer ZIPs for different RAM/disk tiers. The
+  installer packages the app shell, pins the upstream Supabase Docker release,
+  creates local keys, claims the owner pairing code, binds app/API ports to
+  loopback by default or a selected LAN IPv4 address, blocks host ports for
+  Postgres, Supavisor, and Studio, and starts the transport worker.
 - `local-server/agent/src/claim-node.js` can also be run by itself to claim an
   owner-generated pairing code and write the node credential to a server-side
   `.env.local-sync` file.
@@ -160,10 +166,10 @@ Official references:
 3. The operator downloads and runs the business-server preview package on a
    Windows, macOS, or Linux host with Node.js, Git, Docker, and recent Docker
    Compose. Windows also requires Git Bash. The installer pins Supabase
-   `self-hosted/v0.8.1`, offers Full (4 GB) or Lite (2 GB) service sets,
-   generates local secrets, and binds its API gateway to a reserved business-
-   LAN IPv4 address. At startup it creates a desktop shortcut on the host
-   computer to open the local app.
+   `self-hosted/v0.8.1`, offers Full (4 GB RAM) or Lite (2 GB RAM) packages,
+   generates local secrets, and defaults to loopback-only access. An optional
+   LAN mode binds to the selected business IPv4 address. At startup it creates
+   a **STIMA** shortcut on the host computer to open the selected app address.
 4. The installer claims the pairing code, enrolls one node for that business,
    and stores its credential in `.env.local-sync` on the server. It also
    removes host-published Postgres/Supavisor ports and persists Storage in a
@@ -172,10 +178,11 @@ Official references:
    code, and installs local staff sign-in with Admin/Cashier accounts. Full
    configures the business-scoped text team channel; Lite omits Realtime and
    other optional services. It does not load the full app schema or sales data.
-6. Staff devices open `http://<reserved-lan-ip>:8080` on the same LAN. The
-   Admin uses the setup code once, creates local PIN accounts, then each worker
-   signs in locally. The local database validates staff identity for local
-   operations.
+6. In local-only mode, the host opens `http://127.0.0.1:8080`. If LAN mode was
+   selected, devices on the same trusted LAN open the reserved server address
+   at port 8080. The Admin uses the setup code once, creates local PIN
+   accounts, then each worker signs in locally. The local database validates
+   staff identity for local operations.
 7. When internet returns, the agent syncs supported local catalog, stock,
    cash-sale, and (in Full) team-message events for the paired business.
    Unsupported event types are quarantined.

@@ -14,6 +14,24 @@ const formatRemaining = (ms) => {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 };
 
+const installerDownloads = [
+  {
+    href: '/downloads/business-local-server-2gb-ram-lite-20gb-disk.zip',
+    title: '2 GB RAM Lite · 20 GB disk',
+    description: 'Low-disk package · local products and cash sales',
+  },
+  {
+    href: '/downloads/business-local-server-2gb-ram-lite-40gb-disk.zip',
+    title: '2 GB RAM Lite · 40 GB disk',
+    description: 'Same Lite features · more disk headroom',
+  },
+  {
+    href: '/downloads/business-local-server-4gb-ram-full-40gb-disk.zip',
+    title: '4 GB RAM Full · 40 GB disk',
+    description: 'Full services · team chat and stock corrections',
+  },
+];
+
 const BusinessLocalServerSetup = () => {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
@@ -197,12 +215,12 @@ const BusinessLocalServerSetup = () => {
           <section className="bls-card">
             <div className="bls-card-head">
               <div>
-                <p className="bls-eyebrow">Business LAN server</p>
-                <h2>This device is using the business LAN server</h2>
+                <p className="bls-eyebrow">Local server</p>
+                <h2>This device is using the local server</h2>
               </div>
             </div>
             <div className="bls-body">
-              <p>This local server can add products from this store’s own catalog and complete cash sales on its shared LAN database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. It does not search other stores’ product names. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
+              <p>This local server can add products from this store’s own catalog and complete cash sales on its local database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. It does not search other stores’ product names. The server’s selected access mode determines whether only this computer or other trusted LAN devices can connect. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
               <div>
                 {localStaffSession ? (
                   <Link to={['owner', 'admin'].includes(localStaffSession.user.localRole) ? '/local-staff' : '/cashier-portal'} className="bls-btn">
@@ -232,7 +250,7 @@ const BusinessLocalServerSetup = () => {
         <header className="bls-hero">
           <p className="bls-eyebrow">Optional business feature</p>
           <h1>Offline server</h1>
-          <p className="bls-lead">Run an optional local server on one Windows, macOS, or Linux Docker computer at your business. Phones, tablets and other computers connect to it over the same business Wi-Fi.</p>
+          <p className="bls-lead">Run an optional local server on one Windows, macOS, or Linux Docker computer. Local-only access is the default; choose optional LAN access if other devices need to connect. Supported queued changes sync to the cloud when internet returns.</p>
           <span className={`bls-pill ${checkingProtocol ? 'is-wait' : protocolReady ? 'is-ready' : 'is-wait'}`} role="status">
             <i />
             {checkingProtocol
@@ -244,30 +262,40 @@ const BusinessLocalServerSetup = () => {
         </header>
 
         <div className="bls-note">
-          <strong>Setup is in preview.</strong> Cash-only POS sales are saved to the shared local database with an atomic stock deduction and receipt, then queued for cloud sync. Digital City Era handles the one-time cloud setup; customers do not run SQL. Wallet payments and other app workflows still need an internet connection. Local team chat does not authenticate individual staff, so names can be impersonated by anyone on the business Wi-Fi.
+          <strong>Setup is in preview.</strong> Cash-only POS sales are saved to the local database with an atomic stock deduction and receipt, then queued for cloud sync. Choose local-only mode for this computer, or LAN mode for other devices on a trusted business network. Digital City Era handles the one-time cloud setup; customers do not run SQL. Wallet payments and other app workflows still need an internet connection.
         </div>
 
         <section className="bls-card">
           <div className="bls-card-head">
             <div>
-              <h2>1 · Get the installer</h2>
-              <p>One computer at the business becomes the local server. Android and iOS devices connect to it; they cannot host it.</p>
+              <h2>1 · Choose the installer</h2>
+              <p>Pick a ZIP that matches the computer's RAM and free disk space. During installation, choose local-only or LAN access.</p>
             </div>
-            <a
-              href="/downloads/business-local-server-installer.zip"
-              download
-              aria-disabled={!downloadReady}
-              onClick={(event) => { if (!downloadReady) event.preventDefault(); }}
-              className="bls-btn"
-            >
-              <FiHardDrive /> {protocolReady ? 'Download setup package' : 'Setup not available yet'}
-            </a>
           </div>
           <div className="bls-body">
+            <div className="bls-download-options">
+              {installerDownloads.map((downloadOption) => (
+                <a
+                  key={downloadOption.href}
+                  href={downloadOption.href}
+                  download
+                  aria-disabled={!downloadReady}
+                  onClick={(event) => { if (!downloadReady) event.preventDefault(); }}
+                  className="bls-btn bls-download-option"
+                >
+                  <FiHardDrive aria-hidden="true" />
+                  <span>
+                    <strong>{downloadOption.title}</strong>
+                    <small>{downloadOption.description}</small>
+                    <small>{protocolReady ? 'Download ZIP' : 'Setup not available yet'}</small>
+                  </span>
+                </a>
+              ))}
+            </div>
             <ul className="bls-chips">
               <li>Windows 10 / 11</li>
-              <li>4 GB memory</li>
-              <li>40 GB free disk</li>
+              <li>2 GB Lite / 4 GB Full RAM</li>
+              <li>20 or 40 GB free disk</li>
               <li>Internet during setup</li>
               <li>Docker Desktop (Linux containers)</li>
               <li>Node.js 20+</li>
@@ -408,7 +436,7 @@ const BusinessLocalServerSetup = () => {
             <span className="bls-chev" aria-hidden="true" />
           </summary>
           <div className="bls-body" style={{ paddingTop: 14 }}>
-            <p>The server host is a Windows, macOS, or Linux computer with Docker. Android, iPhone, iPad, and desktop devices open the LAN address in a browser; this HTTP preview is not a native phone package or an installable PWA. Phones and tablets are clients and do not host the Supabase stack.</p>
+            <p>The local server runs on a Windows, macOS, or Linux computer with Docker. Local-only mode opens at <code>http://127.0.0.1:8080</code>; LAN mode lets other devices on the trusted business network connect. This HTTP preview is not a native phone package or an installable PWA.</p>
             <p><a href="/LOCAL_BUSINESS_SERVER.md" target="_blank" rel="noreferrer">Read the local server setup and sync status</a></p>
           </div>
         </details>

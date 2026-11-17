@@ -10,7 +10,7 @@ import React, { useState } from 'react';
 import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy, FiChevronDown } from 'react-icons/fi';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-toastify';
-import transactionService from '../services/transactionService';
+import transactionService, { normalizeTransactionItems } from '../services/transactionService';
 import receiptGeneratorService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import { supabaseConfig } from '../services/supabase';
@@ -67,7 +67,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   const [shareOpen, setShareOpen] = useState(false);
   const [openSections, setOpenSections] = useState({ items: true, verify: Boolean(isInvoice) });
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  const items = receiptData?.receipt?.items || [];
+  const items = normalizeTransactionItems(receiptData?.receipt?.items);
   const taxLabel = getTaxTreatmentLabel(items, receiptData?.taxIncluded ?? receiptData?.receipt?.taxIncluded ?? true);
   const canNativeShare = Boolean(receiptData?.id && navigator.share);
 
@@ -167,7 +167,7 @@ Date: ${formatDate(receiptData.timestamp)}
 Cashier: ${receiptData.receipt.cashier}
 
 Items:
-${receiptData.receipt.items.map(item =>
+${items.map(item =>
   `${item.name} x ${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
 ).join('\n')}
 
@@ -206,7 +206,7 @@ Visit us again at ${storeName}
   // SHARE VIA WHATSAPP
   // ===================================================
   const handleWhatsApp = () => {
-    const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - ${docLabel.toUpperCase()}*\n\n📄 *${docLabel}:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${receiptData.receipt.items.map(item =>
+    const whatsappText = `🇺🇬 *${storeName.toUpperCase()} - ${docLabel.toUpperCase()}*\n\n📄 *${docLabel}:* ${receiptData.receiptNumber}\n📅 *Date:* ${new Date(receiptData.timestamp).toLocaleDateString('en-UG')}\n⏰ *Time:* ${new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}\n\n*ITEMS:*\n${items.map(item =>
       `• ${item.name} x${item.quantity} - ${formatCurrency(item.quantity * (item.selling_price || item.price))}`
     ).join('\n')}\n\n💰 *Subtotal:* ${formatCurrency(receiptData.receipt.subtotal)}\n📊 *${taxLabel}:* ${formatCurrency(receiptData.receipt.tax)}\n✅ *Total:* ${formatCurrency(receiptData.receipt.total)}${paymentLabel ? `\n\n💳 *Payment:* ${paymentLabel}` : ''}${isInvoice ? `\n⚠️ *Balance Due:* ${formatCurrency(receiptData.balanceDue)}` : ''}\n\n*Webale nyo!* 🙏\nThank you for shopping with us!`;
     
@@ -232,7 +232,7 @@ Register: ${receiptData.receipt.register}
 ────────────────────────────────
 ITEMS
 ────────────────────────────────
-${receiptData.receipt.items.map(item => {
+${items.map(item => {
   const itemPrice = item.selling_price || item.price;
   return `${item.name}\n  ${item.quantity} x ${formatCurrency(itemPrice)} = ${formatCurrency(item.quantity * itemPrice)}`;
 }).join('\n')}

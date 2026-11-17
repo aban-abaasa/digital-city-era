@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { cpSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statfsSync, chmodSync, writeFileSync } from 'node:fs';
-import { tmpdir, homedir, platform, totalmem, availableParallelism } from 'node:os';
+import { tmpdir, homedir, platform, totalmem, availableParallelism, networkInterfaces } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +12,12 @@ const installerDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(installerDir, '..');
 const upstreamTag = 'self-hosted/v0.8.1';
 const composeMinimum = [2, 24, 4];
+const localHost = '127.0.0.1';
+const installerProfiles = Object.freeze({
+  '2gb-lite-20gb-disk': Object.freeze({ id: '2gb-lite-20gb-disk', title: '2 GB RAM Lite / 20 GB disk', edition: 'lite', minimumMemoryGB: 2, minimumDiskGB: 20 }),
+  '2gb-lite-40gb-disk': Object.freeze({ id: '2gb-lite-40gb-disk', title: '2 GB RAM Lite / 40 GB disk', edition: 'lite', minimumMemoryGB: 2, minimumDiskGB: 40 }),
+  '4gb-full-40gb-disk': Object.freeze({ id: '4gb-full-40gb-disk', title: '4 GB RAM Full / 40 GB disk', edition: 'full', minimumMemoryGB: 4, minimumDiskGB: 40 }),
+});
 const prompt = createInterface({ input: stdin, output: stdout });
 
 function failIf(command, args, label, options = {}) {
@@ -55,12 +61,23 @@ function composeVersion() {
   return match[0];
 }
 
-function isIpv4Address(value) {
-  const parts = value.split('.');
-  return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
+function isUsableLanIpv4Address(value) {
+  const parts = value.split('.').map(Number);
+  if (parts.length !== 4
+      || !parts.every((part, index) => Number.isInteger(part) && part >= 0 && part <= 255
+        && (index !== 0 || (part !== 0 && part !== 127 && part < 224)))) return false;
+
+  const ignoredInterface = /(loopback|docker|wsl|vEthernet|hyper-v|virtualbox|vmware)/i;
+  return Object.entries(networkInterfaces()).some(([name, addresses]) => !ignoredInterface.test(name)
+    && (addresses || []).some(({ address, family, internal }) =>
+      (family === 4 || family === 'IPv4') && !internal && address === value));
 }
 
-function checkRequirements(edition) {
+function checkRequirements(
+  edition,
+  minimumMemoryGB = edition === 'lite' ? 2 : 4,
+  minimumDiskGB = edition === 'lite' ? 20 : 40
+) {
   const currentNode = Number(process.versions.node.split('.')[0]);
   if (currentNode < 20) throw new Error('Node.js 20 or newer is required.');
   failIf('git', ['--version'], 'Git is required');
@@ -71,9 +88,8 @@ function checkRequirements(edition) {
   }
   const shell = shellCommand();
   failIf('docker', ['info'], 'Docker is installed but its engine is not running');
-  const minimumMemoryBytes = edition === 'lite' ? 2 : 4;
-  if (totalmem() < minimumMemoryBytes * 1024 ** 3) {
-    throw new Error(`The ${edition === 'lite' ? 'Lite' : 'Full'} server option needs at least ${minimumMemoryBytes} GB RAM.`);
+  if (totalmem() < minimumMemoryGB * 1024 ** 3) {
+    throw new Error(`This ${edition === 'lite' ? 'Lite' : 'Full'} package needs at least ${minimumMemoryGB} GB RAM.`);
   }
   if (availableParallelism() < 2) throw new Error('This Supabase stack needs at least 2 CPU cores.');
   return { composeVer, shell };
@@ -92,6 +108,27 @@ function getEnvValue(envText, key) {
   return line.slice(prefix.length).trim().replace(/^(['"])(.*)\1$/, '$2');
 }
 
+function getInstallerProfile() {
+  const profilePath = join(packageRoot, 'install-profile.json');
+  if (!existsSync(profilePath)) return null;
+
+  let requestedProfile;
+  try {
+    requestedProfile = JSON.parse(readFileSync(profilePath, 'utf8'));
+  } catch {
+    throw new Error('The ZIP installer profile is invalid. Download a fresh installer package.');
+  }
+
+  const profile = installerProfiles[requestedProfile?.id];
+  if (!profile
+      || requestedProfile.edition !== profile.edition
+      || requestedProfile.minimumMemoryGB !== profile.minimumMemoryGB
+      || requestedProfile.minimumDiskGB !== profile.minimumDiskGB) {
+    throw new Error('The ZIP installer profile is not supported. Download a fresh installer package.');
+  }
+  return profile;
+}
+
 function runCompose(projectDir, envFiles, files, args, { input, inherit = true } = {}) {
   const parameters = [];
   for (const envFile of envFiles) parameters.push('--env-file', envFile);
@@ -105,17 +142,17 @@ function runCompose(projectDir, envFiles, files, args, { input, inherit = true }
   });
 }
 
-function createDesktopShortcut(lanHost) {
-  const appUrl = `http://${lanHost}:8080`;
+function createDesktopShortcut(serverHost) {
+  const appUrl = `http://${serverHost}:8080`;
   if (platform() === 'win32') {
     const script = `
 $desktop = [Environment]::GetFolderPath('Desktop')
 if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'Could not find the Desktop folder.' }
-$shortcutPath = Join-Path $desktop 'Digital City Era Local Server.lnk'
+$shortcutPath = Join-Path $desktop 'STIMA.lnk'
 $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
 $shortcut.TargetPath = Join-Path $env:SystemRoot 'explorer.exe'
 $shortcut.Arguments = '${appUrl}'
-$shortcut.Description = 'Open the Digital City Era local business server'
+$shortcut.Description = 'Open STIMA local server'
 $shortcut.IconLocation = (Join-Path $env:SystemRoot 'System32\\shell32.dll') + ',220'
 $shortcut.Save()
 Write-Output $shortcutPath
@@ -127,7 +164,7 @@ Write-Output $shortcutPath
   const desktop = join(homedir(), 'Desktop');
   mkdirSync(desktop, { recursive: true });
   if (platform() === 'darwin') {
-    const shortcutPath = join(desktop, 'Digital City Era Local Server.webloc');
+    const shortcutPath = join(desktop, 'STIMA.webloc');
     writeFileSync(shortcutPath,
       `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>URL</key><string>${appUrl}</string></dict></plist>\n`,
       'utf8'
@@ -135,9 +172,9 @@ Write-Output $shortcutPath
     return shortcutPath;
   }
 
-  const shortcutPath = join(desktop, 'Digital City Era Local Server.desktop');
+  const shortcutPath = join(desktop, 'STIMA.desktop');
   writeFileSync(shortcutPath,
-    `[Desktop Entry]\nType=Application\nName=Digital City Era Local Server\nComment=Open the local business server\nExec=xdg-open ${appUrl}\nIcon=web-browser\nTerminal=false\nCategories=Network;Utility;\n`,
+    `[Desktop Entry]\nType=Application\nName=STIMA\nComment=Open the local server\nExec=xdg-open ${appUrl}\nIcon=web-browser\nTerminal=false\nCategories=Utility;\n`,
     'utf8'
   );
   chmodSync(shortcutPath, 0o755);
@@ -150,30 +187,57 @@ async function ask(label, fallback = '') {
 }
 
 async function main() {
+  const profile = getInstallerProfile();
   console.log('\nDigital City Era local business server preview');
-  console.log('Choose an edition: Full (existing 4 GB setup) or Lite (2 GB option for local product additions and cash sales).');
+  if (profile) {
+    console.log(`This ZIP installs ${profile.title}; it requires at least ${profile.minimumMemoryGB} GB RAM and ${profile.minimumDiskGB} GB free disk space.`);
+  } else {
+    console.log('Choose an edition: Full (4 GB RAM and 40 GB free disk) or Lite (2 GB RAM and 20 GB free disk for local product additions and cash sales).');
+  }
   console.log('Both editions use the same pairing and Admin/Cashier account setup.');
   console.log('The local server only uses its own store catalog; it does not search other stores for product names.');
   console.log('Purchasing, wallet payments, TLS, backups, and other offline workflows are not included.');
-  console.log('The app and API use HTTP on your private LAN. In Full, team messages are not private from other LAN users.\n');
+  console.log('Choose local-only access or optional access from devices on the business LAN.\n');
 
-  const suggestedEdition = totalmem() < 4 * 1024 ** 3 ? '2' : '1';
-  const editionChoice = await ask('Choose server edition (1 = Full, 2 = Lite)', suggestedEdition);
-  if (!['1', '2'].includes(editionChoice)) throw new Error('Choose 1 for Full or 2 for Lite.');
-  const edition = editionChoice === '2' ? 'lite' : 'full';
-  const { composeVer, shell } = checkRequirements(edition);
+  let edition;
+  let minimumMemoryGB;
+  let minimumDiskGB;
+  if (profile) {
+    edition = profile.edition;
+    minimumMemoryGB = profile.minimumMemoryGB;
+    minimumDiskGB = profile.minimumDiskGB;
+  } else {
+    const suggestedEdition = totalmem() < 4 * 1024 ** 3 ? '2' : '1';
+    const editionChoice = await ask('Choose server edition (1 = Full, 2 = Lite)', suggestedEdition);
+    if (!['1', '2'].includes(editionChoice)) throw new Error('Choose 1 for Full or 2 for Lite.');
+    edition = editionChoice === '2' ? 'lite' : 'full';
+    minimumMemoryGB = edition === 'lite' ? 2 : 4;
+    minimumDiskGB = edition === 'lite' ? 20 : 40;
+  }
+  const { composeVer, shell } = checkRequirements(edition, minimumMemoryGB, minimumDiskGB);
   const defaultDir = join(homedir(), 'DigitalCityLocalServer');
   const targetDir = resolve(await ask('Install folder', defaultDir));
-  const lanHost = await ask('Server LAN IPv4 address (reserve this address in your router)');
-  if (!isIpv4Address(lanHost)) throw new Error('Enter the server computer IPv4 address on the business LAN.');
-
   // Node throws EPERM when asked to "create" a drive root such as D:\ on Windows, even though it exists.
   if (!existsSync(dirname(targetDir))) mkdirSync(dirname(targetDir), { recursive: true });
   const parentInfo = statfsSync(dirname(targetDir));
   const freeBytes = Number(parentInfo.bavail) * Number(parentInfo.bsize);
-  if (freeBytes < 40 * 1024 ** 3) throw new Error('At least 40 GB of free disk space is required for the self-hosted stack and data.');
+  // Disk thresholds use decimal GB to match the guide and Windows reporting.
+  if (freeBytes < minimumDiskGB * 1000 ** 3) {
+    throw new Error(`At least ${minimumDiskGB} GB of free disk space is required for this server package.`);
+  }
   if (existsSync(targetDir)) {
     throw new Error(`Install folder already exists: ${targetDir}. Choose a new empty folder; existing data is never overwritten.`);
+  }
+
+  const accessChoice = await ask('Server access (1 = this computer only, 2 = business LAN devices)', '1');
+  if (!['1', '2'].includes(accessChoice)) throw new Error('Choose 1 for this computer only or 2 for business LAN devices.');
+  let serverHost = localHost;
+  const lanAccess = accessChoice === '2';
+  if (lanAccess) {
+    serverHost = await ask('Server LAN IPv4 address (reserve this address in your router)');
+    if (!isUsableLanIpv4Address(serverHost)) {
+      throw new Error('Enter the IPv4 address assigned to this computer by its active Wi-Fi or Ethernet adapter. Do not use the router, Docker, WSL, or loopback address.');
+    }
   }
 
   const accepted = await ask('This is a transport preview, not production offline app service. Continue? Type YES');
@@ -233,11 +297,11 @@ async function main() {
   }
 
   let envText = readFileSync(join(targetDir, '.env'), 'utf8');
-  envText = setEnvValue(envText, 'SUPABASE_PUBLIC_URL', `http://${lanHost}:8000`);
-  envText = setEnvValue(envText, 'API_EXTERNAL_URL', `http://${lanHost}:8000/auth/v1`);
-  envText = setEnvValue(envText, 'SITE_URL', `http://${lanHost}:8080`);
-  envText = setEnvValue(envText, 'ADDITIONAL_REDIRECT_URLS', `http://${lanHost}:8080`);
-  envText = `${envText.trimEnd()}\nLOCAL_SERVER_BIND_IP=${lanHost}\n`;
+  envText = setEnvValue(envText, 'SUPABASE_PUBLIC_URL', `http://${serverHost}:8000`);
+  envText = setEnvValue(envText, 'API_EXTERNAL_URL', `http://${serverHost}:8000/auth/v1`);
+  envText = setEnvValue(envText, 'SITE_URL', `http://${serverHost}:8080`);
+  envText = setEnvValue(envText, 'ADDITIONAL_REDIRECT_URLS', `http://${serverHost}:8080`);
+  envText = `${envText.trimEnd()}\nLOCAL_SERVER_BIND_IP=${serverHost}\n`;
   envText = setEnvValue(envText, 'DISABLE_SIGNUP', 'true');
   envText = setEnvValue(envText, 'POOLER_TENANT_ID', 'digital-city-local');
   writeFileSync(join(targetDir, '.env'), envText, 'utf8');
@@ -266,7 +330,7 @@ async function main() {
     throw new Error('The generated local app configuration is incomplete; check the Supabase anon-key name and node pairing output.');
   }
   const runtimeConfig = {
-    supabaseUrl: `http://${lanHost}:8000`,
+    supabaseUrl: `http://${serverHost}:8000`,
     supabaseAnonKey: localAnonKey,
     localBusinessServer: true,
     localServerEdition: edition,
@@ -318,13 +382,15 @@ async function main() {
   }
 
   console.log(`\nLocal business server ${edition === 'lite' ? 'Lite' : 'Full'} preview is running.`);
-  console.log(`Local business app: http://${lanHost}:8080`);
-  console.log(`Local Supabase API: http://${lanHost}:8000`);
+  console.log(`Local business app: http://${serverHost}:8080`);
+  console.log(`Local Supabase API: http://${serverHost}:8000`);
   console.log(`Install directory: ${targetDir}`);
   console.log(`Docker Compose: ${composeVer}`);
-  console.log('Keep this server on the business LAN. Do not forward its ports from the internet.');
+  console.log(lanAccess
+    ? 'Other devices on the same trusted LAN can connect over HTTP. Reserve this IP in the router, and never forward the ports to the public internet.'
+    : 'The app and API are available only on this computer at 127.0.0.1.');
   try {
-    console.log(`Desktop shortcut: ${createDesktopShortcut(lanHost)}`);
+    console.log(`Desktop shortcut: ${createDesktopShortcut(serverHost)}`);
   } catch (shortcutError) {
     console.warn(`Could not create a desktop shortcut automatically: ${shortcutError.message || shortcutError}`);
   }
