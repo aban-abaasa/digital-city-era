@@ -218,6 +218,26 @@ const POS = () => {
     // Initial fetch
     fetchProducts();
 
+    // Lite omits Supabase Realtime to stay within its memory limit. Poll the
+    // local catalog and refresh when the network returns or this tab is shown.
+    if (supabaseConfig.localBusinessServer && supabaseConfig.localServerEdition === 'lite') {
+      const refreshCatalog = () => {
+        if (document.visibilityState === 'visible') fetchProducts({ silent: true });
+      };
+      const refreshWhenVisible = () => {
+        if (document.visibilityState === 'visible') refreshCatalog();
+      };
+      const refreshTimer = window.setInterval(refreshCatalog, 15000);
+      window.addEventListener('online', refreshCatalog);
+      document.addEventListener('visibilitychange', refreshWhenVisible);
+
+      return () => {
+        window.clearInterval(refreshTimer);
+        window.removeEventListener('online', refreshCatalog);
+        document.removeEventListener('visibilitychange', refreshWhenVisible);
+      };
+    }
+
     // Subscribe to product changes
     const subscription = supabase
       .channel('products_realtime')
@@ -255,7 +275,7 @@ const POS = () => {
     };
   }, []);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async ({ silent = false } = {}) => {
     try {
       if (supabaseConfig.localBusinessServer) {
         if (supabaseConfig.businessType !== 'supermarket' || !supabaseConfig.businessId) {
@@ -352,9 +372,12 @@ const POS = () => {
       console.log(`✅ Products loaded: ${allProducts.length}, Stock data available for ${Object.keys(stockMap).length} items`);
       
     } catch (error) {
+      if (silent && supabaseConfig.localBusinessServer) return;
       console.error('❌ Failed to fetch products:', error);
-      toast.error('Failed to load products');
-      setProducts([]);
+      if (!silent || !supabaseConfig.localBusinessServer) {
+        toast.error('Failed to load products');
+        setProducts([]);
+      }
     }
   };
 
