@@ -6,7 +6,7 @@
 // front and centre on a phone.
 // ===================================================
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy, FiChevronDown } from 'react-icons/fi';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-toastify';
@@ -17,11 +17,12 @@ import { supabaseConfig } from '../services/supabase';
 import { formatPaymentMethod } from '../utils/paymentMethod';
 import { getTaxTreatmentLabel } from '../utils/taxPricing';
 import './Receipt.css';
-// The same stylesheet, as a string, for the print window.
+import receiptPrintCss from './Receipt.css?inline';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 const ACTION_BTN = 'flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c] focus-visible:ring-offset-1';
 const SHARE_TILE = 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border border-[#ddd2b6] bg-white px-1 py-2 text-[11px] font-semibold text-[#173d32] transition hover:bg-[#f3ecd8] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a85c]';
+let activeReceiptPrintWindow = null;
 
 // A paper-receipt section whose body folds away. The body stays in the DOM
 // (hidden by CSS only) so printing can always show it in full.
@@ -65,6 +66,9 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // Everything people need is visible up front; the QR codes and transaction
   // id fold away, except on an invoice where the QR is how the job is tracked.
   const [shareOpen, setShareOpen] = useState(false);
+  const printLock = useRef(false);
+  const paperRef = useRef(null);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [openSections, setOpenSections] = useState({ items: true, verify: Boolean(isInvoice) });
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const items = normalizeTransactionItems(receiptData?.receipt?.items);
@@ -92,24 +96,95 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // ===================================================
   // PRINT RECEIPT
   // ===================================================
-  const handlePrint = async () => {
+  const handlePrint = () => {
+    if (printLock.current) return;
+    if (activeReceiptPrintWindow && !activeReceiptPrintWindow.closed) return;
+    printLock.current = true;
+    setIsPrinting(true);
+    let printWindow = null;
+    let printStarted = false;
+    let released = false;
+    let loadFallback = null;
+    let releaseFallback = null;
+    const finishPrinting = () => {
+      if (released) return;
+      released = true;
+      if (loadFallback) window.clearTimeout(loadFallback);
+      if (releaseFallback) window.clearTimeout(releaseFallback);
+      if (printWindow) {
+        printWindow.removeEventListener('afterprint', finishPrinting);
+        if (activeReceiptPrintWindow === printWindow) activeReceiptPrintWindow = null;
+        if (!printWindow.closed) printWindow.close();
+      }
+      printLock.current = false;
+      setIsPrinting(false);
+    };
     try {
       // The local server keeps its own cash-sale ledger; its staff token must
       // not try to write a cloud-only print log table.
       if (!supabaseConfig.localBusinessServer) {
-        await transactionService.logReceiptPrint(
+        transactionService.logReceiptPrint(
           transaction?.id,
           receiptData?.receiptNumber,
           'customer_copy',
           'thermal'
-        );
+        ).catch((error) => console.warn('Could not log receipt print:', error));
       }
 
-      document.body.classList.add('rc-printing');
-      window.print();
-      document.body.classList.remove('rc-printing');
+      // Print a receipt-only page so the long POS layout cannot create extra
+      // print pages that repeat the receipt.
+      printWindow = window.open('', '_blank', 'popup,width=420,height=720');
+      if (!printWindow) throw new Error('Allow pop-ups for this site to print the receipt.');
+      activeReceiptPrintWindow = printWindow;
+
+      const paper = paperRef.current;
+      if (!paper) throw new Error('The receipt is not ready to print.');
+      const printPaper = paper.cloneNode(true);
+      printPaper.querySelectorAll('canvas').forEach((canvas) => {
+        try {
+          const image = printPaper.ownerDocument.createElement('img');
+          image.src = canvas.toDataURL('image/png');
+          image.width = canvas.width;
+          image.height = canvas.height;
+          image.alt = 'Receipt QR code';
+          canvas.replaceWith(image);
+        } catch (error) {
+          console.warn('Could not copy a receipt QR code into the print page:', error);
+        }
+      });
+
+      const printOnce = () => {
+        if (printStarted || released || printWindow.closed) return;
+        printStarted = true;
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (error) {
+          finishPrinting();
+          console.error('Print error:', error);
+          toast.error('Failed to print receipt');
+        }
+      };
+
+      printWindow.addEventListener('load', printOnce, { once: true });
+      printWindow.addEventListener('afterprint', finishPrinting, { once: true });
+      loadFallback = window.setTimeout(printOnce, 2000);
+      releaseFallback = window.setTimeout(finishPrinting, 120_000);
+      printWindow.document.open();
+      printWindow.document.write(`<!doctype html>
+        <html><head><meta charset="utf-8"><title>${docLabel} ${receiptData.receiptNumber}</title>
+        <style>${receiptPrintCss}
+          html, body { width: 80mm; min-width: 80mm; margin: 0; padding: 0; }
+          @media print {
+            @page { size: 80mm auto; margin: 0; }
+            .rc-paper { position: static !important; width: 72mm !important; max-width: 72mm !important;
+              margin: 0 auto !important; padding: 2mm 5mm !important; box-shadow: none !important; filter: none !important; }
+          }
+        </style></head><body class="rc-printing">${printPaper.outerHTML}</body></html>`);
+      printWindow.document.close();
       toast.success('🖨️ Printing receipt...');
     } catch (error) {
+      finishPrinting();
       console.error('Print error:', error);
       toast.error('❌ Failed to print receipt');
     }
@@ -321,11 +396,14 @@ ${branding?.publicWebsiteUrl || ''}
         <div className="border-b border-[#e3dac3] bg-[#f6f2e8]">
           <div className="flex items-center gap-2 px-3 py-2 sm:px-5">
             <button
+              type="button"
               onClick={handlePrint}
-              className={`${ACTION_BTN} border-[#173d32] bg-[#173d32] text-white hover:bg-[#10291f]`}
+              disabled={isPrinting}
+              aria-busy={isPrinting}
+              className={`${ACTION_BTN} border-[#173d32] bg-[#173d32] text-white hover:bg-[#10291f] disabled:cursor-wait disabled:opacity-60`}
             >
               <FiPrinter className="h-4 w-4" />
-              <span>Print</span>
+              <span>{isPrinting ? 'Printing…' : 'Print'}</span>
             </button>
             <button
               onClick={handleDownloadPDF}
@@ -376,7 +454,7 @@ ${branding?.publicWebsiteUrl || ''}
 
         {/* Receipt paper */}
         <div className="min-h-0 flex-1 overflow-y-auto bg-[#ece6d6] px-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-6">
-          <div className="rc-paper">
+          <div className="rc-paper" ref={paperRef}>
             {/* Store header */}
             <header className="rc-head">
               {branding?.logoUrl && <img src={branding.logoUrl} alt={storeName} className="rc-logo" />}

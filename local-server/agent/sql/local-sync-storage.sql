@@ -730,18 +730,20 @@ BEGIN
   SET current_stock = v_after, stock_updated_at = now()
   WHERE business_id = v_business_id AND product_id = p_product_id;
 
-  INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
-  VALUES (
-    v_id, 'stock.adjustment.v1', 1,
-    jsonb_build_object(
-      'product_id', p_product_id,
-      'delta', v_delta,
-      'reason', p_reason,
-      'note', v_note,
-      'staff_name', v_staff_name
-    ),
-    now()
-  );
+  IF auth.jwt()->'app_metadata'->>'business_type' = 'supermarket' THEN
+    INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
+    VALUES (
+      v_id, 'stock.adjustment.v1', 1,
+      jsonb_build_object(
+        'product_id', p_product_id,
+        'delta', v_delta,
+        'reason', p_reason,
+        'note', v_note,
+        'staff_name', v_staff_name
+      ),
+      now()
+    );
+  END IF;
 
   RETURN jsonb_build_object('success', true, 'stock', v_after, 'delta', v_delta);
 END;
@@ -889,23 +891,25 @@ BEGIN
     true, v_stock, 0, v_min, v_reorder, now(), now()
   );
 
-  INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
-  VALUES (
-    gen_random_uuid(), 'product.create.v1', 1,
-    jsonb_build_object(
-      'product_id', v_id,
-      'name', v_name,
-      'sku', v_sku,
-      'barcode', v_barcode,
-      'selling_price', v_price,
-      'tax_rate', v_tax,
-      'initial_stock', v_stock,
-      'minimum_stock', v_min,
-      'reorder_point', v_reorder,
-      'staff_name', v_staff_name
-    ),
-    now()
-  );
+  IF auth.jwt()->'app_metadata'->>'business_type' = 'supermarket' THEN
+    INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
+    VALUES (
+      gen_random_uuid(), 'product.create.v1', 1,
+      jsonb_build_object(
+        'product_id', v_id,
+        'name', v_name,
+        'sku', v_sku,
+        'barcode', v_barcode,
+        'selling_price', v_price,
+        'tax_rate', v_tax,
+        'initial_stock', v_stock,
+        'minimum_stock', v_min,
+        'reorder_point', v_reorder,
+        'staff_name', v_staff_name
+      ),
+      now()
+    );
+  END IF;
 
   RETURN jsonb_build_object('success', true, 'product_id', v_id, 'barcode', v_barcode);
 END;
@@ -913,6 +917,120 @@ $$;
 
 REVOKE ALL ON FUNCTION public.business_local_add_product(TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.business_local_add_product(TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC) TO authenticated;
+
+-- Edit a local product without allowing an Admin to overwrite stock directly.
+-- Stock itself stays on the audited adjustment path; product fields sync as a
+-- separate event so an older catalog pull cannot silently restore old values.
+CREATE OR REPLACE FUNCTION public.business_local_update_product(
+  p_product_id UUID,
+  p_name TEXT,
+  p_selling_price NUMERIC,
+  p_sku TEXT DEFAULT NULL,
+  p_barcode TEXT DEFAULT NULL,
+  p_tax_rate NUMERIC DEFAULT 0,
+  p_minimum_stock NUMERIC DEFAULT 0,
+  p_reorder_point NUMERIC DEFAULT 0
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+  v_staff_name TEXT := COALESCE(NULLIF(trim(auth.jwt()->'user_metadata'->>'full_name'), ''), auth.jwt()->'user_metadata'->>'username', 'Staff');
+  v_product public.business_local_catalog%ROWTYPE;
+  v_name TEXT := trim(COALESCE(p_name, ''));
+  v_sku TEXT;
+  v_barcode TEXT;
+  v_price NUMERIC := round(COALESCE(p_selling_price, -1), 2);
+  v_tax NUMERIC := round(COALESCE(p_tax_rate, 0), 3);
+  v_min NUMERIC := round(COALESCE(p_minimum_stock, 0), 2);
+  v_reorder NUMERIC := round(COALESCE(p_reorder_point, 0), 2);
+  v_updated_at TIMESTAMPTZ := now();
+  v_event_id UUID := gen_random_uuid();
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only a local Admin can edit products.');
+  END IF;
+  IF p_product_id IS NULL OR length(v_name) NOT BETWEEN 1 AND 255 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Enter a product name (255 characters at most).');
+  END IF;
+  IF v_price < 0 OR v_price > 1000000000000 OR v_tax < 0 OR v_tax > 100 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Enter a valid price and tax rate.');
+  END IF;
+  IF v_min < 0 OR v_min > 1000000000 OR v_reorder < 0 OR v_reorder > 1000000000 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Stock thresholds must be zero or more.');
+  END IF;
+  IF length(COALESCE(p_sku, '')) > 100 OR length(COALESCE(p_barcode, '')) > 100 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'SKU and barcode can be 100 characters at most.');
+  END IF;
+
+  SELECT * INTO v_product
+  FROM public.business_local_catalog
+  WHERE business_id = v_business_id AND product_id = p_product_id AND is_active
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'That active product is not on this server.');
+  END IF;
+
+  -- Blank code fields mean keep the existing code. Admins can change codes
+  -- without accidentally erasing them when they only intend to fix a name.
+  v_sku := COALESCE(NULLIF(trim(COALESCE(p_sku, '')), ''), v_product.sku);
+  v_barcode := COALESCE(NULLIF(trim(COALESCE(p_barcode, '')), ''), v_product.barcode);
+  IF EXISTS (
+    SELECT 1 FROM public.business_local_catalog c
+    WHERE c.business_id = v_business_id AND c.product_id <> p_product_id
+      AND ((v_barcode IS NOT NULL AND lower(c.barcode) = lower(v_barcode))
+        OR (v_sku IS NOT NULL AND lower(c.sku) = lower(v_sku)))
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Another product already uses that barcode or SKU.');
+  END IF;
+
+  UPDATE public.business_local_catalog
+  SET name = v_name,
+      sku = v_sku,
+      barcode = v_barcode,
+      price = v_price,
+      selling_price = v_price,
+      tax_rate = v_tax,
+      minimum_stock = v_min,
+      reorder_point = v_reorder,
+      product_updated_at = v_updated_at,
+      stock_updated_at = v_updated_at
+  WHERE business_id = v_business_id AND product_id = p_product_id;
+
+  IF auth.jwt()->'app_metadata'->>'business_type' = 'supermarket' THEN
+    INSERT INTO public.business_local_sync_outbox (event_id, event_type, schema_version, payload, occurred_at)
+    VALUES (
+      v_event_id, 'product.update.v1', 1,
+      jsonb_build_object(
+        'product_id', p_product_id,
+        'name', v_name,
+        'sku', v_sku,
+        'barcode', v_barcode,
+        'selling_price', v_price,
+        'tax_rate', v_tax,
+        'minimum_stock', v_min,
+        'reorder_point', v_reorder,
+        'staff_name', v_staff_name
+      ),
+      v_updated_at
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true, 'product_id', p_product_id, 'name', v_name,
+    'sku', v_sku, 'barcode', v_barcode, 'selling_price', v_price,
+    'tax_rate', v_tax, 'minimum_stock', v_min, 'reorder_point', v_reorder,
+    'product_updated_at', v_updated_at
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.business_local_update_product(UUID, TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.business_local_update_product(UUID, TEXT, NUMERIC, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC) TO authenticated;
 
 -- A LAN till records paid cash sales on the shared local database. The stock
 -- decrement and cloud-sync outbox event are part of the same transaction, so

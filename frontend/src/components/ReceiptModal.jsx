@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { 
   FiX, 
   FiDownload, 
@@ -25,6 +25,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const printAttempt = useRef(false);
 
   if (!isOpen || !saleData) return null;
   const brandedSaleData = { ...saleData, websiteUrl: branding?.publicWebsiteUrl || window.location.origin };
@@ -89,6 +90,9 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   };
 
   const handlePrint = async () => {
+    if (printAttempt.current) return;
+    printAttempt.current = true;
+    setIsLoading(true);
     try {
       const result = await receiptService.printReceipt(brandedSaleData);
       if (result.success) {
@@ -96,6 +100,9 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
       }
     } catch (error) {
       toast.error('❌ Failed to open print dialog');
+    } finally {
+      printAttempt.current = false;
+      setIsLoading(false);
     }
   };
 
@@ -391,11 +398,14 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
                     </p>
                   </div>
                   <button
+                    type="button"
                     onClick={handlePrint}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold transition-all"
+                    disabled={isLoading}
+                    aria-busy={isLoading}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold transition-all disabled:cursor-wait disabled:opacity-60"
                   >
                     <FiPrinter className="inline h-5 w-5 mr-2" />
-                    Print Receipt
+                    {isLoading ? 'Preparing receipt…' : 'Print Receipt'}
                   </button>
                 </div>
               </div>

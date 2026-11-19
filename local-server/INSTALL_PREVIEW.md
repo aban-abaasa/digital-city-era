@@ -4,10 +4,10 @@ This package installs a local copy of the Digital City Era app shell, a
 business-specific self-hosted Supabase stack, and the cloud pairing/sync
 worker. Choose a ZIP for the computer: Lite supports 2 GB RAM with either a
 20 GB or 40 GB free-disk requirement; Full needs 4 GB RAM and 40 GB free disk.
-The two Lite ZIPs have the same features. Full keeps the existing services,
-including team text chat and stock corrections. Lite starts only the
-database, sign-in, API, app, and sync services for local product additions and
-cash sales. The stack is pinned to Supabase's
+The two Lite ZIPs have the same features. Both editions provide local product
+editing, stock corrections, cash sales, and transaction history. Full also
+includes team text chat. Lite starts only the database, sign-in, API, app, and
+sync services. The stack is pinned to Supabase's
 `self-hosted/v0.8.1` Docker release. The app and API bind to `127.0.0.1` by
 default, so only the computer running Docker can open the app. During setup,
 you can choose LAN access for phones, tablets, and other computers on a trusted
@@ -19,10 +19,10 @@ supermarket's product names, prices, and stock, plus updates to that store's
 catalog. A local server does not search or read other stores' product names.
 Cross-store product suggestions are available only in connected online add
 forms. Cash sales are saved to the shared local database, deduct local stock
-atomically, print a receipt, and queue a cloud transaction. Full also queues
-local team messages and supports Admin stock corrections. Lite is limited to
-local product additions and cash sales; team chat and optional services are
-not started. Purchasing, ICAN, BodaGoEra, attachments, and other offline
+atomically, print named receipts, and queue a cloud transaction. Admins can
+edit product details and adjust stock in both editions. Full also queues local
+team messages; Lite leaves team chat and optional services stopped. Purchasing,
+ICAN, BodaGoEra, attachments, and other offline
 workflows are not enabled. Local accounts use only **Admin** and **Cashier**
 roles; the first setup account is an Admin. Wallet payments and invoice/bill-later
 sales require the cloud app.
@@ -55,7 +55,8 @@ sales require the cloud app.
   `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`.
 - The platform administrator then applies
   `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
-  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` in that order. If the setup page says it
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` and
+  `ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql` in that order. If the setup page says it
   is waiting for platform setup, contact support; do not run these files.
 - The shared cloud project already has the Digital City Era `public.products`
   and `public.inventory` tables. These setup migrations add the sync layer,
@@ -90,7 +91,7 @@ sales require the cloud app.
 4. Enter a new installation folder, choose local-only or LAN access, and type
    `YES` after reviewing the preview limitations. The installer asks for the
    cloud Supabase project URL, public anon/publishable key, and the one-time
-   pairing code. It checks for cloud protocol v3, team-history bootstrap, and
+   pairing code. It checks for cloud protocol v4, product-edit sync, team-history bootstrap, and
    supermarket-catalog support before consuming the code.
 
    - **Folder:** type a full path that starts with the drive and a backslash and
@@ -146,16 +147,17 @@ same pairing, first Admin setup, and PIN sign-in flow is used for both editions.
 
 ## Products and stock
 
-Admins can add a new product (name, selling price, opening stock and, optionally,
-barcode, SKU, tax rate and low-stock level). Product additions are saved locally
-and queued for this store's cloud catalog when internet returns. Full also lets
-Admins correct stock with a reason and optional note. Lite keeps product setup
-and cash sales available and does not expose stock correction tools.
+Admins can add products, edit the name, selling price, barcode, SKU, tax rate,
+and stock thresholds, and change stock with a reason and optional note. Changes
+are saved locally and synced to the paired supermarket when internet returns.
+Product names and prices are saved with each sale, so old receipts remain
+readable after later product edits.
 
 While adding, the local form can suggest matching names and barcodes from this
 server's own catalog. Choosing one copies its name and barcode into a new
-product form; it does not link or edit the existing product. If the barcode is
-already used in this store, change it before saving the separate product.
+product form; it does not link or edit the existing product. Use **Edit** on
+the inventory list to update an existing item, or **Change stock** to record an
+audited quantity adjustment.
 
 The local product source is limited to this store's own catalog. A product from
 another store is never suggested or loaded by the local server.
@@ -163,27 +165,28 @@ another store is never suggested or loaded by the local server.
 - **Pair the server to the supermarket entry.** Only a supermarket's products
   and stock are copied to a server. On the Offline server settings page, the
   "Choose the business" list shows each entry as *supermarket* or *business
-  profile*; a server paired to a business profile has no products and the
-  Inventory page stays empty. The pairing cannot be switched later without
-  reinstalling.
+  profile*; a server paired to a business profile can add and edit products
+  locally, but those changes do not sync to a supermarket. The pairing cannot
+  be switched later without reinstalling.
 - **Changes are sent as differences** ("+24", "-3"), never as final numbers, so
   an offline change cannot overwrite stock the cloud changed meanwhile (online
   sales, other deliveries). The cloud never lets stock drop below zero.
-- **Platform administrator only: cloud migration.** The platform administrator
-  applies
-  `backend/database/migrations/ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` once
-  in the cloud Supabase project, after the four migrations above (it is also
-  served from `/local-server-migrations/`). Without it the server still keeps
-  its own corrected stock and new products, but the cloud quarantines those
-  events instead of applying them. A new product keeps the id the server gave
-  it, so the cloud's own catalog update then refreshes the same row. Barcodes
+- **Platform administrator only: cloud migrations.** The platform
+  administrator applies `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql`,
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql`, then
+  `ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql` once in the cloud Supabase project
+  (also served from `/local-server-migrations/`). Without the latest migration,
+  product edits stay on the node and the cloud quarantines their events. A new
+  product keeps the id the server gave it, so the cloud catalog updates the same
+  row. Barcodes
   are unique across **all** stores in the cloud: a barcode or SKU that another
   store already uses is refused by the cloud (the product then exists on the
   server only), so use real barcodes, or leave the barcode blank to get a
   generated one. A server paired to a business profile can add products
-  locally, but they never reach the cloud. Existing servers need nothing re-installed for the
-  server-side part: re-run `local-server/agent/sql/local-sync-storage.sql`
-  against the local database (every statement is safe to repeat).
+  locally, but they never reach the cloud. For an existing install, re-run
+  `local-server/agent/sql/local-sync-storage.sql` against the local database
+  (every statement is safe to repeat) and replace its app shell with the new
+  package; this release does not update a running server automatically.
 - Products that are not stock-controlled (listing-only, service and batch
   products) cannot be changed here.
 
@@ -262,8 +265,10 @@ docker compose --env-file .env --env-file .env.local-sync \
   -f docker-compose.yml -f docker-compose.local-business.yml down
 ```
 
-This command stops containers but keeps the database and Storage data. Do not
-use `down -v` unless you intend to delete them. Automated backup, restore,
+This command stops containers but keeps the database and Storage data. Receipts
+remain in the local ledger after shutdown; choose **All time** in Transaction
+History to review sales from earlier days. Do not use `down -v` unless you
+intend to delete the database. Automated backup, restore,
 updates, rollback, TLS certificates, and the rest of the business app
 schema/workflows still need work before production use. Local staff PINs
 currently control app access only.

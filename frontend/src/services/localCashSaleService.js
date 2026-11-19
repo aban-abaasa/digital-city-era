@@ -15,13 +15,18 @@ export async function getLocalCashSales({ from, to, cashierId } = {}) {
     .from('business_local_cash_sales')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(500);
+    .order('id', { ascending: false });
 
   if (from) query = query.gte('created_at', from);
   if (to) query = query.lt('created_at', to);
   if (cashierId) query = query.eq('cashier_id', cashierId);
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message || 'Could not load local receipts.');
-  return data || [];
+  const pageSize = 1000;
+  const sales = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) throw new Error(error.message || 'Could not load local receipts.');
+    sales.push(...(data || []));
+    if (!data || data.length < pageSize) return sales;
+  }
 }

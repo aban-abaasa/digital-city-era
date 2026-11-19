@@ -71,8 +71,9 @@ Storage configuration before promising file uploads. See the official
   `backend/database/migrations/ADD_BUSINESS_LOCAL_TEAM_MESSAGE_SYNC.sql`, and
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql`,
   then `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`,
-  followed by `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
-  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` to the cloud project. The customer setup
+  followed by `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql`,
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql`, and
+  `ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql` to the cloud project. The customer setup
   page checks readiness and directs customers to support if platform setup is
   missing. The shared cloud project must already
   have the Digital City Era `public.products` and `public.inventory` tables;
@@ -99,10 +100,9 @@ Storage configuration before promising file uploads. See the official
   customer pairing stays unavailable and the setup page directs customers to
   their platform administrator/support. The customer does not apply SQL.
 - The installer offers Full (the existing 4 GB option) and Lite (2 GB minimum
-  option). Full serves the LAN team channel, mirrors this supermarket's
-  products, prices, and stock, and supports Admin stock corrections. Lite runs
-  the database, sign-in, API, app, and sync agent for local product additions
-  and cash sales; it leaves optional services and team chat stopped. Neither
+  option). Both editions mirror this supermarket's products, prices, and stock,
+  support product edits and Admin stock corrections, and save cash sales locally.
+  Full serves the LAN team channel; Lite leaves optional services and team chat stopped. Neither
   edition searches or loads other stores' product names. Cross-store product
   suggestions are available only in connected online add forms. Both use local
   Admin/Cashier PIN accounts, with the first setup account as Admin. Cash sales
@@ -123,7 +123,8 @@ Storage configuration before promising file uploads. See the official
 
 The repository has a downloadable **business-server preview** with Full and
 Lite installer choices. Team chat works over the LAN in Full and syncs after
-reconnection; the Lite option focuses on local product additions and cash sales.
+reconnection; both editions support local catalog edits, stock corrections,
+cash sales, and durable receipt history.
 The server catalog is scoped to the paired store and never suggests products
 from other stores. It is not a complete offline business system: other app
 workflows, full app schemas, TLS, backup, and update/rollback are still missing.

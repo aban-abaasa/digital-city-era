@@ -15,6 +15,7 @@ import { formatPaymentMethod, paymentMethodKind } from '../utils/paymentMethod';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { supabaseConfig } from '../services/supabase';
 import { getLocalCashSales } from '../services/localCashSaleService';
+import { useAuth } from '../contexts/AuthContext';
 
 const PAYMENT_BADGE = {
   cash: 'bg-green-100 text-green-800',
@@ -29,6 +30,7 @@ const localSyncCopy = (status) => status === 'synced'
     : 'Waiting to sync';
 
 const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId = null, viewMode = 'cashier', savedReceipts = [], classicLayout = false }) => {
+  const { user } = useAuth();
   const branding = useSupermarketBranding();
   const storeName = branding?.name || 'Your Supermarket';
   // viewMode: 'cashier' (own transactions), 'manager' (all transactions), 'admin' (all + analytics)
@@ -36,7 +38,10 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('today');
+  // A local server's receipt ledger is durable across power loss. Show the
+  // complete saved ledger by default so older days are immediately visible;
+  // cloud portals keep the familiar daily view.
+  const [dateFilter, setDateFilter] = useState(supabaseConfig.localBusinessServer ? 'all' : 'today');
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all'); // all | unpaid | partial | paid — "customers who owe"
   const [selectedTransaction, setSelectedTransaction] = useState(null);
@@ -57,6 +62,7 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
   useBackLayer(!!collectingFor, () => setCollectingFor(null));
   const [collectAmount, setCollectAmount] = useState('');
   const [collecting, setCollecting] = useState(false);
+  const periodLabel = dateFilter === 'today' ? 'Today' : dateFilter === 'week' ? 'This week' : dateFilter === 'month' ? 'This month' : dateFilter === 'year' ? 'This year' : 'All time';
 
   useEffect(() => {
     loadTransactions();
@@ -113,16 +119,15 @@ const TransactionHistory = ({ cashierId = null, supermarketId = null, managerId 
     setLoading(true);
     try {
       if (supabaseConfig.localBusinessServer) {
-        const now = new Date();
-        const from = new Date(now);
-        if (dateFilter === 'today') from.setHours(0, 0, 0, 0);
-        else if (dateFilter === 'week') from.setDate(from.getDate() - 7);
-        else if (dateFilter === 'month') from.setDate(1);
-        else if (dateFilter === 'year') from.setMonth(0, 1);
-        from.setHours(0, 0, 0, 0);
+        const from = dateFilter === 'all' ? null : new Date();
+        if (from && dateFilter === 'today') from.setHours(0, 0, 0, 0);
+        else if (from && dateFilter === 'week') from.setDate(from.getDate() - 7);
+        else if (from && dateFilter === 'month') from.setDate(1);
+        else if (from && dateFilter === 'year') from.setMonth(0, 1);
+        if (from) from.setHours(0, 0, 0, 0);
         const localSales = await getLocalCashSales({
-          from: from.toISOString(),
-          cashierId: viewMode === 'cashier' ? cashierId : null,
+          from: from?.toISOString(),
+          cashierId: viewMode === 'cashier' && user?.localRole === 'cashier' ? cashierId : null,
         });
         const rows = localSales.map((sale) => ({
           ...sale,
@@ -587,7 +592,7 @@ ${branding?.publicWebsiteUrl || ''}
       {/* Header Stats - Responsive Grid */}
       {classicLayout ? (
         <div className="classic-receipt-summary" aria-label="Receipt summary">
-          <div><span>Transactions</span><strong>{statsData.totalTransactions}</strong><small>{dateFilter === 'today' ? 'Today' : dateFilter === 'week' ? 'This week' : dateFilter === 'month' ? 'This month' : 'This year'}</small></div>
+          <div><span>Transactions</span><strong>{statsData.totalTransactions}</strong><small>{periodLabel}</small></div>
           <div><span>Total sales</span><strong>{formatCurrency(statsData.totalSales)}</strong><small>Revenue</small></div>
           <div><span>Average basket</span><strong>{formatCurrency(statsData.averageBasket)}</strong><small>Per transaction</small></div>
           <div><span>Items sold</span><strong>{statsData.totalItems}</strong><small>Total products</small></div>
@@ -598,7 +603,7 @@ ${branding?.publicWebsiteUrl || ''}
           <FiShoppingCart className={`${isMobile ? 'h-5 w-5' : 'h-8 w-8'} mb-2 opacity-80`} />
           <p className={`opacity-80 ${isMobile ? 'text-xs' : 'text-sm'}`}>Transactions</p>
           <p className={`font-bold ${isMobile ? 'text-lg' : 'text-3xl'}`}>{statsData.totalTransactions}</p>
-          <p className={`opacity-60 mt-1 ${isMobile ? 'text-xs' : 'text-xs'}`}>{dateFilter === 'today' ? 'Today' : dateFilter === 'week' ? 'This Week' : dateFilter === 'month' ? 'This Month' : 'This Year'}</p>
+          <p className={`opacity-60 mt-1 ${isMobile ? 'text-xs' : 'text-xs'}`}>{periodLabel}</p>
         </div>
         <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg md:rounded-xl p-3 md:p-4 text-white shadow-md hover:shadow-lg transition-shadow">
           <FiDollarSign className={`${isMobile ? 'h-5 w-5' : 'h-8 w-8'} mb-2 opacity-80`} />
@@ -700,6 +705,7 @@ ${branding?.publicWebsiteUrl || ''}
               <option value="week">Week</option>
               <option value="month">Month</option>
               <option value="year">Year</option>
+              {supabaseConfig.localBusinessServer && <option value="all">All time</option>}
             </select>
 
             <select

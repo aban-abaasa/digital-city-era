@@ -423,8 +423,11 @@ const CashierPortal = () => {
         return true;
       };
 
-      // No connection: don't wait out two 2s timeouts just to fail.
-      if (!navigator.onLine) {
+      // A business server is the cashier's local database, so it remains
+      // reachable over localhost/LAN even when the browser reports no internet.
+      // Always read its current stock after a sale instead of showing the old
+      // per-device offline cache. Cloud tills still use that cache when offline.
+      if (!navigator.onLine && !supabaseConfig.localBusinessServer) {
         if (!(await showSavedCatalog())) {
           toast.info('📴 Offline and no saved products on this device yet. Open the till once while online to save them.');
         }
@@ -1821,7 +1824,24 @@ const CashierPortal = () => {
           soldAt,
         });
 
-        const receiptItems = savedSale.items || items;
+        const savedItems = Array.isArray(savedSale.items) && savedSale.items.length ? savedSale.items : items;
+        const receiptItems = savedItems.map((savedItem, index) => {
+          const productId = savedItem.product_id || savedItem.id || savedItem.productId;
+          const cartItem = items.find((item) => String(item.id || item.product_id) === String(productId)) || items[index] || {};
+          const catalogProduct = products.find((product) => String(product.id) === String(productId));
+          const name = savedItem.name || savedItem.product_name || savedItem.productName || cartItem.name || catalogProduct?.name || 'Item';
+          const price = Number(savedItem.selling_price ?? savedItem.price ?? cartItem.price ?? 0);
+          return {
+            ...cartItem,
+            ...savedItem,
+            id: productId || cartItem.id || null,
+            product_id: productId || cartItem.id || null,
+            name,
+            product_name: name,
+            price: Number.isFinite(price) ? price : 0,
+            selling_price: Number.isFinite(price) ? price : 0,
+          };
+        });
         const completedSale = {
           success: true,
           id: null,
@@ -1851,15 +1871,28 @@ const CashierPortal = () => {
 
         setPaymentResult(completedSale);
         setReceiptData(completedSale);
+        const soldByProduct = new Map();
+        items.forEach((item) => {
+          const productId = String(item.id || item.product_id || '');
+          if (productId) soldByProduct.set(productId, (soldByProduct.get(productId) || 0) + Number(item.quantity || 0));
+        });
+        setProducts((current) => current.map((product) => {
+          const remaining = soldByProduct.get(String(product.id));
+          if (!remaining || product.inventoryMode !== 'stock_controlled') return product;
+          const stock = Math.max(0, Number(product.stock || 0) - remaining);
+          const reserved = Number(product.reserved_stock || 0);
+          return { ...product, stock, available_stock: Math.max(0, stock - reserved) };
+        }));
         localSaleAttemptIdRef.current = null;
+        // Close the checkout dialog before mounting the receipt. Keeping both
+        // fixed overlays alive briefly caused the first sale receipt to print
+        // through the stacked modal layout; My Receipts prints without that
+        // extra checkout layer.
+        setPaymentModal(false);
+        setPaymentResult(null);
         setTimeout(() => setShowReceiptModal(true), 250);
         toast.success(`Cash sale saved on this server. Receipt: ${savedSale.receiptNumber}`);
         loadProductsFromSupabase();
-
-        setTimeout(() => {
-          setPaymentModal(false);
-          setPaymentResult(null);
-        }, 3000);
       } catch (error) {
         setPaymentResult({
           success: false,

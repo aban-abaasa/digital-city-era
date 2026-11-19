@@ -65,7 +65,8 @@ try {
       || Number(protocolInfo.protocolVersion) < 3
       || Number(protocolInfo.teamHistoryBootstrapVersion) < 1
       || Number(protocolInfo.catalogBootstrapVersion) < 1
-      || Number(protocolInfo.cashSalesSyncVersion) < 1) {
+      || Number(protocolInfo.cashSalesSyncVersion) < 1
+      || Number(protocolInfo.productEditingSyncVersion) < 1) {
     throw new Error('Digital City Era has not enabled offline server setup yet. Contact Digital City Era support; your one-time code has not been used.');
   }
 

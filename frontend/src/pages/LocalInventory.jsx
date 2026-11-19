@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { FiArrowLeft, FiCheck, FiClock, FiPackage, FiPlus, FiRefreshCw, FiSearch, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiCheck, FiClock, FiEdit2, FiPackage, FiPlus, FiRefreshCw, FiSearch, FiX } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, supabaseConfig } from '../services/supabase';
-import { REASON_LABELS, STOCK_REASONS, addProduct, adjustStock, getPendingStock, getStockHistory, listInventory } from '../services/localInventoryService';
+import { REASON_LABELS, STOCK_REASONS, addProduct, adjustStock, getPendingStock, getStockHistory, listInventory, updateProduct } from '../services/localInventoryService';
 import './BusinessLocalServerSetup.css';
 
 const MODES = [
@@ -347,6 +347,115 @@ const AddProductSheet = ({ pairedToProfile, onClose, onAdded }) => {
   );
 };
 
+const EditProductSheet = ({ item, pairedToProfile, onClose, onSaved }) => {
+  const [form, setForm] = useState({
+    name: item.name || '',
+    price: String(item.selling_price ?? ''),
+    sku: item.sku || '',
+    barcode: item.barcode || '',
+    tax: String(item.tax_rate ?? 0),
+    low: String(item.minimum_stock ?? 0),
+    reorder: String(item.reorder_point ?? 0),
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const price = parseQuantity(form.price);
+  const tax = form.tax.trim() === '' ? 0 : parseQuantity(form.tax);
+  const low = form.low.trim() === '' ? 0 : parseQuantity(form.low);
+  const reorder = form.reorder.trim() === '' ? 0 : parseQuantity(form.reorder);
+  const valid = form.name.trim().length > 0
+    && form.price.trim() !== '' && Number.isFinite(price) && price >= 0
+    && Number.isFinite(tax) && tax >= 0 && tax <= 100
+    && Number.isFinite(low) && low >= 0
+    && Number.isFinite(reorder) && reorder >= 0;
+
+  const save = async (event) => {
+    event.preventDefault();
+    if (!valid) return;
+    setSaving(true);
+    setError('');
+    try {
+      const result = await updateProduct({
+        productId: item.product_id,
+        name: form.name.trim(),
+        sellingPrice: price,
+        sku: form.sku.trim(),
+        barcode: form.barcode.trim(),
+        taxRate: tax,
+        minimumStock: low,
+        reorderPoint: reorder,
+      });
+      onSaved(item, { ...result, name: form.name.trim(), selling_price: price, sku: form.sku.trim(), barcode: form.barcode.trim(), tax_rate: tax, minimum_stock: low, reorder_point: reorder });
+    } catch (requestError) {
+      setError(requestError.message || 'Could not update the product.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bls-sheet-back" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <form className="bls-sheet" onSubmit={save} role="dialog" aria-modal="true" aria-label={`Edit ${item.name}`}>
+        <div className="bls-sheet-head">
+          <div>
+            <p className="bls-eyebrow">Product details</p>
+            <h2>Edit product</h2>
+            <p className="bls-sub">{pairedToProfile ? 'Changes are saved on this server only.' : 'Changes are saved on this server and queued for the cloud store.'}</p>
+          </div>
+          <button type="button" className="bls-btn is-ghost is-small" onClick={onClose} aria-label="Close"><FiX /></button>
+        </div>
+
+        <div className="bls-field">
+          <label htmlFor="ep-name">Product name</label>
+          <input id="ep-name" className="bls-input" autoFocus maxLength={255} value={form.name} onChange={set('name')} />
+        </div>
+        <div className="bls-two">
+          <div className="bls-field">
+            <label htmlFor="ep-price">Selling price</label>
+            <input id="ep-price" className="bls-input" inputMode="decimal" value={form.price} onChange={set('price')} />
+          </div>
+          <div className="bls-field">
+            <label htmlFor="ep-tax">Tax rate %</label>
+            <input id="ep-tax" className="bls-input" inputMode="decimal" value={form.tax} onChange={set('tax')} />
+          </div>
+        </div>
+        <div className="bls-two">
+          <div className="bls-field">
+            <label htmlFor="ep-barcode">Barcode<small>blank keeps current</small></label>
+            <input id="ep-barcode" className="bls-input is-mono" maxLength={100} value={form.barcode} onChange={set('barcode')} />
+          </div>
+          <div className="bls-field">
+            <label htmlFor="ep-sku">SKU<small>blank keeps current</small></label>
+            <input id="ep-sku" className="bls-input is-mono" maxLength={100} value={form.sku} onChange={set('sku')} />
+          </div>
+        </div>
+        <div className="bls-two">
+          <div className="bls-field">
+            <label htmlFor="ep-low">Low-stock level</label>
+            <input id="ep-low" className="bls-input" inputMode="decimal" value={form.low} onChange={set('low')} />
+          </div>
+          <div className="bls-field">
+            <label htmlFor="ep-reorder">Reorder point</label>
+            <input id="ep-reorder" className="bls-input" inputMode="decimal" value={form.reorder} onChange={set('reorder')} />
+          </div>
+        </div>
+        {error && <p role="alert" className="bls-err">{error}</p>}
+        <button type="submit" className="bls-btn is-block" disabled={!valid || saving}>
+          <FiCheck /> {saving ? 'Saving…' : 'Save product'}
+        </button>
+        <p className="bls-sub">Change the on-hand quantity with the stock adjustment action so each change has a reason and history.</p>
+      </form>
+    </div>
+  );
+};
+
 const LocalInventory = () => {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
@@ -357,6 +466,7 @@ const LocalInventory = () => {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [adding, setAdding] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -396,7 +506,6 @@ const LocalInventory = () => {
     });
   }, [items, query, filter]);
 
-  const isLite = supabaseConfig.localServerEdition === 'lite';
   const isAdmin = user?.localRole === 'owner' || user?.localRole === 'admin';
   if (!supabaseConfig.localBusinessServer) return <Navigate to="/" replace />;
   if (!user) return <Navigate to="/local-staff-login" replace />;
@@ -405,14 +514,26 @@ const LocalInventory = () => {
   const onSaved = async (item, result) => {
     setSelected(null);
     setItems((current) => current.map((row) => (row.product_id === item.product_id ? { ...row, current_stock: result.stock } : row)));
-    setNotice(`${item.name}: ${fmt(item.current_stock)} → ${fmt(result.stock)}. Waiting to sync with the cloud.`);
+    setNotice(business === 'business_profile'
+      ? `${item.name}: ${fmt(item.current_stock)} → ${fmt(result.stock)}. Saved on this server.`
+      : `${item.name}: ${fmt(item.current_stock)} → ${fmt(result.stock)}. Waiting to sync with the cloud.`);
     try { setPending(await getPendingStock()); } catch { /* the badge just updates on the next refresh */ }
   };
 
   const onAdded = async (name) => {
     setAdding(false);
-    setNotice(`${name} added. It will reach the cloud store when the internet is available.`);
+    setNotice(business === 'business_profile'
+      ? `${name} added to this server.`
+      : `${name} added. It will reach the cloud store when the internet is available.`);
     await refresh();
+  };
+
+  const onProductSaved = (item, changes) => {
+    setEditing(null);
+    setItems((current) => current.map((row) => (row.product_id === item.product_id ? { ...row, ...changes } : row)));
+    setNotice(business === 'business_profile'
+      ? `${changes.name} updated on this server.`
+      : `${changes.name} updated on this server. Waiting to sync with the cloud.`);
   };
 
   const business = supabaseConfig.businessType;
@@ -425,7 +546,9 @@ const LocalInventory = () => {
         <header className="bls-hero">
           <p className="bls-eyebrow">Local server</p>
           <h1>Inventory</h1>
-          <p className="bls-lead">{isLite ? 'Add products to this store’s local catalog. Product names are not searched across other stores.' : 'Add products and manage this store’s local stock. Changes work offline and reach the cloud when the internet is back.'}</p>
+          <p className="bls-lead">{business === 'business_profile'
+            ? 'Add products, edit product details, and adjust stock on this server.'
+            : 'Add products, edit product details, and adjust stock for this store. Changes are saved locally and sync when the internet is available.'}</p>
           <div className="bls-stats">
             <span>{items.length} {items.length === 1 ? 'product' : 'products'}</span>
             <span>{counts.low} low</span>
@@ -491,11 +614,12 @@ const LocalInventory = () => {
                         <span className={`bls-badge ${state === 'ok' ? 'is-ok' : state === 'low' ? 'is-gold' : 'is-off'}`}>{state === 'ok' ? 'In stock' : state === 'low' ? 'Low' : 'Out'}</span>
                         {wait && <span className="bls-badge is-gold" title="Changed on this server; the cloud has not confirmed it yet"><FiClock style={{ verticalAlign: '-1px' }} /> {fmtSigned(wait.delta)} waiting</span>}
                       </div>
-                      {!isLite && item.inventory_mode === 'stock_controlled' ? (
-                        <button type="button" className="bls-btn is-small" onClick={() => setSelected(item)}>Change</button>
-                      ) : !isLite && (
-                        <span className="bls-sub" title="Only stock-controlled products can be changed here">Not tracked</span>
-                      )}
+                      <div className="bls-code-actions">
+                        {item.inventory_mode === 'stock_controlled' && (
+                          <button type="button" className="bls-btn is-small" onClick={() => setSelected(item)}>Change stock</button>
+                        )}
+                        <button type="button" className="bls-btn is-ghost is-small" onClick={() => setEditing(item)} aria-label={`Edit ${item.name}`}><FiEdit2 /> Edit</button>
+                      </div>
                     </li>
                   );
                 })}
@@ -506,6 +630,7 @@ const LocalInventory = () => {
       </div>
 
       {selected && <AdjustSheet item={selected} onClose={() => setSelected(null)} onSaved={onSaved} />}
+      {editing && <EditProductSheet item={editing} pairedToProfile={business === 'business_profile'} onClose={() => setEditing(null)} onSaved={onProductSaved} />}
       {adding && <AddProductSheet pairedToProfile={business === 'business_profile'} onClose={() => setAdding(false)} onAdded={onAdded} />}
 
       {notice && (

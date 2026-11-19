@@ -71,13 +71,13 @@ const LocalHome = () => {
           <div className="bls-card-head">
             <div>
               <h2>What you can do here</h2>
-              <p>{isLite ? 'Lite keeps local product additions and cash sales available over the business Wi-Fi.' : 'These tools work on this server, over the business Wi-Fi.'}</p>
+              <p>{isLite ? 'Lite keeps product edits, stock corrections, and cash sales available over the business Wi-Fi.' : 'These tools work on this server, over the business Wi-Fi.'}</p>
             </div>
           </div>
           <div className="bls-body">
             <div className="bls-tiles">
               <Tile to="/cashier-portal" icon={FiShoppingCart} title="Cashier station" tag="Cash sales" text="Build a basket from this store’s local catalog and record cash sales." />
-              {isAdmin && <Tile to="/local-inventory" icon={FiPackage} title={isLite ? 'Add products' : 'Inventory'} text={isLite ? 'Add products to this store’s own catalog. The local server does not search other stores.' : 'Add products and manage this store’s local stock.'} />}
+              {isAdmin && <Tile to="/local-inventory" icon={FiPackage} title="Products & inventory" text="Add and edit products, then review stock or record a reasoned stock change." />}
               {isAdmin && <Tile to="/local-staff" icon={FiUsers} title="Manage local staff" text="Create Admin or Cashier accounts, hand over their PINs, and disable accounts." />}
               {isAdmin && <Tile to="/business-local-server" icon={FiMonitor} title="Server settings" text="This server’s status and how phones and tablets connect." />}
             </div>

@@ -35,7 +35,9 @@ $migrationFiles = @(
   # Cloud stock correction migration: lets Admin changes made on a server reach cloud inventory
   'ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql',
   # Shared local cash receipts, stock deduction, and cloud transaction sync
-  'ADD_BUSINESS_LOCAL_CASH_SALES.sql'
+  'ADD_BUSINESS_LOCAL_CASH_SALES.sql',
+  # Product detail edits made by local Admins sync back to the paired store
+  'ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql'
 )
 foreach ($migrationFile in $migrationFiles) {
   $migrationPath = Join-Path $projectRoot "backend\database\migrations\$migrationFile"

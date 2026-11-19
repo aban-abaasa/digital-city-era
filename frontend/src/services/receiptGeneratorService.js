@@ -14,6 +14,7 @@ const FALLBACK_COMPANY_INFO = {
   motto: 'Thank you for shopping with us.',
   logoUrl: null
 };
+let activeReceiptPrintWindow = null;
 class ReceiptService {
   constructor() {
     this._companyInfoPromise = null;
@@ -717,20 +718,53 @@ class ReceiptService {
   }
   // Print receipt (browser print)
   async printReceipt(saleData) {
-    const htmlContent = await this.generateEmailReceipt(saleData);
+    if (activeReceiptPrintWindow && !activeReceiptPrintWindow.closed) {
+      return { success: true, message: 'The receipt print dialog is already open.' };
+    }
     const printWindow = window.open('', '_blank');
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
+    if (!printWindow) throw new Error('Allow pop-ups for this site to print the receipt.');
+
+    activeReceiptPrintWindow = printWindow;
+    let printStarted = false;
+    let released = false;
+    let loadFallback = null;
+    let releaseFallback = null;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (loadFallback) window.clearTimeout(loadFallback);
+      if (releaseFallback) window.clearTimeout(releaseFallback);
+      printWindow.removeEventListener('afterprint', release);
+      if (activeReceiptPrintWindow === printWindow) activeReceiptPrintWindow = null;
+      if (!printWindow.closed) printWindow.close();
     };
-    
-    return {
-      success: true,
-      message: 'Print dialog opened successfully!'
+    const printOnce = () => {
+      if (printStarted || released || printWindow.closed) return;
+      printStarted = true;
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch (error) {
+        release();
+        console.error('Could not start receipt printing:', error);
+      }
     };
+
+    try {
+      const htmlContent = await this.generateEmailReceipt(saleData);
+      printWindow.addEventListener('load', printOnce, { once: true });
+      printWindow.addEventListener('afterprint', release, { once: true });
+      loadFallback = window.setTimeout(printOnce, 3000);
+      releaseFallback = window.setTimeout(release, 120_000);
+      printWindow.document.open();
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      if (printWindow.document.readyState === 'complete') window.setTimeout(printOnce, 0);
+      return { success: true, message: 'Print dialog opened successfully!' };
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 }
 export default new ReceiptService();

@@ -38,7 +38,7 @@ const unwrap = (data, error, fallback) => {
 export async function listInventory() {
   const { data, error } = await supabase
     .from('business_local_catalog')
-    .select('product_id,name,sku,barcode,selling_price,current_stock,minimum_stock,reorder_point,inventory_mode,stock_updated_at')
+    .select('product_id,name,sku,barcode,selling_price,tax_rate,current_stock,minimum_stock,reorder_point,inventory_mode,stock_updated_at')
     .eq('is_active', true)
     .order('name', { ascending: true })
     .limit(5000);
@@ -72,6 +72,20 @@ export async function addProduct({ name, sellingPrice, sku, barcode, taxRate, in
     p_reorder_point: reorderPoint,
   });
   return unwrap(data, error, 'Could not add the product.');
+}
+
+export async function updateProduct({ productId, name, sellingPrice, sku, barcode, taxRate, minimumStock, reorderPoint }) {
+  const { data, error } = await supabase.rpc('business_local_update_product', {
+    p_product_id: productId,
+    p_name: name,
+    p_selling_price: sellingPrice,
+    p_sku: sku || null,
+    p_barcode: barcode || null,
+    p_tax_rate: taxRate,
+    p_minimum_stock: minimumStock,
+    p_reorder_point: reorderPoint,
+  });
+  return unwrap(data, error, 'Could not update the product.');
 }
 
 export async function adjustStock({ productId, mode, quantity, reason, note }) {

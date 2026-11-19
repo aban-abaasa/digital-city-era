@@ -18,7 +18,7 @@ const installerDownloads = [
   {
     href: '/downloads/business-local-server-2gb-ram-lite-20gb-disk.zip',
     title: '2 GB RAM Lite · 20 GB disk',
-    description: 'Low-disk package · local products and cash sales',
+    description: 'Low-disk package · product edits, stock, and cash sales',
   },
   {
     href: '/downloads/business-local-server-2gb-ram-lite-40gb-disk.zip',
@@ -28,7 +28,7 @@ const installerDownloads = [
   {
     href: '/downloads/business-local-server-4gb-ram-full-40gb-disk.zip',
     title: '4 GB RAM Full · 40 GB disk',
-    description: 'Full services · team chat and stock corrections',
+    description: 'Full services · team chat, product edits, and stock',
   },
 ];
 
@@ -89,6 +89,7 @@ const BusinessLocalServerSetup = () => {
           && Number(protocol?.teamHistoryBootstrapVersion) >= 1
           && Number(protocol?.catalogBootstrapVersion) >= 1
           && Number(protocol?.cashSalesSyncVersion) >= 1
+          && Number(protocol?.productEditingSyncVersion) >= 1
         );
       } catch (requestError) {
         if (cancelled) return;
@@ -220,7 +221,7 @@ const BusinessLocalServerSetup = () => {
               </div>
             </div>
             <div className="bls-body">
-              <p>This local server can add products from this store’s own catalog and complete cash sales on its local database, reduce local stock, print receipts, and sync sale records to the cloud when internet returns. It does not search other stores’ product names. The server’s selected access mode determines whether only this computer or other trusted LAN devices can connect. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
+              <p>This local server can add and edit products from this store’s own catalog, record stock changes, and complete cash sales on its local database. Sales reduce stock, print named receipts, remain in transaction history after shutdown, and sync to the cloud when internet returns. It does not search other stores’ product names. The server’s selected access mode determines whether only this computer or other trusted LAN devices can connect. Digital City Era enables cloud sync once for the platform; contact support if it is unavailable. You do not need to run SQL. Other app workflows remain online-only.</p>
               <div>
                 {localStaffSession ? (
                   <Link to={['owner', 'admin'].includes(localStaffSession.user.localRole) ? '/local-staff' : '/cashier-portal'} className="bls-btn">
