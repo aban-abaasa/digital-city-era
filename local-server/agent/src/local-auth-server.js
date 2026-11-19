@@ -160,6 +160,7 @@ const server = createServer(async (request, response) => {
         p_username: body.username,
         p_display_name: body.displayName,
         p_pin: body.pin,
+        p_store_name: body.storeName,
       }, localServiceKey);
       if (!result?.success || !result.staff) {
         sendJson(response, 409, { success: false, error: result?.error || 'Owner setup could not be completed.' });

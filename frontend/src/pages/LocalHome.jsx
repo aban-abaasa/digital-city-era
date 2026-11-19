@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiLogOut, FiMonitor, FiPackage, FiServer, FiShoppingCart, FiUsers } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, supabaseConfig } from '../services/supabase';
+import useSupermarketBranding from '../hooks/useSupermarketBranding';
 import './BusinessLocalServerSetup.css';
 
 // What this business server can do today, and what still needs the cloud app.
@@ -25,6 +26,7 @@ const Tile = ({ to, icon: Icon, title, text, tag }) => (
 
 const LocalHome = () => {
   const { user, logout } = useAuth();
+  const branding = useSupermarketBranding();
   const navigate = useNavigate();
   const [catalogCount, setCatalogCount] = useState(undefined); // undefined = loading, null = could not read
 
@@ -56,7 +58,7 @@ const LocalHome = () => {
     <main className="bls-page">
       <div className="bls is-wide">
         <header className="bls-hero">
-          <p className="bls-eyebrow">Business LAN server</p>
+          <p className="bls-eyebrow">{branding?.name || 'Business LAN server'}</p>
           <h1>Welcome{name ? `, ${name}` : ''}</h1>
               <p className="bls-lead">You are signed in to this business server as <strong>{roleLabel}</strong>{isLite ? ' on the Lite setup.' : '.'} It keeps working when the internet is down.</p>
           <div className="bls-stats">

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'supermartkera-v5';
+const CACHE_NAME = 'supermartkera-v6';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/images/supermarketera-apk.jpg', '/icons/supermarketera-192.png', '/icons/supermarketera-512.png'];
 
 // How long a same-origin request may wait on the network before falling back

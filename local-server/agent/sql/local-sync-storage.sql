@@ -401,7 +401,8 @@ CREATE OR REPLACE FUNCTION public.business_local_bootstrap_owner(
   p_business_id UUID,
   p_username TEXT,
   p_display_name TEXT,
-  p_pin TEXT
+  p_pin TEXT,
+  p_store_name TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -417,6 +418,7 @@ BEGIN
   IF p_business_id IS NULL
      OR COALESCE(trim(p_username), '') !~ '^[A-Za-z0-9._-]{3,64}$'
      OR length(trim(COALESCE(p_display_name, ''))) NOT BETWEEN 1 AND 120
+     OR length(trim(COALESCE(p_store_name, ''))) NOT BETWEEN 1 AND 120
      OR COALESCE(p_pin, '') !~ '^[0-9]{6,12}$' THEN
     RETURN jsonb_build_object('success', false, 'error', 'Enter a valid username, display name, and 6–12 digit PIN.');
   END IF;
@@ -436,6 +438,11 @@ BEGIN
     extensions.crypt(p_pin, extensions.gen_salt('bf', 10))
   ) RETURNING * INTO v_staff;
 
+  INSERT INTO public.business_local_sync_meta (key, value, updated_at)
+  VALUES ('store_name', trim(p_store_name), now())
+  ON CONFLICT (key) DO UPDATE
+  SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;
+
   RETURN jsonb_build_object('success', true, 'staff', jsonb_build_object(
     'id', v_staff.id, 'businessId', v_staff.business_id,
     'username', v_staff.username, 'displayName', v_staff.display_name,
@@ -443,6 +450,33 @@ BEGIN
   ));
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION public.business_local_get_store_profile()
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT := auth.jwt()->'app_metadata'->>'local_role';
+  v_business_id UUID := NULLIF(auth.jwt()->'app_metadata'->>'business_id', '')::UUID;
+  v_store_name TEXT;
+BEGIN
+  IF auth.uid() IS NULL OR v_business_id IS NULL OR v_role NOT IN ('owner', 'admin', 'cashier') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Sign in to this local server to load its store name.');
+  END IF;
+
+  SELECT value INTO v_store_name
+  FROM public.business_local_sync_meta
+  WHERE key = 'store_name';
+
+  RETURN jsonb_build_object('success', true, 'storeName', COALESCE(NULLIF(trim(v_store_name), ''), 'Your Store'));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.business_local_get_store_profile() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.business_local_get_store_profile() TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.business_local_authenticate_staff(
   p_business_id UUID,
@@ -614,12 +648,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.business_local_bootstrap_owner(UUID, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+DROP FUNCTION IF EXISTS public.business_local_bootstrap_owner(UUID, TEXT, TEXT, TEXT);
+REVOKE ALL ON FUNCTION public.business_local_bootstrap_owner(UUID, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.business_local_authenticate_staff(UUID, TEXT, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.business_local_list_staff() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.business_local_create_staff(TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.business_local_set_staff_active(UUID, BOOLEAN) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.business_local_bootstrap_owner(UUID, TEXT, TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.business_local_bootstrap_owner(UUID, TEXT, TEXT, TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.business_local_authenticate_staff(UUID, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.business_local_list_staff() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.business_local_create_staff(TEXT, TEXT, TEXT, TEXT) TO authenticated;

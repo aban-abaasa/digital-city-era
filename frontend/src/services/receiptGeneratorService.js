@@ -1,10 +1,11 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { supabase } from './supabase';
+import { supabase, supabaseConfig } from './supabase';
 import inventoryService from './inventorySupabaseService';
 import { getPublicBusinessPageUrl } from '../utils/publicBusinessUrl';
 import { getTaxTreatmentLabel } from '../utils/taxPricing';
+import { getLocalStoreName } from './localBusinessSettingsService';
 const FALLBACK_COMPANY_INFO = {
   name: 'Your Supermarket',
   address: '',
@@ -26,6 +27,10 @@ class ReceiptService {
     if (this._companyInfoPromise) return this._companyInfoPromise;
     this._companyInfoPromise = (async () => {
       try {
+        if (supabaseConfig.localBusinessServer) {
+          return { ...FALLBACK_COMPANY_INFO, name: await getLocalStoreName() };
+        }
+
         const supermarketId = await inventoryService.getCurrentSupermarketId();
         if (!supermarketId) return FALLBACK_COMPANY_INFO;
         const { data: supermarket, error } = await supabase

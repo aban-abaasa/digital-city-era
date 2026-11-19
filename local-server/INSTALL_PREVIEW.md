@@ -24,7 +24,8 @@ edit product details and adjust stock in both editions. Full also queues local
 team messages; Lite leaves team chat and optional services stopped. Purchasing,
 ICAN, BodaGoEra, attachments, and other offline
 workflows are not enabled. Local accounts use only **Admin** and **Cashier**
-roles; the first setup account is an Admin. Wallet payments and invoice/bill-later
+roles; the first setup account is an Admin and enters the store name that
+appears on local receipts. Wallet payments and invoice/bill-later
 sales require the cloud app.
 
 ## Requirements

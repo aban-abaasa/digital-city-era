@@ -183,7 +183,8 @@ Official references:
    selected, devices on the same trusted LAN open the reserved server address
    at port 8080. The Admin uses the setup code once, creates local PIN
    accounts, then each worker signs in locally. The local database validates
-   staff identity for local operations.
+   staff identity for local operations. At first setup, the Admin also enters
+   the store name used on local receipts.
 7. When internet returns, the agent syncs supported local catalog, stock,
    cash-sale, and (in Full) team-message events for the paired business.
    Unsupported event types are quarantined.

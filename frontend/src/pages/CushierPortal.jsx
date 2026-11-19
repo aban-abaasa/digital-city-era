@@ -4043,6 +4043,7 @@ const CashierPortal = () => {
         <Receipt
           transaction={{}}
           receiptData={receiptData}
+          supermarketBranding={branding}
           onClose={() => {
             setShowReceiptModal(false);
             setReceiptData(null);

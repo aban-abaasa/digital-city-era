@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../services/supabase';
+import { supabase, supabaseConfig } from '../services/supabase';
 import inventoryService from '../services/inventorySupabaseService';
+import { getLocalStoreName } from '../services/localBusinessSettingsService';
 import { getPublicBusinessPageUrl } from '../utils/publicBusinessUrl';
 
 const FALLBACK_NAME = 'Your Supermarket';
@@ -35,6 +36,14 @@ export const useSupermarketBranding = () => {
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      if (supabaseConfig.localBusinessServer) {
+        const storeName = await getLocalStoreName();
+        setSupermarket({ name: storeName, business_type: supabaseConfig.businessType || 'supermarket' });
+        setBusinessProfile(null);
+        setPublicWebsiteUrl(window.location.origin);
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setSupermarket(null);

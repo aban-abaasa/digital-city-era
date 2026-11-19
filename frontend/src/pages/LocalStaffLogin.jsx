@@ -24,6 +24,7 @@ const LocalStaffLogin = () => {
   const [setupMode, setSetupMode] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [storeName, setStoreName] = useState('');
   const [pin, setPin] = useState('');
   const [pinAgain, setPinAgain] = useState('');
   const [setupToken, setSetupToken] = useState('');
@@ -48,8 +49,9 @@ const LocalStaffLogin = () => {
   const pinsMatch = pin.length > 0 && pin === pinAgain;
   const pinIsCommon = COMMON_PINS.has(pin);
   const setupReady = useMemo(
-    () => codeLooksRight && displayName.trim().length > 0 && USERNAME_OK.test(username.trim()) && pinLengthOk && pinsMatch,
-    [codeLooksRight, displayName, username, pinLengthOk, pinsMatch],
+    () => codeLooksRight && storeName.trim().length > 0 && storeName.trim().length <= 120
+      && displayName.trim().length > 0 && USERNAME_OK.test(username.trim()) && pinLengthOk && pinsMatch,
+    [codeLooksRight, storeName, displayName, username, pinLengthOk, pinsMatch],
   );
 
   if (!supabaseConfig.localBusinessServer) return <Navigate to="/login" replace />;
@@ -65,7 +67,7 @@ const LocalStaffLogin = () => {
     setError('');
     setWorking(true);
     try {
-      if (setupMode) await bootstrapLocalOwner({ setupToken, username: username.trim(), displayName: displayName.trim(), pin });
+      if (setupMode) await bootstrapLocalOwner({ setupToken, username: username.trim(), displayName: displayName.trim(), pin, storeName: storeName.trim() });
       else await signInLocalStaff({ username: username.trim(), pin });
       const requestedPath = location.state?.from?.pathname;
       const destination = !setupMode && requestedPath && requestedPath.startsWith('/') && !requestedPath.startsWith('//')
@@ -138,6 +140,10 @@ const LocalStaffLogin = () => {
                       </div>
                     </details>
                     <div className="bls-field">
+                      <label htmlFor="ls-store-name">Store name<small>printed on receipts</small></label>
+                      <input id="ls-store-name" className="bls-input" value={storeName} onChange={(event) => setStoreName(event.target.value)} autoComplete="organization" maxLength={120} placeholder="Enter your store name" required />
+                    </div>
+                    <div className="bls-field">
                       <label htmlFor="ls-name">Your name<small>shown to staff</small></label>
                       <input id="ls-name" className="bls-input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" maxLength={120} required />
                     </div>
@@ -163,6 +169,7 @@ const LocalStaffLogin = () => {
                     <PinInput id="ls-pin2" label="Type the PIN again" value={pinAgain} onChange={setPinAgain} autoComplete="new-password" />
                     <ul className="bls-checks" aria-label="Checklist">
                       <Check ok={codeLooksRight}>Setup code is 64 letters and numbers</Check>
+                      <Check ok={storeName.trim().length > 0 && storeName.trim().length <= 120}>Store name is entered</Check>
                       <Check ok={USERNAME_OK.test(username.trim())}>Username is 3+ letters, numbers or . _ -</Check>
                       <Check ok={pinLengthOk}>PIN is 6 to 12 digits</Check>
                       <Check ok={pinsMatch}>Both PINs match</Check>

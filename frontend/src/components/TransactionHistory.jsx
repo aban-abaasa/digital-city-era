@@ -1129,6 +1129,7 @@ ${branding?.publicWebsiteUrl || ''}
         <Receipt
           transaction={{}}
           receiptData={selectedTransaction}
+          supermarketBranding={branding}
           onClose={() => setShowReceipt(false)}
         />
       )}

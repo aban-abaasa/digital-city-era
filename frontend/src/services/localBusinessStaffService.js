@@ -75,8 +75,8 @@ export function signInLocalStaff({ username, pin }) {
   return postLocalAuth('login', { username, pin });
 }
 
-export function bootstrapLocalOwner({ setupToken, username, displayName, pin }) {
-  return postLocalAuth('bootstrap-owner', { setupToken, username, displayName, pin });
+export function bootstrapLocalOwner({ setupToken, username, displayName, pin, storeName }) {
+  return postLocalAuth('bootstrap-owner', { setupToken, username, displayName, pin, storeName });
 }
 
 export async function listLocalStaff() {
