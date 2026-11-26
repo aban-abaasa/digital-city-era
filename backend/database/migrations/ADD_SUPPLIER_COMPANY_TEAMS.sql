@@ -93,6 +93,23 @@ $$;
 REVOKE ALL ON FUNCTION public.get_supplier_company_staff_candidates_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_supplier_company_staff_candidates_v1(UUID) TO authenticated;
 
+-- A manager is also a supplier identity in the shared order and catalog
+-- workflow. Create supplier profiles for existing managers that do not yet
+-- have one, using the supply company's display name.
+INSERT INTO public.suppliers (user_id, company_name)
+SELECT DISTINCT ON (manager.user_id) manager.user_id,
+       COALESCE(NULLIF(company.company_name, ''), NULLIF(person.full_name, ''), 'Supplier company')
+FROM public.supplier_company_members manager
+JOIN public.suppliers company ON company.id = manager.company_supplier_id
+JOIN public.users person ON person.id = manager.user_id
+WHERE manager.role = 'manager'
+  AND manager.status = 'active'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.suppliers existing
+    WHERE existing.user_id = manager.user_id
+  )
+ORDER BY manager.user_id, manager.created_at;
+
 CREATE OR REPLACE FUNCTION public.guard_supplier_company_member_manager_v1()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -207,7 +224,7 @@ BEGIN
       INTO v_supplier_user_ids
     FROM public.supplier_company_members member
     WHERE member.company_supplier_id = p_company_supplier_id
-      AND member.role = 'supplier'
+      AND member.role IN ('manager', 'supplier')
       AND member.status = 'active';
 
     SELECT array_append(v_supplier_user_ids, company.user_id)
@@ -232,6 +249,7 @@ BEGIN
         AND member.manager_user_id = v_user_id
         AND member.role = 'supplier'
         AND member.status = 'active';
+      v_supplier_user_ids := array_append(v_supplier_user_ids, v_user_id);
     ELSE
       v_supplier_user_ids := ARRAY[v_user_id];
     END IF;

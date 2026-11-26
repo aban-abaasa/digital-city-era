@@ -29,7 +29,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
   const [expandedWorkers, setExpandedWorkers] = useState({});
   const [selectedStoreId, setSelectedStoreId] = useState(null);
   const [assigningWorker, setAssigningWorker] = useState('');
-  const [assignToManager, setAssignToManager] = useState('');
+  const [supplierManagerAssignments, setSupplierManagerAssignments] = useState({});
   const [notice, setNotice] = useState('');
   const [showOrders, setShowOrders] = useState(false);
 
@@ -89,7 +89,11 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
       let stock = [];
       let orders = [];
 
-      const companySupplierUserIds = isAdmin ? idSet(user.id, user.auth_id) : [];
+      const companySupplierUserIds = idSet(
+        isAdmin ? [user.id, user.auth_id] : [],
+        isAdmin || isManager ? managerRows.flatMap((manager) => [manager.id, manager.auth_id]) : [],
+        isManager ? [user.id, user.auth_id] : []
+      );
       const linkedUserIds = idSet(workerIds, companySupplierUserIds);
 
       if (linkedUserIds.length) {
@@ -129,7 +133,8 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
             .select('id, name, sku, category, supplier_id, supermarket_id, is_active').in('supplier_id', supplierProfileIds).order('name');
           products = (catalogRows || []).map((product) => {
             const profile = supplierProfiles.find((item) => item.id === product.supplier_id);
-            const owner = workerRows.find((worker) => profile && (worker.id === profile.user_id || worker.auth_id === profile.user_id));
+            const profileOwners = [...workerRows, ...managerRows, ...(isAdmin ? [{ ...user, full_name: companyName || user.full_name || 'Company account' }] : [])];
+            const owner = profileOwners.find((worker) => profile && (worker.id === profile.user_id || worker.auth_id === profile.user_id));
             return {
               ...product,
               supplier_user_id: owner?.id || profile?.user_id
@@ -140,7 +145,6 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
       }
 
       setData({ managers: managerRows, workers: workerRows, applications, stores, products, stock, orders });
-      if (isAdmin && managerRows.length === 1) setAssignToManager(managerRows[0].id);
       if (role === 'supplier' && workerRows[0]) {
         setExpandedWorkers({ [workerRows[0].id]: true });
         setExpandedManagers(workerRows[0].company_manager_user_id ? { [workerRows[0].company_manager_user_id]: true } : {});
@@ -179,19 +183,20 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
   const storesById = useMemo(() => new Map(data.stores.map((store) => [store.id, store])), [data.stores]);
   const workerById = useMemo(() => {
-    const rows = data.workers.flatMap((worker) => [[worker.id, worker], ...(worker.auth_id ? [[worker.auth_id, worker]] : [])]);
+    const supplierRows = [...data.workers, ...data.managers];
+    const rows = supplierRows.flatMap((worker) => [[worker.id, worker], ...(worker.auth_id ? [[worker.auth_id, worker]] : [])]);
     if (isAdmin) {
       const companyAccount = { ...user, full_name: companyName || user.full_name || 'Company account' };
       rows.push([user.id, companyAccount]);
       if (user.auth_id) rows.push([user.auth_id, companyAccount]);
     }
     return new Map(rows);
-  }, [data.workers, isAdmin, user, companyName]);
+  }, [data.workers, data.managers, isAdmin, user, companyName]);
   const managerById = useMemo(() => new Map(data.managers.flatMap((manager) => [[manager.id, manager], ...(manager.auth_id ? [[manager.auth_id, manager]] : [])])), [data.managers]);
 
   const workerStats = useMemo(() => {
     const map = new Map();
-    data.workers.forEach((worker) => map.set(worker.id, { orders: 0, fulfilled: 0, units: 0, volume: 0, pending: 0 }));
+    [...data.workers, ...data.managers].forEach((worker) => map.set(worker.id, { orders: 0, fulfilled: 0, units: 0, volume: 0, pending: 0 }));
     data.orders.forEach((order) => {
       const worker = workerById.get(order.supplier_id);
       if (!worker) return;
@@ -205,17 +210,25 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
       map.set(worker.id, stats);
     });
     return map;
-  }, [data.orders, data.workers, workerById]);
+  }, [data.orders, data.workers, data.managers, workerById]);
 
   const managerStats = useMemo(() => {
     const map = new Map();
-    data.managers.forEach((manager) => map.set(manager.id, { workers: 0, fulfilled: 0, units: 0, pending: 0 }));
+    data.managers.forEach((manager) => {
+      const ownSupply = workerStats.get(manager.id) || {};
+      map.set(manager.id, {
+        suppliers: 1,
+        fulfilled: ownSupply.fulfilled || 0,
+        units: ownSupply.units || 0,
+        pending: ownSupply.pending || 0
+      });
+    });
     data.workers.forEach((worker) => {
       const manager = managerById.get(worker.company_manager_user_id);
       if (!manager) return;
-      const stats = map.get(manager.id) || { workers: 0, fulfilled: 0, units: 0, pending: 0 };
+      const stats = map.get(manager.id) || { suppliers: 1, fulfilled: 0, units: 0, pending: 0 };
       const workerPerf = workerStats.get(worker.id) || {};
-      stats.workers += 1;
+      stats.suppliers += 1;
       stats.fulfilled += workerPerf.fulfilled || 0;
       stats.units += workerPerf.units || 0;
       stats.pending += workerPerf.pending || 0;
@@ -239,7 +252,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
   const pendingOrders = data.orders.filter((order) => ORDER_OPEN.has(normalise(order.status)));
   const fulfilledOrders = data.orders.filter((order) => ORDER_DONE.has(normalise(order.status)));
-  const topWorker = [...data.workers].sort((a, b) => (workerStats.get(b.id)?.units || 0) - (workerStats.get(a.id)?.units || 0)).find((worker) => (workerStats.get(worker.id)?.units || 0) > 0);
+  const topWorker = [...data.workers, ...data.managers].sort((a, b) => (workerStats.get(b.id)?.units || 0) - (workerStats.get(a.id)?.units || 0)).find((worker) => (workerStats.get(worker.id)?.units || 0) > 0);
   const topManager = [...data.managers].sort((a, b) => (managerStats.get(b.id)?.units || 0) - (managerStats.get(a.id)?.units || 0)).find((manager) => (managerStats.get(manager.id)?.units || 0) > 0);
   const topProduct = movingProducts[0];
 
@@ -266,22 +279,22 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     setAssigningWorker('');
   };
 
-  const addTeamMember = async (person, teamRole) => {
+  const addTeamMember = async (person, teamRole, managerUserId = '') => {
     setAssigningWorker(person.id);
     setNotice('');
     const { data: updated, error } = await supabase.from('supplier_company_members').upsert({
       company_supplier_id: user.supplier_company_id,
       user_id: person.id,
       role: teamRole,
-      manager_user_id: teamRole === 'supplier' ? assignToManager || null : null,
+      manager_user_id: teamRole === 'supplier' ? managerUserId || null : null,
       status: 'active',
       created_by: user.id
     }, { onConflict: 'company_supplier_id,user_id' }).select('id').maybeSingle();
     if (error || !updated) {
       setNotice(error?.message || 'Could not add this person to the supply team.');
     } else {
-      let resultMessage = `${person.full_name || person.email} added as ${teamRole === 'supplier' ? 'a supplier worker' : 'a manager'}.`;
-      if (teamRole === 'supplier') {
+      let resultMessage = `${person.full_name || person.email} added as ${teamRole === 'supplier' ? 'a supplier worker' : 'a manager and supplier'}.`;
+      if (teamRole === 'supplier' || teamRole === 'manager') {
         const { data: existingSupplier, error: profileLookupError } = await supabase.from('suppliers')
           .select('id').in('user_id', idSet(person.id, person.auth_id)).limit(1).maybeSingle();
         if (profileLookupError) resultMessage += ` Supplier profile setup needs attention: ${profileLookupError.message}`;
@@ -316,7 +329,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
       <article className="scw-worker" key={worker.id}>
         <button className="scw-row scw-worker-row" onClick={() => setExpandedWorkers((current) => ({ ...current, [worker.id]: !current[worker.id] }))} aria-expanded={isExpanded}>
           <span className="scw-avatar worker-avatar">{(worker.full_name || 'S').slice(0, 1).toUpperCase()}</span>
-          <span className="scw-row-main"><b>{worker.full_name || 'Supplier worker'}</b><small>{worker.email || worker.phone || 'Contact details not added'}</small></span>
+          <span className="scw-row-main"><b>{worker.is_manager_supplier ? `${worker.full_name || 'Supply manager'} · also supplies` : worker.full_name || 'Supplier worker'}</b><small>{worker.email || worker.phone || 'Contact details not added'}</small></span>
           <span className="scw-row-stat"><b>{workerStores.length}</b><small>stores served</small></span>
           <span className="scw-row-stat"><b>{stats.units || 0}</b><small>units supplied</small></span>
           <span className={`scw-status ${worker.company_member_status === 'active' ? 'active' : 'review'}`}>{worker.company_member_status === 'active' ? 'Active' : 'Inactive'}</span>
@@ -352,19 +365,21 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
   const renderManager = (manager) => {
     const managerIds = idSet(manager.id, manager.auth_id);
-    const team = filteredWorkers.filter((worker) => managerIds.includes(worker.company_manager_user_id));
+    const assignedWorkers = filteredWorkers.filter((worker) => managerIds.includes(worker.company_manager_user_id));
+    const managerSupplier = { ...manager, company_manager_user_id: manager.id, company_member_status: 'active', is_manager_supplier: true };
+    const team = [managerSupplier, ...assignedWorkers];
     const stats = managerStats.get(manager.id) || {};
     const open = expandedManagers[manager.id] !== false;
     return <section className="scw-manager" key={manager.id}>
       <button className="scw-row scw-manager-row" onClick={() => setExpandedManagers((current) => ({ ...current, [manager.id]: current[manager.id] === false }))} aria-expanded={open}>
         <span className="scw-avatar manager-avatar"><FiUsers /></span>
         <span className="scw-row-main"><b>{manager.full_name || 'Supply manager'}</b><small>{manager.email || 'Manager'}{manager.phone ? ` · ${manager.phone}` : ''}</small></span>
-        <span className="scw-row-stat"><b>{team.length}</b><small>workers</small></span>
+        <span className="scw-row-stat"><b>{stats.suppliers || team.length}</b><small>supplier profiles</small></span>
         <span className="scw-row-stat"><b>{stats.units || 0}</b><small>units supplied</small></span>
         <span className="scw-status active">Active</span>
         {open ? <FiChevronDown /> : <FiChevronRight />}
       </button>
-      {open && <div className="scw-team-list">{team.length ? team.map(renderWorker) : <div className="scw-empty-inline">No supplier workers assigned to this manager yet.</div>}</div>}
+      {open && <div className="scw-team-list">{team.map(renderWorker)}{assignedWorkers.length === 0 && <div className="scw-empty-inline">Assign supplier workers to this manager to grow their team.</div>}</div>}
     </section>;
   };
 
@@ -411,7 +426,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     <header className="scw-hero">
       <div><span className="scw-kicker">Supply company · {isAdmin ? 'Admin workspace' : isManager ? 'Manager workspace' : 'Supplier workspace'}</span>
         <h2>{isAdmin ? 'Your supply team, at a glance' : isManager ? 'Your assigned supply team' : 'The stores you serve'}</h2>
-        <p>{isAdmin ? 'Organize managers and supplier workers, track store approvals, and spot what is moving.' : isManager ? 'Keep your supplier workers and the stores they serve moving together.' : 'See your store assignments, product approvals, order activity, and stock levels.'}</p>
+        <p>{isAdmin ? 'Organize managers and supplier workers, track store approvals, and spot what is moving.' : isManager ? 'Supply stores yourself and manage the supplier workers assigned to your area.' : 'See your store assignments, product approvals, order activity, and stock levels.'}</p>
       </div>
       <div className="scw-hero-actions">
         <button className="scw-button quiet" onClick={() => load(true)} disabled={refreshing}><FiRefreshCw className={refreshing ? 'scw-spin' : ''} /> Refresh</button>
@@ -422,7 +437,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
     {loading ? <div className="scw-loading"><FiRefreshCw className="scw-spin" /> Loading your supply network…</div> : <>
       <section className="scw-stats">
-        <Stat icon={<FiUsers />} label={isAdmin ? 'Managers' : 'Team members'} value={isAdmin ? data.managers.length : isManager ? data.workers.length : 1} note={isAdmin ? 'Supply areas covered' : isManager ? 'Assigned supplier workers' : 'Your supplier account'} />
+        <Stat icon={<FiUsers />} label={isAdmin ? 'Managers' : isManager ? 'Suppliers in your area' : 'Team members'} value={isAdmin ? data.managers.length : isManager ? data.workers.length + 1 : 1} note={isAdmin ? 'Supply areas covered' : isManager ? 'You and assigned supplier workers' : 'Your supplier account'} />
         <Stat icon={<FiShoppingBag />} label="Stores served" value={idSet(data.applications.map((item) => item.supermarket_id), data.orders.map((item) => item.supermarket_id)).length} note="Approved links and active orders" />
         <Stat icon={<FiPackage />} label="Open orders" value={pendingOrders.length} note="Across the visible team" tone={pendingOrders.length ? 'warm' : ''} />
         <Stat icon={<FiTruck />} label="Orders fulfilled" value={fulfilledOrders.length} note="Received or completed" tone="green" />
@@ -430,18 +445,17 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
       {isAdmin && <section className="scw-insights">
         <Insight eyebrow="Leading manager" name={topManager?.full_name || 'No manager activity yet'} detail={topManager ? `${managerStats.get(topManager.id)?.units || 0} units fulfilled by the team` : 'Fulfilled orders will build this ranking'} icon={<FiShield />} />
-        <Insight eyebrow="Top supplier worker" name={topWorker?.full_name || 'No supplier activity yet'} detail={topWorker ? `${workerStats.get(topWorker.id)?.units || 0} units fulfilled` : 'Completed orders will build this ranking'} icon={<FiTruck />} />
+        <Insight eyebrow="Top supplier" name={topWorker?.full_name || 'No supplier activity yet'} detail={topWorker ? `${workerStats.get(topWorker.id)?.units || 0} units fulfilled` : 'Completed orders will build this ranking'} icon={<FiTruck />} />
         <Insight eyebrow="Most supplied product" name={topProduct?.name || 'No product movement yet'} detail={topProduct ? `${topProduct.units} units in fulfilled orders` : 'Product quantities from fulfilled orders appear here'} icon={<FiActivity />} />
       </section>}
 
       {isAdmin && <section className="scw-card scw-add-team">
         <div className="scw-section-head scw-assign-users-head">
-          <div><span className="scw-kicker">Add to the supply company</span><h3><FiUserPlus /> Assign Manager or Supplier</h3><p>People create an account first. Search the registered users, then assign their supply role here.</p></div>
+          <div><span className="scw-kicker">Add to the supply company</span><h3><FiUserPlus /> Add managers and suppliers</h3><p>Managers can supply stores too. Choose a reporting manager on each supplier worker before adding them.</p></div>
           <button type="button" className="scw-button scw-users-refresh" onClick={loadPeople} disabled={searchingPeople}><FiRefreshCw className={searchingPeople ? 'scw-spin' : ''} /> Refresh</button>
         </div>
         <div className="scw-add-form">
           <label className="scw-search"><FiSearch /><input aria-label="Filter registered users by name or email" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Filter by name or email..." /></label>
-          <label className="scw-manager-select"><span>Supplier workers report to</span><select value={assignToManager} onChange={(event) => setAssignToManager(event.target.value)}><option value="">Leave unassigned</option>{data.managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.full_name || manager.email}</option>)}</select></label>
         </div>
         <div className="scw-candidate-list">
           {searchingPeople && peopleResults.length === 0 ? <div className="scw-empty-inline">Loading registered users…</div>
@@ -450,12 +464,14 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
                 const currentSupplyRole = data.managers.some((manager) => manager.id === person.id)
                   ? 'manager'
                   : data.workers.some((worker) => worker.id === person.id) ? 'supplier' : null;
+                const assignedManagerId = supplierManagerAssignments[person.id] ?? (data.managers.length === 1 ? data.managers[0].id : '');
                 return <div className="scw-candidate" key={person.id}>
                   <span className="scw-avatar worker-avatar">{(person.full_name || person.email || 'U').slice(0, 1).toUpperCase()}</span>
-                  <span className="scw-row-main"><b>{person.full_name || '(no name)'}</b><small>{person.email || person.phone || 'Contact details not added'}</small><span className="scw-user-role">Account role: {person.role || 'customer'}{currentSupplyRole ? ` · Supply ${currentSupplyRole}` : ''}</span></span>
+                  <span className="scw-row-main"><b>{person.full_name || '(no name)'}</b><small>{person.email || person.phone || 'Contact details not added'}</small><span className="scw-user-role">Account role: {person.role || 'customer'}{currentSupplyRole ? ` · Supply role: ${currentSupplyRole === 'manager' ? 'manager and supplier' : 'supplier'}` : ''}</span></span>
+                  {!currentSupplyRole && data.managers.length > 0 && <label className="scw-manager-select scw-candidate-manager"><span>Assign supplier to manager</span><select value={assignedManagerId} onChange={(event) => setSupplierManagerAssignments((current) => ({ ...current, [person.id]: event.target.value }))}><option value="">Unassigned</option>{data.managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.full_name || manager.email}</option>)}</select></label>}
                   <span className="scw-candidate-actions">
-                    <button type="button" className="scw-assign-button manager-assign" disabled={assigningWorker === person.id || currentSupplyRole === 'manager'} onClick={() => addTeamMember(person, 'manager')}>{currentSupplyRole === 'manager' ? 'Manager added' : 'Add manager'}</button>
-                    <button type="button" className="scw-assign-button supplier-assign" disabled={assigningWorker === person.id || currentSupplyRole === 'supplier'} onClick={() => addTeamMember(person, 'supplier')}>{currentSupplyRole === 'supplier' ? 'Supplier added' : 'Add supplier'}</button>
+                    <button type="button" className="scw-assign-button manager-assign" disabled={assigningWorker === person.id || currentSupplyRole === 'manager'} onClick={() => addTeamMember(person, 'manager')}>{currentSupplyRole === 'manager' ? 'Manager added' : 'Add manager + supplier'}</button>
+                    <button type="button" className="scw-assign-button supplier-assign" disabled={assigningWorker === person.id || Boolean(currentSupplyRole)} onClick={() => addTeamMember(person, 'supplier', assignedManagerId)}>{currentSupplyRole === 'manager' ? 'Supplier enabled' : currentSupplyRole === 'supplier' ? 'Supplier added' : 'Add supplier'}</button>
                   </span>
                 </div>;
               })}
@@ -463,7 +479,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
       </section>}
 
       <section className="scw-card">
-        <div className="scw-section-head"><div><span className="scw-kicker">People & coverage</span><h3>{isAdmin ? 'Managers and their supplier workers' : isManager ? 'Supplier workers assigned to you' : 'Your supply coverage'}</h3><p>Open a person, then open a store to see products and stock.</p></div>
+        <div className="scw-section-head"><div><span className="scw-kicker">People & coverage</span><h3>{isAdmin ? 'Managers and their suppliers' : isManager ? 'Your supply work and assigned suppliers' : 'Your supply coverage'}</h3><p>Open a person, then open a store to see products and stock.</p></div>
           <label className="scw-search"><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people" /></label>
         </div>
         {isAdmin ? <div className="scw-hierarchy">
@@ -472,7 +488,10 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
             <div className="scw-unassigned-head"><b>Unassigned supplier workers</b><span>{filteredWorkers.filter((worker) => !managerById.has(worker.company_manager_user_id)).length}</span></div>
             <div className="scw-team-list">{filteredWorkers.filter((worker) => !managerById.has(worker.company_manager_user_id)).map(renderWorker)}</div>
           </section>}
-        </div> : isManager ? <div className="scw-hierarchy">{filteredWorkers.length ? filteredWorkers.map(renderWorker) : <div className="scw-empty"><FiUsers /><b>No supplier workers assigned yet</b><span>Ask your company admin to assign supplier workers to your area.</span></div>}</div> : <div className="scw-hierarchy">{data.workers.map(renderWorker)}</div>}
+        </div> : isManager ? <div className="scw-hierarchy">{[
+          { ...user, company_manager_user_id: user.id, company_member_status: 'active', is_manager_supplier: true },
+          ...filteredWorkers
+        ].map(renderWorker)}</div> : <div className="scw-hierarchy">{data.workers.map(renderWorker)}</div>}
       </section>
 
       <section className="scw-lower-grid">

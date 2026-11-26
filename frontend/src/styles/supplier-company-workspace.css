@@ -77,6 +77,7 @@
 .scw-candidate:last-child { border-bottom: 0; }
 .scw-candidate .scw-row-main { gap: 4px; }
 .scw-user-role { align-self: flex-start; margin-top: 2px; padding: 2px 8px; border: 1px solid #e5dfd2; border-radius: 999px; color: #625f58; background: #f3f1ec; font-size: 10px; font-weight: 700; line-height: 1.4; text-transform: capitalize; }
+.scw-candidate-manager { flex: 0 1 200px; width: 200px; }
 .scw-candidate-actions { display: flex; flex: none; gap: 7px; margin-left: auto; }
 .scw-assign-button { min-height: 35px; padding: 0 11px; border: 1px solid #e3dccd; border-radius: 8px; font-size: 10px; font-weight: 800; white-space: nowrap; }
 .scw-assign-button.manager-assign { color: #fff; border-color: #485b4c; background: #485b4c; }
@@ -159,6 +160,9 @@
 @media (max-width: 900px) {
   .scw-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scw-insights { grid-template-columns: 1fr; }
+  .scw-candidate { flex-wrap: wrap; }
+  .scw-candidate .scw-row-main { flex-basis: calc(100% - 55px); }
+  .scw-candidate-manager { width: 200px; margin-left: 49px; }
 }
 @media (max-width: 640px) {
   .scw { gap: 12px; }
@@ -179,8 +183,9 @@
   .scw-assign-users-head .scw-users-refresh { align-self: flex-start; }
   .scw-candidate { flex-wrap: wrap; gap: 8px 10px; padding: 10px; }
   .scw-candidate .scw-row-main { flex-basis: calc(100% - 55px); }
+  .scw-candidate-manager { flex: 1 1 calc(100% - 49px); width: auto; margin-left: 49px; }
   .scw-candidate-actions { flex: 1 1 calc(100% - 49px); margin-left: 49px; }
-  .scw-assign-button { flex: 1 1 110px; }
+  .scw-assign-button { flex: 1 1 100%; white-space: normal; }
   .scw-candidate-list { max-height: 400px; }
   .scw-row-stat { display: none; }
   .scw-manager-row, .scw-worker-row { gap: 8px; padding: 9px; }
