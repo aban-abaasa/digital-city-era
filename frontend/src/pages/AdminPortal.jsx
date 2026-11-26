@@ -3245,7 +3245,7 @@ const AdminPortal = () => {
                   <FiRefreshCw className={`h-3 w-3 ${staffSearchLoading ? 'animate-spin' : ''}`} /> Refresh
                 </button>
               </div>
-              <p className="text-sm text-gray-500 mb-4">All signed-up users are shown below. Search to filter, then assign a role.</p>
+              <p className="text-sm text-gray-500 mb-4">Search by name or email to show matching accounts, then assign a role.</p>
 
               {/* Filter bar */}
               <div className="relative mb-3">
@@ -3269,8 +3269,13 @@ const AdminPortal = () => {
                 <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto"></div><p className="text-xs text-gray-400 mt-2">Loading users…</p></div>
               ) : (() => {
                 const q = staffSearchQuery.toLowerCase().trim();
+                if (!q) {
+                  return <div className="text-center py-8 text-gray-400">
+                    <FiSearch className="h-7 w-7 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Search for a name or email to show matching accounts.</p>
+                  </div>;
+                }
                 const filtered = staffSearchResults.filter(u =>
-                  !q ||
                   (u.full_name  || '').toLowerCase().includes(q) ||
                   (u.email      || '').toLowerCase().includes(q) ||
                   (u.phone      || '').toLowerCase().includes(q) ||
