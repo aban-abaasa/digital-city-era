@@ -153,10 +153,6 @@ const BusinessLocalServerSetup = () => {
 
   const createPairing = async () => {
     if (!selectedBusiness) return;
-    if (!protocolReady) {
-      setError('Digital City Era has not enabled offline server setup yet. Contact Digital City Era support; the one-time setup is handled for you.');
-      return;
-    }
     setWorking(true);
     setError('');
     setNotice('');
@@ -168,7 +164,11 @@ const BusinessLocalServerSetup = () => {
       setPairing(result);
       setNotice('Pairing code created. It can be used once and expires in 10 minutes.');
     } catch (requestError) {
-      setError(requestError.message || 'Could not create a pairing code.');
+      const details = String(requestError?.message || '');
+      const setupUnavailable = /business_local|businesslocal|schema cache|does not exist|function .* not found/i.test(details);
+      setError(setupUnavailable
+        ? 'The cloud pairing service is not available yet, so no code was created. Please try again later.'
+        : details || 'Could not create a pairing code.');
     } finally {
       setWorking(false);
     }
@@ -257,7 +257,7 @@ const BusinessLocalServerSetup = () => {
               ? 'Checking whether offline setup is available…'
               : protocolReady
                 ? 'Offline setup is ready for this business'
-                : 'Waiting for one-time platform setup'}
+                : 'Cloud sync setup is incomplete'}
           </span>
         </header>
 
@@ -364,7 +364,7 @@ const BusinessLocalServerSetup = () => {
               <button
                 type="button"
                 onClick={createPairing}
-                disabled={!selectedBusiness || working || checkingProtocol || !protocolReady}
+                disabled={!selectedBusiness || working}
                 className="bls-btn"
               >
                 <FiShield /> {working ? 'Working…' : 'Create one-time pairing code'}
