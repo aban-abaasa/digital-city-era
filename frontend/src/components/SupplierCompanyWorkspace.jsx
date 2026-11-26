@@ -16,6 +16,7 @@ const lineQty = (line) => Number(line?.quantity ?? line?.qty ?? line?.units ?? 0
 const lineName = (line) => line?.product_name || line?.name || line?.product?.name || 'Product';
 const lineProductId = (line) => line?.product_id || line?.product?.id || null;
 const statusLabel = (status) => String(status || 'pending').replaceAll('_', ' ');
+const managerName = (manager) => manager?.full_name?.trim() || manager?.email || manager?.phone || `Supply manager (${String(manager?.id || '').slice(0, 8)})`;
 
 const SupplierCompanyWorkspace = ({ user, companyName }) => {
   const [data, setData] = useState({ managers: [], workers: [], applications: [], stores: [], products: [], stock: [], orders: [] });
@@ -267,16 +268,24 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
   const assignWorker = async (workerId, managerId) => {
     setAssigningWorker(workerId);
     setNotice('');
-    const { data: updated, error } = await supabase.from('supplier_company_members')
-      .update({ manager_user_id: managerId || null })
-      .eq('company_supplier_id', user.supplier_company_id)
-      .eq('user_id', workerId)
-      .eq('role', 'supplier')
-      .select('id')
-      .maybeSingle();
-    if (error || !updated) setNotice(error?.message || 'This supplier worker could not be reassigned.');
-    else await load(true);
-    setAssigningWorker('');
+    try {
+      const { data: updated, error } = await supabase.from('supplier_company_members')
+        .update({ manager_user_id: managerId || null })
+        .eq('company_supplier_id', user.supplier_company_id)
+        .eq('user_id', workerId)
+        .eq('role', 'supplier')
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!updated) throw new Error('This supplier worker could not be reassigned.');
+      const manager = data.managers.find((item) => item.id === managerId);
+      setNotice(managerId ? `Supplier worker assigned to ${managerName(manager)}.` : 'Supplier worker is now unassigned.');
+      await load(true);
+    } catch (error) {
+      setNotice(error?.message || 'This supplier worker could not be reassigned.');
+    } finally {
+      setAssigningWorker('');
+    }
   };
 
   const addTeamMember = async (person, teamRole, managerUserId = '') => {
@@ -324,7 +333,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     const stats = workerStats.get(worker.id) || {};
     const workerStores = storesForWorker(worker);
     const isExpanded = Boolean(expandedWorkers[worker.id]);
-    const hasManager = Boolean(managerById.get(worker.company_manager_user_id));
+    const assignedManager = managerById.get(worker.company_manager_user_id);
     return (
       <article className="scw-worker" key={worker.id}>
         <button className="scw-row scw-worker-row" onClick={() => setExpandedWorkers((current) => ({ ...current, [worker.id]: !current[worker.id] }))} aria-expanded={isExpanded}>
@@ -338,9 +347,9 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
         {isExpanded && <div className="scw-worker-detail">
           <div className="scw-worker-tools">
             <div><span className="scw-kicker">Supplier worker</span><p>{stats.fulfilled || 0} fulfilled orders · {stats.pending || 0} awaiting action</p></div>
-            {isAdmin && <label className="scw-manager-select"><span>Assigned manager</span><select value={hasManager ? worker.company_manager_user_id : ''} onChange={(event) => assignWorker(worker.id, event.target.value)} disabled={assigningWorker === worker.id}>
+            {isAdmin && <label className="scw-manager-select"><span>Assigned manager</span><select aria-label={`Assign ${worker.full_name || 'supplier'} to a manager`} value={assignedManager?.id || ''} onChange={(event) => assignWorker(worker.id, event.target.value)} disabled={assigningWorker === worker.id || data.managers.length === 0}>
               <option value="">Unassigned</option>
-              {data.managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.full_name || manager.email}</option>)}
+              {data.managers.map((manager) => <option key={manager.id} value={manager.id}>{managerName(manager)}</option>)}
             </select></label>}
           </div>
           <div className="scw-store-list">
@@ -468,7 +477,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
                 return <div className="scw-candidate" key={person.id}>
                   <span className="scw-avatar worker-avatar">{(person.full_name || person.email || 'U').slice(0, 1).toUpperCase()}</span>
                   <span className="scw-row-main"><b>{person.full_name || '(no name)'}</b><small>{person.email || person.phone || 'Contact details not added'}</small><span className="scw-user-role">Account role: {person.role || 'customer'}{currentSupplyRole ? ` · Supply role: ${currentSupplyRole === 'manager' ? 'manager and supplier' : 'supplier'}` : ''}</span></span>
-                  {!currentSupplyRole && data.managers.length > 0 && <label className="scw-manager-select scw-candidate-manager"><span>Assign supplier to manager</span><select value={assignedManagerId} onChange={(event) => setSupplierManagerAssignments((current) => ({ ...current, [person.id]: event.target.value }))}><option value="">Unassigned</option>{data.managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.full_name || manager.email}</option>)}</select></label>}
+                  {!currentSupplyRole && data.managers.length > 0 && <label className="scw-manager-select scw-candidate-manager"><span>Assign supplier to manager</span><select aria-label={`Choose a manager for ${person.full_name || person.email || 'this supplier'}`} value={assignedManagerId} onChange={(event) => setSupplierManagerAssignments((current) => ({ ...current, [person.id]: event.target.value }))}><option value="">Unassigned</option>{data.managers.map((manager) => <option key={manager.id} value={manager.id}>{managerName(manager)}</option>)}</select></label>}
                   <span className="scw-candidate-actions">
                     <button type="button" className="scw-assign-button manager-assign" disabled={assigningWorker === person.id || currentSupplyRole === 'manager'} onClick={() => addTeamMember(person, 'manager')}>{currentSupplyRole === 'manager' ? 'Manager added' : 'Add manager + supplier'}</button>
                     <button type="button" className="scw-assign-button supplier-assign" disabled={assigningWorker === person.id || Boolean(currentSupplyRole)} onClick={() => addTeamMember(person, 'supplier', assignedManagerId)}>{currentSupplyRole === 'manager' ? 'Supplier enabled' : currentSupplyRole === 'supplier' ? 'Supplier added' : 'Add supplier'}</button>
