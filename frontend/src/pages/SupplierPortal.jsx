@@ -43,6 +43,7 @@ import PortalHeader from '../components/PortalHeader';
 import PortalTabNavigator from '../components/PortalTabNavigator';
 import { ROLE_HOME } from '../components/RoleProtectedRoute';
 import { SUPPLIER_CAPABLE_ROLES, getSupplierAccess } from '../utils/supplierAccess';
+import SupplierCompanyWorkspace from '../components/SupplierCompanyWorkspace';
 import '../styles/supermartkera-portals.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 
@@ -68,6 +69,7 @@ const SupplierPortal = () => {
     return () => { active = false; };
   }, [navigate]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [portalUser, setPortalUser] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -282,8 +284,16 @@ const SupplierPortal = () => {
         throw checkError;
       }
 
+      const [teamMembership, ownerSupplierProfile] = existingUser?.id ? await Promise.all([
+        supabase.from('supplier_company_members').select('id').eq('user_id', existingUser.id).eq('status', 'active').limit(1).maybeSingle(),
+        supabase.from('suppliers').select('id')
+          .in('user_id', [...new Set([existingUser.id, existingUser.auth_id, user.id].filter(Boolean))])
+          .limit(1).maybeSingle()
+      ]) : [{ data: null }, { data: null }];
+      const hasSupplierCompanyAccess = Boolean(teamMembership.data || ownerSupplierProfile.data);
+
       // Wrong role (fully set up as something else) → redirect
-      if (existingUser && existingUser.role && !SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && existingUser.role !== 'customer') {
+      if (existingUser && existingUser.role && !SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && existingUser.role !== 'customer' && !hasSupplierCompanyAccess) {
         const redirectPath = existingUser.role === 'manager' ? '/manager-portal'
                            : existingUser.role === 'admin'   ? '/admin-portal'
                            : existingUser.role === 'cashier' ? '/cashier-portal'
@@ -298,7 +308,6 @@ const SupplierPortal = () => {
         .from('users')
         .select('*')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
-        .in('role', SUPPLIER_CAPABLE_ROLES)
         .maybeSingle();
 
       if (suppError && suppError.code !== 'PGRST116') {
@@ -426,8 +435,8 @@ const SupplierPortal = () => {
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('id, auth_id, role')
-        .eq('auth_id', user.id)
-        .single();
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
 
       if (checkError) {
         console.error('❌ Error checking user:', checkError);
@@ -444,7 +453,7 @@ const SupplierPortal = () => {
       console.log('✅ User found:', existingUser);
 
       // Ensure we're updating a supplier record only
-      if (!SUPPLIER_CAPABLE_ROLES.includes(existingUser.role)) {
+      if (!SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && !portalUser?.supplier_company_id) {
         console.error('❌ Existing user role cannot act as a supplier:', existingUser.role);
         alert('Failed to save: Authenticated account is not registered as a supplier.');
         return;
@@ -454,8 +463,7 @@ const SupplierPortal = () => {
       const { data: updatedUsers, error } = await supabase
         .from('users')
         .update(updateData)
-        .eq('auth_id', user.id)
-        .in('role', SUPPLIER_CAPABLE_ROLES)
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .select();
 
       if (error) {
@@ -553,8 +561,7 @@ const SupplierPortal = () => {
       const { error } = await supabase
         .from('users')
         .update(updateData)
-        .eq('auth_id', user.id)
-        .in('role', SUPPLIER_CAPABLE_ROLES);
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`);
 
       if (error) {
         console.error('Error saving financial details:', error);
@@ -653,8 +660,7 @@ const SupplierPortal = () => {
               avatar_url: base64String,
               updated_at: new Date().toISOString()
             })
-            .eq('auth_id', user.id)
-            .in('role', SUPPLIER_CAPABLE_ROLES);
+            .or(`auth_id.eq.${user.id},id.eq.${user.id}`);
 
           if (error) {
             console.error('❌ Error saving to database:', error);
@@ -668,8 +674,7 @@ const SupplierPortal = () => {
           const { data: updatedData, error: fetchError } = await supabase
             .from('users')
             .select('avatar_url')
-            .eq('auth_id', user.id)
-            .in('role', SUPPLIER_CAPABLE_ROLES)
+            .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
             .single();
           
           if (fetchError) {
@@ -864,7 +869,6 @@ const SupplierPortal = () => {
         .from('users')
         .select('id')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
-        .in('role', SUPPLIER_CAPABLE_ROLES)
         .maybeSingle();
 
       if (!userRow?.id) {
@@ -1106,6 +1110,32 @@ const SupplierPortal = () => {
         return;
       }
 
+      const { data: portalUserRow } = await supabase
+        .from('users')
+        .select('id, auth_id, full_name, email, phone, role')
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+      const [membershipResult, ownerSupplierResult] = portalUserRow?.id ? await Promise.all([
+        supabase.from('supplier_company_members')
+          .select('company_supplier_id, role, manager_user_id')
+          .eq('user_id', portalUserRow.id).eq('status', 'active').maybeSingle(),
+        supabase.from('suppliers').select('id, company_name')
+          .in('user_id', [...new Set([portalUserRow.id, portalUserRow.auth_id, user.id].filter(Boolean))])
+          .limit(1).maybeSingle()
+      ]) : [{ data: null }, { data: null }];
+      const supplierCompanyId = membershipResult.data?.company_supplier_id || ownerSupplierResult.data?.id || null;
+      const supplierCompanyRole = membershipResult.data?.role || (ownerSupplierResult.data ? 'admin' : null);
+      const contextualUser = portalUserRow ? {
+        ...portalUserRow,
+        supplier_company_id: supplierCompanyId,
+        supplier_company_role: supplierCompanyRole,
+        supplier_company_manager_id: membershipResult.data?.manager_user_id || null
+      } : null;
+      setPortalUser(contextualUser);
+      if (supplierCompanyId && supplierCompanyRole) {
+        setActiveTab('company');
+      }
+
       console.log('Loading supplier data for user:', user.id);
       
       // Create timeout promise that rejects after 15 seconds
@@ -1261,7 +1291,7 @@ const SupplierPortal = () => {
       // Check user role — match by auth_id OR id (handles both old and new rows)
       const { data: existingUser } = await supabase
         .from('users')
-        .select('id, role')
+        .select('id, auth_id, role')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
 
@@ -1273,7 +1303,15 @@ const SupplierPortal = () => {
       }
 
       // Wrong role (fully set up as something else) → redirect
-      if (existingUser.role && !SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && existingUser.role !== 'customer') {
+      const [membership, supplierProfile] = existingUser?.id ? await Promise.all([
+        supabase.from('supplier_company_members').select('id').eq('user_id', existingUser.id).eq('status', 'active').limit(1).maybeSingle(),
+        supabase.from('suppliers').select('id')
+          .in('user_id', [...new Set([existingUser.id, existingUser.auth_id, user.id].filter(Boolean))])
+          .limit(1).maybeSingle()
+      ]) : [{ data: null }, { data: null }];
+      const hasSupplierCompanyAccess = Boolean(membership.data || supplierProfile.data);
+
+      if (existingUser.role && !SUPPLIER_CAPABLE_ROLES.includes(existingUser.role) && existingUser.role !== 'customer' && !hasSupplierCompanyAccess) {
         const redirectPath = existingUser.role === 'manager' ? '/manager-portal'
                            : existingUser.role === 'admin'   ? '/admin-portal'
                            : existingUser.role === 'cashier' ? '/cashier-portal'
@@ -2745,10 +2783,16 @@ const SupplierPortal = () => {
     />
   );
 
+  const portalRole = String(portalUser?.supplier_company_role || '').toLowerCase();
   const tabs = [
     { id: 'overview', label: 'Overview', icon: FiBarChart },
+    ...(portalUser?.supplier_company_id && (portalRole === 'admin' || portalRole === 'manager')
+      ? [{ id: 'company', label: portalRole === 'admin' ? 'Company team' : 'My team', icon: FiUsers }]
+      : portalUser?.supplier_company_id && portalRole === 'supplier'
+        ? [{ id: 'company', label: 'Stores & stock', icon: FiHome }]
+        : []),
     { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
-    { id: 'orders', label: 'Supply', icon: FiPackage },
+    { id: 'orders', label: portalRole === 'supplier' || portalRole === 'admin' || portalRole === 'manager' ? 'Orders & stock' : 'Supply', icon: FiPackage },
     { id: 'deliveries', label: 'Deliveries', icon: FiTruck },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
@@ -2809,8 +2853,8 @@ const SupplierPortal = () => {
         email={supplierProfile.email}
         initial={(supplierProfile.contactPerson || supplierProfile.name || 'S').charAt(0).toUpperCase()}
         bottomTabs={[
-          { id: 'overview', label: 'Overview' },
-          { id: 'orders', label: 'Supply' },
+          ...(portalUser?.supplier_company_id ? [{ id: 'company', label: portalRole === 'supplier' ? 'Stores' : portalRole === 'manager' ? 'Team' : 'Company' }] : []),
+          { id: 'orders', label: portalUser?.supplier_company_id ? 'Orders' : 'Supply' },
           { id: 'payments', label: 'Payments' },
           { id: 'ican-wallet', label: 'Wallet' }
         ]}
@@ -2828,6 +2872,12 @@ const SupplierPortal = () => {
         ) : (
           <>
             {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'company' && portalUser && (
+              <SupplierCompanyWorkspace
+                user={portalUser}
+                companyName={supplierProfile.name}
+              />
+            )}
             {activeTab === 'business-profile' && (
               <UseBusinessProfileTab
                 mode="supplier"

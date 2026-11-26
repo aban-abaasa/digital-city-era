@@ -366,10 +366,10 @@ function App() {
               <Route path="/employee-portal" element={<RoleProtectedRoute minLevel={1}><EmployeePortal /></RoleProtectedRoute>} />
               <Route path="/employee" element={<RoleProtectedRoute minLevel={1}><EmployeePortal /></RoleProtectedRoute>} />
 
-              {/* Managers/admins of wholesale, hardware, and factory stores can
-                  use the supplier portal to receive and dispatch orders. */}
-              <Route path="/supplier-portal" element={<RoleProtectedRoute minLevel={2} exactRoles={['supplier']}><SupplierPortal /></RoleProtectedRoute>} />
-              <Route path="/supplier" element={<RoleProtectedRoute minLevel={2} exactRoles={['supplier']}><SupplierPortal /></RoleProtectedRoute>} />
+              {/* Supplier-company memberships are separate from store staff
+                  roles; assigned company workers enter their supplier view here. */}
+              <Route path="/supplier-portal" element={<RoleProtectedRoute minLevel={2} exactRoles={['supplier']} allowSupplierTeam><SupplierPortal /></RoleProtectedRoute>} />
+              <Route path="/supplier" element={<RoleProtectedRoute minLevel={2} exactRoles={['supplier']} allowSupplierTeam><SupplierPortal /></RoleProtectedRoute>} />
 
               <Route path="/customer-portal" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />
               <Route path="/customer" element={<RoleProtectedRoute minLevel={0}><CustomerDashboard /></RoleProtectedRoute>} />

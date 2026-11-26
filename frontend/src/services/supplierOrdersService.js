@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { SUPPLIER_CAPABLE_ROLES } from '../utils/supplierAccess';
 import { transferFromBusinessWallet, getOrCreateBusinessWallet } from './icanWalletService';
 
 // ---------------------------------------------------------------------------
@@ -121,7 +120,6 @@ export const getSupplierOrderMatchIds = async (authId) => {
     .from('users')
     .select('id')
     .or(`auth_id.eq.${authId},id.eq.${authId}`)
-    .in('role', SUPPLIER_CAPABLE_ROLES)
     .maybeSingle();
 
   return [...new Set([authId, userRow?.id].filter(Boolean))];
@@ -307,7 +305,7 @@ export const createPurchaseOrder = async (orderData) => {
       .from('users')
       .select('id, auth_id')
       .or(`id.eq.${selectedSupplierId},auth_id.eq.${selectedSupplierId}`)
-      .in('role', SUPPLIER_CAPABLE_ROLES);
+      .limit(1);
     if (supplierLookupError) throw supplierLookupError;
     const supplierRow = supplierRows?.[0];
     const supplierId = supplierRow?.id || selectedSupplierId;

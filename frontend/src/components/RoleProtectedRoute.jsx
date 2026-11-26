@@ -69,7 +69,7 @@ const tooManyRecentRedirects = () => {
  * like supplier). Admin always gets in regardless. Anyone else gets bounced
  * to the home page for their own role instead of a dead end.
  */
-const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
+const RoleProtectedRoute = ({ children, minLevel, exactRoles, allowSupplierTeam = false }) => {
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
@@ -166,10 +166,26 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
         const role = userRow?.role?.toLowerCase() || null;
         if (role) saveCachedIdentity({ userId: session.user.id, email: session.user.email, role });
 
+        let supplierTeamMember = false;
+        if (allowSupplierTeam && userRow?.id) {
+          const [{ data: teamMembership }, { data: ownedSupplier }] = await Promise.all([
+            supabase.from('supplier_company_members')
+              .select('id')
+              .eq('user_id', userRow.id)
+              .eq('status', 'active')
+              .limit(1)
+              .maybeSingle(),
+            supabase.from('suppliers').select('id')
+              .in('user_id', [...new Set([userRow.id, session.user.id].filter(Boolean))])
+              .limit(1).maybeSingle()
+          ]);
+          supplierTeamMember = Boolean(teamMembership || ownedSupplier);
+        }
+
         console.log('[ROLE-GUARD] user_id=', session.user.id, 'userRow=', userRow, 'role=', role, 'userError=', userError || null);
 
         if (!active) return;
-        finishWithDecision(true, role);
+        finishWithDecision(true, role, supplierTeamMember);
       } catch (error) {
         console.error('Role access check failed:', error);
         if (active) finishWithDecision(false, null);
@@ -179,7 +195,7 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
     // Resolve whether this render needs to redirect, and if so, whether
     // that redirect is safe or part of a loop — decided once, here, instead
     // of recomputed (and re-triggering sessionStorage writes) on every render.
-    const finishWithDecision = (isAuthenticated, resolvedRole) => {
+    const finishWithDecision = (isAuthenticated, resolvedRole, supplierTeamMember = false) => {
       setAuthenticated(isAuthenticated);
       setRole(resolvedRole);
       setLoading(false);
@@ -187,7 +203,8 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
       const isAllowed = isAuthenticated && (
         resolvedRole === 'admin' ||
         (typeof minLevel === 'number' && (ROLE_LEVEL[resolvedRole] ?? -1) >= minLevel) ||
-        (exactRoles && exactRoles.includes(resolvedRole))
+        (exactRoles && exactRoles.includes(resolvedRole)) ||
+        (allowSupplierTeam && supplierTeamMember)
       );
       console.log('[ROLE-GUARD] isAuthenticated=', isAuthenticated, 'resolvedRole=', resolvedRole, 'minLevel=', minLevel, 'exactRoles=', exactRoles, 'isAllowed=', isAllowed);
 
@@ -217,7 +234,7 @@ const RoleProtectedRoute = ({ children, minLevel, exactRoles }) => {
     return () => {
       active = false;
     };
-  }, [location.pathname, minLevel, exactRoles]);
+  }, [location.pathname, minLevel, exactRoles, allowSupplierTeam]);
 
   if (loading) {
     return (

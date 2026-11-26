@@ -1,12 +1,8 @@
 import { supabase } from '../services/supabase';
 
-// Roles whose own users row may be used as a supplier identity. A dedicated
-// 'supplier' account always can; an admin can opt in to supplying from their
-// own account (their orders, catalog and payouts hang off their own ids, so
-// no second account is needed); a manager can when their store is a
-// supply-enabled one (wholesale/hardware/factory). Every supplier query is
-// already scoped to the signed-in user's own id, so widening the role filter
-// never exposes anyone else's row.
+// Roles whose users rows can be used in the supplier portal. Supplier workers
+// always can; admins can opt in to supplying; managers can enter when their
+// store supports supply orders or supplier workers have been assigned to them.
 export const SUPPLIER_CAPABLE_ROLES = ['supplier', 'admin', 'manager'];
 
 export const SUPPLIER_PORTAL_ROUTE = '/supplier-portal';
@@ -23,16 +19,33 @@ export const getSupplierAccess = async () => {
 
   const { data: userRow } = await supabase
     .from('users')
-    .select('id, role, supermarket_id')
+    .select('id, auth_id, role, supermarket_id')
     .or(`auth_id.eq.${session.user.id},id.eq.${session.user.id}`)
     .maybeSingle();
 
   const role = userRow?.role?.toLowerCase() || null;
-  let canSupply = false;
+  let canSupply = role === 'supplier' || role === 'admin';
+  let supplierMembership = null;
+  let ownSupplierProfile = null;
 
-  if (role === 'supplier' || role === 'admin') {
-    canSupply = true;
-  } else if (role === 'manager') {
+  if (userRow?.id) {
+    const [{ data: member }, { data: supplierProfile }] = await Promise.all([
+      supabase.from('supplier_company_members')
+        .select('id, company_supplier_id, role, manager_user_id')
+        .eq('user_id', userRow.id)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('suppliers').select('id')
+        .in('user_id', [...new Set([userRow.id, userRow.auth_id, session.user.id].filter(Boolean))])
+        .limit(1).maybeSingle()
+    ]);
+    supplierMembership = member;
+    ownSupplierProfile = supplierProfile;
+    if (supplierMembership || ownSupplierProfile) canSupply = true;
+  }
+
+  if (role === 'manager' && !canSupply) {
     if (!userRow.supermarket_id) {
       canSupply = true;
     } else {
@@ -46,15 +59,7 @@ export const getSupplierAccess = async () => {
   }
 
   let isSetUp = role === 'supplier';
-  if (canSupply && !isSetUp && userRow?.id) {
-    const { data: supplierRow } = await supabase
-      .from('suppliers')
-      .select('id')
-      .eq('user_id', userRow.id)
-      .limit(1)
-      .maybeSingle();
-    isSetUp = Boolean(supplierRow);
-  }
+  if (canSupply && !isSetUp) isSetUp = Boolean(ownSupplierProfile || supplierMembership);
 
   return { role, canSupply, isSetUp };
 };
