@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  FiCalendar, FiCheck, FiExternalLink, FiImage, FiMapPin, FiPackage, FiServer, FiShoppingBag,
+  FiCalendar, FiCheck, FiChevronDown, FiExternalLink, FiImage, FiMapPin, FiPackage, FiServer, FiShoppingBag,
   FiTrash2, FiUpload, FiUsers
 } from 'react-icons/fi';
 import { supabase } from '../../services/supabase';
@@ -445,9 +445,20 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         </ul>
       </Section>
 
-      <Section id="supplier-stock" title="Supplier stock visibility" hint="Choose whether suppliers linked to your products can see this store’s stock and recent sales." flash={flash['supplier-visibility']}>
-        <ul className="ass-rows">
-          <li className="ass-row">
+      <details className="ass-card ass-supplier-disclosure" aria-labelledby="supplier-stock-title">
+        <summary className="ass-card-head ass-supplier-summary">
+          <div>
+            <h3 id="supplier-stock-title">Supplier stock visibility</h3>
+            <p>Choose whether suppliers linked to your products can see this store’s stock and recent sales.</p>
+          </div>
+          <span className={`ass-flash${flash['supplier-visibility'] ? ` is-${flash['supplier-visibility'].tone}` : ''}`} role="status" aria-live="polite">
+            {flash['supplier-visibility'] ? <>{flash['supplier-visibility'].tone === 'ok' && <FiCheck aria-hidden="true" />}{flash['supplier-visibility'].text}</> : ''}
+          </span>
+          <span className="ass-disclosure-chevron" aria-hidden="true"><FiChevronDown /></span>
+        </summary>
+        <div className="ass-card-body">
+        <ul className="ass-rows ass-supplier-rows">
+          <li className="ass-row ass-supplier-row">
             <span className="ass-row-icon"><FiUsers aria-hidden="true" /></span>
             <div className="ass-row-text">
               <b>Share stock and sales with linked suppliers</b>
@@ -460,7 +471,7 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
               onChange={setSupplierInventoryVisibility}
             />
           </li>
-          <li className="ass-row">
+          <li className="ass-row ass-supplier-row">
             <span className="ass-row-icon"><FiPackage aria-hidden="true" /></span>
             <div className="ass-row-text">
               <b>Supplier inventory amount</b>
@@ -471,20 +482,20 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
               value={store?.metadata?.supplier_inventory_visibility_mode === 'limited' ? 'limited' : 'full'}
               disabled={Boolean(busy)}
               onChange={(event) => setSupplierInventoryMode(event.target.value)}
-              className="max-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60"
+              className="max-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60 ass-supplier-select"
             >
               <option value="full">Full · unlimited</option>
               <option value="limited">Limited · low stock</option>
             </select>
           </li>
           {store?.metadata?.supplier_inventory_visibility_mode === 'limited' && (
-            <li className="ass-row">
+            <li className="ass-row ass-supplier-row">
               <span className="ass-row-icon"><FiPackage aria-hidden="true" /></span>
               <div className="ass-row-text">
                 <b>Maximum stock suppliers can see</b>
                 <span>Suppliers see only linked products with on-hand stock at or below this amount.</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ass-supplier-cap-controls">
                 <input
                   aria-label="Supplier inventory unit cap"
                   type="number"
@@ -508,7 +519,8 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
             </li>
           )}
         </ul>
-      </Section>
+        </div>
+      </details>
 
       <Section id="pickup" title="Delivery pickup point" hint="Riders need real coordinates to find your store. Search for the place or tap the map — you don’t need to be at the store." flash={flash.pickup}>
         <div className="ass-pickup">
