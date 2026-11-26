@@ -238,7 +238,6 @@ const BusinessLocalServerSetup = () => {
     );
   }
 
-  const downloadReady = protocolReady && !checkingProtocol;
   const expiresAt = pairing?.expiresAt ? new Date(pairing.expiresAt).getTime() : 0;
   const remaining = expiresAt ? expiresAt - now : 0;
   const expired = Boolean(pairing) && expiresAt > 0 && remaining <= 0;
@@ -280,15 +279,13 @@ const BusinessLocalServerSetup = () => {
                   key={downloadOption.href}
                   href={downloadOption.href}
                   download
-                  aria-disabled={!downloadReady}
-                  onClick={(event) => { if (!downloadReady) event.preventDefault(); }}
                   className="bls-btn bls-download-option"
                 >
                   <FiHardDrive aria-hidden="true" />
                   <span>
                     <strong>{downloadOption.title}</strong>
                     <small>{downloadOption.description}</small>
-                    <small>{protocolReady ? 'Download ZIP' : 'Setup not available yet'}</small>
+                    <small>Download ZIP</small>
                   </span>
                 </a>
               ))}
@@ -303,7 +300,7 @@ const BusinessLocalServerSetup = () => {
               <li>Git</li>
             </ul>
             {!checkingProtocol && !protocolReady && (
-              <p className="bls-sub">The Digital City Era team needs to finish one-time setup before this download opens. Contact support; you do not need to run SQL or use a terminal.</p>
+              <p className="bls-sub">ZIP downloads are ready. Pairing and installation will be available after Digital City Era finishes the one-time cloud setup. Contact support; you do not need to run SQL or use a terminal.</p>
             )}
           </div>
         </section>
