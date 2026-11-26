@@ -2800,6 +2800,14 @@ const SupplierPortal = () => {
   );
 
   const portalRole = String(portalUser?.supplier_company_role || '').toLowerCase();
+  // Business identity belongs to the company owner. Supplier workers and
+  // their managers should not be asked to link their personal accounts to a
+  // Pichin business profile.
+  const canUseBusinessProfile = Boolean(portalUser && (!portalUser.supplier_company_id || portalRole === 'admin'));
+  useEffect(() => {
+    if (!canUseBusinessProfile && activeTab === 'business-profile') setActiveTab('overview');
+  }, [activeTab, canUseBusinessProfile]);
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: FiBarChart },
     ...(portalUser?.supplier_company_id && (portalRole === 'admin' || portalRole === 'manager')
@@ -2807,7 +2815,7 @@ const SupplierPortal = () => {
       : portalUser?.supplier_company_id && portalRole === 'supplier'
         ? [{ id: 'company', label: 'Stores & stock', icon: FiHome }]
         : []),
-    { id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase },
+    ...(canUseBusinessProfile ? [{ id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase }] : []),
     { id: 'orders', label: portalRole === 'supplier' || portalRole === 'admin' || portalRole === 'manager' ? 'Orders & stock' : 'Supply', icon: FiPackage },
     { id: 'deliveries', label: 'Deliveries', icon: FiTruck },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
@@ -2894,7 +2902,7 @@ const SupplierPortal = () => {
                 companyName={supplierProfile.name}
               />
             )}
-            {activeTab === 'business-profile' && (
+            {activeTab === 'business-profile' && canUseBusinessProfile && (
               <UseBusinessProfileTab
                 mode="supplier"
                 supplierUserId={supplierProfile.id}
