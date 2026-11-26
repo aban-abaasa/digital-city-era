@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FiActivity, FiArrowUpRight, FiBox, FiChevronDown, FiChevronRight,
-  FiMapPin, FiPackage, FiRefreshCw, FiSearch, FiShield, FiStore, FiUserPlus,
+  FiMapPin, FiPackage, FiRefreshCw, FiSearch, FiShield, FiShoppingBag, FiUserPlus,
   FiTruck, FiUsers
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
@@ -365,7 +365,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
               const active = selectedStoreId === `${worker.id}:${store.id}`;
               return <div className="scw-store-wrap" key={`${worker.id}:${store.id}`}>
                 <button className={`scw-store-row${active ? ' selected' : ''}`} onClick={() => setSelectedStoreId(active ? null : `${worker.id}:${store.id}`)} aria-expanded={active}>
-                  <span className="scw-store-icon"><FiStore /></span>
+                  <span className="scw-store-icon"><FiShoppingBag /></span>
                   <span className="scw-row-main"><b>{store.name || 'Store'}</b><small><FiMapPin /> {store.location || store.address || 'Location not listed'}</small></span>
                   <span className={`scw-status ${normalise(appStatus) === 'approved' || normalise(appStatus) === 'active' ? 'active' : normalise(appStatus) === 'rejected' ? 'rejected' : 'review'}`}>{statusLabel(appStatus)}</span>
                   {active ? <FiChevronDown /> : <FiChevronRight />}
