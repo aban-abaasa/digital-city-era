@@ -149,13 +149,13 @@
   .ass-supplier-summary .ass-flash:empty { display: none; }
   .ass-supplier-disclosure > .ass-card-body { padding: 12px; }
   .ass-rows .ass-row {
-    display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; gap: 8px 10px; padding: 12px;
+    display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 8px; padding: 12px;
   }
-  .ass-rows .ass-row-icon { grid-column: 1; grid-row: 1; }
-  .ass-rows .ass-row-text { grid-column: 2; grid-row: 1; }
+  .ass-rows .ass-row-icon { display: none; }
+  .ass-rows .ass-row-text { grid-column: 1; grid-row: 1; width: 100%; }
   .ass-rows .ass-row > .ass-switch,
   .ass-rows .ass-row > .ass-supplier-select,
-  .ass-rows .ass-row > .ass-supplier-cap-controls { grid-column: 2; grid-row: 2; justify-self: start; }
+  .ass-rows .ass-row > .ass-supplier-cap-controls { grid-column: 1; grid-row: 2; justify-self: start; }
   .ass-rows .ass-row > .ass-supplier-select { width: 100%; max-width: 220px; min-height: 44px; font-size: 16px; }
   .ass-rows .ass-row > .ass-supplier-cap-controls { display: flex; flex-wrap: wrap; width: 100%; }
   .ass-supplier-cap-controls input { min-height: 44px; font-size: 16px; }
