@@ -299,9 +299,6 @@ const BusinessLocalServerSetup = () => {
               <li>Node.js 20+</li>
               <li>Git</li>
             </ul>
-            {!checkingProtocol && !protocolReady && (
-              <p className="bls-sub">ZIP downloads are ready. Pairing and installation will be available after Digital City Era finishes the one-time cloud setup. Contact support; you do not need to run SQL or use a terminal.</p>
-            )}
           </div>
         </section>
 
