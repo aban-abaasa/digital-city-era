@@ -93,6 +93,92 @@ $$;
 REVOKE ALL ON FUNCTION public.get_supplier_company_staff_candidates_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_supplier_company_staff_candidates_v1(UUID) TO authenticated;
 
+-- Return names and contact details only for members the caller is allowed to
+-- see: the whole company for its owner, direct reports for a manager, and a
+-- supplier's own assigned manager. This avoids depending on broad users-table
+-- read access in the portal.
+CREATE OR REPLACE FUNCTION public.get_supplier_company_members_v1(
+  p_company_supplier_id UUID
+)
+RETURNS TABLE (
+  id UUID,
+  auth_id UUID,
+  full_name TEXT,
+  email TEXT,
+  phone TEXT,
+  account_role TEXT,
+  company_role TEXT,
+  company_manager_user_id UUID,
+  company_member_status TEXT,
+  created_at TIMESTAMPTZ,
+  is_active BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_company_role TEXT;
+  v_manager_user_id UUID;
+  v_is_owner BOOLEAN;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  SELECT person.id INTO v_user_id
+  FROM public.users person
+  WHERE person.auth_id = auth.uid() OR person.id = auth.uid()
+  ORDER BY (person.auth_id = auth.uid()) DESC NULLS LAST
+  LIMIT 1;
+
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'User profile not found';
+  END IF;
+
+  v_is_owner := public.supplier_company_is_owner(p_company_supplier_id);
+
+  SELECT membership.role, membership.manager_user_id
+    INTO v_company_role, v_manager_user_id
+  FROM public.supplier_company_members membership
+  WHERE membership.company_supplier_id = p_company_supplier_id
+    AND membership.user_id = v_user_id
+    AND membership.status = 'active'
+  LIMIT 1;
+
+  IF NOT v_is_owner AND v_company_role IS NULL THEN
+    RAISE EXCEPTION 'Not a member of this supplier company';
+  END IF;
+
+  RETURN QUERY
+  SELECT person.id,
+         person.auth_id,
+         person.full_name::TEXT,
+         person.email::TEXT,
+         person.phone::TEXT,
+         person.role::TEXT,
+         membership.role,
+         membership.manager_user_id,
+         membership.status,
+         person.created_at,
+         person.is_active
+  FROM public.supplier_company_members membership
+  JOIN public.users person ON person.id = membership.user_id
+  WHERE membership.company_supplier_id = p_company_supplier_id
+    AND membership.status = 'active'
+    AND (
+      v_is_owner
+      OR membership.user_id = v_user_id
+      OR (v_company_role = 'manager' AND membership.manager_user_id = v_user_id)
+      OR (v_company_role = 'supplier' AND membership.user_id = v_manager_user_id)
+    )
+  ORDER BY (membership.user_id = v_user_id) DESC, person.full_name NULLS LAST;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.get_supplier_company_members_v1(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_supplier_company_members_v1(UUID) TO authenticated;
+
 -- A manager is also a supplier identity in the shared order and catalog
 -- workflow. Create supplier profiles for existing managers that do not yet
 -- have one, using the supply company's display name.

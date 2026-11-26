@@ -43,44 +43,25 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     quiet ? setRefreshing(true) : setLoading(true);
     if (!quiet) setNotice('');
     try {
-      let membershipQuery = supabase.from('supplier_company_members')
-        .select('id, user_id, role, manager_user_id, status')
-        .eq('company_supplier_id', user.supplier_company_id)
-        .eq('status', 'active');
-      if (isManager) membershipQuery = membershipQuery.or(`user_id.eq.${user.id},manager_user_id.eq.${user.id}`);
-      if (role === 'supplier') membershipQuery = membershipQuery.eq('user_id', user.id);
-      const { data: membershipRows, error: membershipError } = await membershipQuery;
+      const { data: membershipRows, error: membershipError } = await supabase.rpc('get_supplier_company_members_v1', {
+        p_company_supplier_id: user.supplier_company_id
+      });
       if (membershipError) throw membershipError;
-
-      const memberUserIds = idSet((membershipRows || []).map((item) => item.user_id));
-      const { data: companyUsers, error: companyUsersError } = memberUserIds.length
-        ? await supabase.from('users')
-          .select('id, auth_id, full_name, email, phone, role, is_active, created_at')
-          .in('id', memberUserIds)
-        : { data: [], error: null };
-      if (companyUsersError) throw companyUsersError;
-      const companyUserById = new Map((companyUsers || []).map((item) => [item.id, item]));
       const companyMembers = (membershipRows || []).map((member) => ({
-        ...(companyUserById.get(member.user_id) || { id: member.user_id }),
-        company_membership_id: member.id,
-        company_role: member.role,
-        company_manager_user_id: member.manager_user_id,
-        company_member_status: member.status
+        id: member.id,
+        auth_id: member.auth_id,
+        full_name: member.full_name,
+        email: member.email,
+        phone: member.phone,
+        role: member.account_role,
+        is_active: member.is_active,
+        created_at: member.created_at,
+        company_role: member.company_role,
+        company_manager_user_id: member.company_manager_user_id,
+        company_member_status: member.company_member_status
       }));
       let managerRows = companyMembers.filter((member) => member.company_role === 'manager');
       let workerRows = companyMembers.filter((member) => member.company_role === 'supplier');
-      if (isManager) managerRows = [user];
-      if (role === 'supplier' && user.supplier_company_manager_id) {
-        let manager = companyUserById.get(user.supplier_company_manager_id);
-        if (!manager) {
-          const { data: managerUser } = await supabase.from('users')
-            .select('id, auth_id, full_name, email, phone, role, is_active, created_at')
-            .eq('id', user.supplier_company_manager_id)
-            .maybeSingle();
-          manager = managerUser;
-        }
-        if (manager) managerRows = [manager];
-      }
 
       const workerIds = idSet(workerRows.map((item) => item.id), workerRows.map((item) => item.auth_id));
       let applications = [];
