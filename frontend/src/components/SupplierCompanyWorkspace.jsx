@@ -124,46 +124,17 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
         }
 
         const supplierProfileIds = idSet(supplierProfiles.map((item) => item.id));
-        const { data: linkedProducts } = await supabase.from('supplier_products')
-          .select('supplier_id, product_id, is_active').in('supplier_id', linkedUserIds);
         if (supplierProfileIds.length) {
           const { data: catalogRows } = await supabase.from('products')
             .select('id, name, sku, category, supplier_id, supermarket_id, is_active').in('supplier_id', supplierProfileIds).order('name');
-          products = (catalogRows || []).map((product) => ({
-            ...product,
-            supplier_user_id: workerRows.find((worker) => {
-              const profile = supplierProfiles.find((item) => item.id === product.supplier_id);
-              return profile && (worker.id === profile.user_id || worker.auth_id === profile.user_id);
-            })?.id || supplierProfiles.find((profile) => profile.id === product.supplier_id)?.user_id,
-            supplier_link_active: (() => {
-              const profile = supplierProfiles.find((item) => item.id === product.supplier_id);
-              const owner = workerRows.find((worker) => profile && (worker.id === profile.user_id || worker.auth_id === profile.user_id));
-              const ownerIds = idSet(owner?.id, owner?.auth_id, profile?.user_id);
-              return linkedProducts?.find((link) => link.product_id === product.id && ownerIds.includes(link.supplier_id))?.is_active;
-            })()
-          }));
-        }
-
-        // Some older catalogs use the supplier_products link table instead of
-        // products.supplier_id. Merge those entries when the table is available.
-        {
-          const missingLinks = (linkedProducts || []).filter((link) => !products.some((product) => {
-            const owner = workerRows.find((worker) => worker.id === product.supplier_user_id || worker.auth_id === product.supplier_user_id);
-            return product.id === link.product_id && owner && idSet(owner.id, owner.auth_id).includes(link.supplier_id);
-          }));
-          const linkedIds = idSet(missingLinks.map((item) => item.product_id));
-          if (linkedIds.length) {
-            const { data: productRows } = await supabase.from('products')
-              .select('id, name, sku, category, supermarket_id, is_active').in('id', linkedIds).order('name');
-            const expandedRows = (productRows || []).flatMap((product) => missingLinks
-              .filter((link) => link.product_id === product.id)
-              .map((link) => ({
-                ...product,
-                supplier_user_id: workerRows.find((worker) => worker.id === link.supplier_id || worker.auth_id === link.supplier_id)?.id || link.supplier_id,
-                supplier_link_active: link.is_active
-              })));
-            products = [...products, ...expandedRows];
-          }
+          products = (catalogRows || []).map((product) => {
+            const profile = supplierProfiles.find((item) => item.id === product.supplier_id);
+            const owner = workerRows.find((worker) => profile && (worker.id === profile.user_id || worker.auth_id === profile.user_id));
+            return {
+              ...product,
+              supplier_user_id: owner?.id || profile?.user_id
+            };
+          });
         }
 
       }
@@ -452,7 +423,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     {loading ? <div className="scw-loading"><FiRefreshCw className="scw-spin" /> Loading your supply network…</div> : <>
       <section className="scw-stats">
         <Stat icon={<FiUsers />} label={isAdmin ? 'Managers' : 'Team members'} value={isAdmin ? data.managers.length : isManager ? data.workers.length : 1} note={isAdmin ? 'Supply areas covered' : isManager ? 'Assigned supplier workers' : 'Your supplier account'} />
-        <Stat icon={<FiStore />} label="Stores served" value={idSet(data.applications.map((item) => item.supermarket_id), data.orders.map((item) => item.supermarket_id)).length} note="Approved links and active orders" />
+        <Stat icon={<FiShoppingBag />} label="Stores served" value={idSet(data.applications.map((item) => item.supermarket_id), data.orders.map((item) => item.supermarket_id)).length} note="Approved links and active orders" />
         <Stat icon={<FiPackage />} label="Open orders" value={pendingOrders.length} note="Across the visible team" tone={pendingOrders.length ? 'warm' : ''} />
         <Stat icon={<FiTruck />} label="Orders fulfilled" value={fulfilledOrders.length} note="Received or completed" tone="green" />
       </section>
