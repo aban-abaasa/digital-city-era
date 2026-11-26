@@ -305,7 +305,7 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
   const filteredWorkers = data.workers.filter((worker) => `${worker.full_name || ''} ${worker.email || ''}`.toLowerCase().includes(search.toLowerCase()));
   const filteredPeople = useMemo(() => {
     const term = peopleSearch.trim().toLowerCase();
-    if (!term) return peopleResults;
+    if (!term) return [];
     return peopleResults.filter((person) => `${person.full_name || ''} ${person.email || ''} ${person.phone || ''} ${person.id || ''}`.toLowerCase().includes(term));
   }, [peopleResults, peopleSearch]);
   const managerRows = data.managers;
@@ -445,11 +445,12 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
           <button type="button" className="scw-button scw-users-refresh" onClick={loadPeople} disabled={searchingPeople}><FiRefreshCw className={searchingPeople ? 'scw-spin' : ''} /> Refresh</button>
         </div>
         <div className="scw-add-form">
-          <label className="scw-search"><FiSearch /><input aria-label="Filter registered users by name or email" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Filter by name or email..." /></label>
+          <label className="scw-search"><FiSearch /><input aria-label="Search registered users by name or email" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Search a name or email to show matching users..." /></label>
         </div>
         <div className="scw-candidate-list">
           {searchingPeople && peopleResults.length === 0 ? <div className="scw-empty-inline">Loading registered users…</div>
-            : filteredPeople.length === 0 ? <div className="scw-empty-inline">{peopleResults.length ? 'No users match your search.' : 'No users found. Users must sign up first.'}</div>
+            : !peopleSearch.trim() ? <div className="scw-empty-inline">Search by name or email to see matching accounts.</div>
+              : filteredPeople.length === 0 ? <div className="scw-empty-inline">{peopleResults.length ? 'No users match your search.' : 'No users found. Users must sign up first.'}</div>
               : filteredPeople.map((person) => {
                 const currentSupplyRole = data.managers.some((manager) => manager.id === person.id)
                   ? 'manager'
