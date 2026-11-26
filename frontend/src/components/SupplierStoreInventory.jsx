@@ -51,7 +51,7 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
       <div className="rounded-2xl border border-rose-200 bg-white p-6 shadow-sm">
         <h2 className="text-xl font-bold text-slate-900">Store stock and sales</h2>
         <p className="mt-2 text-sm text-rose-700">{error}</p>
-        <p className="mt-1 text-sm text-slate-600">Ask the platform administrator to apply the supplier store inventory migration, then refresh.</p>
+        <p className="mt-1 text-sm text-slate-600">Apply the latest supplier store inventory SQL migration, then refresh this panel.</p>
         <button type="button" onClick={load} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><FiRefreshCw /> Retry</button>
       </div>
     );

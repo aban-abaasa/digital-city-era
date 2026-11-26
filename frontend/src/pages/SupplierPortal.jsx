@@ -1112,7 +1112,7 @@ const SupplierPortal = () => {
 
       const { data: portalUserRow } = await supabase
         .from('users')
-        .select('id, auth_id, full_name, company_name, email, phone, role')
+        .select('id, auth_id, full_name, email, phone, role')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
       const [membershipResult, ownerSupplierResult] = portalUserRow?.id ? await Promise.all([
@@ -1128,7 +1128,7 @@ const SupplierPortal = () => {
         const { data: createdSupplier, error: createSupplierError } = await supabase.from('suppliers')
           .insert({
             user_id: portalUserRow.id,
-            company_name: portalUserRow.company_name?.trim() || portalUserRow.full_name?.trim() || 'Supplier Company'
+            company_name: portalUserRow.full_name?.trim() || 'Supplier Company'
           })
           .select('id, company_name')
           .maybeSingle();

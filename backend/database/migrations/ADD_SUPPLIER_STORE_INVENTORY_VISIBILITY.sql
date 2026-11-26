@@ -349,7 +349,9 @@ BEGIN
         ELSE 0
       END AS suggested_delivery_quantity
     FROM visible p
-    JOIN reductions r ON r.product_id = p.product_id
+    -- USING keeps one product_id in the join result so the following sales
+    -- join can safely use product_id again without an ambiguous left column.
+    JOIN reductions r USING (product_id)
     LEFT JOIN sales s USING (product_id, supermarket_id)
   )
   SELECT jsonb_build_object(
