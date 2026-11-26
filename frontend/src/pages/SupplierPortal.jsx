@@ -1112,19 +1112,35 @@ const SupplierPortal = () => {
 
       const { data: portalUserRow } = await supabase
         .from('users')
-        .select('id, auth_id, full_name, email, phone, role')
+        .select('id, auth_id, full_name, company_name, email, phone, role')
         .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
       const [membershipResult, ownerSupplierResult] = portalUserRow?.id ? await Promise.all([
         supabase.from('supplier_company_members')
           .select('company_supplier_id, role, manager_user_id')
-          .eq('user_id', portalUserRow.id).eq('status', 'active').maybeSingle(),
+          .eq('user_id', portalUserRow.id).eq('status', 'active').limit(1).maybeSingle(),
         supabase.from('suppliers').select('id, company_name')
           .in('user_id', [...new Set([portalUserRow.id, portalUserRow.auth_id, user.id].filter(Boolean))])
           .limit(1).maybeSingle()
       ]) : [{ data: null }, { data: null }];
-      const supplierCompanyId = membershipResult.data?.company_supplier_id || ownerSupplierResult.data?.id || null;
-      const supplierCompanyRole = membershipResult.data?.role || (ownerSupplierResult.data ? 'admin' : null);
+      let ownerSupplier = ownerSupplierResult.data || null;
+      if (!membershipResult.data && !ownerSupplier && portalUserRow?.role?.toLowerCase() === 'supplier') {
+        const { data: createdSupplier, error: createSupplierError } = await supabase.from('suppliers')
+          .insert({
+            user_id: portalUserRow.id,
+            company_name: portalUserRow.company_name?.trim() || portalUserRow.full_name?.trim() || 'Supplier Company'
+          })
+          .select('id, company_name')
+          .maybeSingle();
+        if (createSupplierError) {
+          console.warn('[SupplierPortal] Could not initialize supplier company profile:', createSupplierError);
+          notificationService.show('Could not set up your supplier company workspace: ' + createSupplierError.message, 'error', 6000);
+        } else {
+          ownerSupplier = createdSupplier;
+        }
+      }
+      const supplierCompanyId = membershipResult.data?.company_supplier_id || ownerSupplier?.id || null;
+      const supplierCompanyRole = membershipResult.data?.role || (ownerSupplier ? 'admin' : null);
       const contextualUser = portalUserRow ? {
         ...portalUserRow,
         supplier_company_id: supplierCompanyId,
