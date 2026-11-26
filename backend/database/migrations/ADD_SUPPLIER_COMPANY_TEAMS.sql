@@ -41,6 +41,58 @@ $$;
 REVOKE ALL ON FUNCTION public.supplier_company_is_owner(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.supplier_company_is_owner(UUID) TO authenticated;
 
+-- Give supplier-company owners the same account discovery flow as store
+-- admins, while keeping the results scoped to eligible supply workers. The
+-- company membership remains contextual and does not change users.role.
+CREATE OR REPLACE FUNCTION public.get_supplier_company_staff_candidates_v1(
+  p_company_supplier_id UUID
+)
+RETURNS TABLE (
+  id UUID,
+  auth_id UUID,
+  email TEXT,
+  phone TEXT,
+  full_name TEXT,
+  role TEXT,
+  created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  IF NOT public.supplier_company_is_owner(p_company_supplier_id) THEN
+    RAISE EXCEPTION 'Only a supplier-company admin can list staff candidates';
+  END IF;
+
+  RETURN QUERY
+  SELECT person.id,
+         person.auth_id,
+         person.email,
+         person.phone,
+         person.full_name,
+         person.role::TEXT,
+         person.created_at
+  FROM public.users person
+  WHERE person.role::TEXT NOT IN ('admin', 'super_admin')
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.supplier_company_members other_membership
+      WHERE other_membership.user_id = person.id
+        AND other_membership.status = 'active'
+        AND other_membership.company_supplier_id <> p_company_supplier_id
+    )
+  ORDER BY person.created_at DESC
+  LIMIT 500;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.get_supplier_company_staff_candidates_v1(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_supplier_company_staff_candidates_v1(UUID) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.guard_supplier_company_member_manager_v1()
 RETURNS TRIGGER
 LANGUAGE plpgsql

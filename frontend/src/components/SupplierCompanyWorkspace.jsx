@@ -157,6 +157,26 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  const loadPeople = useCallback(async () => {
+    if (!isAdmin) return;
+    setSearchingPeople(true);
+    setNotice('');
+    try {
+      const { data: users, error } = await supabase.rpc('get_supplier_company_staff_candidates_v1', {
+        p_company_supplier_id: user.supplier_company_id
+      });
+      if (error) throw error;
+      setPeopleResults((users || []).filter((person) => person.id !== user.id));
+    } catch (error) {
+      setNotice(error?.message || 'Could not load registered users. Refresh to try again.');
+      setPeopleResults([]);
+    } finally {
+      setSearchingPeople(false);
+    }
+  }, [isAdmin, user?.id, user?.supplier_company_id]);
+
+  useEffect(() => { if (isAdmin) loadPeople(); }, [isAdmin, loadPeople]);
+
   const storesById = useMemo(() => new Map(data.stores.map((store) => [store.id, store])), [data.stores]);
   const workerById = useMemo(() => {
     const rows = data.workers.flatMap((worker) => [[worker.id, worker], ...(worker.auth_id ? [[worker.auth_id, worker]] : [])]);
@@ -246,30 +266,6 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     setAssigningWorker('');
   };
 
-  const searchPeople = async (event) => {
-    event.preventDefault();
-    const term = peopleSearch.trim();
-    if (term.length < 2) {
-      setNotice('Enter at least two characters to find a registered user.');
-      return;
-    }
-    setSearchingPeople(true);
-    setNotice('');
-    const pattern = `%${term}%`;
-    const [byName, byEmail] = await Promise.all([
-      supabase.from('users').select('id, auth_id, full_name, email, phone, role, supermarket_id').ilike('full_name', pattern).limit(15),
-      supabase.from('users').select('id, auth_id, full_name, email, phone, role, supermarket_id').ilike('email', pattern).limit(15)
-    ]);
-    const merged = new Map();
-    [...(byName.data || []), ...(byEmail.data || [])].forEach((person) => merged.set(person.id, person));
-    const candidates = [...merged.values()].filter((person) => person.id !== user.id);
-    setPeopleResults(candidates);
-    const error = byName.error || byEmail.error;
-    if (error) setNotice(error.message || 'Could not search registered users.');
-    else if (candidates.length === 0) setNotice('No registered users matched. They need to create an account before they can be assigned.');
-    setSearchingPeople(false);
-  };
-
   const addTeamMember = async (person, teamRole) => {
     setAssigningWorker(person.id);
     setNotice('');
@@ -297,7 +293,6 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
           if (profileError) resultMessage += ` Supplier profile setup needs attention: ${profileError.message}`;
         }
       }
-      setPeopleResults((current) => current.filter((entry) => entry.id !== person.id));
       setNotice(resultMessage);
       await load(true);
     }
@@ -305,6 +300,11 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
   };
 
   const filteredWorkers = data.workers.filter((worker) => `${worker.full_name || ''} ${worker.email || ''}`.toLowerCase().includes(search.toLowerCase()));
+  const filteredPeople = useMemo(() => {
+    const term = peopleSearch.trim().toLowerCase();
+    if (!term) return peopleResults;
+    return peopleResults.filter((person) => `${person.full_name || ''} ${person.email || ''} ${person.phone || ''} ${person.id || ''}`.toLowerCase().includes(term));
+  }, [peopleResults, peopleSearch]);
   const managerRows = data.managers;
 
   const renderWorker = (worker) => {
@@ -435,18 +435,31 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
       </section>}
 
       {isAdmin && <section className="scw-card scw-add-team">
-        <div className="scw-section-head"><div><span className="scw-kicker">Add to the supply company</span><h3>Find a registered user</h3><p>Like store staff setup, people create an account first; then you assign their supply role here.</p></div><FiUserPlus className="scw-head-icon" /></div>
-        <form className="scw-add-form" onSubmit={searchPeople}>
-          <label className="scw-search"><FiSearch /><input value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Search by name or email" /></label>
+        <div className="scw-section-head scw-assign-users-head">
+          <div><span className="scw-kicker">Add to the supply company</span><h3><FiUserPlus /> Assign Manager or Supplier</h3><p>People create an account first. Search the registered users, then assign their supply role here.</p></div>
+          <button type="button" className="scw-button scw-users-refresh" onClick={loadPeople} disabled={searchingPeople}><FiRefreshCw className={searchingPeople ? 'scw-spin' : ''} /> Refresh</button>
+        </div>
+        <div className="scw-add-form">
+          <label className="scw-search"><FiSearch /><input aria-label="Filter registered users by name or email" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Filter by name or email..." /></label>
           <label className="scw-manager-select"><span>Supplier workers report to</span><select value={assignToManager} onChange={(event) => setAssignToManager(event.target.value)}><option value="">Leave unassigned</option>{data.managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.full_name || manager.email}</option>)}</select></label>
-          <button className="scw-button" type="submit" disabled={searchingPeople}>{searchingPeople ? 'Searching…' : 'Search users'}</button>
-        </form>
-        {peopleResults.length > 0 && <div className="scw-candidate-list">{peopleResults.map((person) => <div className="scw-candidate" key={person.id}>
-          <span className="scw-avatar worker-avatar">{(person.full_name || 'U').slice(0, 1).toUpperCase()}</span>
-          <span className="scw-row-main"><b>{person.full_name || 'Registered user'}</b><small>{person.email || person.phone || 'Contact details not added'} · Current role: {person.role || 'customer'}</small></span>
-          <button type="button" className="scw-assign-button manager-assign" disabled={assigningWorker === person.id} onClick={() => addTeamMember(person, 'manager')}>Add manager</button>
-          <button type="button" className="scw-assign-button supplier-assign" disabled={assigningWorker === person.id} onClick={() => addTeamMember(person, 'supplier')}>Add supplier</button>
-        </div>)}</div>}
+        </div>
+        <div className="scw-candidate-list">
+          {searchingPeople && peopleResults.length === 0 ? <div className="scw-empty-inline">Loading registered users…</div>
+            : filteredPeople.length === 0 ? <div className="scw-empty-inline">{peopleResults.length ? 'No users match your search.' : 'No users found. Users must sign up first.'}</div>
+              : filteredPeople.map((person) => {
+                const currentSupplyRole = data.managers.some((manager) => manager.id === person.id)
+                  ? 'manager'
+                  : data.workers.some((worker) => worker.id === person.id) ? 'supplier' : null;
+                return <div className="scw-candidate" key={person.id}>
+                  <span className="scw-avatar worker-avatar">{(person.full_name || person.email || 'U').slice(0, 1).toUpperCase()}</span>
+                  <span className="scw-row-main"><b>{person.full_name || '(no name)'}</b><small>{person.email || person.phone || 'Contact details not added'}</small><span className="scw-user-role">Account role: {person.role || 'customer'}{currentSupplyRole ? ` · Supply ${currentSupplyRole}` : ''}</span></span>
+                  <span className="scw-candidate-actions">
+                    <button type="button" className="scw-assign-button manager-assign" disabled={assigningWorker === person.id || currentSupplyRole === 'manager'} onClick={() => addTeamMember(person, 'manager')}>{currentSupplyRole === 'manager' ? 'Manager added' : 'Add manager'}</button>
+                    <button type="button" className="scw-assign-button supplier-assign" disabled={assigningWorker === person.id || currentSupplyRole === 'supplier'} onClick={() => addTeamMember(person, 'supplier')}>{currentSupplyRole === 'supplier' ? 'Supplier added' : 'Add supplier'}</button>
+                  </span>
+                </div>;
+              })}
+        </div>
       </section>}
 
       <section className="scw-card">
