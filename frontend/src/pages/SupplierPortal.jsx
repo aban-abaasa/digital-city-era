@@ -926,6 +926,7 @@ const SupplierPortal = () => {
           id: item.id,
           supplier_catalog_item_id: item.id,
           name: item.name,
+          image_url: item.image_url || "",
           barcode: item.barcode || '',
           sku: item.sku || '',
           batch_number: offer.first?.batch.batch_number || '',

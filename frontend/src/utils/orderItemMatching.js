@@ -74,6 +74,7 @@ export const createStoreProductForOrderItem = async (supabase, { supermarketId, 
   const supplierBarcode = orderItemBarcode(item);
   const name = orderItemName(item) || (supplierBarcode ? `Product - ${supplierBarcode}` : 'Unnamed product');
   const expiryDate = clean(item.expiry_date ?? item.expiryDate);
+  const imageUrl = clean(item.image_url || item.product_data?.image_url || (Array.isArray(item.images) ? item.images[0] : ''));
   const makeSku = () => `SUP-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`.toUpperCase();
 
   const row = {
@@ -84,6 +85,7 @@ export const createStoreProductForOrderItem = async (supabase, { supermarketId, 
     cost_price: unitPrice,
     description: `Added from supplier order ${orderRef}`.trim(),
     markup_percentage: 0,
+    ...(imageUrl ? { images: [imageUrl] } : {}),
     ...(expiryDate ? { expiry_date: expiryDate } : {})
   };
 
