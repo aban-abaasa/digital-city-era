@@ -330,7 +330,8 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
   total_amount    DECIMAL(15,2) DEFAULT 0,
   notes           TEXT,
   ordered_at      TIMESTAMPTZ DEFAULT now(),
-  approved_at     TIMESTAMPTZ,                 -- set when supplier approves
+  approved_by     UUID        REFERENCES public.users(id) ON DELETE SET NULL,
+  approved_at     TIMESTAMPTZ,                 -- set when a manager approves
   confirmed_at    TIMESTAMPTZ,                 -- set when manager confirms receipt
   received_at     TIMESTAMPTZ,                 -- triggers inventory update
   expected_delivery_date TIMESTAMPTZ,
@@ -353,6 +354,7 @@ ALTER TABLE public.purchase_orders
   ADD COLUMN IF NOT EXISTS total_amount    DECIMAL(15,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS notes           TEXT,
   ADD COLUMN IF NOT EXISTS ordered_at      TIMESTAMPTZ DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS approved_by     UUID REFERENCES public.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS approved_at     TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS confirmed_at    TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS received_at     TIMESTAMPTZ,

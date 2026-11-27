@@ -559,7 +559,11 @@ export const recordPayment = async ({ orderId, amountPaid, paymentMethod, paymen
         amount_ugx:        amountPaid,
         payment_method:    paymentMethod || 'cash',
         payment_reference: paymentReference || null,
-        payment_status:    'confirmed',
+        // Cash and other manually recorded payments remain pending until the
+        // supplier confirms receipt in SupplierPaymentConfirmations.
+        payment_status:    'pending',
+        confirmed_by_supplier: false,
+        confirmation_date: null,
         payment_date:      new Date().toISOString(),
         notes:             notes || null,
       })

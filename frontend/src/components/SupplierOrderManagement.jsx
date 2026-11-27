@@ -2217,7 +2217,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                             </p>
                             <p className={`mt-1 text-sm ${quoteAccepted ? 'text-green-800' : 'text-amber-800'}`}>
                               {quoteAccepted
-                                ? 'The agreed order total is ready for an ICAN business-wallet payment request. Admin PIN approval completes payment.'
+                                ? 'The agreed order total is ready for payment by cash or ICAN business wallet. Cash only needs supplier confirmation; wallet payments need an authorized administrator’s PIN approval.'
                                 : 'The supplier can propose products, quantities, and prices. Payment remains locked until you approve the final list.'}
                             </p>
                             {selectedOrder.supplier_quote_review_notes && <p className="mt-2 text-sm"><strong>Review note:</strong> {selectedOrder.supplier_quote_review_notes}</p>}
@@ -2750,7 +2750,7 @@ const CreateOrderModal = ({ suppliers, pricingMode = 'supplier_price', onClose, 
 const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
   const [amountPaid, setAmountPaid] = useState('');
   const quotePaymentOnly = Boolean(order?.supplier_quote_status && order.supplier_quote_status !== 'not_requested');
-  const [paymentMethod, setPaymentMethod] = useState(quotePaymentOnly ? 'ican_wallet' : 'cash');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -2803,11 +2803,6 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
       alert('The manager must approve the supplier proposal before payment can be requested.');
       return;
     }
-    if (quotePaymentOnly && paymentMethod !== 'ican_wallet') {
-      alert('Quote-based supply orders must use the business-wallet admin approval flow.');
-      return;
-    }
-
     const amount = parseFloat(amountPaid);
     if (!amount || amount <= 0) {
       alert('Please enter a valid payment amount');
@@ -2877,7 +2872,7 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
 
         if (!payResult.success) throw new Error(payResult.error);
 
-        alert(`✅ Payment recorded successfully!\n\nAmount Paid: ${formatUGX(amount)}\n⏳ Awaiting supplier confirmation...`);
+        alert(`✅ Cash payment recorded successfully!\n\nAmount Paid: ${formatUGX(amount)}\n⏳ Awaiting supplier confirmation. No wallet administrator approval is needed.`);
       }
       onSuccess();
     } catch (err) {
@@ -2936,7 +2931,6 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
               </div>
             )}
 
-            {!quotePaymentOnly && (
             <>
             <p className="co-label">Pay with</p>
             <div className="co-seg two" role="group" aria-label="Payment method">
@@ -2944,6 +2938,9 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
               <button type="button" aria-pressed={paymentMethod === 'ican_wallet'} onClick={() => setPaymentMethod('ican_wallet')}>🪙 IcanEra Wallet</button>
             </div>
             </>
+
+            {paymentMethod === 'cash' && quotePaymentOnly && (
+              <div className="co-note">Cash is recorded for the supplier to confirm. It does not need a business-wallet PIN approval.</div>
             )}
 
             {paymentMethod === 'ican_wallet' && (

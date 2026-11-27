@@ -363,8 +363,9 @@ BEFORE UPDATE OF supplier_quote_status, supplier_quote_items, supplier_quote_not
 ON public.purchase_orders
 FOR EACH ROW EXECUTE FUNCTION public.guard_supplier_quote_order_updates();
 
--- A quote-based order must not accept a wallet payment request or a hand-entered
--- cash transfer until the manager approves its final products and total.
+-- A quote-based order must have manager approval before any payment is recorded.
+-- Wallet payments still go through wallet-admin PIN approval; cash waits for the
+-- supplier to confirm receipt.
 CREATE OR REPLACE FUNCTION public.guard_supplier_quote_order_payment()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -376,8 +377,12 @@ BEGIN
     IF v_order.supplier_quote_status <> 'accepted' THEN
       RAISE EXCEPTION 'Manager approval of the supplier proposal is required before payment';
     END IF;
-    IF NEW.payment_method <> 'ican_business_wallet' THEN
-      RAISE EXCEPTION 'Quote-based supplier orders must be paid through the business wallet admin approval flow';
+    IF NEW.payment_method = 'cash' THEN
+      NEW.payment_status := 'pending';
+      NEW.confirmed_by_supplier := FALSE;
+      NEW.confirmation_date := NULL;
+    ELSIF NEW.payment_method <> 'ican_business_wallet' THEN
+      RAISE EXCEPTION 'Quote-based supplier orders accept cash or business-wallet payments';
     END IF;
   END IF;
   RETURN NEW;
