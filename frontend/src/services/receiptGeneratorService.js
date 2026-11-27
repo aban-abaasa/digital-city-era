@@ -122,6 +122,7 @@ class ReceiptService {
       change: saleData.change || 0,
       loyaltyPointsEarned: saleData.loyaltyPointsEarned || 0,
       customer: saleData.customer,
+      documentLabel: saleData.documentLabel || null,
       cashier: saleData.cashier || 'System User',
       // Invoice vs. receipt: 'paid' prints a RECEIPT; 'partial'/'unpaid'
       // prints an INVOICE showing what's still owed.
@@ -140,16 +141,19 @@ class ReceiptService {
     const receipt = this.generateReceiptData(saleData);
     const companyInfo = await this.getCompanyInfo(saleData.companyInfo);
     const isInvoice = receipt.paymentStatus !== 'paid';
+    const docLabel = receipt.documentLabel
+      ? `${receipt.documentLabel} ${isInvoice ? 'Invoice' : 'Receipt'}`
+      : (isInvoice ? 'Invoice' : 'Receipt');
     let message = `🇺🇬 ${companyInfo.name}\n`;
     message += `📱 ${companyInfo.phone}\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
-    message += isInvoice
-      ? `🧾 INVOICE: ${receipt.receiptNumber}\n`
-      : `🧾 Receipt: ${receipt.receiptNumber}\n`;
+    message += `🧾 ${docLabel}: ${receipt.receiptNumber}\n`;
     message += `📅 ${receipt.date}\n`;
     
     if (receipt.customer) {
-      message += `👤 Customer: ${receipt.customer.firstName} ${receipt.customer.lastName}\n`;
+      message += `👤 ${receipt.customer.label || 'Customer'}: ${receipt.customer.firstName} ${receipt.customer.lastName}\n`;
+      if (receipt.customer.contactPerson) message += `Contact: ${receipt.customer.contactPerson}\n`;
+      if (receipt.customer.address) message += `Delivery: ${receipt.customer.address}\n`;
     }
     
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -201,7 +205,9 @@ class ReceiptService {
       ? await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 240 })
       : null;
     const isInvoice = receipt.paymentStatus !== 'paid';
-    const docLabel = isInvoice ? 'Invoice' : 'Receipt';
+    const docLabel = receipt.documentLabel
+      ? `${receipt.documentLabel} ${isInvoice ? 'Invoice' : 'Receipt'}`
+      : (isInvoice ? 'Invoice' : 'Receipt');
     const statusBadge = isInvoice
       ? ` <span style="color:#b45309;">(${receipt.paymentStatus === 'partial' ? 'PARTIALLY PAID' : 'UNPAID'})</span>`
       : '';
@@ -371,7 +377,7 @@ class ReceiptService {
             <p><strong>${docLabel} #:</strong> ${receipt.receiptNumber}</p>
             <p><strong>Date:</strong> ${receipt.date}</p>
             <p><strong>Cashier:</strong> ${receipt.cashier}</p>
-            ${receipt.customer ? `<p><strong>Customer:</strong> ${receipt.customer.firstName} ${receipt.customer.lastName}</p>` : ''}
+            ${receipt.customer ? `<p><strong>${receipt.customer.label || 'Customer'}:</strong> ${receipt.customer.firstName} ${receipt.customer.lastName}</p>${receipt.customer.contactPerson ? `<p><strong>Contact:</strong> ${receipt.customer.contactPerson}</p>` : ''}${receipt.customer.address ? `<p><strong>Delivery:</strong> ${receipt.customer.address}</p>` : ''}` : ''}
           </div>
           <h3><span class="emoji">🛒</span> Items Purchased</h3>
           <table class="items-table">
@@ -468,6 +474,9 @@ class ReceiptService {
     const receipt = this.generateReceiptData(saleData);
     const companyInfo = await this.getCompanyInfo(saleData.companyInfo);
     const isInvoice = receipt.paymentStatus !== 'paid';
+    const docLabel = receipt.documentLabel
+      ? `${receipt.documentLabel} ${isInvoice ? 'Invoice' : 'Receipt'}`
+      : (isInvoice ? 'Invoice' : 'Receipt');
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -523,7 +532,7 @@ class ReceiptService {
     // when there's a balance due.
     doc.setFontSize(11);
     doc.setTextColor(49, 46, 129);
-    doc.text(isInvoice ? 'INVOICE' : 'RECEIPT', pageWidth/2, yPos, { align: 'center' });
+    doc.text(docLabel.toUpperCase(), pageWidth/2, yPos, { align: 'center' });
     yPos += 5;
     if (isInvoice) {
       doc.setFontSize(8);
@@ -537,13 +546,21 @@ class ReceiptService {
     // Receipt info
     doc.setFontSize(9);
     doc.setTextColor(51, 65, 85);
-    doc.text(`${isInvoice ? 'Invoice' : 'Receipt'}: ${receipt.receiptNumber}`, margin, yPos);
+    doc.text(`${docLabel}: ${receipt.receiptNumber}`, margin, yPos);
     yPos += 4;
     doc.text(`Date: ${receipt.date}`, margin, yPos);
     yPos += 4;
     if (receipt.customer) {
-      doc.text(`Customer: ${receipt.customer.firstName} ${receipt.customer.lastName}`, margin, yPos);
-      yPos += 4;
+      const buyerLines = [
+        `${receipt.customer.label || 'Customer'}: ${receipt.customer.firstName} ${receipt.customer.lastName}`,
+        receipt.customer.contactPerson ? `Contact: ${receipt.customer.contactPerson}` : null,
+        receipt.customer.address ? `Delivery: ${receipt.customer.address}` : null,
+      ].filter(Boolean);
+      buyerLines.forEach((line) => {
+        const wrapped = doc.splitTextToSize(line, pageWidth - margin * 2);
+        doc.text(wrapped, margin, yPos);
+        yPos += Math.max(4, wrapped.length * 3.5);
+      });
     }
     doc.text(`Cashier: ${receipt.cashier}`, margin, yPos);
     yPos += 4;
@@ -716,8 +733,11 @@ class ReceiptService {
         // An unpaid/partial sale is an invoice, not a receipt — the
         // downloaded filename should say so too, not just the PDF's own
         // "INVOICE" heading (see generatePDFReceipt's isInvoice).
-        const docWord = receipt.paymentStatus && receipt.paymentStatus !== 'paid' ? 'Invoice' : 'Receipt';
-        const finalFilename = filename || `${docWord}_${receipt.receiptNumber}.pdf`;
+        const isInvoice = receipt.paymentStatus && receipt.paymentStatus !== 'paid';
+        const docWord = receipt.documentLabel
+          ? `${receipt.documentLabel} ${isInvoice ? 'Invoice' : 'Receipt'}`
+          : (isInvoice ? 'Invoice' : 'Receipt');
+        const finalFilename = filename || `${docWord.replace(/\s+/g, '_')}_${receipt.receiptNumber}.pdf`;
         doc.save(finalFilename);
         
         resolve({

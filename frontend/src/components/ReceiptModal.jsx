@@ -126,7 +126,9 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   };
 
   const receiptData = receiptService.generateReceiptData(brandedSaleData);
-  const documentWord = receiptData.paymentStatus === 'paid' ? 'Receipt' : 'Invoice';
+  const documentWord = saleData.documentLabel
+    ? `${saleData.documentLabel} ${receiptData.paymentStatus === 'paid' ? 'Receipt' : 'Invoice'}`
+    : (receiptData.paymentStatus === 'paid' ? 'Receipt' : 'Invoice');
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
@@ -218,7 +220,11 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
                     <div>
                       <p><strong>Cashier:</strong> {receiptData.cashier}</p>
                       {receiptData.customer && (
-                        <p><strong>Customer:</strong> {receiptData.customer.firstName} {receiptData.customer.lastName}</p>
+                        <>
+                          <p><strong>{receiptData.customer.label || 'Customer'}:</strong> {receiptData.customer.firstName} {receiptData.customer.lastName}</p>
+                          {receiptData.customer.contactPerson && <p><strong>Contact:</strong> {receiptData.customer.contactPerson}</p>}
+                          {receiptData.customer.address && <p><strong>Delivery:</strong> {receiptData.customer.address}</p>}
+                        </>
                       )}
                     </div>
                   </div>
