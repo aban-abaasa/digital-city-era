@@ -192,14 +192,15 @@ export function SupplierCatalogTab({ userId }) {
           </button>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="supplier-catalog-list">
           {items.map(item => (
               <div key={item.id}
-              className={`bg-white rounded-2xl border p-4 transition-all ${item.is_available ? 'border-gray-100 shadow-sm' : 'border-gray-100 opacity-50'}`}>
-              {item.image_url ? <img src={item.image_url} alt={item.name} className="mb-3 h-36 w-full rounded-xl object-cover" /> : <div className="mb-3 flex h-20 items-center justify-center rounded-xl bg-purple-50 text-3xl">📦</div>}
-              <div className="flex items-start justify-between gap-2 mb-2">
+              className={`supplier-catalog-item bg-white rounded-2xl border p-4 transition-all ${item.is_available ? 'border-gray-100 shadow-sm' : 'border-gray-100 opacity-50'}`}>
+              {item.image_url ? <img src={item.image_url} alt="" loading="lazy" className="supplier-catalog-thumb mb-3 h-36 w-full rounded-xl object-cover" /> : <div className="supplier-catalog-thumb mb-3 flex h-20 items-center justify-center rounded-xl bg-purple-50 text-3xl">📦</div>}
+              <div className="supplier-catalog-title-row flex items-start justify-between gap-2 mb-2">
                 <div>
                   <p className="font-semibold text-gray-800 text-sm">{item.name}</p>
+                  <p className="supplier-catalog-barcode">{item.barcode ? `Barcode ${item.barcode}` : 'Barcode not set'}{item.sku ? ` · SKU ${item.sku}` : ''}</p>
                   <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{item.category}</span>
                 </div>
                 <div className="flex gap-1">

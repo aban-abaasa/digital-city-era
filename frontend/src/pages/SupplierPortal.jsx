@@ -36,15 +36,17 @@ import SupplierStoreInventory from '../components/SupplierStoreInventory';
 import FarmProduceBoard from '../components/FarmProduceBoard';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
-import { getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds, submitSupplierPurchaseOrderQuote } from '../services/supplierOrdersService';
+import { confirmSupplierOrderDelivery, getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds, submitSupplierPurchaseOrderQuote } from '../services/supplierOrdersService';
 import UseBusinessProfileTab from '../components/UseBusinessProfileTab';
 import { useTheme } from '../contexts/ThemeContext';
 import PortalHeader from '../components/PortalHeader';
 import PortalTabNavigator from '../components/PortalTabNavigator';
 import { ROLE_HOME } from '../components/RoleProtectedRoute';
 import { SUPPLIER_CAPABLE_ROLES, getSupplierAccess } from '../utils/supplierAccess';
+import { catalogItemOffer, groupBatchesByItem } from '../utils/supplierBatchExpiry';
 import SupplierCompanyWorkspace from '../components/SupplierCompanyWorkspace';
 import '../styles/supermartkera-portals.css';
+import '../styles/supplier-order-create.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 const SupplierPortal = () => {
@@ -78,6 +80,7 @@ const SupplierPortal = () => {
   const [vehicleChoiceOrderId, setVehicleChoiceOrderId] = useState(null);
   useBackLayer(!!vehicleChoiceOrderId, () => setVehicleChoiceOrderId(null));
   const [confirmingOrder, setConfirmingOrder] = useState(false);
+  const [confirmingDeliveryOrderId, setConfirmingDeliveryOrderId] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [supplierProfile, setSupplierProfile] = useState({
     name: '',
@@ -827,27 +830,34 @@ const SupplierPortal = () => {
 
       // Format orders with payment data from purchase_orders table
       // (payment data is now tracked directly in purchase_orders)
-      const formatted = filteredOrders.map(order => ({
-        id: order.po_number || order.id,
-        orderId: order.id,
-        date: new Date(order.ordered_at).toLocaleDateString('en-UG', {
-          year: 'numeric', month: 'short', day: 'numeric'
-        }),
-        items: order.items?.length || 0,
-        amount: parseFloat(order.total_amount) || 0,
-        status: order.status === 'completed' ? 'delivered'
-              : order.status === 'received'   ? 'received'
-              : 'cancelled',
-        rating: 5,
-        products: order.items?.map(item => item.product_name || item.name || 'Item').join(', ') || 'N/A',
-        payment_status: order.payment_status || 'unpaid',
-        amount_paid: parseFloat(order.amount_paid_ugx) || 0,
-        amount_paid_ugx: parseFloat(order.amount_paid_ugx) || 0,
-        balance_due: order.balance_due_ugx != null
-          ? (parseFloat(order.balance_due_ugx) || 0)
-          : Math.max(0, (parseFloat(order.total_amount) || 0) - (parseFloat(order.amount_paid_ugx) || 0)),
-        total_amount: parseFloat(order.total_amount) || 0
-      }));
+      const formatted = filteredOrders.map(order => {
+        const total = Math.max(0, parseFloat(order.total_amount) || 0);
+        const paid = order.payment_status === 'paid'
+          ? total
+          : Math.min(total, Math.max(0, parseFloat(order.amount_paid_ugx) || 0));
+        const balance = Math.max(0, total - paid);
+        return {
+          id: order.po_number || order.id,
+          orderId: order.id,
+          date: new Date(order.ordered_at).toLocaleDateString('en-UG', {
+            year: 'numeric', month: 'short', day: 'numeric'
+          }),
+          items: order.items?.length || 0,
+          amount: total,
+          status: order.status === 'completed' ? 'delivered'
+                : order.status === 'received'   ? 'received'
+                : 'cancelled',
+          rating: 5,
+          products: order.items?.map(item => item.product_name || item.name || 'Item').join(', ') || 'N/A',
+          payment_status: order.payment_status || 'unpaid',
+          amount_paid: paid,
+          amount_paid_ugx: paid,
+          balance_due: balance,
+          balance_due_ugx: balance,
+          total_amount: total,
+          total_amount_ugx: total
+        };
+      });
 
       console.log('✅ Order history loaded:', formatted.length, 'orders');
       setOrderHistory(formatted);
@@ -882,20 +892,54 @@ const SupplierPortal = () => {
         .eq('user_id', userRow.id)
         .maybeSingle();
 
-      if (!supplierRow?.id) {
-        setProductCatalog([]);
-        return;
+      let products = [];
+      if (supplierRow?.id) {
+        const { data } = await supabase
+          .from('products')
+          .select('id, name, sku, barcode, selling_price, category_id')
+          .eq('supplier_id', supplierRow.id)
+          .order('name');
+        products = data || [];
       }
 
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, name, sku, selling_price, category_id')
-        .eq('supplier_id', supplierRow.id)
+      const { data: listedCatalog } = await supabase
+        .from('supplier_catalog_items')
+        .select('*')
+        .eq('supplier_user_id', userId)
+        .eq('is_available', true)
         .order('name');
-
-      const formatted = products?.map(product => ({
+      const catalogIds = (listedCatalog || []).map((item) => item.id);
+      let batchGroups = {};
+      if (catalogIds.length) {
+        const { data: catalogBatches } = await supabase.from('supplier_catalog_batches')
+          .select('*').in('catalog_item_id', catalogIds);
+        batchGroups = groupBatchesByItem(catalogBatches || []);
+      }
+      const listedProducts = (listedCatalog || []).flatMap((item) => {
+        const batches = batchGroups[item.id] || [];
+        const offer = catalogItemOffer(item, batches);
+        if (batches.length && !offer.first) return [];
+        return [{
+          id: item.id,
+          supplier_catalog_item_id: item.id,
+          name: item.name,
+          barcode: item.barcode || '',
+          sku: item.sku || '',
+          batch_number: offer.first?.batch.batch_number || '',
+          expiry_date: offer.first?.batch.expiry_date || '',
+          category: item.category || 'Uncategorized',
+          price: offer.price || Number(item.price_per_unit) || 0,
+          stock: offer.first?.batch.quantity ?? Number(item.stock_quantity) ?? 0,
+          status: 'active',
+          unit: item.unit || 'unit',
+          season: 'year-round',
+        }];
+      });
+      const formattedProducts = products?.map(product => ({
         id: product.id,
         name: product.name,
+        barcode: product.barcode || '',
+        sku: product.sku || '',
         category: 'Uncategorized',
         price: parseFloat(product.selling_price) || 0,
         stock: 0,
@@ -904,7 +948,7 @@ const SupplierPortal = () => {
         season: 'year-round'
       })) || [];
 
-      setProductCatalog(formatted);
+      setProductCatalog([...listedProducts, ...(formattedProducts || [])]);
     } catch (error) {
       console.error('Error loading product catalog:', error);
     }
@@ -1012,6 +1056,10 @@ const SupplierPortal = () => {
         const displayedAmount = ['submitted', 'changes_requested'].includes(order.supplier_quote_status)
           ? quoteSubtotal * 1.18
           : (parseFloat(order.total_amount) || 0);
+        const paidAmount = order.payment_status === 'paid'
+          ? displayedAmount
+          : Math.min(displayedAmount, Math.max(0, parseFloat(order.amount_paid_ugx) || 0));
+        const balanceDue = Math.max(0, displayedAmount - paidAmount);
         return {
           id: order.po_number || order.id,
           orderId: order.id,
@@ -1031,12 +1079,12 @@ const SupplierPortal = () => {
           notes: order.notes,
           // Real payment roll-up from purchase_orders (kept current by confirmPayment)
           payment_status: order.payment_status || 'unpaid',
-          amount_paid: parseFloat(order.amount_paid_ugx) || 0,
-          amount_paid_ugx: parseFloat(order.amount_paid_ugx) || 0,
-          balance_due: order.balance_due_ugx != null
-            ? (parseFloat(order.balance_due_ugx) || 0)
-            : Math.max(0, (parseFloat(order.total_amount) || 0) - (parseFloat(order.amount_paid_ugx) || 0)),
+          amount_paid: paidAmount,
+          amount_paid_ugx: paidAmount,
+          balance_due: balanceDue,
+          balance_due_ugx: balanceDue,
           total_amount: parseFloat(order.total_amount) || 0,
+          total_amount_ugx: displayedAmount,
           fullOrder: order
         };
       }) || [];
@@ -1947,7 +1995,7 @@ const SupplierPortal = () => {
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="supplier-history-table hidden md:block">
             <table className="w-full">
               <thead>
                 <tr className="border-b-2 border-gray-200">
@@ -2273,13 +2321,15 @@ const SupplierPortal = () => {
   const handleConfirmOrder = async (orderId, vehicleType) => {
     setConfirmingOrder(true);
     try {
-      console.log('🔵 Confirming order with ID:', orderId, 'vehicle:', vehicleType);
+      const isOwnDelivery = vehicleType === 'supplier_own_delivery';
+      console.log('🔵 Confirming order with ID:', orderId, 'delivery:', vehicleType);
 
       const { data, error } = await supabase
         .from('purchase_orders')
         .update({
           status: 'confirmed',
-          preferred_vehicle_type: vehicleType,
+          preferred_vehicle_type: isOwnDelivery ? null : vehicleType,
+          delivery_method: isOwnDelivery ? 'supplier_own_delivery' : 'supplier_delivery',
           updated_at: new Date().toISOString()
         })
         .eq('id', orderId)
@@ -2292,7 +2342,9 @@ const SupplierPortal = () => {
       }
 
       console.log('✅ Order confirmed successfully:', data);
-      alert(`✅ Order confirmed with ${vehicleType} requested for delivery!`);
+      alert(isOwnDelivery
+        ? 'Order accepted. Confirm delivery to the store after the goods arrive.'
+        : `Order accepted with ${vehicleType} selected. Confirm delivery after the goods arrive.`);
       setVehicleChoiceOrderId(null);
       loadSupplierData(); // Reload data
     } catch (err) {
@@ -2300,6 +2352,22 @@ const SupplierPortal = () => {
       alert('Failed to confirm order: ' + err.message);
     } finally {
       setConfirmingOrder(false);
+    }
+  };
+
+  const handleConfirmDelivery = async (orderId) => {
+    if (!window.confirm('Confirm that this order has been delivered to the store? The manager will then be able to receive it into POS.')) return;
+    setConfirmingDeliveryOrderId(orderId);
+    try {
+      const result = await confirmSupplierOrderDelivery(orderId);
+      if (!result.success) throw new Error(result.error);
+      alert('Delivery confirmed. The store manager can now receive the products into POS.');
+      await loadSupplierData();
+    } catch (error) {
+      console.error('Could not confirm supplier delivery:', error);
+      alert('Could not confirm delivery: ' + error.message);
+    } finally {
+      setConfirmingDeliveryOrderId(null);
     }
   };
 
@@ -2352,21 +2420,21 @@ const SupplierPortal = () => {
   };
 
   const renderOrders = () => (
-    <div className="space-y-6 animate-fadeInUp">
-      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-emerald-50 p-4 shadow-sm sm:p-5">
+    <div className="supplier-orders-classic animate-fadeInUp">
+      <section className="supplier-orders-heading">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-700">Supply</p>
             <h2 className="mt-1 text-xl font-extrabold text-gray-900">Proposals and delivery preparation</h2>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">Propose only products you can provide, set your quantities and prices, and prepare approved supplies for delivery.</p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="supplier-order-stats grid grid-cols-3 gap-2 text-center">
             {[
               { label: 'Proposal needed', count: pendingOrders.filter((item) => ['awaiting_supplier_quote', 'changes_requested'].includes(item.fullOrder?.supplier_quote_status)).length, tone: 'text-amber-700' },
               { label: 'Manager review', count: pendingOrders.filter((item) => item.fullOrder?.supplier_quote_status === 'submitted').length, tone: 'text-blue-700' },
               { label: 'Approved', count: pendingOrders.filter((item) => item.fullOrder?.supplier_quote_status === 'accepted').length, tone: 'text-green-700' },
             ].map((stat) => (
-              <div key={stat.label} className="min-w-[82px] rounded-xl bg-white px-2 py-2 ring-1 ring-gray-200">
+              <div key={stat.label} className="supplier-order-stat min-w-[82px] px-2 py-2">
                 <p className={`text-xl font-extrabold ${stat.tone}`}>{stat.count}</p>
                 <p className="text-[10px] font-semibold text-gray-600 sm:text-xs">{stat.label}</p>
               </div>
@@ -2374,10 +2442,10 @@ const SupplierPortal = () => {
           </div>
         </div>
       </section>
-      <SupplierStoreInventory />
+      <div className="supplier-store-inventory-section"><SupplierStoreInventory /></div>
       {/* Pending Orders */}
-      <div className="bg-white rounded-xl p-6 shadow-lg">
-        <div className="flex items-center justify-between mb-6">
+      <div className="supplier-orders-list">
+        <div className="supplier-orders-list-head flex items-center justify-between">
           <h3 className="text-xl font-bold text-gray-900">📦 Orders from Store Managers</h3>
           <button
             onClick={loadSupplierData}
@@ -2387,7 +2455,7 @@ const SupplierPortal = () => {
             <span>Refresh</span>
           </button>
         </div>
-        <div className="space-y-3">
+        <div className="supplier-order-list">
           {pendingOrders.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">
               <FiPackage className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -2396,10 +2464,10 @@ const SupplierPortal = () => {
             </div>
           ) : (
             pendingOrders.map((order) => (
-              <div key={order.id} className="border-2 border-blue-200 rounded-lg overflow-hidden bg-gradient-to-r from-blue-50 to-white hover:shadow-md transition-all duration-300">
+              <div key={order.id} className="supplier-order-list-item transition-colors">
                 {/* Collapsed View - Order Header */}
                 <div 
-                  className="p-4 md:p-5 cursor-pointer hover:bg-blue-50 transition-colors"
+                  className="supplier-order-list-head cursor-pointer transition-colors"
                   onClick={() => setExpandedOrderId(expandedOrderId === order.orderId ? null : order.orderId)}
                 >
                   {/* Mobile Portrait: Completely Stacked Layout */}
@@ -2456,12 +2524,11 @@ const SupplierPortal = () => {
                     <div className="flex items-baseline justify-between pl-13 md:pl-0 pt-1 border-t md:border-t-0 md:pt-0">
                       <div className="flex-1">
                         <p className="text-xs text-gray-600 mb-1">Total Amount</p>
-                        <p className="font-bold text-3xl md:text-lg text-green-600">{formatCurrency(order.amount)}</p>
-                        {order.payment_status === 'partially_paid' && (
-                          <p className="text-xs text-gray-600 mt-1">
-                            Paid: <span className="text-green-600 font-semibold">{formatCurrency(order.amount_paid)}</span>
-                          </p>
-                        )}
+                        <div className="supplier-order-money">
+                          <span><small>Total</small><b>{formatCurrency(order.amount)}</b></span>
+                          <span><small>Paid</small><b>{formatCurrency(order.amount_paid)}</b></span>
+                          <span><small>Remaining</small><b>{formatCurrency(order.balance_due)}</b></span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2469,7 +2536,7 @@ const SupplierPortal = () => {
 
                 {/* Expanded View - Order Details */}
                 {expandedOrderId === order.orderId && (
-                  <div className="border-t-2 border-blue-200 p-4 bg-white animate-fadeInUp">
+                  <div className="supplier-order-list-details animate-fadeInUp">
                     {['awaiting_supplier_quote', 'changes_requested'].includes(order.fullOrder?.supplier_quote_status) && (
                       <div className="mb-4">
                         {order.fullOrder?.supplier_quote_status === 'changes_requested' && order.fullOrder?.supplier_quote_review_notes && (
@@ -2499,6 +2566,9 @@ const SupplierPortal = () => {
                             {order.fullOrder.supplier_quote_items.map((item, index) => (
                               <li key={`${item.product_id || item.product_name || 'quote'}-${index}`}>
                                 {item.product_name || item.name} × {item.quantity} · UGX {Number(item.unit_price || item.unitPrice || 0).toLocaleString()} each
+                                {(item.barcode || item.batch_number || item.expiry_date) && <small className="ml-2 text-gray-500">
+                                  {[item.barcode ? `Barcode ${item.barcode}` : null, item.batch_number ? `Batch ${item.batch_number}` : null, item.expiry_date ? `Expires ${item.expiry_date}` : null].filter(Boolean).join(' · ')}
+                                </small>}
                               </li>
                             ))}
                           </ul>
@@ -2587,9 +2657,27 @@ const SupplierPortal = () => {
                     )}
 
                     {order.status === 'confirmed' && (
-                      <div className="flex items-center space-x-2 pt-4 border-t text-green-600">
-                        <FiCheckCircle className="h-5 w-5" />
-                        <span className="font-semibold">Order Confirmed - Preparing for delivery</span>
+                      <div className="supplier-delivery-confirmation">
+                        {order.fullOrder?.supplier_delivery_confirmed_at ? (
+                          <p className="supplier-delivery-confirmation-status">
+                            <FiCheckCircle aria-hidden="true" /> Delivery confirmed to store. Waiting for the manager to receive it into POS.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="supplier-delivery-confirmation-status is-waiting">
+                              Order accepted. Confirm delivery after the goods reach the store.
+                            </p>
+                            <button
+                              type="button"
+                              className="supplier-delivery-confirm-button"
+                              disabled={confirmingDeliveryOrderId === order.orderId}
+                              onClick={() => handleConfirmDelivery(order.orderId)}
+                            >
+                              <FiCheckCircle aria-hidden="true" />
+                              {confirmingDeliveryOrderId === order.orderId ? 'Confirming…' : 'Confirm delivery to store'}
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2601,7 +2689,7 @@ const SupplierPortal = () => {
       </div>
 
       {/* Order History */}
-      <div className="bg-white rounded-xl p-6 shadow-lg">
+      <section className="supplier-order-history">
         <h3 className="text-xl font-bold text-gray-900 mb-6">📚 Recent Order History</h3>
         {orderHistory.length === 0 ? (
           <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -2610,7 +2698,8 @@ const SupplierPortal = () => {
             <p className="text-gray-500 text-sm">Completed orders will appear here</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="supplier-history-content">
+          <div className="supplier-history-table hidden md:block">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -2691,8 +2780,29 @@ const SupplierPortal = () => {
               </tfoot>
             </table>
           </div>
+          <ul className="supplier-history-list md:hidden">
+            {orderHistory.map((order) => (
+              <li key={order.orderId || order.id}>
+                <div className="supplier-history-row-head">
+                  <span><b>{order.id}</b><small>{order.date} · {order.items} items</small></span>
+                  <span className={`supplier-history-status ${order.payment_status || 'unpaid'}`}>{order.payment_status?.replaceAll('_', ' ') || 'unpaid'}</span>
+                </div>
+                <div className="supplier-history-money">
+                  <span><small>Total</small><b>{formatCurrency(order.amount)}</b></span>
+                  <span><small>Paid</small><b>{formatCurrency(order.amount_paid)}</b></span>
+                  <span><small>Remaining</small><b>{formatCurrency(order.balance_due)}</b></span>
+                </div>
+              </li>
+            ))}
+            <li className="supplier-history-totals">
+              <b>All orders</b>
+              <span>Total {formatCurrency(orderHistory.reduce((sum, order) => sum + order.amount, 0))}</span>
+              <span>Remaining {formatCurrency(orderHistory.reduce((sum, order) => sum + order.balance_due, 0))}</span>
+            </li>
+          </ul>
+          </div>
         )}
-      </div>
+      </section>
     </div>
   );
 
@@ -2885,7 +2995,7 @@ const SupplierPortal = () => {
       />
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8">
+      <div className={activeTab === 'orders' ? 'supplier-orders-screen' : activeTab === 'payments' ? 'supplier-payments-screen' : 'max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8'}>
         {(loading && ['overview','orders','products','payments'].includes(activeTab)) ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">
@@ -2966,9 +3076,7 @@ const SupplierPortal = () => {
         }}
       />
 
-      {/* Vehicle Choice Modal — shown right when confirming an order, so
-          the supplier picks what actually fits the shipment instead of
-          dispatch deciding automatically with no input from them. */}
+      {/* Delivery choice shown as part of supplier confirmation. */}
       {vehicleChoiceOrderId && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
@@ -2976,10 +3084,10 @@ const SupplierPortal = () => {
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-bold flex items-center gap-2">
-                    <FiTruck className="h-6 w-6" /> Choose a Delivery Vehicle
+                    <FiTruck className="h-6 w-6" /> Choose a Delivery Method
                   </h2>
                   <p className="text-green-100 mt-1 text-sm">
-                    For 🏬 {pendingOrders.find(o => o.orderId === vehicleChoiceOrderId)?.storeName || 'this store'} — what fits this shipment best?
+                    For 🏬 {pendingOrders.find(o => o.orderId === vehicleChoiceOrderId)?.storeName || 'this store'} — choose your delivery method.
                   </p>
                 </div>
                 <button
@@ -2991,8 +3099,9 @@ const SupplierPortal = () => {
                 </button>
               </div>
             </div>
-            <div className="p-6 grid grid-cols-3 gap-3">
+            <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
+                { value: 'supplier_own_delivery', label: 'My own delivery', emoji: '🚚', hint: 'I will deliver' },
                 { value: 'car', label: 'Car', emoji: '🚗', hint: 'Small / light' },
                 { value: 'van', label: 'Van', emoji: '🚐', hint: 'Medium' },
                 { value: 'truck', label: 'Truck', emoji: '🚚', hint: 'Bulk / heavy' },

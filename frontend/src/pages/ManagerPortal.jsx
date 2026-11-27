@@ -10061,7 +10061,7 @@ SUPERMARTKERA Uganda Management Team
         </div>
 
         {/* Full Inventory Interface for Manager */}
-        <ProductInventoryInterface />
+        <ProductInventoryInterface enableCatalogProductSuggestions />
       </div>
 
       {/* Manager Quick Actions */}

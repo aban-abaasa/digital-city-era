@@ -19,17 +19,16 @@ const FILTERS = [
 ];
 
 const paymentOf = (order) => (order.payment_status === 'paid' || order.payment_status === 'partially_paid' ? order.payment_status : 'unpaid');
-const totalOf = (order) => Number(order.total_amount ?? order.amount) || 0;
+const totalOf = (order) => Number(order.total_amount_ugx) || Number(order.total_amount) || Number(order.amount) || 0;
 const paidOf = (order) => {
   if (paymentOf(order) === 'paid') return totalOf(order);
-  return Number(order.amount_paid_ugx ?? order.amount_paid) || 0;
+  return Math.min(totalOf(order), Number(order.amount_paid_ugx) || Number(order.amount_paid) || 0);
 };
 
 /**
- * Supplier "Payments" tab. Every figure comes from the purchase orders the
- * supplier actually received (payment roll-up kept current when a payment is
- * confirmed). Orders are cards on every screen width; tap one for its payment
- * history.
+ * Supplier "Payments" tab. Figures use each purchase order's total and
+ * confirmed payment roll-up. Rows show the remaining balance on every screen;
+ * tap one for its payment history.
  *
  * orders: pending orders first, then history. An order can be in both lists
  * (received / completed), so they are de-duplicated by order id here.
@@ -135,6 +134,9 @@ export default function SupplierPaymentsPanel({ orders, loading, onRefresh }) {
                       <p className="spc-item-title">{order.id}</p>
                       <p className="spc-item-meta">
                         {order.storeName ? `${order.storeName} · ` : ''}{order.date}
+                      </p>
+                      <p className="spc-item-payment">
+                        Paid {formatUgx(paid)} <span aria-hidden="true">·</span> Remaining {formatUgx(Math.max(0, total - paid))}
                       </p>
                     </div>
                     <div className="spc-item-side">

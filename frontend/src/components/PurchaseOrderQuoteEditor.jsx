@@ -2,9 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { FiPlus, FiTrash2, FiPackage } from 'react-icons/fi';
 
 const toLine = (item = {}) => ({
-  product_id: item.product_id || item.id || null,
+  product_id: Object.prototype.hasOwnProperty.call(item, 'product_id') ? item.product_id : (item.id || null),
   store_product_id: item.store_product_id || null,
   product_name: item.product_name || item.productName || item.name || '',
+  barcode: item.barcode || item.product_data?.barcode || '',
+  sku: item.sku || item.product_data?.sku || '',
+  batch_number: item.batch_number || '',
+  expiry_date: item.expiry_date || '',
+  supplier_catalog_item_id: item.supplier_catalog_item_id || null,
   quantity: Number(item.quantity ?? item.qty ?? 1),
   unit_price: Number(item.unit_price ?? item.unitPrice ?? item.price ?? 0),
 });
@@ -41,8 +46,14 @@ const PurchaseOrderQuoteEditor = ({
     if (!product) return;
     setItems((current) => [...current, toLine({
       id: product.id,
+      product_id: isManager ? product.id : null,
       store_product_id: isManager ? product.id : null,
+      supplier_catalog_item_id: isManager ? null : product.supplier_catalog_item_id || null,
       name: product.name || product.product_name,
+      barcode: product.barcode || '',
+      sku: product.sku || '',
+      batch_number: product.batch_number || '',
+      expiry_date: product.expiry_date || '',
       unit_price: product.cost_price ?? product.selling_price ?? product.price ?? 0,
       quantity: 1,
     })]);
@@ -64,6 +75,11 @@ const PurchaseOrderQuoteEditor = ({
     const normalized = items.map((item) => ({
       product_id: item.store_product_id || item.product_id || null,
       product_name: String(item.product_name || '').trim(),
+      barcode: item.barcode || '',
+      sku: item.sku || '',
+      batch_number: item.batch_number || '',
+      expiry_date: item.expiry_date || '',
+      supplier_catalog_item_id: item.supplier_catalog_item_id || null,
       quantity: Number(item.quantity),
       unit_price: Number(item.unit_price),
     }));
@@ -80,7 +96,7 @@ const PurchaseOrderQuoteEditor = ({
   };
 
   return (
-    <div className="rounded-xl border border-indigo-200 bg-white p-4 sm:p-5">
+    <div className="co-quote-editor">
       <div className="mb-4 flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700"><FiPackage /></span>
         <div>
@@ -95,7 +111,7 @@ const PurchaseOrderQuoteEditor = ({
 
       {items.length > 0 && <div className="space-y-3">
         {items.map((item, index) => (
-          <div key={`${item.product_id || 'item'}-${index}`} className={`grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 sm:items-end ${isManager ? 'sm:grid-cols-[minmax(0,1fr)_minmax(170px,0.8fr)_100px_145px_40px]' : 'sm:grid-cols-[minmax(0,1fr)_110px_150px_40px]'}`}>
+          <div key={`${item.product_id || 'item'}-${index}`} className={`co-quote-line grid grid-cols-1 gap-2 sm:items-end ${isManager ? 'is-manager sm:grid-cols-[minmax(0,1fr)_minmax(170px,0.8fr)_100px_145px_40px]' : 'sm:grid-cols-[minmax(0,1fr)_110px_150px_40px]'}`}>
             <label className="text-xs font-semibold text-gray-600">
               Product
               <input value={item.product_name} readOnly={!isManager} onChange={(event) => updateItem(index, 'product_name', event.target.value)} placeholder="Product name" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 read-only:bg-gray-50" />
@@ -105,13 +121,18 @@ const PurchaseOrderQuoteEditor = ({
               <select value={item.store_product_id || (catalogItems.some((product) => String(product.id) === String(item.product_id)) ? item.product_id : '')} onChange={(event) => {
                 const product = catalogItems.find((candidate) => String(candidate.id) === String(event.target.value));
                 setItems((current) => current.map((line, itemIndex) => itemIndex === index
-                  ? { ...line, store_product_id: product?.id || null, product_id: product?.id || line.product_id, product_name: product?.name || product?.product_name || line.product_name }
+                  ? { ...line, store_product_id: product?.id || null, product_id: product?.id || line.product_id, product_name: product?.name || product?.product_name || line.product_name, barcode: line.barcode || product?.barcode || '', sku: line.sku || product?.sku || '' }
                   : line));
               }} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900">
                 <option value="">Keep proposal product</option>
                 {catalogItems.map((product) => <option key={product.id} value={product.id}>{product.name || product.product_name}</option>)}
               </select>
             </label>}
+            {(item.barcode || item.batch_number || item.expiry_date) && <p className="text-xs text-gray-500 sm:col-span-full">
+              {item.barcode ? `Barcode ${item.barcode}` : ''}
+              {item.batch_number ? `${item.barcode ? ' · ' : ''}Batch ${item.batch_number}` : ''}
+              {item.expiry_date ? `${item.barcode || item.batch_number ? ' · ' : ''}Expires ${item.expiry_date}` : ''}
+            </p>}
             <label className="text-xs font-semibold text-gray-600">
               Quantity
               <input type="number" min="0.01" step="any" value={item.quantity} onChange={(event) => updateItem(index, 'quantity', event.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900" />

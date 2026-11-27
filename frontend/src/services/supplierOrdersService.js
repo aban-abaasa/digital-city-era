@@ -459,6 +459,21 @@ export const sendOrderToSupplier = async (orderId, managerId) => {
   }
 };
 
+/** The assigned supplier confirms that the goods have reached the store. */
+export const confirmSupplierOrderDelivery = async (orderId) => {
+  try {
+    const { data, error } = await supabase.rpc('confirm_supplier_order_delivery', {
+      p_order_id: orderId,
+    });
+    if (error) throw error;
+    if (data?.success === false) throw new Error(data.error || 'Could not confirm delivery.');
+    return { success: true, result: data };
+  } catch (error) {
+    console.error('Error confirming supplier order delivery:', error);
+    return { success: false, error: error.message || 'Could not confirm delivery.' };
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Stats
 // ---------------------------------------------------------------------------
@@ -513,7 +528,7 @@ export const getAllDeliveries = async () => {
 
 export const createDelivery = async (orderId, deliveryData = {}) => {
   try {
-    const allowedMethods = ['supplier_delivery', 'mybodaguy_delivery', 'supermarket_pickup'];
+    const allowedMethods = ['supplier_delivery', 'supplier_own_delivery', 'mybodaguy_delivery', 'supermarket_pickup'];
     if (!allowedMethods.includes(deliveryData.deliveryMethod)) {
       throw new Error('Choose a delivery method before recording delivery');
     }
@@ -820,6 +835,7 @@ const supplierOrdersService = {
   reviewSupplierPurchaseOrderQuote,
   rejectPurchaseOrder,
   sendOrderToSupplier,
+  confirmSupplierOrderDelivery,
   getSupplierOrderStats,
   getAllDeliveries,
   createDelivery,

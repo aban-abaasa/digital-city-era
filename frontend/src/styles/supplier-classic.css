@@ -132,6 +132,8 @@
 .spc-item-main { flex: 1; min-width: 0; }
 .spc-item-title { font-weight: 700; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 .spc-item-meta { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.spc-item-payment { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.spc-item-payment span { padding-inline: 3px; color: var(--gold-deep); }
 .spc-item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
 .spc-amount { font-family: var(--serif); font-weight: 700; font-size: 1rem; color: var(--ink); white-space: nowrap; }
 .spc-chev { flex: none; color: var(--gold-deep); transition: transform 0.15s ease; }
@@ -249,3 +251,32 @@ a.spc-btn { text-decoration: none; }
 [data-theme="dark"] .spc-btn.gold { background: linear-gradient(135deg, #f8e7b0, #e2c46b 55%, #c4a052); color: #3b2f0b; }
 [data-theme="dark"] .spc-btn.ok { background: linear-gradient(135deg, #047857, #059669); }
 [data-theme="dark"] .spc-btn.ghost, [data-theme="dark"] .spc-btn.danger { background: #0f2a20; }
+
+/* Full-width supplier payments: classic ledger rows instead of nested cards. */
+.supplier-payments-screen .spc { gap: 0.75rem; }
+.supplier-payments-screen .spc-hero { padding: 0 0 0.7rem; border: 0; border-bottom: 2px solid var(--gold); border-radius: 0; background: transparent; box-shadow: none; }
+.supplier-payments-screen .spc-hero::after { display: none; }
+.supplier-payments-screen .spc-hero .spc-eyebrow { color: var(--gold-deep); }
+.supplier-payments-screen .spc-hero h2 { color: var(--ink); font-size: 1.35rem; }
+.supplier-payments-screen .spc-hero p { color: var(--muted); }
+.supplier-payments-screen .spc-stats { gap: 0; }
+.supplier-payments-screen .spc-stat { padding: 0.45rem 0.55rem; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
+.supplier-payments-screen .spc-stat:first-child { border-left: 0; }
+.supplier-payments-screen .spc-stat-value { font-size: clamp(0.8rem, 3vw, 1.1rem); }
+.supplier-payments-screen .spc-card { padding: 0.65rem 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
+.supplier-payments-screen .spc-card-head { margin-bottom: 0.5rem; }
+.supplier-payments-screen .spc-item { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.supplier-payments-screen .spc-item-head { padding: 0.65rem 0.15rem; }
+.supplier-payments-screen .spc-item-body { padding: 0.65rem 0.15rem 0.8rem; border-top: 1px solid var(--line-soft); background: transparent; }
+.supplier-payments-screen .spc-kv { gap: 0.35rem 0.75rem; }
+.supplier-payments-screen .spc-kv > div { padding: 0.3rem 0; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
+.supplier-payments-screen .spc-seg { border-radius: 0.5rem; }
+.supplier-payments-screen .spc-item-payment { font-variant-numeric: tabular-nums; }
+@media (max-width: 380px) {
+  .supplier-payments-screen .spc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .supplier-payments-screen .spc-stat:nth-child(odd) { border-left: 0; }
+  .supplier-payments-screen .spc-item-head { gap: 0.45rem; }
+  .supplier-payments-screen .spc-item-side { align-items: flex-end; }
+  .supplier-payments-screen .spc-amount { font-size: 0.82rem; }
+  .supplier-payments-screen .spc-item-payment { font-size: 10px; }
+}

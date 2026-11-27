@@ -11,6 +11,7 @@ import { supabase } from '../services/supabase';
 import supplierOrdersService, { getBusinessWalletBalance } from '../services/supplierOrdersService';
 import { ugxToICAN, formatICAN } from '../services/icanWalletService';
 import { useBackLayer } from '../hooks/useBackLayer';
+import '../styles/order-payment-tracker.css';
 
 const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, showAddPayment = false, userRole = 'viewer' }) => {
   const quotePaymentOnly = Boolean(order?.supplier_quote_status && order.supplier_quote_status !== 'not_requested');
@@ -76,13 +77,16 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
       .reduce((sum, t) => sum + (parseFloat(t.amount_ugx) || 0), 0);
   };
 
-  // Calculate payment percentage
-  // purchase_orders stores the total as `total_amount` — `total_amount_ugx` is
-  // never populated by order creation, so fall back to keep this in sync.
-  const totalPaidAmount = calculateTotalPaid();
-  const orderTotal = parseFloat(order.total_amount_ugx || order.total_amount) || 0;
+  // purchase_orders stores the total as `total_amount`; older views use
+  // `total_amount_ugx`, and supplier list rows expose the value as `amount`.
+  const orderTotal = Math.max(0, Number(order?.total_amount_ugx) || Number(order?.total_amount) || Number(order?.amount) || 0);
+  const reportedPaidAmount = Math.max(0, Number(order?.amount_paid_ugx) || Number(order?.amount_paid) || 0);
+  const totalPaidAmount = Math.min(orderTotal, order?.payment_status === 'paid'
+    ? orderTotal
+    : Math.max(reportedPaidAmount, calculateTotalPaid()));
+  const balanceDue = Math.max(0, orderTotal - totalPaidAmount);
   const paymentPercentage = orderTotal > 0
-    ? (totalPaidAmount / orderTotal * 100)
+    ? Math.min(100, totalPaidAmount / orderTotal * 100)
     : 0;
 
   // Get status color
@@ -139,8 +143,8 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
     }
 
     const amount = parseFloat(paymentData.amount);
-    if (amount > order.balance_due_ugx) {
-      alert(`Payment amount cannot exceed balance due: ${formatUGX(order.balance_due_ugx)}`);
+    if (amount > balanceDue) {
+      alert(`Payment amount cannot exceed balance due: ${formatUGX(balanceDue)}`);
       return;
     }
 
@@ -241,93 +245,68 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
   };
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 sm:p-4 rounded-lg border border-blue-200">
+    <div className="opt">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
-          <FiDollarSign className="text-blue-600 text-lg sm:text-xl" />
+      <div className="opt-header">
+        <h3>
+          <FiDollarSign aria-hidden="true" />
           Payment Progress
         </h3>
-        {showAddPayment && (!quotePaymentOnly || quoteAccepted) && order.balance_due_ugx > 0 && (
+        {showAddPayment && (!quotePaymentOnly || quoteAccepted) && balanceDue > 0 && (
           <button
             onClick={() => setShowPaymentModal(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 sm:px-3 sm:py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors text-sm sm:text-xs font-semibold shadow-md w-full sm:w-auto"
+            className="opt-add"
           >
-            <FiPlus className="text-lg sm:text-base" /> Add Payment
+            <FiPlus aria-hidden="true" /> Add Payment
           </button>
         )}
       </div>
 
       {/* Payment Stats Grid - Responsive Stack */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        {/* Total Amount */}
-        <div className="bg-white p-4 sm:p-3 rounded-lg border-2 border-blue-300 shadow-sm">
-          <div className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">Total Amount</div>
-          <div className="text-2xl sm:text-xl font-bold text-blue-600 break-words">
-            {formatUGX(order.total_amount_ugx)}
-          </div>
+      <dl className="opt-money">
+        <div>
+          <dt>Total amount</dt>
+          <dd>{formatUGX(orderTotal)}</dd>
         </div>
-
-        {/* Amount Paid */}
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 sm:p-3 rounded-lg border-2 border-green-400 shadow-md">
-          <div className="text-xs text-green-700 mb-2 font-semibold uppercase tracking-wide flex items-center gap-1">
-            <FiCheck className="text-green-600 text-base" /> Paid
-          </div>
-          <div className="text-2xl sm:text-xl font-extrabold text-green-700 break-words">
-            {formatUGX(totalPaidAmount)}
-          </div>
+        <div className="is-paid">
+          <dt>Paid</dt>
+          <dd>{formatUGX(totalPaidAmount)}</dd>
         </div>
-
-        {/* Balance Due */}
-        <div className="bg-gradient-to-br from-red-50 to-orange-50 p-4 sm:p-3 rounded-lg border-2 border-red-400 shadow-md">
-          <div className="text-xs text-red-700 mb-2 font-semibold uppercase tracking-wide flex items-center gap-1">
-            <FiAlertCircle className="text-red-600 text-base" /> Balance
-          </div>
-          <div className="text-2xl sm:text-xl font-extrabold text-red-700 break-words">
-            {formatUGX(order.total_amount_ugx - totalPaidAmount)}
-          </div>
+        <div className="is-due">
+          <dt>Remaining</dt>
+          <dd>{formatUGX(balanceDue)}</dd>
         </div>
-      </div>
+      </dl>
 
       {/* Progress Bar */}
-      <div className="mb-4 bg-white p-4 sm:p-3 rounded-lg border-2 border-gray-300 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-          <span className="text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wide">Payment Progress</span>
-          <span className={`text-2xl sm:text-xl font-extrabold ${getStatusColor()}`}>
+      <div className="opt-progress">
+        <div className="opt-progress-label">
+          <span>Payment progress</span>
+          <span className={getStatusColor()}>
             {paymentPercentage.toFixed(1)}%
           </span>
         </div>
-        <div className="w-full h-8 sm:h-6 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+        <div className="opt-progress-track">
           <div
-            className={`h-full ${getProgressColor()} transition-all duration-500 flex items-center justify-end pr-2 shadow-md`}
+            className={getProgressColor()}
             style={{ width: `${Math.min(paymentPercentage, 100)}%` }}
-          >
-            {paymentPercentage > 5 && (
-              <FiCheck className="text-white text-base sm:text-sm animate-pulse" />
-            )}
-          </div>
+          />
         </div>
       </div>
 
       {/* Payment Status Badge */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+      <div className="opt-status">
         {paymentPercentage >= 100 ? (
-          <div className="flex items-center justify-center gap-2 text-base sm:text-sm font-bold text-green-700 bg-green-100 px-3 py-3 sm:py-2 rounded-lg border-2 border-green-500 shadow-md flex-1 touch-active:bg-green-200">
-            <FiCheck className="text-2xl sm:text-xl" /> FULLY PAID
-          </div>
+          <span className="is-paid"><FiCheck aria-hidden="true" /> Fully paid</span>
         ) : paymentPercentage > 0 ? (
-          <div className="flex items-center justify-center gap-2 text-base sm:text-sm font-bold text-yellow-700 bg-yellow-100 px-3 py-3 sm:py-2 rounded-lg border-2 border-yellow-500 shadow-md flex-1 touch-active:bg-yellow-200">
-            <FiClock className="text-2xl sm:text-xl" /> PARTIALLY PAID
-          </div>
+          <span className="is-pending"><FiClock aria-hidden="true" /> Partially paid</span>
         ) : (
-          <div className="flex items-center justify-center gap-2 text-base sm:text-sm font-bold text-red-700 bg-red-100 px-3 py-3 sm:py-2 rounded-lg border-2 border-red-500 shadow-md flex-1 touch-active:bg-red-200">
-            <FiAlertCircle className="text-2xl sm:text-xl" /> UNPAID
-          </div>
+          <span className="is-due"><FiAlertCircle aria-hidden="true" /> Unpaid</span>
         )}
         
         {/* Payment Method */}
         {order.payment_method && (
-          <div className="text-xs sm:text-sm font-semibold text-gray-700 bg-white px-3 py-3 sm:py-2 rounded-lg border-2 border-gray-300 shadow-sm flex-1 sm:flex-initial text-center">
+          <div className="opt-method">
             💳 {order.payment_method.toUpperCase()}
           </div>
         )}
@@ -335,7 +314,7 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
 
       {/* Confirmation Status Indicator */}
       {paymentTransactions.length > 0 && (
-        <div className="mt-4 p-3 sm:p-4 bg-white rounded-lg border-2 border-gray-300 shadow-sm">
+        <div className="opt-confirmations">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
               <FiCheckCircle className={unconfirmedCount === 0 ? 'text-green-500 text-xl sm:text-lg' : 'text-yellow-500 text-xl sm:text-lg'} />
@@ -423,7 +402,7 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
             <div className="bg-blue-50 p-3 sm:p-4 rounded-lg mb-4 border border-blue-200">
               <div className="text-xs sm:text-sm text-gray-600 mb-2">PO: {order.po_number}</div>
               <div className="text-lg sm:text-xl font-bold text-gray-800 break-words">
-                Balance Due: {formatUGX(order.balance_due_ugx)}
+                Balance Due: {formatUGX(balanceDue)}
               </div>
             </div>
 
@@ -438,7 +417,7 @@ const OrderPaymentTracker = ({ order, businessProfileId = null, onPaymentAdded, 
                 onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
                 className="w-full px-4 py-3 sm:py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
                 placeholder="Enter amount"
-                max={order.balance_due_ugx}
+                max={balanceDue}
               />
             </div>
 

@@ -154,6 +154,7 @@ const OrderItemsSelector = ({
               price_per_unit: offer.price,
               expiry_discount_percent: offer.percent,
               next_expiry_date: offer.first.batch.expiry_date,
+              next_batch_number: offer.first.batch.batch_number,
               next_expiry_label: offer.first.status.label,
               next_batch_quantity: offer.first.batch.quantity
             };
@@ -215,6 +216,8 @@ const OrderItemsSelector = ({
       product_name: catalogItem.name,
       barcode: catalogItem.barcode || '',
       sku: catalogItem.sku || '',
+      batch_number: catalogItem.next_batch_number || '',
+      expiry_date: catalogItem.next_expiry_date || '',
       quantity,
       display_quantity: quantity,
       unit_type: catalogItem.unit || 'units',
@@ -441,6 +444,7 @@ const OrderItemsSelector = ({
       return;
     }
 
+    const offer = supplierId ? supplierOfferFor(product) : null;
     const buyingPriceForProduct = pricingMode === 'supplier_price'
       ? unitPriceForProduct
       : (Number(product.cost_price) || 0);
@@ -449,12 +453,15 @@ const OrderItemsSelector = ({
       product_id: product.id,
       product_name: product.name,
       sku: product.sku,
-      barcode: product.barcode || '',
+      barcode: product.barcode || offer?.barcode || '',
       quantity: 1,
       display_quantity: 1,
       unit_type: 'units',
       units_per_box: 12,
       unit_price: unitPriceForProduct,
+      batch_number: offer?.next_batch_number || '',
+      expiry_date: offer?.next_expiry_date || '',
+      supplier_catalog_item_id: offer?.id || null,
       buying_price: buyingPriceForProduct,
       total: unitPriceForProduct,
       margin: unitPriceForProduct - buyingPriceForProduct,
@@ -634,8 +641,8 @@ const OrderItemsSelector = ({
                     {item.expiry_discount_percent > 0 && <s className="ois-was">{formatCurrency(item.list_price)}</s>}
                     {formatCurrency(item.price_per_unit)}<small> / {item.unit || 'unit'}</small>
                   </>}
-                  sub={`Min ${item.min_order_qty || 1}${item.admin_selling_price > 0 ? ` · Sell ${formatCurrency(item.admin_selling_price)}` : ''}`}
-                  note={item.expiry_discount_percent > 0 ? `−${item.expiry_discount_percent}% · ${item.next_expiry_label}` : null}
+                  sub={[item.barcode ? `Barcode ${item.barcode}` : null, `Min ${item.min_order_qty || 1}`, item.admin_selling_price > 0 ? `Sell ${formatCurrency(item.admin_selling_price)}` : null].filter(Boolean).join(' · ')}
+                  note={item.next_expiry_date ? `Batch ${item.next_batch_number || '—'} · Expires ${item.next_expiry_date}${item.expiry_discount_percent > 0 ? ` · −${item.expiry_discount_percent}%` : ''}` : null}
                   qty={idx >= 0 ? (orderItems[idx]?.display_quantity ?? orderItems[idx]?.quantity) : null}
                   onStep={(delta) => bumpItem(idx, delta)}
                   onAdd={() => addSupplierCatalogItem(item)}
@@ -669,10 +676,8 @@ const OrderItemsSelector = ({
                 image={firstImage(product.images) || offer?.image_url}
                 name={product.name}
                 price={price > 0 ? formatCurrency(price) : noPriceText}
-                sub={pricingMode === 'admin_price' && offerPrice > 0
-                  ? `Supplier ${formatCurrency(offerPrice)} · Stock ${product.current_stock || 0}`
-                  : `Stock ${product.current_stock || 0}`}
-                note={pricingMode === 'supplier_price' && price > 0 ? 'Supplier price' : null}
+                sub={[product.barcode ? `Barcode ${product.barcode}` : null, product.sku ? `SKU ${product.sku}` : null, pricingMode === 'admin_price' && offerPrice > 0 ? `Supplier ${formatCurrency(offerPrice)}` : null, `Stock ${product.current_stock || 0}`].filter(Boolean).join(' · ')}
+                note={offer?.next_expiry_date ? `Batch ${offer.next_batch_number || '—'} · Expires ${offer.next_expiry_date}` : pricingMode === 'supplier_price' && price > 0 ? 'Supplier price' : null}
                 qty={idx >= 0 ? (orderItems[idx]?.display_quantity ?? orderItems[idx]?.quantity) : null}
                 onStep={(delta) => bumpItem(idx, delta)}
                 dimmed={price <= 0}
@@ -703,6 +708,8 @@ const OrderItemsSelector = ({
                       <span className="ois-row-name">{item.product_name}</span>
                       <span className="ois-row-sub">
                         {formatCurrency(item.unit_price)} × {item.quantity}{item.unit_type === 'boxes' ? ` (${item.display_quantity} boxes)` : ''}
+                        {item.barcode ? ` · Barcode ${item.barcode}` : ''}
+                        {item.batch_number || item.expiry_date ? ` · Batch ${item.batch_number || '—'}${item.expiry_date ? ` · Expires ${item.expiry_date}` : ''}` : ''}
                       </span>
                     </span>
                     <span className="ois-row-end">

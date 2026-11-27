@@ -43,6 +43,35 @@ const SoFold = ({ title, badge, startOpen = false, children }) => {
   );
 };
 
+// Resolve every supplier line to a product owned by the receiving store before
+// the purchase order transitions to received. The database trigger then adds
+// stock and records its batch exactly once in the same transaction.
+const prepareReceivedOrderItems = async (items, supermarketId, orderRef) => {
+  if (!Array.isArray(items) || items.length === 0) throw new Error('This order has no products to receive.');
+  const prepared = [];
+  for (const item of items) {
+    const quantity = Number(item.quantity ?? item.qty ?? 0);
+    const name = item.product_name || item.productName || item.name || '';
+    if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`Enter a valid quantity for ${name || 'each product'}.`);
+    if (!name && !orderItemBarcode(item)) throw new Error('An order product needs a name or barcode before it can be received.');
+
+    const match = await findStoreProductForOrderItem(supabase, { supermarketId, item });
+    const product = match?.product || await createStoreProductForOrderItem(supabase, { supermarketId, item, orderRef });
+    prepared.push({
+      ...item,
+      product_id: product.id,
+      product_name: product.name || name,
+      barcode: orderItemBarcode(item) || product.barcode || '',
+      sku: item.sku || product.sku || '',
+      quantity,
+      unit_price: Number(item.unit_price ?? item.unitPrice ?? item.price ?? 0),
+      batch_number: String(item.batch_number || '').trim(),
+      expiry_date: String(item.expiry_date || '').trim() || null,
+    });
+  }
+  return prepared;
+};
+
 const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, supermarketId: assignedSupermarketId = null }) => {
   const [resolvedBusinessProfileId, setResolvedBusinessProfileId] = useState(businessProfileId);
   const activeBusinessProfileId = businessProfileId || resolvedBusinessProfileId;
@@ -343,12 +372,14 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
         // Add unconfirmed counts to orders
         const ordersWithUnconfirmed = ordersResponse.orders.map(order => {
           const total = Number(order.total_amount_ugx ?? order.total_amount ?? 0);
-          const paid = Number(order.amount_paid_ugx ?? order.amount_paid ?? 0);
+          const paid = order.payment_status === 'paid'
+            ? total
+            : Math.min(total, Math.max(0, Number(order.amount_paid_ugx ?? order.amount_paid ?? 0)));
           return {
             ...order,
             total_amount_ugx: total,
             amount_paid_ugx: paid,
-            balance_due_ugx: Number(order.balance_due_ugx ?? Math.max(0, total - paid)),
+            balance_due_ugx: Math.max(0, total - paid),
             unconfirmedPaymentsCount: unconfirmedMap[order.id] || 0,
           };
         });
@@ -402,12 +433,14 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
         .maybeSingle();
       if (!refreshError && refreshedOrder) {
         const total = Number(refreshedOrder.total_amount_ugx ?? refreshedOrder.total_amount ?? 0);
-        const paid = Number(refreshedOrder.amount_paid_ugx ?? refreshedOrder.amount_paid ?? 0);
+        const paid = refreshedOrder.payment_status === 'paid'
+          ? total
+          : Math.min(total, Math.max(0, Number(refreshedOrder.amount_paid_ugx ?? refreshedOrder.amount_paid ?? 0)));
         setSelectedOrder({
           ...refreshedOrder,
           total_amount_ugx: total,
           amount_paid_ugx: paid,
-          balance_due_ugx: Number(refreshedOrder.balance_due_ugx ?? Math.max(0, total - paid)),
+          balance_due_ugx: Math.max(0, total - paid),
           supplierName: orders.find((item) => item.id === orderId)?.supplierName || selectedOrder?.supplierName,
         });
       }
@@ -492,7 +525,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
           notes: approvalData.notes || selectedOrderData.notes,
           // Manager's choice at approval wins over whatever the supplier
           // picked earlier; leaving it null keeps the supplier's choice.
-          ...(approvalVehicleType ? { preferred_vehicle_type: approvalVehicleType } : {}),
+          ...(approvalVehicleType ? { preferred_vehicle_type: approvalVehicleType, delivery_method: null } : {}),
         })
         .eq('id', approvalOrderId);
 
@@ -658,15 +691,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
    */
   const handleMarkAsReceived = async (orderId) => {
     const deliveryMethod = window.prompt(
-      'Choose delivery method before completing this order:\n\n1 = Supplier delivery\n2 = MyBodaGuy delivery\n3 = Supermarket pickup',
+      'Choose delivery method before completing this order:\n\n1 = Supplier delivery\n2 = MyBodaGuy delivery\n3 = Supermarket pickup\n4 = Supplier own delivery',
       '1'
     );
-    const deliveryMethods = { '1': 'supplier_delivery', '2': 'mybodaguy_delivery', '3': 'supermarket_pickup' };
+    const deliveryMethods = { '1': 'supplier_delivery', '2': 'mybodaguy_delivery', '3': 'supermarket_pickup', '4': 'supplier_own_delivery' };
     if (!deliveryMethods[deliveryMethod]) {
       alert('A delivery method is required. The order was not completed.');
       return;
     }
-    if (!confirm('Mark this order as RECEIVED and update inventory?\n\nDelivery: ' + deliveryMethods[deliveryMethod])) {
+    const deliveryLabels = { supplier_delivery: 'Supplier delivery', supplier_own_delivery: 'Supplier own delivery', mybodaguy_delivery: 'MyBodaGuy delivery', supermarket_pickup: 'Supermarket pickup' };
+    if (!confirm('Mark this order as RECEIVED and update inventory?\n\nDelivery: ' + deliveryLabels[deliveryMethods[deliveryMethod]])) {
       return;
     }
 
@@ -676,8 +710,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
       // Receiving adds stock to the order's store, so the order must have one. Orders made before
       // the store was recorded get the receiving manager's store here; without it the database
       // refuses the stock update ("null value in column supermarket_id of relation inventory").
-      const { data: orderRow } = await supabase.from('purchase_orders').select('supermarket_id').eq('id', orderId).maybeSingle();
-      if (orderRow && !orderRow.supermarket_id) {
+      const { data: orderRow, error: orderLoadError } = await supabase
+        .from('purchase_orders').select('supermarket_id, items, po_number, status').eq('id', orderId).maybeSingle();
+      if (orderLoadError) throw orderLoadError;
+      if (!orderRow) throw new Error('Purchase order not found.');
+      if (orderRow.status === 'received') {
+        alert('This order is already marked as received. Inventory has already been updated.');
+        return;
+      }
+      let receivingStoreId = orderRow.supermarket_id || storeId;
+      if (!receivingStoreId) {
         let storeId = null;
         try {
           storeId = JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null;
@@ -699,18 +741,19 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
           alert('❌ Your account is not assigned to a store, so this order cannot be received into inventory. Ask an admin to assign your account to a store, then try again.');
           return;
         }
-        const { error: storeError } = await supabase.from('purchase_orders').update({ supermarket_id: storeId }).eq('id', orderId);
-        if (storeError) {
-          alert(`❌ Error: ${storeError.message}`);
-          return;
-        }
+        receivingStoreId = storeId;
       }
 
-      // Step 1: Update order status to 'received'
+      if (!receivingStoreId) throw new Error('This account is not assigned to a store. Assign it to a store before receiving orders.');
+      const receivedItems = await prepareReceivedOrderItems(orderRow.items, receivingStoreId, orderRow.po_number || orderId);
+
+      // The receive trigger adds inventory and batch records atomically.
       const { error: statusError } = await supabase
         .from('purchase_orders')
         .update({ 
           status: 'received',
+          supermarket_id: receivingStoreId,
+          inventory_receiving_items: receivedItems,
           delivery_method: deliveryMethods[deliveryMethod],
           delivery_selected_by: (await supabase.auth.getUser()).data.user?.id || null,
           delivery_selected_at: new Date().toISOString(),
@@ -724,48 +767,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
         return;
       }
 
-      // Step 2: Call inventory update function (trigger will auto-run, but we'll call manually for confirmation)
-      const { data: inventoryResult, error: inventoryError } = await supabase
-        .rpc('update_inventory_on_delivery', {
-          p_order_id: orderId
-        });
-
-      if (inventoryError) {
-        const receivedOrder = orders.find((order) => order.id === orderId);
-        if (receivedOrder && /function|rpc|does not exist|not found/i.test(inventoryError.message || '')) {
-          await handleAddOrderProductsToPOS(receivedOrder);
-          alert('✅ Order marked as received and inventory quantities were synchronised.');
-          loadAllData();
-          return;
-        }
-        console.error('❌ Error updating inventory:', inventoryError);
-        alert(`⚠️ Order marked as received, but inventory update failed:\n${inventoryError.message}\n\nPlease contact IT support.`);
-        loadAllData();
-        return;
-      }
-
-      if (inventoryResult && inventoryResult.length > 0) {
-        const result = inventoryResult[0];
-        if (result.success) {
-          // Build success message with product details
-          let successMsg = `✅ ORDER RECEIVED & INVENTORY UPDATED!\n\n`;
-          successMsg += `${result.message}\n\n`;
-          successMsg += `📦 Products Updated:\n`;
-          const products = result.updated_products;
-          if (Array.isArray(products)) {
-            products.forEach(product => {
-              successMsg += `\n• ${product.product_name} (${product.sku})\n`;
-              successMsg += `  Received: ${product.quantity_received} units\n`;
-              successMsg += `  Stock: ${product.previous_stock} → ${product.new_stock}\n`;
-            });
-          }
-          alert(successMsg);
-        } else {
-          alert(`⚠️ ${result.message}`);
-        }
-      } else {
-        alert('✅ Order marked as received!\n\nInventory will be updated automatically by the system.');
-      }
+      alert('Order received. Inventory was updated for ' + receivedItems.length + ' products, including supplier barcodes and batch expiry details.');
 
       loadAllData();
     } catch (err) {
@@ -780,239 +782,116 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
    * Handle adding order products to POS inventory
    */
   const handleAddOrderProductsToPOS = async (order) => {
-    console.log('📦 handleAddOrderProductsToPOS called with order:', order);
-    console.log('Order items:', order.items);
-    
-    // Check if order already added to POS
-    if (order.added_to_pos) {
-      toast.warning('⚠️ This order has already been added to POS');
+    if (order.added_to_pos || order.status === 'received') {
+      toast.warning('This order is already received. Inventory is only added once when an order is received.');
       return;
     }
-    
-    if (!order.items || order.items.length === 0) {
-      alert('❌ No products in this order to add to POS');
+    if (order.status !== 'confirmed' || !order.supplier_delivery_confirmed_at) {
+      toast.info(order.status === 'confirmed'
+        ? 'Waiting for the supplier to confirm delivery to the store.'
+        : 'Waiting for the supplier to accept the order and confirm delivery.');
       return;
     }
-
     setLoading(true);
     try {
-      let supermarketId = null;
-      try {
-        supermarketId = JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null;
-      } catch {
-        // Fall back to the authenticated user below.
+      const { data: confirmedOrder, error: orderError } = await supabase
+        .from('purchase_orders')
+        .select('id, supermarket_id, items, po_number, status, supplier_delivery_confirmed_at, delivery_method, preferred_vehicle_type')
+        .eq('id', order.id)
+        .maybeSingle();
+      if (orderError) throw orderError;
+      if (!confirmedOrder || confirmedOrder.status !== 'confirmed' || !confirmedOrder.supplier_delivery_confirmed_at) {
+        throw new Error('The supplier must confirm delivery before this order can be received into POS.');
       }
-      if (!supermarketId) {
+      const deliveryMethod = confirmedOrder.delivery_method || (confirmedOrder.preferred_vehicle_type ? 'supplier_delivery' : null);
+      if (!deliveryMethod) throw new Error('The supplier must choose a delivery method before confirming delivery.');
+
+      let receivingStoreId = confirmedOrder.supermarket_id || storeId || null;
+      try {
+        receivingStoreId ||= JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null;
+      } catch { /* Use the authenticated user's store below. */ }
+      if (!receivingStoreId) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id) {
-          const { data: userRow } = await supabase
-            .from('users')
-            .select('supermarket_id')
-            .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
-            .maybeSingle();
-          supermarketId = userRow?.supermarket_id || null;
+          const { data: userRow } = await supabase.from('users').select('supermarket_id')
+            .or('auth_id.eq.' + user.id + ',id.eq.' + user.id).maybeSingle();
+          receivingStoreId = userRow?.supermarket_id || null;
         }
       }
-      let successCount = 0;
-      let failedCount = 0;
-      const results = [];
+      if (!receivingStoreId) throw new Error('Your account is not assigned to a store.');
+      const preparedItems = await prepareReceivedOrderItems(confirmedOrder.items, receivingStoreId, confirmedOrder.po_number || confirmedOrder.id);
+      const { data: receivedOrder, error } = await supabase.from('purchase_orders').update({
+        status: 'received',
+        supermarket_id: receivingStoreId,
+        inventory_receiving_items: preparedItems,
+        updated_at: new Date().toISOString(),
+      }).eq('id', order.id)
+        .eq('status', 'confirmed')
+        .not('supplier_delivery_confirmed_at', 'is', null)
+        .select('id')
+        .single();
+      if (error) throw error;
+      if (!receivedOrder) throw new Error('The order could not be received. Refresh and try again.');
 
-      // Add each product from the order to POS
-      for (const item of order.items) {
-        try {
-          // Get product name - check all possible field names
-          const productName = item.product_name || item.productName || item.name;
-          const quantity = item.quantity || 0;
-          const unitPrice = item.unit_price || item.unitPrice || 0;
-          
-          console.log(`🛒 Processing item:`, { productName, quantity, unitPrice, item });
-          
-          if (!productName && !orderItemBarcode(item)) {
-            console.warn('⚠️ No product name or barcode found in item:', item);
-            failedCount++;
-            results.push({
-              name: 'Unknown',
-              action: 'failed',
-              error: 'Order item has no barcode or product name'
-            });
-            continue;
-          }
-
-          // Barcode decides which of THIS store's products the line is; the supplier's name is optional
-          const match = await findStoreProductForOrderItem(supabase, { supermarketId, item });
-          console.log(`🔍 Match for "${productName}" / ${orderItemBarcode(item) || 'no barcode'}:`, match?.matchedBy || 'none');
-          const existingProducts = match ? [match.product] : [];
-
-          if (existingProducts && existingProducts.length > 0) {
-            // Product exists - update stock in inventory table
-            const existingProduct = existingProducts[0];
-            const inventoryRecord = existingProduct.inventory?.[0];
-            let newStock = 0;
-            
-            if (!inventoryRecord) {
-              console.warn(`⚠️ No inventory record for ${productName}, creating one`);
-              // Create inventory record if it doesn't exist
-              newStock = quantity;
-              const { error: invError } = await supabase
-                .from('inventory')
-                .upsert({
-                  product_id: existingProduct.id,
-                  ...(supermarketId ? { supermarket_id: supermarketId } : {}),
-                  current_stock: quantity,
-                  minimum_stock: 10
-                }, { onConflict: 'product_id' });
-              if (invError) throw invError;
-            } else {
-              newStock = (inventoryRecord.current_stock || 0) + quantity;
-              
-              console.log(`✅ Updating existing product "${productName}": stock ${inventoryRecord.current_stock} -> ${newStock}`);
-
-              const { error: updateError } = await supabase
-                .from('inventory')
-                .update({
-                  current_stock: newStock
-                })
-                .eq('id', inventoryRecord.id);
-
-              if (updateError) throw updateError;
-            }
-
-            results.push({
-              name: existingProduct.name || productName,
-              action: 'updated',
-              quantity: quantity,
-              newStock: newStock
-            });
-            successCount++;
-          } else {
-            // Create new product in POS
-            console.log(`🆕 Creating new product in POS: "${productName}" x ${quantity} @ ${unitPrice}`);
-
-            const createdProduct = await createStoreProductForOrderItem(supabase, {
-              supermarketId,
-              item,
-              orderRef: order.po_number
-            });
-            const newProduct = [createdProduct];
-
-            // Create inventory record
-            if (newProduct && newProduct.length > 0) {
-              const { error: invError } = await supabase
-                .from('inventory')
-                .upsert({
-                  product_id: newProduct[0].id,
-                  ...(supermarketId ? { supermarket_id: supermarketId } : {}),
-                  current_stock: quantity,
-                  minimum_stock: 10
-                }, { onConflict: 'product_id' });
-
-              if (invError) throw invError;
-            }
-
-            results.push({
-              name: productName || orderItemBarcode(item),
-              action: 'created',
-              quantity: quantity
-            });
-            successCount++;
-          }
-        } catch (itemErr) {
-          console.error(`❌ Error adding ${item.product_name || item.productName}:`, itemErr);
-          failedCount++;
-          results.push({
-            name: item.product_name || item.productName || 'Unknown',
-            action: 'failed',
-            error: itemErr.message
-          });
-        }
+      setOrders((previous) => previous.map((row) => row.id === order.id
+        ? { ...row, status: 'received', supermarket_id: receivingStoreId, added_to_pos: true }
+        : row));
+      toast.success('Supplier delivery received. ' + preparedItems.length + ' products and their batches are now active in POS.');
+      if (typeof onPosUpdated === 'function') {
+        onPosUpdated(preparedItems.map((item) => ({ name: item.product_name, quantity: item.quantity })));
       }
-
-      // Show summary
-      let message = `✅ POS Inventory Updated!\n\n`;
-      message += `Order: ${order.po_number}\n`;
-      message += `Successfully added/updated: ${successCount}/${order.items.length} products\n\n`;
-      
-      results.forEach(r => {
-        if (r.action === 'updated') {
-          message += `✅ ${r.name} - Updated (+ ${r.quantity} units, new stock: ${r.newStock})\n`;
-        } else if (r.action === 'created') {
-          message += `🆕 ${r.name} - Created (${r.quantity} units)\n`;
-        } else if (r.action === 'failed') {
-          message += `❌ ${r.name} - Failed: ${r.error}\n`;
-        }
-      });
-
-      if (failedCount > 0) {
-        message += `\n⚠️ ${failedCount} product(s) failed to add.`;
-      }
-
-      toast.success(message, {
-        autoClose: 5000
-      });
-
-      // Mark order as added to POS to prevent duplicate additions
-      if (successCount > 0) {
-        try {
-          await supabase
-            .from('purchase_orders')
-            .update({ status: 'received' })
-            .eq('id', order.id);
-          console.log('✅ Order marked as received');
-        } catch (err) {
-          console.warn('Could not update order added_to_pos flag:', err);
-        }
-      }
-
-      // OPTIMIZED: Only refresh the current orders list, don't reload everything
-      // Update the order in the orders array instead of reloading all data
-      setOrders(prevOrders => 
-        prevOrders.map(o => 
-          o.id === order.id 
-            ? { ...o, added_to_pos: true }
-            : o
-        )
-      );
-      
-      // TRIGGER POS REFRESH with added products data (for parent components to update POS inventory)
-      if (onPosUpdated && typeof onPosUpdated === 'function') {
-        // Pass the successfully added products so parent can update state immediately
-        const addedProducts = results.filter(r => r.action === 'created' || r.action === 'updated').map(r => ({
-          name: r.name,
-          quantity: r.quantity,
-          newStock: r.newStock
-        }));
-        onPosUpdated(addedProducts);
-      }
-      
-      console.log('✅ Orders list updated without full reload');
     } catch (err) {
-      console.error('Error adding products to POS:', err);
-      toast.error(`❌ Failed to add products to POS: ${err.message}`);
+      console.error('Could not receive order into POS:', err);
+      toast.error('Could not receive order: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
-
   /**
    * Handle mark order as completed
    */
   const handleMarkAsCompleted = async (orderId) => {
     const deliveryMethod = window.prompt(
-      'Choose delivery method before completing this order:\n\n1 = Supplier delivery\n2 = MyBodaGuy delivery\n3 = Supermarket pickup',
+      'Choose delivery method before completing this order:\n\n1 = Supplier delivery\n2 = MyBodaGuy delivery\n3 = Supermarket pickup\n4 = Supplier own delivery',
       '1'
     );
-    const deliveryMethods = { '1': 'supplier_delivery', '2': 'mybodaguy_delivery', '3': 'supermarket_pickup' };
+    const deliveryMethods = { '1': 'supplier_delivery', '2': 'mybodaguy_delivery', '3': 'supermarket_pickup', '4': 'supplier_own_delivery' };
     if (!deliveryMethods[deliveryMethod]) {
       alert('A delivery method is required. The order was not completed.');
       return;
     }
-    if (!confirm('Mark this order as RECEIVED?\n\nDelivery: ' + deliveryMethods[deliveryMethod])) return;
+    const deliveryLabels = { supplier_delivery: 'Supplier delivery', supplier_own_delivery: 'Supplier own delivery', mybodaguy_delivery: 'MyBodaGuy delivery', supermarket_pickup: 'Supermarket pickup' };
+    if (!confirm('Mark this order as RECEIVED?\n\nDelivery: ' + deliveryLabels[deliveryMethods[deliveryMethod]])) return;
 
     try {
+      const { data: order, error: orderError } = await supabase.from('purchase_orders')
+        .select('supermarket_id, items, po_number, status').eq('id', orderId).maybeSingle();
+      if (orderError) throw orderError;
+      if (!order) throw new Error('Purchase order not found.');
+      if (order.status === 'received') {
+        alert('This order is already received. Inventory has already been updated.');
+        return;
+      }
+      let receivingStoreId = order.supermarket_id || storeId || null;
+      if (!receivingStoreId) {
+        try { receivingStoreId = JSON.parse(localStorage.getItem('supermarket_user') || '{}').supermarket_id || null; } catch { /* Use user assignment below. */ }
+      }
+      if (!receivingStoreId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { data: userRow } = await supabase.from('users').select('supermarket_id')
+            .or('auth_id.eq.' + user.id + ',id.eq.' + user.id).maybeSingle();
+          receivingStoreId = userRow?.supermarket_id || null;
+        }
+      }
+      if (!receivingStoreId) throw new Error('Your account is not assigned to a store.');
+      const receivedItems = await prepareReceivedOrderItems(order.items, receivingStoreId, order.po_number || orderId);
       const { error } = await supabase
         .from('purchase_orders')
         .update({ 
           status: 'received',
+          supermarket_id: receivingStoreId,
+          inventory_receiving_items: receivedItems,
           delivery_method: deliveryMethods[deliveryMethod],
           delivery_selected_by: (await supabase.auth.getUser()).data.user?.id || null,
           delivery_selected_at: new Date().toISOString(),
@@ -1026,7 +905,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
         return;
       }
 
-      alert('✅ Order marked as received!');
+      alert('Order received. Inventory and supplier batch details were recorded for ' + receivedItems.length + ' products.');
       loadAllData();
     } catch (err) {
       console.error('Error completing order:', err);
@@ -1154,7 +1033,9 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
       if (order.payment_status === 'unpaid' || !order.payment_status) {
         return sum + (parseFloat(order.total_amount_ugx) || 0);
       } else if (order.payment_status === 'partially_paid') {
-        return sum + (parseFloat(order.balance_due_ugx) || 0);
+        const total = Number(order.total_amount_ugx ?? order.total_amount) || 0;
+        const paid = Math.min(total, Number(order.amount_paid_ugx ?? order.amount_paid) || 0);
+        return sum + Math.max(0, total - paid);
       }
       return sum;
     }, 0);
@@ -1302,7 +1183,9 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
               <p className="text-xs text-gray-600 mb-3">
                 {selectedOrder.preferred_vehicle_type
                   ? `Supplier requested: ${selectedOrder.preferred_vehicle_type}. Pick a different one to override it.`
-                  : 'Choose what fits this shipment, or leave unset to let dispatch decide automatically.'}
+                  : selectedOrder.delivery_method === 'supplier_own_delivery'
+                    ? 'Supplier will use their own delivery. Choose a vehicle below to override that choice.'
+                    : 'Choose what fits this shipment, or leave unset to let dispatch decide automatically.'}
               </p>
               <div className={`grid ${approvalShipOptionAvailable ? 'grid-cols-4' : 'grid-cols-3'} gap-2`}>
                 {[
@@ -1601,26 +1484,17 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
 
   return (
     <div className="manager-supplier-orders">
-      <section className="mb-4 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-emerald-50 p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-700">Supplies</p>
-            <h1 className="mt-1 text-xl font-extrabold text-gray-900">Supplier proposals and deliveries</h1>
-            <p className="mt-1 max-w-2xl text-sm text-gray-600">Choose a supplier, optionally add a starter list, review their proposed products, then approve the final supply list. Payments go to the admin wallet approval queue.</p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs font-semibold text-gray-700">
-            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-gray-200">1 · Supplier proposes</span>
-            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-gray-200">2 · Manager approves</span>
-            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-gray-200">3 · Admin approves payment</span>
-          </div>
+      <header className="so-home-head">
+        <div>
+          <p>SUPPLIES</p>
+          <h1>Supplier orders</h1>
         </div>
-      </section>
-      {/* Home: one button to order, a line for each tab (each opens a full page), the rest folded away */}
-      <div className="so-home">
-        <button type="button" className="so-new" onClick={() => setShowCreateModal(true)}>
-          <FiPlus className="h-5 w-5" /> <span>New supply request</span>
+        <button type="button" className="so-new so-new-small" onClick={() => setShowCreateModal(true)}>
+          <FiPlus className="h-4 w-4" /> <span>New supply request</span>
         </button>
-
+      </header>
+      {/* Home: a line for each section; the rest stays folded away */}
+      <div className="so-home">
         <nav className="so-links" aria-label="Orders">
           {[
             { key: 'active', icon: FiPackage, count: viewMode === 'active' ? orders.length : null },
@@ -1687,7 +1561,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
 
       {/* Full page for whichever tab was opened */}
       {ordersPage && createPortal((
-        <div className="so-page fixed inset-0 z-[45] flex flex-col" role="dialog" aria-modal="true" aria-label={PAGE_TITLES[ordersPage]}>
+        <div className="so-page" role="dialog" aria-modal="true" aria-label={PAGE_TITLES[ordersPage]}>
           <header className="so-page-bar">
             <button type="button" className="so-back" onClick={closePage} aria-label="Back to orders">
               <FiArrowLeft className="h-5 w-5" />
@@ -1887,15 +1761,19 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                   </span>
                 </span>
                 <span className="supplier-order-summary-end">
-                  <span className="supplier-order-total">{formatUGX(order.total_amount_ugx)}</span>
+                  <span className="supplier-order-money">
+                    <span><small>Total</small><b>{formatUGX(order.total_amount_ugx ?? order.total_amount)}</b></span>
+                    <span><small>Paid</small><b>{formatUGX(order.payment_status === 'paid' ? (order.total_amount_ugx ?? order.total_amount) : (order.amount_paid_ugx ?? order.amount_paid))}</b></span>
+                    <span><small>Left</small><b>{formatUGX(Math.max(0, (Number(order.total_amount_ugx ?? order.total_amount) || 0) - (order.payment_status === 'paid' ? (Number(order.total_amount_ugx ?? order.total_amount) || 0) : (Number(order.amount_paid_ugx ?? order.amount_paid) || 0)))}</b></span>
+                  </span>
                   <FiChevronDown className={`supplier-order-chevron${expandedOrderId === order.id ? ' is-open' : ''}`} aria-hidden="true" />
                 </span>
               </button>
               {/* Expanded View - Order Details */}
               {expandedOrderId === order.id && (
-                <div id={`supplier-order-details-${order.id}`} className="supplier-order-details border-t-2 border-gray-200 p-6 bg-white animate-fadeInUp">
+                <div id={`supplier-order-details-${order.id}`} className="supplier-order-details so-order-details">
                   {/* Supplier Info */}
-                  <div className="mb-4">
+                  <div className="so-order-supplier">
                     <h4 className="text-lg font-semibold text-blue-600 mb-2 flex items-center gap-2">
                       {order.supplierAvatar && (
                         <img 
@@ -1914,7 +1792,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                   </div>
 
                   {/* Order Details Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="so-order-facts">
                     <div className="flex items-center space-x-2">
                       <FiCalendar className="text-gray-500" />
                       <div>
@@ -1948,7 +1826,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                     order.status === 'confirmed' || 
                     order.status === 'received' || 
                     order.status === 'received') && (
-                    <div className="mb-4">
+                    <SoFold title="Payment tracker">
                       <OrderPaymentTracker
                         order={order}
            businessProfileId={activeBusinessProfileId}
@@ -1957,30 +1835,28 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                         showAddPayment={true}
                         userRole="manager"
                       />
-                    </div>
+                    </SoFold>
                   )}
 
                   {/* Items Summary */}
                   {order.items && Array.isArray(order.items) && order.items.length > 0 && (
-                    <div className="mb-4">
-                      <h5 className="text-sm font-semibold text-gray-700 mb-2">Order Items ({order.items.length})</h5>
-                      <div className="space-y-1">
-                        {order.items.slice(0, 3).map((item, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-700">
-                              {item.product_name || item.productName} × {item.quantity}
-                            </span>
+                    <div className="so-order-products">
+                      <h5>Products ({order.items.length})</h5>
+                      <ul className="so-order-products-list">
+                        {order.items.map((item, idx) => (
+                          <li key={idx} className="so-order-product-row">
+                            <div className="min-w-0">
+                              <span className="block text-gray-700">{item.product_name || item.productName || item.name} × {item.quantity}</span>
+                              {(item.barcode || item.batch_number || item.expiry_date) && <small className="block text-xs text-gray-500">
+                                {[item.barcode ? `Barcode ${item.barcode}` : null, item.batch_number ? `Batch ${item.batch_number}` : null, item.expiry_date ? `Expires ${item.expiry_date}` : null].filter(Boolean).join(' · ')}
+                              </small>}
+                            </div>
                             <span className="font-semibold text-gray-900">
                               {formatUGX((item.unit_price || item.unitPrice) * item.quantity)}
                             </span>
-                          </div>
+                          </li>
                         ))}
-                        {order.items.length > 3 && (
-                          <p className="text-sm text-blue-600 font-semibold">
-                            +{order.items.length - 3} more items
-                          </p>
-                        )}
-                      </div>
+                      </ul>
                     </div>
                   )}
 
@@ -2034,7 +1910,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                     )}
 
                     {/* Mark as Received Button - Shows for sent_to_supplier or confirmed orders */}
-                    {(order.status === 'sent_to_supplier' || order.status === 'confirmed') && (
+                    {false && (order.status === 'sent_to_supplier' || order.status === 'confirmed') && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2048,7 +1924,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                     )}
 
                     {/* Mark as Completed Button - Shows for received orders */}
-                    {order.status === 'received' && (
+                    {false && order.status === 'received' && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2072,6 +1948,15 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                       >
                         <FiCheckCircle className="mr-2 inline h-5 w-5" />Review supplier proposal
                       </button>
+                    )}
+
+                    {['pending_approval', 'approved', 'sent_to_supplier', 'confirmed'].includes(order.status)
+                      && !order.supplier_delivery_confirmed_at && (
+                      <p className="so-receive-wait" role="status">
+                        {order.status === 'confirmed'
+                          ? 'Order accepted by supplier. Waiting for supplier delivery confirmation.'
+                          : 'Waiting for the supplier to accept the order and confirm delivery.'}
+                      </p>
                     )}
 
                     {/* Add Payment Button - quote-based orders unlock only after the manager accepts the final list */}
@@ -2110,11 +1995,15 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                         e.stopPropagation();
                       }}
                       className="flex-1 min-w-[180px] bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-3 rounded-lg hover:from-indigo-700 hover:to-blue-700 active:from-indigo-800 active:to-blue-800 transition-all duration-300 flex items-center justify-center space-x-2 font-bold shadow-lg cursor-pointer hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={order.added_to_pos ? "This order has already been added to POS" : "Add all order products to POS inventory"}
-                      disabled={!order.items || order.items.length === 0 || order.added_to_pos}
+                      title={order.status === 'received' || order.added_to_pos
+                        ? 'This delivery is already active in POS'
+                        : order.supplier_delivery_confirmed_at
+                          ? 'Receive the supplier-confirmed delivery into POS'
+                          : 'This action becomes available after the supplier confirms delivery'}
+                      disabled={!order.items || order.items.length === 0 || order.added_to_pos || order.status === 'received' || order.status !== 'confirmed' || !order.supplier_delivery_confirmed_at}
                     >
                       <FiPlus className="h-5 w-5" />
-                      <span>➕ {order.added_to_pos ? 'Added to POS ✓' : 'Add to POS'}</span>
+                      <span>➕ {order.added_to_pos || order.status === 'received' ? 'Added to POS ✓' : 'Receive into POS'}</span>
                     </button>
 
                     <button
@@ -2166,9 +2055,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
       {/* Order Detail Modal */}
       {selectedOrder && !showPaymentModal && (() => {
         const detailTotal = Number(selectedOrder.total_amount_ugx ?? selectedOrder.total_amount ?? 0);
-        const detailPaid = Number(selectedOrder.amount_paid_ugx ?? selectedOrder.amount_paid ?? 0);
-        const storedBalance = Number(selectedOrder.balance_due_ugx ?? selectedOrder.balance_due ?? 0);
-        const detailBalance = storedBalance > 0 ? storedBalance : Math.max(0, detailTotal - detailPaid);
+        const detailPaid = selectedOrder.payment_status === 'paid'
+          ? detailTotal
+          : Math.min(detailTotal, Math.max(0, Number(selectedOrder.amount_paid_ugx ?? selectedOrder.amount_paid ?? 0)));
+        const detailBalance = Math.max(0, detailTotal - detailPaid);
         const quoteEnabled = selectedOrder.supplier_quote_status && selectedOrder.supplier_quote_status !== 'not_requested';
         const quoteAccepted = selectedOrder.supplier_quote_status === 'accepted';
         const canPay = ['pending_approval', 'approved', 'sent_to_supplier', 'confirmed', 'received'].includes(selectedOrder.status)
@@ -2228,6 +2118,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
 
                     <dl className="co-facts">
                       <div><dt>Total</dt><dd className="co-big">{formatUGX(detailTotal)}</dd></div>
+                      <div><dt>Paid</dt><dd className="co-big co-good">{formatUGX(detailPaid)}</dd></div>
                       <div><dt>Balance due</dt><dd className={`co-big ${detailBalance > 0 ? 'co-bad' : 'co-good'}`}>{formatUGX(detailBalance)}</dd></div>
                       <div>
                         <dt>Status</dt>
@@ -2256,10 +2147,16 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                       <ul className="co-lines">
                         {lines.map((item, idx) => {
                           const price = item.unit_price || item.unitPrice || 0;
+                          const itemDetails = [
+                            `${item.quantity} × ${formatUGX(price)}`,
+                            item.barcode ? `Barcode ${item.barcode}` : null,
+                            item.batch_number ? `Batch ${item.batch_number}` : null,
+                            item.expiry_date ? `Expires ${item.expiry_date}` : null,
+                          ].filter(Boolean).join(' · ');
                           return (
                             <li key={idx}>
-                              <span className="n">{item.product_name || item.productName}</span>
-                              <span className="s">{item.quantity} × {formatUGX(price)}</span>
+                              <span className="n">{item.product_name || item.productName || item.name}</span>
+                              <span className="s">{itemDetails}</span>
                               <span className="t">{formatUGX(price * item.quantity)}</span>
                             </li>
                           );

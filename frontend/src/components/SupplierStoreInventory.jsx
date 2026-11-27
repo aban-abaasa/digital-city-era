@@ -152,7 +152,7 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
         {visibleProducts.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500">{products.length ? 'No products match your search.' : 'No products currently meet your linked product, recent stock reduction, and store visibility settings.'}</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-[1180px] w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -179,6 +179,34 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
             </table>
           </div>
         )}
+        {visibleProducts.length > 0 && <ul className="supplier-store-mobile-list divide-y divide-slate-200 md:hidden">
+          {visibleProducts.map((item) => {
+            const low = number(item.available_stock) <= number(item.reorder_point);
+            return (
+              <li key={`${item.supermarket_id}-${item.product_id}`} className="supplier-store-mobile-row py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{item.product_name}</p>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">{item.store_name}{item.sku ? ` · SKU ${item.sku}` : ''}</p>
+                  </div>
+                  {number(item.suggested_delivery_quantity) > 0
+                    ? <span className="shrink-0 text-xs font-semibold text-amber-800">Prepare {formatCount(item.suggested_delivery_quantity)}</span>
+                    : <span className="shrink-0 text-xs text-emerald-700">Stock sufficient</span>}
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <span>Available <b className={low ? 'text-amber-700' : 'text-slate-800'}>{formatCount(item.available_stock)}</b></span>
+                  <span>On hand <b>{formatCount(item.current_stock)}</b></span>
+                  <span>Reduced <b>{formatCount(item.units_reduced_30d)}</b></span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Sold {formatCount(item.units_sold_7d)} / {formatCount(item.units_sold_30d)} · 7d / 30d
+                  {' · '}{formatCurrency(item.sales_30d_ugx)} sales
+                  {item.estimated_days_remaining != null ? ` · ${formatCount(item.estimated_days_remaining)} days cover` : ''}
+                </p>
+              </li>
+            );
+          })}
+        </ul>}
       </section>
     </div>
   );

@@ -15,7 +15,7 @@ BEGIN
   ALTER TABLE public.purchase_orders
     ADD CONSTRAINT purchase_orders_delivery_method_check
     CHECK (delivery_method IS NULL OR delivery_method IN (
-      'supplier_delivery', 'mybodaguy_delivery', 'supermarket_pickup'
+      'supplier_delivery', 'supplier_own_delivery', 'mybodaguy_delivery', 'supermarket_pickup'
     ));
 END $$;
 
@@ -62,8 +62,8 @@ SET search_path = public
 AS $$
 DECLARE v_order public.purchase_orders;
 BEGIN
-  IF p_delivery_method NOT IN ('supplier_delivery', 'mybodaguy_delivery', 'supermarket_pickup') THEN
-    RAISE EXCEPTION 'Select supplier delivery, MyBodaGuy delivery, or supermarket pickup';
+  IF p_delivery_method NOT IN ('supplier_delivery', 'supplier_own_delivery', 'mybodaguy_delivery', 'supermarket_pickup') THEN
+    RAISE EXCEPTION 'Select supplier delivery, supplier own delivery, MyBodaGuy delivery, or supermarket pickup';
   END IF;
 
   SELECT * INTO v_order FROM public.purchase_orders WHERE id = p_order_id;

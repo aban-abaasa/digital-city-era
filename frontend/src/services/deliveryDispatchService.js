@@ -110,11 +110,14 @@ export const dispatchDeliveryForPurchaseOrder = async (purchaseOrderId) => {
   try {
     const { data: purchaseOrder, error: poError } = await supabase
       .from('purchase_orders')
-      .select('id, supermarket_id, supplier_id, preferred_vehicle_type, pickup_address, pickup_latitude, pickup_longitude, pickup_country, delivery_address, dropoff_latitude, dropoff_longitude, dropoff_country')
+      .select('id, supermarket_id, supplier_id, preferred_vehicle_type, delivery_method, pickup_address, pickup_latitude, pickup_longitude, pickup_country, delivery_address, dropoff_latitude, dropoff_longitude, dropoff_country')
       .eq('id', purchaseOrderId)
       .single();
     if (poError || !purchaseOrder) {
       return { dispatched: false, reason: 'Purchase order not found' };
+    }
+    if (purchaseOrder.delivery_method === 'supplier_own_delivery') {
+      return { dispatched: false, reason: 'Supplier will deliver using their own transport' };
     }
 
     const locations = await resolvePickupAndDropoff(purchaseOrder);

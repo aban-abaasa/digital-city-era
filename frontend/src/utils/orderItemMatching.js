@@ -17,13 +17,13 @@ const clean = (value) => String(value ?? '').trim();
 
 // The code printed on the supplier's item, whatever field the order screen stored it in
 export const orderItemBarcode = (item = {}) => {
-  const code = clean(item.barcode ?? item.product_data?.barcode ?? item.bar_code);
+  const code = clean(item.barcode) || clean(item.product_data?.barcode) || clean(item.bar_code);
   return isPlaceholderBarcode(code) ? '' : code;
 };
 
 export const orderItemName = (item = {}) => clean(item.product_name ?? item.productName ?? item.name);
 
-export const orderItemSku = (item = {}) => clean(item.sku ?? item.product_data?.sku);
+export const orderItemSku = (item = {}) => clean(item.sku) || clean(item.product_data?.sku);
 
 const inStore = (query, supermarketId) => (supermarketId ? query.eq('supermarket_id', supermarketId) : query);
 
@@ -73,6 +73,8 @@ export const createStoreProductForOrderItem = async (supabase, { supermarketId, 
   const unitPrice = Number(item.unit_price ?? item.unitPrice) || 0;
   const supplierBarcode = orderItemBarcode(item);
   const name = orderItemName(item) || (supplierBarcode ? `Product - ${supplierBarcode}` : 'Unnamed product');
+  const expiryDate = clean(item.expiry_date ?? item.expiryDate);
+  const makeSku = () => `SUP-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`.toUpperCase();
 
   const row = {
     name,
@@ -82,21 +84,19 @@ export const createStoreProductForOrderItem = async (supabase, { supermarketId, 
     cost_price: unitPrice,
     description: `Added from supplier order ${orderRef}`.trim(),
     markup_percentage: 0,
-    ...(orderItemSku(item) ? { sku: orderItemSku(item) } : {})
+    ...(expiryDate ? { expiry_date: expiryDate } : {})
   };
 
-  const attempt = (barcode) => supabase.from('products').insert({ ...row, barcode }).select('id').single();
-
-  let result = await attempt(supplierBarcode || generateStoreBarcode({ supermarketId }));
-  if (result.error && supplierBarcode && result.error.code === '23505') {
-    // Barcode (or SKU) already used by another store's row: keep this store independent
-    const { sku: _sku, ...withoutSku } = row;
-    result = await supabase
-      .from('products')
-      .insert({ ...withoutSku, barcode: generateStoreBarcode({ supermarketId }) })
-      .select('id')
-      .single();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const barcode = attempt === 0 && supplierBarcode
+      ? supplierBarcode
+      : generateStoreBarcode({ supermarketId });
+    // SKUs are globally unique in older store databases, so a supplier SKU
+    // collision also needs a store-local generated SKU on the retry.
+    const sku = attempt === 0 && orderItemSku(item) ? orderItemSku(item) : makeSku();
+    const result = await supabase.from('products').insert({ ...row, sku, barcode }).select('id, name, barcode, sku').single();
+    if (!result.error) return result.data;
+    if (result.error.code !== '23505') throw result.error;
   }
-  if (result.error) throw result.error;
-  return result.data;
+  throw new Error(`Could not create a unique store product for ${name}`);
 };
