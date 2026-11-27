@@ -936,11 +936,12 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
       if (supermarketId) {
         const { data: offersRow } = await supabase
           .from('supermarkets')
-          .select('name, offers_products, offers_services')
+          .select('name, business_type, offers_products, offers_services')
           .eq('id', supermarketId)
           .maybeSingle();
         if (offersRow) {
           setStoreName(offersRow.name || '');
+          setBusinessType(offersRow.business_type || 'supermarket');
           setOffersProducts(offersRow.offers_products !== false);
           setOffersServices(offersRow.offers_services === true);
         }
@@ -1037,10 +1038,26 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
       });
 
       // Load categories
-      const { data: categoriesData, error: categoriesError } = await supabase
+      let { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
-        .select('id, name')
+        .select('id, name, kind')
         .order('name');
+
+      // Older deployments may not have ADD_CATEGORY_KINDS.sql yet. Keep the
+      // existing category list usable there; newer databases can separate
+      // product categories from service categories in Add Products.
+      if (categoriesError) {
+        const legacyCategories = await supabase
+          .from('categories')
+          .select('id, name')
+          .order('name');
+        if (!legacyCategories.error) {
+          categoriesData = legacyCategories.data;
+          categoriesError = null;
+        } else {
+          categoriesError = legacyCategories.error;
+        }
+      }
 
       if (categoriesError) {
         console.error('❌ Error loading categories:', categoriesError);
@@ -3252,6 +3269,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
       {showAddProductModal && (
         <AddProductPage
           storeName={storeName}
+          businessType={businessType}
           product={newProduct}
           setProduct={setNewProduct}
           errors={addErrors}

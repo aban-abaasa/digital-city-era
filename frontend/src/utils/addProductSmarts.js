@@ -15,6 +15,14 @@ const stem = (word) => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1
 
 const wordsOf = (name) => normalizeName(name).split(' ').filter(Boolean).map(stem);
 
+const PHARMACY_CATEGORY_HINTS = [
+  { category: 'Vitamins & Supplements', words: ['vitamin', 'supplement', 'multivitamin'] },
+  { category: 'First Aid', words: ['bandage', 'plaster', 'gauze', 'dressing', 'wound care', 'first aid'] },
+  { category: 'Medical Supplies & Devices', words: ['thermometer', 'glucometer', 'glucose meter', 'blood pressure', 'syringe', 'medical gloves', 'test kit'] },
+  { category: 'Medicines', words: ['medicine', 'medication', 'tablet', 'capsule', 'paracetamol', 'panadol', 'ibuprofen', 'amoxicillin', 'aspirin', 'antibiotic', 'cough syrup'] },
+  { category: 'Health & Pharmacy', words: ['medicine', 'medication', 'tablet', 'capsule', 'paracetamol', 'panadol', 'ibuprofen', 'amoxicillin', 'aspirin', 'antibiotic', 'cough syrup'] }
+];
+
 // Products already in the shop that look like the one being typed: the exact same name first
 // ('same'), then names that start with it or contain it ('similar'). Needs 3+ letters so that
 // typing "r" does not flag the whole shelf.
@@ -47,6 +55,16 @@ export const suggestCategoryId = (name, products, categories) => {
     if (categoryWords.length > 0 && categoryWords.every((word) => word.length >= 3 && typedWords.includes(word))) {
       return category.id;
     }
+  }
+
+  // Common pharmacy items rarely contain their category name ("paracetamol"
+  // does not say "Medicines"). Use conservative product-name hints when the
+  // matching pharmacy category exists; leave prescription status to the user.
+  const normalizedName = normalizeName(name);
+  for (const hint of PHARMACY_CATEGORY_HINTS) {
+    if (!hint.words.some((word) => normalizedName.includes(normalizeName(word)))) continue;
+    const category = (categories || []).find((item) => item?.name?.trim().toLowerCase() === hint.category.toLowerCase());
+    if (category) return category.id;
   }
 
   const first = typedWords[0];

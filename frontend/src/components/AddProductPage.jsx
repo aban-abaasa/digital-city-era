@@ -121,6 +121,17 @@ const AP_STYLES = `
 const money = (value) => `UGX ${Math.round(Number(value) || 0).toLocaleString()}`;
 const STOCK_CHIPS = [6, 12, 24, 50, 100];
 const MARGIN_CHIPS = [10, 20, 30, 50];
+const PHARMACY_CATEGORY_NAMES = new Set([
+  'health & pharmacy',
+  'medicines',
+  'prescription medicines',
+  'over-the-counter medicines',
+  'vitamins & supplements',
+  'medical supplies & devices',
+  'first aid',
+  'baby & mother care',
+  'personal care'
+]);
 
 // A section that stays out of the way until opened. Its content stays mounted while folded so
 // nothing typed inside is lost. `openWhen` opens it (never closes it) when something fills it in
@@ -146,6 +157,7 @@ const Fold = ({ icon, title, subtitle, badge, openWhen = false, children }) => {
 
 const AddProductPage = ({
   storeName,
+  businessType,
   product,
   setProduct,
   errors,
@@ -176,6 +188,28 @@ const AddProductPage = ({
   const [mode, setMode] = useState('single'); // 'single' | 'quick'
   const [categoryFromName, setCategoryFromName] = useState(false);
   const busy = saving || registering;
+  const productCategories = useMemo(
+    () => categories.filter((category) => !category.kind || category.kind === 'product'),
+    [categories]
+  );
+  const pharmacyCategories = productCategories.filter((category) => PHARMACY_CATEGORY_NAMES.has(category.name?.trim().toLowerCase()));
+  const otherProductCategories = productCategories.filter((category) => !PHARMACY_CATEGORY_NAMES.has(category.name?.trim().toLowerCase()));
+  const categoryGroups = businessType === 'pharmacy'
+    ? [
+        { label: 'Pharmacy products', items: pharmacyCategories },
+        { label: 'Other products', items: otherProductCategories }
+      ]
+    : [
+        { label: 'Store & supermarket products', items: otherProductCategories },
+        { label: 'Health & pharmacy products', items: pharmacyCategories }
+      ];
+  const categoryOptions = categoryGroups
+    .filter((group) => group.items.length > 0)
+    .map((group) => (
+      <optgroup key={group.label} label={group.label}>
+        {group.items.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+      </optgroup>
+    ));
 
   // Nothing behind the page should scroll while it covers the dashboard
   useEffect(() => {
@@ -194,11 +228,11 @@ const AddProductPage = ({
   const matches = useMemo(() => findSimilarProducts(product.name, products), [product.name, products]);
   const sameProduct = matches.find((match) => match.kind === 'same');
   const suggestedCategoryId = useMemo(
-    () => suggestCategoryId(product.name, products, categories),
-    [product.name, products, categories]
+    () => suggestCategoryId(product.name, products, productCategories),
+    [product.name, products, productCategories]
   );
-  const suggestedCategory = categories.find((category) => category.id === suggestedCategoryId);
-  const chosenCategory = categories.find((category) => category.id === product.category_id);
+  const suggestedCategory = productCategories.find((category) => category.id === suggestedCategoryId);
+  const chosenCategory = productCategories.find((category) => category.id === product.category_id);
 
   const applyNameBlur = () => {
     if (!product.category_id && suggestedCategoryId) {
@@ -424,7 +458,7 @@ const AddProductPage = ({
                   )}
 
                   <div className="mt-4">
-                    <label htmlFor="ap-category" className="ap-label">Category <span className="font-normal" style={{ color: 'var(--ap-muted)' }}>(optional)</span></label>
+                    <label htmlFor="ap-category" className="ap-label">{businessType === 'pharmacy' ? 'Pharmacy product category' : 'Product category'} <span className="font-normal" style={{ color: 'var(--ap-muted)' }}>(optional)</span></label>
                     <select
                       id="ap-category"
                       className="ap-input"
@@ -432,8 +466,9 @@ const AddProductPage = ({
                       onChange={(e) => { setProduct((previous) => ({ ...previous, category_id: e.target.value || null })); setCategoryFromName(false); }}
                     >
                       <option value="">No category</option>
-                      {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                      {categoryOptions}
                     </select>
+                    <p className="ap-hint">Product categories only. Add services from the Services tab to keep service categories separate.</p>
                     {categoryFromName && chosenCategory && suggestedCategoryId === product.category_id && (
                       <p className="ap-hint">💡 Picked <b>{chosenCategory.name}</b> from the name. Change it if that is wrong.</p>
                     )}
@@ -765,7 +800,7 @@ const AddProductPage = ({
                   <label htmlFor="ap-quick-category" className="ap-label">Category for all of these <span className="font-normal" style={{ color: 'var(--ap-muted)' }}>(optional)</span></label>
                   <select id="ap-quick-category" className="ap-input" value={quickCategory} onChange={(e) => setQuickCategory(e.target.value)}>
                     <option value="">No category</option>
-                    {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    {categoryOptions}
                   </select>
                 </div>
               </section>
