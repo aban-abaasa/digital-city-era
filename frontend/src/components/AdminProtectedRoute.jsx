@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { getCachedIdentity, isNetworkFailure } from '../services/posOfflineCache';
 
 const AdminProtectedRoute = ({ children }) => {
   const location = useLocation();
@@ -12,20 +13,41 @@ const AdminProtectedRoute = ({ children }) => {
   }, []);
 
   const checkAuth = async () => {
+    const cachedIdentity = getCachedIdentity();
+    const hasCachedAdmin = cachedIdentity?.role === 'admin' && Boolean(cachedIdentity.userId);
+    const allowCachedAdmin = (sessionUserId = null) => {
+      if (!hasCachedAdmin || (sessionUserId && sessionUserId !== cachedIdentity.userId)) return false;
+      setIsAuthenticated(true);
+      localStorage.setItem('adminKey', 'true');
+      return true;
+    };
+
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
+      const backendUnreachable = !navigator.onLine || isNetworkFailure(error);
 
-      if (error) {
-        setIsAuthenticated(false);
-      } else if (session && session.user) {
+      if (session?.user && !error) {
+        // When offline, never let a saved admin role authorize a different
+        // account whose session happens to remain on this shared device.
+        if (!navigator.onLine && cachedIdentity?.userId !== session.user.id) {
+          setIsAuthenticated(false);
+          return;
+        }
         setIsAuthenticated(true);
         localStorage.setItem('adminKey', 'true');
+      } else if (backendUnreachable && allowCachedAdmin(session?.user?.id)) {
+        // AdminPortal will restore the profile and inventory snapshots after
+        // this route guard accepts the last verified admin identity.
+        return;
       } else {
         setIsAuthenticated(false);
         localStorage.removeItem('adminKey');
       }
     } catch (error) {
       console.error('Auth error:', error);
+      if ((!navigator.onLine || isNetworkFailure(error)) && allowCachedAdmin()) {
+        return;
+      }
       setIsAuthenticated(false);
     } finally {
       setLoading(false);

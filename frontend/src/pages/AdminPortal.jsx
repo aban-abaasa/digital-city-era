@@ -40,7 +40,7 @@ import {
 } from 'recharts';
 import '../styles/supermartkera-portals.css';
 import { useBackLayer } from '../hooks/useBackLayer';
-import { getCachedIdentity, loadPortalSnapshot, saveCachedIdentity, savePortalSnapshot } from '../services/posOfflineCache';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, saveCachedIdentity, savePortalSnapshot } from '../services/posOfflineCache';
 
 const AdminPortal = () => {
   const navigate = useNavigate();
@@ -222,12 +222,14 @@ const AdminPortal = () => {
       try {
         // Try auth_id first; fall back to id (some deployments lack auth_id column)
         let userData = null;
+        let roleLookupError = null;
         const { data: ud1, error: e1 } = await supabase
           .from('users')
           .select('id, role, supermarket_id, full_name, email, phone, avatar_url')
           .eq('auth_id', user.id)
           .maybeSingle();
 
+        roleLookupError = e1;
         if (!e1) {
           userData = ud1;
         } else {
@@ -237,11 +239,14 @@ const AdminPortal = () => {
             .select('id, role, supermarket_id, full_name, email, phone, avatar_url')
             .eq('id', user.id)
             .maybeSingle();
+          roleLookupError = e2;
           if (!e2) userData = ud2;
           else console.warn('⚠️ id fallback also failed:', e2.message);
         }
 
         console.log('📊 Query result:', { userData });
+
+        if (!userData && roleLookupError && isNetworkFailure(roleLookupError)) throw roleLookupError;
 
         // Determine admin status — three tiers:
         // 1. users.role column exists and equals 'admin'
@@ -410,7 +415,7 @@ const AdminPortal = () => {
       } catch (queryError) {
         console.warn('⚠️ Failed to query user role:', queryError);
         const identity = getCachedIdentity();
-        const cached = identity?.userId === (await supabase.auth.getUser()).data.user?.id && identity.role === 'admin'
+        const cached = isNetworkFailure(queryError) && identity?.userId === user.id && identity.role === 'admin'
           ? await loadPortalSnapshot('admin', identity.userId, 'profile')
           : null;
         if (cached?.value) {
@@ -421,7 +426,7 @@ const AdminPortal = () => {
     } catch (error) {
       console.error('❌ Error checking admin access:', error);
       const identity = getCachedIdentity();
-      const cached = identity?.role === 'admin' && identity.userId
+      const cached = (!navigator.onLine || isNetworkFailure(error)) && identity?.role === 'admin' && identity.userId
         ? await loadPortalSnapshot('admin', identity.userId, 'profile')
         : null;
       if (cached?.value) {
