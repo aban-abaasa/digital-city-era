@@ -366,6 +366,7 @@ export const createPurchaseOrder = async (orderData) => {
       subtotal:              subtotal,
       tax_amount:            taxAmount,
       total_amount:          totalAmount,
+      total_amount_ugx:      totalAmount,
       // Initialize payment tracking so the balance is correct from the start —
       // otherwise balance_due_ugx stays NULL/0 and the "Add Payment" UI never appears.
       payment_status:        'unpaid',

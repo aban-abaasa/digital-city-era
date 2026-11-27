@@ -28,6 +28,20 @@ import '../styles/supplier-order-create.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { findStoreProductForOrderItem, createStoreProductForOrderItem, orderItemBarcode } from '../utils/orderItemMatching';
 
+// Older purchase orders may have a default 0 in *_ugx while total_amount or
+// amount_paid contains the real value. Prefer the first populated amount so
+// that a database default cannot hide the legacy field.
+const firstPositiveAmount = (...values) => {
+  for (const value of values) {
+    const amount = Number(value);
+    if (Number.isFinite(amount) && amount > 0) return amount;
+  }
+  return 0;
+};
+
+const getOrderTotal = (order) => firstPositiveAmount(order?.total_amount_ugx, order?.total_amount);
+const getOrderPaid = (order) => firstPositiveAmount(order?.amount_paid_ugx, order?.amount_paid);
+
 // A section that stays folded until it is wanted; its content stays mounted so nothing typed inside is lost.
 const SoFold = ({ title, badge, startOpen = false, children }) => {
   const [open, setOpen] = useState(startOpen);
@@ -371,10 +385,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
         
         // Add unconfirmed counts to orders
         const ordersWithUnconfirmed = ordersResponse.orders.map(order => {
-          const total = Number(order.total_amount_ugx ?? order.total_amount ?? 0);
+          const total = getOrderTotal(order);
           const paid = order.payment_status === 'paid'
             ? total
-            : Math.min(total, Math.max(0, Number(order.amount_paid_ugx ?? order.amount_paid ?? 0)));
+            : Math.min(total, getOrderPaid(order));
           return {
             ...order,
             total_amount_ugx: total,
@@ -432,10 +446,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
         .eq('id', orderId)
         .maybeSingle();
       if (!refreshError && refreshedOrder) {
-        const total = Number(refreshedOrder.total_amount_ugx ?? refreshedOrder.total_amount ?? 0);
+        const total = getOrderTotal(refreshedOrder);
         const paid = refreshedOrder.payment_status === 'paid'
           ? total
-          : Math.min(total, Math.max(0, Number(refreshedOrder.amount_paid_ugx ?? refreshedOrder.amount_paid ?? 0)));
+          : Math.min(total, getOrderPaid(refreshedOrder));
         setSelectedOrder({
           ...refreshedOrder,
           total_amount_ugx: total,
@@ -1001,7 +1015,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
     const allOrders = orders; // Use all orders, not just filtered ones
     
     const totalOrders = allOrders.length;
-    const totalValue = allOrders.reduce((sum, order) => sum + (parseFloat(order.total_amount_ugx) || 0), 0);
+    const totalValue = allOrders.reduce((sum, order) => sum + getOrderTotal(order), 0);
     
     // Count by status
     const pendingOrders = allOrders.filter(o => 
@@ -1022,19 +1036,19 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
     // Calculate payment amounts
     const totalPaidAmount = allOrders.reduce((sum, order) => {
       if (order.payment_status === 'paid') {
-        return sum + (parseFloat(order.total_amount_ugx) || 0);
+        return sum + getOrderTotal(order);
       } else if (order.payment_status === 'partially_paid') {
-        return sum + (parseFloat(order.amount_paid_ugx) || 0);
+        return sum + getOrderPaid(order);
       }
       return sum;
     }, 0);
     
     const totalOutstanding = allOrders.reduce((sum, order) => {
       if (order.payment_status === 'unpaid' || !order.payment_status) {
-        return sum + (parseFloat(order.total_amount_ugx) || 0);
+        return sum + getOrderTotal(order);
       } else if (order.payment_status === 'partially_paid') {
-        const total = Number(order.total_amount_ugx ?? order.total_amount) || 0;
-        const paid = Math.min(total, Number(order.amount_paid_ugx ?? order.amount_paid) || 0);
+        const total = getOrderTotal(order);
+        const paid = Math.min(total, getOrderPaid(order));
         return sum + Math.max(0, total - paid);
       }
       return sum;
@@ -1103,7 +1117,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
   const ApprovalModal = () => {
     if (!showApprovalModal || !selectedOrder) return null;
 
-    const originalTotal = selectedOrder.total_amount_ugx || 0;
+    const originalTotal = getOrderTotal(selectedOrder);
     const adjustedTotal = approvalData.adjustedTotal ? parseFloat(approvalData.adjustedTotal) : originalTotal;
     const totalAmount = adjustedTotal;
     const paymentAmount = parseFloat(approvalData.initialPayment) || 0;
@@ -1762,9 +1776,9 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                 </span>
                 <span className="supplier-order-summary-end">
                   <span className="supplier-order-money">
-                    <span><small>Total</small><b>{formatUGX(order.total_amount_ugx ?? order.total_amount)}</b></span>
-                    <span><small>Paid</small><b>{formatUGX(order.payment_status === 'paid' ? (order.total_amount_ugx ?? order.total_amount) : (order.amount_paid_ugx ?? order.amount_paid))}</b></span>
-                    <span><small>Left</small><b>{formatUGX(Math.max(0, Number(order.total_amount_ugx ?? order.total_amount) - Number(order.payment_status === 'paid' ? (order.total_amount_ugx ?? order.total_amount) : (order.amount_paid_ugx ?? order.amount_paid))))}</b></span>
+                    <span><small>Total</small><b>{formatUGX(getOrderTotal(order))}</b></span>
+                    <span><small>Paid</small><b>{formatUGX(order.payment_status === 'paid' ? getOrderTotal(order) : getOrderPaid(order))}</b></span>
+                    <span><small>Left</small><b>{formatUGX(Math.max(0, getOrderTotal(order) - (order.payment_status === 'paid' ? getOrderTotal(order) : getOrderPaid(order))))}</b></span>
                   </span>
                   <FiChevronDown className={`supplier-order-chevron${expandedOrderId === order.id ? ' is-open' : ''}`} aria-hidden="true" />
                 </span>
@@ -2054,10 +2068,10 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
 
       {/* Order Detail Modal */}
       {selectedOrder && !showPaymentModal && (() => {
-        const detailTotal = Number(selectedOrder.total_amount_ugx ?? selectedOrder.total_amount ?? 0);
+        const detailTotal = getOrderTotal(selectedOrder);
         const detailPaid = selectedOrder.payment_status === 'paid'
           ? detailTotal
-          : Math.min(detailTotal, Math.max(0, Number(selectedOrder.amount_paid_ugx ?? selectedOrder.amount_paid ?? 0)));
+          : Math.min(detailTotal, getOrderPaid(selectedOrder));
         const detailBalance = Math.max(0, detailTotal - detailPaid);
         const quoteEnabled = selectedOrder.supplier_quote_status && selectedOrder.supplier_quote_status !== 'not_requested';
         const quoteAccepted = selectedOrder.supplier_quote_status === 'accepted';
@@ -2675,8 +2689,8 @@ const PaymentModal = ({ order, businessProfileId, onClose, onSuccess }) => {
   };
 
   // The order row stores these as *_ugx; older rows and other screens used the short names
-  const orderTotal = Number(order.total_amount_ugx ?? order.total_amount ?? 0);
-  const alreadyPaid = Number(order.amount_paid_ugx ?? order.amount_paid ?? 0);
+  const orderTotal = getOrderTotal(order);
+  const alreadyPaid = getOrderPaid(order);
   const storedBalance = Number(order.balance_due_ugx ?? order.balance_due ?? 0);
   const balanceDue = storedBalance > 0 ? storedBalance : Math.max(0, orderTotal - alreadyPaid);
   const supplierLabel = order.supplierName || order.supplier_name || order.supplier?.business_name || 'Supplier';
@@ -2974,7 +2988,7 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
       const { error: updateError } = await supabase
         .from('purchase_orders')
         .update({
-          total_amount_ugx: (order.total_amount_ugx || 0) + newLineTotal,
+          total_amount_ugx: getOrderTotal(order) + newLineTotal,
           updated_at: new Date().toISOString()
         })
         .eq('id', order.id);
@@ -3098,7 +3112,7 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
           </button>
           <div className="co-title">
             <h1>Add Product to Order</h1>
-            <p>{order.po_number} · now UGX {(order.total_amount_ugx || 0).toLocaleString()}</p>
+            <p>{order.po_number} · now UGX {getOrderTotal(order).toLocaleString()}</p>
           </div>
         </div>
       </header>
@@ -3168,7 +3182,7 @@ const AddProductToOrderModal = ({ isOpen, onClose, order, onProductAdded }) => {
             {formData.quantity > 0 && formData.unitPrice && (
               <dl className="ois-sum" style={{ marginTop: '0.9rem' }} aria-live="polite">
                 <div><dt>This line</dt><dd>UGX {totalLineAmount.toLocaleString()}</dd></div>
-                <div className="is-total"><dt>New order total</dt><dd>UGX {((order.total_amount_ugx || 0) + totalLineAmount).toLocaleString()}</dd></div>
+                <div className="is-total"><dt>New order total</dt><dd>UGX {(getOrderTotal(order) + totalLineAmount).toLocaleString()}</dd></div>
               </dl>
             )}
 
