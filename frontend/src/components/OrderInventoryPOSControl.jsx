@@ -584,6 +584,26 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
     return rest;
   });
 
+  const useExistingStoreProduct = (sourceProduct) => {
+    const imageUrl = (Array.isArray(sourceProduct.images) ? sourceProduct.images : [])
+      .find((url) => typeof url === 'string' && url.trim())?.trim() || null;
+    const categoryExists = categories.some((category) => (
+      String(category.id) === String(sourceProduct.category_id)
+      && (!category.kind || category.kind === 'product')
+    ));
+
+    setNewProduct((previous) => ({
+      ...previous,
+      name: sourceProduct.name || '',
+      barcode: sourceProduct.barcode || '',
+      ...(categoryExists ? { category_id: sourceProduct.category_id } : {})
+    }));
+    setNewProductImageFile(null);
+    setNewProductImageUrl(imageUrl);
+    setNewProductImagePreview(imageUrl);
+    clearAddError('name');
+  };
+
   // A new store barcode: scannable, unique, and clear of every code already on the page
   const generateBarcodeFor = (alsoTaken = []) =>
     generateStoreBarcode({ supermarketId, taken: [...products.map(p => p.barcode), ...alsoTaken] });
@@ -1787,6 +1807,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
           tax_rate: Number(newProduct.tax_rate) || 0,
           tax_included: newProduct.tax_included,
           category_id: newProduct.category_id || null,
+          images: newProductImageUrl ? [newProductImageUrl] : [],
           is_active: true,
           supermarket_id: storeId,
           ...(expiryReady && effectiveProduct.expiry_date ? { expiry_date: effectiveProduct.expiry_date } : {}),
@@ -1844,7 +1865,11 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
           });
         }
 
-        const localRows = savedRows.map(({ product, stock }) => ({ ...product, current_stock: stock, images: [] }));
+        const localRows = savedRows.map(({ product, stock }) => ({
+          ...product,
+          current_stock: stock,
+          images: Array.isArray(product.images) ? product.images : []
+        }));
         const updatedProducts = [...products, ...localRows];
         const nextInventoryMap = { ...inventoryMap };
         for (const row of savedRows) {
@@ -3284,6 +3309,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
       {showAddProductModal && (
         <AddProductPage
           storeName={storeName}
+          supermarketId={supermarketId}
           businessType={businessType}
           product={newProduct}
           setProduct={setNewProduct}
@@ -3310,6 +3336,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
           saving={savingNew}
           onSave={saveNewProduct}
           onQuickSave={saveQuickProducts}
+          onUseExistingProduct={useExistingStoreProduct}
           onClose={closeAddProductWindow}
         />
       )}

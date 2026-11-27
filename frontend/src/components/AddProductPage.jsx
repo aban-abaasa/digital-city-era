@@ -18,6 +18,7 @@ import {
   FiAlertTriangle, FiArrowLeft, FiCamera, FiCheck, FiChevronDown, FiHash, FiImage,
   FiList, FiMinus, FiPackage, FiPlus, FiTrash2, FiX, FiZap
 } from 'react-icons/fi';
+import { supabase } from '../services/supabase';
 import ProductFlavorsEditor from './ProductFlavorsEditor';
 import { withDiscountPercent, withSellingPrice, withWholesalePrice } from '../utils/wholesalePricing';
 import {
@@ -119,6 +120,8 @@ const AP_STYLES = `
 `;
 
 const money = (value) => `UGX ${Math.round(Number(value) || 0).toLocaleString()}`;
+const firstProductImage = (product) => (Array.isArray(product?.images) ? product.images : [])
+  .find((url) => typeof url === 'string' && url.trim())?.trim() || null;
 const STOCK_CHIPS = [6, 12, 24, 50, 100];
 const MARGIN_CHIPS = [10, 20, 30, 50];
 const PHARMACY_CATEGORY_NAMES = new Set([
@@ -157,6 +160,7 @@ const Fold = ({ icon, title, subtitle, badge, openWhen = false, children }) => {
 
 const AddProductPage = ({
   storeName,
+  supermarketId,
   businessType,
   product,
   setProduct,
@@ -183,10 +187,15 @@ const AddProductPage = ({
   saving,
   onSave,
   onQuickSave,
+  onUseExistingProduct,
   onClose
 }) => {
   const [mode, setMode] = useState('single'); // 'single' | 'quick'
   const [categoryFromName, setCategoryFromName] = useState(false);
+  const [storeProductMatches, setStoreProductMatches] = useState([]);
+  const [searchingStoreProducts, setSearchingStoreProducts] = useState(false);
+  const [storeProductSearchError, setStoreProductSearchError] = useState('');
+  const [dismissedSearch, setDismissedSearch] = useState('');
   const busy = saving || registering;
   const productCategories = useMemo(
     () => categories.filter((category) => !category.kind || category.kind === 'product'),
@@ -224,6 +233,79 @@ const AddProductPage = ({
     onClose();
   };
 
+  // Typing a name in this full-page admin form searches the same active store
+  // products suppliers can find. Selecting one reuses its identity and photo;
+  // this store still sets its own price, cost and opening stock.
+  useEffect(() => {
+    const search = String(product.name || '').trim();
+    const normalizedSearch = search.toLocaleLowerCase();
+    if (search.length < 2 || barcodeLocked || registering || normalizedSearch === dismissedSearch) {
+      setStoreProductMatches([]);
+      setSearchingStoreProducts(false);
+      setStoreProductSearchError('');
+      return undefined;
+    }
+    if (!navigator.onLine) {
+      setStoreProductMatches([]);
+      setSearchingStoreProducts(false);
+      setStoreProductSearchError('Connect to the internet to search store products.');
+      return undefined;
+    }
+
+    setStoreProductMatches([]);
+    setStoreProductSearchError('');
+    let active = true;
+    const timeout = setTimeout(async () => {
+      setSearchingStoreProducts(true);
+      setStoreProductSearchError('');
+      try {
+        const [nameResult, barcodeResult] = await Promise.all([
+          supabase.from('products').select('id, name, barcode, brand, images, category_id, supermarket_id')
+            .eq('is_active', true).ilike('name', `%${search}%`).order('name', { ascending: true }).limit(30),
+          supabase.from('products').select('id, name, barcode, brand, images, category_id, supermarket_id')
+            .eq('is_active', true).ilike('barcode', `%${search}%`).order('name', { ascending: true }).limit(30),
+        ]);
+        if (nameResult.error) throw nameResult.error;
+        if (barcodeResult.error) throw barcodeResult.error;
+
+        if (active) {
+          const unique = new Map();
+          const ownProductIds = new Set(products.map((item) => String(item.id)));
+          [...(nameResult.data || []), ...(barcodeResult.data || [])].forEach((candidate) => {
+            if (
+              !candidate.name?.trim()
+              || ownProductIds.has(String(candidate.id))
+              || (supermarketId && candidate.supermarket_id === supermarketId)
+            ) return;
+            const key = `${candidate.name.trim().toLocaleLowerCase()}\u0000${String(candidate.barcode || '').trim()}`;
+            const existing = unique.get(key);
+            if (!existing || (!firstProductImage(existing) && firstProductImage(candidate))) unique.set(key, candidate);
+          });
+          setStoreProductMatches([...unique.values()].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8));
+        }
+      } catch (error) {
+        if (active) {
+          console.warn('Could not search store products:', error);
+          setStoreProductMatches([]);
+          setStoreProductSearchError(error.message || 'Could not search store products.');
+        }
+      } finally {
+        if (active) setSearchingStoreProducts(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [product.name, products, supermarketId, barcodeLocked, registering, dismissedSearch]);
+
+  const useStoreProduct = (candidate) => {
+    setDismissedSearch(candidate.name.trim().toLocaleLowerCase());
+    setStoreProductMatches([]);
+    onUseExistingProduct?.(candidate);
+  };
+
   // ---------- smart helpers (single product) ----------
   const matches = useMemo(() => findSimilarProducts(product.name, products), [product.name, products]);
   const sameProduct = matches.find((match) => match.kind === 'same');
@@ -245,6 +327,8 @@ const AddProductPage = ({
   const selling = Number(product.selling_price) || 0;
   const margin = marginPercent(cost, selling);
   const stockNumber = Math.max(0, Math.floor(Number(stock) || 0));
+  const storeProductSearchIsActive = product.name.trim().length >= 2
+    && product.name.trim().toLocaleLowerCase() !== dismissedSearch;
 
   const setStockNumber = (value) => setStock(String(Math.max(0, Math.floor(value))));
 
@@ -430,11 +514,59 @@ const AddProductPage = ({
                         autoComplete="off"
                         placeholder="e.g. Rice - 1kg"
                         value={product.name}
-                        onChange={(e) => { setProduct((previous) => ({ ...previous, name: e.target.value })); clearError('name'); }}
+                        onChange={(e) => {
+                          setDismissedSearch('');
+                          setProduct((previous) => ({ ...previous, name: e.target.value }));
+                          clearError('name');
+                        }}
                         onBlur={applyNameBlur}
                         aria-required={flavorRows.length === 0}
                         aria-invalid={errors.name ? 'true' : undefined}
                       />
+                      {storeProductSearchIsActive && searchingStoreProducts && (
+                        <p className="ap-hint" role="status">Searching products already listed by stores…</p>
+                      )}
+                      {storeProductSearchIsActive && !searchingStoreProducts && storeProductSearchError && (
+                        <p className="ap-error" role="status">{storeProductSearchError}</p>
+                      )}
+                      {storeProductSearchIsActive && !searchingStoreProducts && !storeProductSearchError && storeProductMatches.length === 0 && (
+                        <p className="ap-hint" role="status">No matching store products found. Continue entering a new product below.</p>
+                      )}
+                      {storeProductSearchIsActive && !searchingStoreProducts && !storeProductSearchError && storeProductMatches.length > 0 && (
+                        <div className="mt-2 overflow-hidden rounded-xl border border-blue-100 bg-white" role="group" aria-label="Matching products already listed by stores">
+                          <p className="border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800">
+                            Select a match to fill its name, barcode and photo. You can still change them:
+                          </p>
+                          {storeProductMatches.map((candidate) => (
+                            <button
+                              key={candidate.id}
+                              type="button"
+                              onClick={() => useStoreProduct(candidate)}
+                              className="flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                            >
+                              <span className="flex min-w-0 items-center gap-2.5">
+                                {firstProductImage(candidate) ? (
+                                  <img src={firstProductImage(candidate)} alt="" className="h-10 w-10 flex-none rounded-lg object-cover" loading="lazy" />
+                                ) : (
+                                  <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-400" aria-hidden="true">
+                                    <FiImage className="h-5 w-5" />
+                                  </span>
+                                )}
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-semibold">{candidate.name}</span>
+                                  <span className="block truncate text-xs" style={{ color: 'var(--ap-muted)' }}>
+                                    {candidate.barcode ? `Barcode: ${candidate.barcode}` : 'Barcode not listed'}
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="flex-none text-xs font-semibold text-blue-700">Use product</span>
+                            </button>
+                          ))}
+                          {storeProductMatches.length === 8 && (
+                            <p className="bg-gray-50 px-3 py-2 text-xs" style={{ color: 'var(--ap-muted)' }}>Showing up to 8 matches. Type more to narrow the search.</p>
+                          )}
+                        </div>
+                      )}
                       {errors.name && <p role="alert" className="ap-error">{errors.name}</p>}
                       {!product.name.trim() && flavorRows.length > 0 && <p className="ap-hint">Each flavor, type, or size will be saved as its own product.</p>}
                     </div>
