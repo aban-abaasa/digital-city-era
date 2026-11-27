@@ -1764,7 +1764,7 @@ const SupplierOrderManagement = ({ onPosUpdated, businessProfileId = null, super
                   <span className="supplier-order-money">
                     <span><small>Total</small><b>{formatUGX(order.total_amount_ugx ?? order.total_amount)}</b></span>
                     <span><small>Paid</small><b>{formatUGX(order.payment_status === 'paid' ? (order.total_amount_ugx ?? order.total_amount) : (order.amount_paid_ugx ?? order.amount_paid))}</b></span>
-                    <span><small>Left</small><b>{formatUGX(Math.max(0, (Number(order.total_amount_ugx ?? order.total_amount) || 0) - (order.payment_status === 'paid' ? (Number(order.total_amount_ugx ?? order.total_amount) || 0) : (Number(order.amount_paid_ugx ?? order.amount_paid) || 0)))}</b></span>
+                    <span><small>Left</small><b>{formatUGX(Math.max(0, Number(order.total_amount_ugx ?? order.total_amount) - Number(order.payment_status === 'paid' ? (order.total_amount_ugx ?? order.total_amount) : (order.amount_paid_ugx ?? order.amount_paid))))}</b></span>
                   </span>
                   <FiChevronDown className={`supplier-order-chevron${expandedOrderId === order.id ? ' is-open' : ''}`} aria-hidden="true" />
                 </span>

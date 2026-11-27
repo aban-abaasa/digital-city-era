@@ -10,6 +10,7 @@ const toLine = (item = {}) => ({
   batch_number: item.batch_number || '',
   expiry_date: item.expiry_date || '',
   supplier_catalog_item_id: item.supplier_catalog_item_id || null,
+  supplier_catalog_item_name: item.supplier_catalog_item_name || '',
   quantity: Number(item.quantity ?? item.qty ?? 1),
   unit_price: Number(item.unit_price ?? item.unitPrice ?? item.price ?? 0),
 });
@@ -17,6 +18,7 @@ const toLine = (item = {}) => ({
 const PurchaseOrderQuoteEditor = ({
   initialItems = [],
   catalog = [],
+  supplierInventory = [],
   mode = 'supplier',
   taxRate = 18,
   initialNotes = '',
@@ -27,6 +29,14 @@ const PurchaseOrderQuoteEditor = ({
   const [notes, setNotes] = useState(initialNotes || '');
   const [error, setError] = useState('');
   const catalogItems = useMemo(() => (catalog || []).filter((item) => item?.id && (item.name || item.product_name)), [catalog]);
+  const supplierCatalogItems = useMemo(
+    () => catalogItems.filter((item) => item.supplier_catalog_item_id),
+    [catalogItems]
+  );
+  const supplierInventoryItems = useMemo(
+    () => supplierInventory.length ? supplierInventory.filter((item) => item?.supplier_catalog_item_id) : supplierCatalogItems,
+    [supplierInventory, supplierCatalogItems]
+  );
   const subtotal = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0), 0);
   const tax = subtotal * Number(taxRate || 0) / 100;
   const total = subtotal + tax;
@@ -35,7 +45,14 @@ const PurchaseOrderQuoteEditor = ({
   const updateItem = (index, field, value) => {
     setItems((current) => current.map((item, itemIndex) => (
       itemIndex === index
-        ? { ...item, [field]: value, ...(field === 'product_name' ? { product_id: null, store_product_id: null } : {}) }
+        ? {
+            ...item,
+            [field]: value,
+            ...(field === 'product_name' ? {
+              product_id: null,
+              store_product_id: null,
+            } : {}),
+          }
         : item
     )));
     setError('');
@@ -49,6 +66,7 @@ const PurchaseOrderQuoteEditor = ({
       product_id: isManager ? product.id : null,
       store_product_id: isManager ? product.id : null,
       supplier_catalog_item_id: isManager ? null : product.supplier_catalog_item_id || null,
+      supplier_catalog_item_name: isManager ? '' : product.name || product.product_name || '',
       name: product.name || product.product_name,
       barcode: product.barcode || '',
       sku: product.sku || '',
@@ -57,6 +75,34 @@ const PurchaseOrderQuoteEditor = ({
       unit_price: product.cost_price ?? product.selling_price ?? product.price ?? 0,
       quantity: 1,
     })]);
+  };
+
+  const linkSupplierInventory = (index, catalogItemId) => {
+    const product = supplierInventoryItems.find((item) => String(item.supplier_catalog_item_id) === String(catalogItemId));
+    const line = items[index];
+    const previous = supplierInventoryItems.find((item) => String(item.supplier_catalog_item_id) === String(line?.supplier_catalog_item_id));
+    const firstBatch = product?.batches?.[0] || null;
+    setItems((current) => current.map((item, itemIndex) => itemIndex === index ? {
+      ...item,
+      supplier_catalog_item_id: product?.supplier_catalog_item_id || null,
+      supplier_catalog_item_name: product?.name || product?.product_name || '',
+      barcode: item.barcode && item.barcode !== previous?.barcode ? item.barcode : (product?.barcode || ''),
+      sku: item.sku && item.sku !== previous?.sku ? item.sku : (product?.sku || ''),
+      batch_number: item.batch_number && item.batch_number !== previous?.batch_number ? item.batch_number : (firstBatch?.batch_number || ''),
+      expiry_date: item.expiry_date && item.expiry_date !== previous?.expiry_date ? item.expiry_date : (firstBatch?.expiry_date || ''),
+    } : item));
+    setError('');
+  };
+
+  const selectSupplierBatch = (index, batchId) => {
+    const line = items[index];
+    const linkedProduct = supplierInventoryItems.find((item) => String(item.supplier_catalog_item_id) === String(line?.supplier_catalog_item_id));
+    const batch = linkedProduct?.batches?.find((row) => String(row.id) === String(batchId));
+    setItems((current) => current.map((item, itemIndex) => itemIndex === index ? {
+      ...item,
+      batch_number: batch?.batch_number || '',
+      expiry_date: batch?.expiry_date || '',
+    } : item));
   };
 
   const addCustomLine = () => setItems((current) => [...current, toLine({ quantity: 1, unit_price: 0 })]);
@@ -80,6 +126,7 @@ const PurchaseOrderQuoteEditor = ({
       batch_number: item.batch_number || '',
       expiry_date: item.expiry_date || '',
       supplier_catalog_item_id: item.supplier_catalog_item_id || null,
+      supplier_catalog_item_name: item.supplier_catalog_item_name || '',
       quantity: Number(item.quantity),
       unit_price: Number(item.unit_price),
     }));
@@ -111,10 +158,11 @@ const PurchaseOrderQuoteEditor = ({
 
       {items.length > 0 && <div className="space-y-3">
         {items.map((item, index) => (
-          <div key={`${item.product_id || 'item'}-${index}`} className={`co-quote-line grid grid-cols-1 gap-2 sm:items-end ${isManager ? 'is-manager sm:grid-cols-[minmax(0,1fr)_minmax(170px,0.8fr)_100px_145px_40px]' : 'sm:grid-cols-[minmax(0,1fr)_110px_150px_40px]'}`}>
+          <div key={`${item.product_id || 'item'}-${index}`} className={`co-quote-line grid grid-cols-1 gap-2 sm:items-end ${isManager ? 'is-manager sm:grid-cols-[minmax(0,1fr)_minmax(170px,0.8fr)_100px_145px_40px]' : 'sm:grid-cols-[minmax(0,1fr)_minmax(170px,0.8fr)_110px_150px_40px]'}`}>
             <label className="text-xs font-semibold text-gray-600">
               Product
               <input value={item.product_name} readOnly={!isManager} onChange={(event) => updateItem(index, 'product_name', event.target.value)} placeholder="Product name" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 read-only:bg-gray-50" />
+              {isManager && item.supplier_catalog_item_id && <span className="mt-1 block text-[11px] font-medium text-indigo-700">Supplier stock link: {item.supplier_catalog_item_name || 'supplier catalog item'}</span>}
             </label>
             {isManager && <label className="text-xs font-semibold text-gray-600">
               Store inventory match
@@ -128,6 +176,25 @@ const PurchaseOrderQuoteEditor = ({
                 {catalogItems.map((product) => <option key={product.id} value={product.id}>{product.name || product.product_name}</option>)}
               </select>
             </label>}
+            {!isManager && supplierInventoryItems.length > 0 && <label className="text-xs font-semibold text-gray-600">
+              Link to your inventory
+              <select value={item.supplier_catalog_item_id || ''} onChange={(event) => linkSupplierInventory(index, event.target.value)} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900">
+                <option value="">No inventory link</option>
+                {supplierInventoryItems.map((product) => <option key={product.supplier_catalog_item_id} value={product.supplier_catalog_item_id}>{product.name || product.product_name} · stock {Number(product.stock || 0).toLocaleString()}</option>)}
+              </select>
+            </label>}
+            {!isManager && (() => {
+              const linkedProduct = supplierInventoryItems.find((product) => String(product.supplier_catalog_item_id) === String(item.supplier_catalog_item_id));
+              if (!linkedProduct?.batches?.length) return null;
+              const selectedBatch = linkedProduct.batches.find((batch) => batch.batch_number === item.batch_number);
+              return <label className="text-xs font-semibold text-gray-600 sm:col-span-2">
+                Supplier stock batch {selectedBatch ? `· ${Number(selectedBatch.quantity || 0).toLocaleString()} available` : ''}
+                <select value={selectedBatch?.id || ''} onChange={(event) => selectSupplierBatch(index, event.target.value)} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900">
+                  <option value="">Use available batches automatically</option>
+                  {linkedProduct.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.batch_number} · {Number(batch.quantity || 0).toLocaleString()} available · expires {batch.expiry_date}</option>)}
+                </select>
+              </label>;
+            })()}
             {(item.barcode || item.batch_number || item.expiry_date) && <p className="text-xs text-gray-500 sm:col-span-full">
               {item.barcode ? `Barcode ${item.barcode}` : ''}
               {item.batch_number ? `${item.barcode ? ' · ' : ''}Batch ${item.batch_number}` : ''}
@@ -156,6 +223,7 @@ const PurchaseOrderQuoteEditor = ({
         <button type="button" onClick={addCustomLine} className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"><FiPlus /> Add product manually</button>
       </div>
       {isManager && <p className="mt-2 text-xs text-gray-500">Match a line to a store product when you want delivered stock added to that product’s inventory.</p>}
+      {!isManager && supplierInventoryItems.length > 0 && <p className="mt-2 text-xs text-gray-500">Link a manually added product to your supplier inventory to deduct delivered stock after you confirm delivery. Store inventory matching remains managed separately by the store.</p>}
 
       {items.length === 0 && <p className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">No products yet. Add items to build the supply proposal.</p>}
 

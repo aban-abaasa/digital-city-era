@@ -66,7 +66,7 @@ export default function SupplierBatchManager({ item, batches, onClose, onChanged
 
   const payloadFrom = (fields) => ({
     batch_number: fields.batch_number.trim(),
-    quantity: parseInt(fields.quantity, 10) || 0,
+    quantity: Math.round((Number(fields.quantity) || 0) * 1000) / 1000,
     expiry_date: fields.expiry_date,
     discount_mode: fields.discount_mode,
     discount_percent: fields.discount_mode === 'manual' ? Number(fields.discount_percent) : null,
@@ -195,7 +195,7 @@ export default function SupplierBatchManager({ item, batches, onClose, onChanged
                       </label>
                       <label className="text-[11px] text-gray-500">Quantity
                         <input
-                          type="number" min="0" step="1" inputMode="numeric"
+                          type="number" min="0" step="any" inputMode="decimal"
                           value={batch.quantity ?? ''}
                           onChange={(e) => edit(batch.id, { quantity: e.target.value })}
                           className="mt-0.5 w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-800"
@@ -239,7 +239,7 @@ export default function SupplierBatchManager({ item, batches, onClose, onChanged
                 className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
               />
               <input
-                type="number" min="0" step="1" inputMode="numeric" placeholder={`Quantity (${item.unit || 'units'}) *`} value={draft.quantity}
+                type="number" min="0" step="any" inputMode="decimal" placeholder={`Quantity (${item.unit || 'units'}) *`} value={draft.quantity}
                 onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))}
                 className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
               />

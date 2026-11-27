@@ -135,6 +135,7 @@ const SupplierPortal = () => {
   const [quoteSubmittingOrderId, setQuoteSubmittingOrderId] = useState(null);
 
   const [productCatalog, setProductCatalog] = useState([]);
+  const [supplierInventoryCatalog, setSupplierInventoryCatalog] = useState([]);
 
   const [revenueData, setRevenueData] = useState([]);
 
@@ -906,7 +907,6 @@ const SupplierPortal = () => {
         .from('supplier_catalog_items')
         .select('*')
         .eq('supplier_user_id', userId)
-        .eq('is_available', true)
         .order('name');
       const catalogIds = (listedCatalog || []).map((item) => item.id);
       let batchGroups = {};
@@ -915,11 +915,14 @@ const SupplierPortal = () => {
           .select('*').in('catalog_item_id', catalogIds);
         batchGroups = groupBatchesByItem(catalogBatches || []);
       }
-      const listedProducts = (listedCatalog || []).flatMap((item) => {
+      const supplierInventoryProducts = (listedCatalog || []).map((item) => {
         const batches = batchGroups[item.id] || [];
         const offer = catalogItemOffer(item, batches);
-        if (batches.length && !offer.first) return [];
-        return [{
+        const sellableBatches = offer.rows
+          .filter((row) => !row.expired && Number(row.batch.quantity) > 0)
+          .sort((a, b) => (a.status.days ?? Number.MAX_SAFE_INTEGER) - (b.status.days ?? Number.MAX_SAFE_INTEGER))
+          .map((row) => row.batch);
+        return {
           id: item.id,
           supplier_catalog_item_id: item.id,
           name: item.name,
@@ -927,14 +930,20 @@ const SupplierPortal = () => {
           sku: item.sku || '',
           batch_number: offer.first?.batch.batch_number || '',
           expiry_date: offer.first?.batch.expiry_date || '',
+          batches: sellableBatches,
+          has_batches: batches.length > 0,
           category: item.category || 'Uncategorized',
           price: offer.price || Number(item.price_per_unit) || 0,
-          stock: offer.first?.batch.quantity ?? Number(item.stock_quantity) ?? 0,
-          status: 'active',
+          stock: batches.length
+            ? batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0)
+            : Number(item.stock_quantity) || 0,
+          is_available: item.is_available === true,
+          status: item.is_available === true ? 'active' : 'unlisted',
           unit: item.unit || 'unit',
           season: 'year-round',
-        }];
+        };
       });
+      const listedProducts = supplierInventoryProducts.filter((item) => item.is_available && (!item.has_batches || item.batches.length > 0));
       const formattedProducts = products?.map(product => ({
         id: product.id,
         name: product.name,
@@ -948,7 +957,9 @@ const SupplierPortal = () => {
         season: 'year-round'
       })) || [];
 
-      setProductCatalog([...listedProducts, ...(formattedProducts || [])]);
+      const catalog = [...listedProducts, ...(formattedProducts || [])];
+      setProductCatalog(catalog);
+      setSupplierInventoryCatalog(supplierInventoryProducts);
     } catch (error) {
       console.error('Error loading product catalog:', error);
     }
@@ -2547,6 +2558,7 @@ const SupplierPortal = () => {
                         <PurchaseOrderQuoteEditor
                           mode="supplier"
                           catalog={productCatalog}
+                          supplierInventory={supplierInventoryCatalog}
                           initialItems={order.fullOrder?.supplier_quote_status === 'changes_requested'
                             ? order.fullOrder?.supplier_quote_items
                             : (order.fullOrder?.supplier_quote_items?.length ? order.fullOrder.supplier_quote_items : order.fullOrder?.items || [])}
