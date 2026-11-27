@@ -143,7 +143,7 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Metric icon={FiPackage} label="Products reduced · 30 days" value={formatCount(products.length)} />
+        <Metric icon={FiPackage} label="Products shared" value={formatCount(products.length)} />
         <Metric icon={FiAlertTriangle} label="Need restocking" value={formatCount(lowStockCount)} tone={lowStockCount ? 'amber' : 'green'} />
         <Metric icon={FiTrendingUp} label="Units reduced · 30 days" value={formatCount(reduced30d)} />
       </div>
