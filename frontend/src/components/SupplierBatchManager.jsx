@@ -192,147 +192,197 @@ export default function SupplierBatchManager({ item, batches, cacheUserId, onClo
   };
 
   const discountFields = (value, onChange) => (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <select
-        value={value.discount_mode}
-        onChange={(e) => onChange({ discount_mode: e.target.value })}
-        className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs"
-        aria-label="Discount mode"
-      >
-        <option value="auto">Auto discount</option>
-        <option value="manual">Fixed %</option>
-        <option value="none">No discount</option>
-      </select>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <label className="supplier-batch-field">
+        <span>Discount rule</span>
+        <select
+          value={value.discount_mode}
+          onChange={(e) => onChange({ discount_mode: e.target.value })}
+          aria-label="Discount mode"
+          className="supplier-batch-input"
+        >
+          <option value="auto">Automatic near expiry</option>
+          <option value="manual">Fixed percentage</option>
+          <option value="none">No discount</option>
+        </select>
+      </label>
       {value.discount_mode === 'manual' && (
-        <input
-          type="number" min="1" max="90" step="1" inputMode="numeric"
-          value={value.discount_percent ?? ''}
-          onChange={(e) => onChange({ discount_percent: e.target.value })}
-          placeholder="% off"
-          aria-label="Discount percent"
-          className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs"
-        />
+        <label className="supplier-batch-field">
+          <span>Fixed discount (%)</span>
+          <input
+            type="number" min="1" max="90" step="1" inputMode="numeric"
+            value={value.discount_percent ?? ''}
+            onChange={(e) => onChange({ discount_percent: e.target.value })}
+            placeholder="1 to 90"
+            aria-label="Discount percent"
+            className="supplier-batch-input"
+          />
+        </label>
       )}
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={`Batches for ${item.name}`}>
-      <div className="w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl shadow-xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3">
+    <div className="supplier-batch-screen" role="dialog" aria-modal="true" aria-label={`Batches for ${item.name}`}>
+      <header className="supplier-batch-header">
+        <div className="supplier-batch-header-inner">
           <div className="min-w-0">
-            <h3 className="font-bold text-gray-800 truncate">Batches · {item.name}</h3>
-            <p className="text-xs text-gray-500">
-              Update a batch's expiry date any time. Near-expiry batches are flagged and discounted automatically for supermarkets.
-            </p>
+            <p className="supplier-batch-eyebrow">Supply catalog</p>
+            <h2 className="supplier-batch-title">Batches for {item.name}</h2>
+            <p className="supplier-batch-subtitle">Track stock by lot, update expiry dates, and manage buyer discounts.</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-1" aria-label="Close">×</button>
+          <button type="button" onClick={onClose} className="supplier-batch-close">
+            <span aria-hidden="true">×</span><span>Close</span>
+          </button>
         </div>
+      </header>
 
-        <div className="p-4 space-y-4">
-          <details className="rounded-xl bg-purple-50 px-3 py-2 text-xs text-purple-900">
-            <summary className="cursor-pointer font-semibold">How auto discount works</summary>
-            <ul className="mt-1.5 space-y-0.5">
+      <main className="supplier-batch-scroll">
+        <div className="supplier-batch-content">
+          <details className="supplier-batch-help">
+            <summary>How automatic discounts work</summary>
+            <p>Automatic discounts change each day as a batch approaches expiry. You do not need to update the catalog price.</p>
+            <ul>
               {[...AUTO_DISCOUNT_SCHEDULE].reverse().map((tier) => (
-                <li key={tier.withinDays}>Within {tier.withinDays} days of expiry → <b>{tier.percent}% off</b></li>
+                <li key={tier.withinDays}>Within {tier.withinDays} days of expiry: <b>{tier.percent}% off</b></li>
               ))}
-              <li>Expired batches are never offered to buyers.</li>
+              <li>Expired batches are hidden from buyers.</li>
             </ul>
-            <p className="mt-1">It recalculates every day, so you never have to re-publish a price.</p>
           </details>
 
-          {rows.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-4">No batches yet — add the first one below.</p>
-          ) : (
-            <ul className="space-y-3">
-              {rows.map(({ batch, status, expired, percent }) => {
-                const dirty = Boolean(edits[batch.id]);
-                const saving = busy === batch.id;
-                return (
-                  <li key={batch.id} className={`rounded-xl border p-3 ${expired ? 'border-red-200 bg-red-50/40' : 'border-gray-100'}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-semibold text-sm text-gray-800">Batch {batch.batch_number}</p>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${PILL[status.key]}`}>{status.label}</span>
-                        {percent > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700">−{percent}% today</span>}
-                      </div>
-                    </div>
-
-                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      <label className="text-[11px] text-gray-500">Expiry date
-                        <input
-                          type="date"
-                          value={batch.expiry_date ? String(batch.expiry_date).slice(0, 10) : ''}
-                          onChange={(e) => edit(batch.id, { expiry_date: e.target.value })}
-                          className="mt-0.5 w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-800"
-                        />
-                      </label>
-                      <label className="text-[11px] text-gray-500">Quantity
-                        <input
-                          type="number" min="0" step="any" inputMode="decimal"
-                          value={batch.quantity ?? ''}
-                          onChange={(e) => edit(batch.id, { quantity: e.target.value })}
-                          className="mt-0.5 w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-800"
-                        />
-                      </label>
-                      <div className="col-span-2 sm:col-span-1 text-[11px] text-gray-500">Discount
-                        <div className="mt-0.5">{discountFields(batch, (patch) => edit(batch.id, patch))}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="text-gray-500">
-                        {expired
-                          ? 'Expired — hidden from buyers. Change the date if it was entered wrong.'
-                          : base > 0 && percent > 0
-                            ? <>Buyers pay <b className="text-purple-700">{fmtUGX(priceAfterDiscount(base, percent))}</b> <span className="line-through">{fmtUGX(base)}</span></>
-                            : `Expires ${formatExpiryDate(batch.expiry_date)}`}
-                      </span>
-                      <span className="flex items-center gap-2">
-                        {dirty && (
-                          <button onClick={() => saveBatch(batches.find((b) => b.id === batch.id))} disabled={saving}
-                            className="px-3 py-1.5 bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 disabled:opacity-50">
-                            {saving ? 'Saving…' : 'Save changes'}
-                          </button>
-                        )}
-                        <button onClick={() => removeBatch(batch)} disabled={saving} className="text-gray-400 hover:text-red-500 disabled:opacity-50">Remove</button>
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <form onSubmit={addBatch} className="rounded-xl border border-dashed border-gray-300 p-3 space-y-2">
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Add a batch</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <input
-                placeholder="Batch no. *" value={draft.batch_number}
-                onChange={(e) => setDraft((d) => ({ ...d, batch_number: e.target.value }))}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
-              />
-              <input
-                type="number" min="0" step="any" inputMode="decimal" placeholder={`Quantity (${item.unit || 'units'}) *`} value={draft.quantity}
-                onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
-              />
-              <input
-                type="date" min={todayIso()} value={draft.expiry_date} aria-label="Expiry date"
-                onChange={(e) => setDraft((d) => ({ ...d, expiry_date: e.target.value }))}
-                className="col-span-2 sm:col-span-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
-              />
+          <form onSubmit={addBatch} className="supplier-batch-panel supplier-batch-add-form">
+            <div className="supplier-batch-section-heading">
+              <div>
+                <h3>Add a batch</h3>
+                <p>Enter the lot number, quantity on hand, and expiry date.</p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="supplier-batch-field">
+                <span>Batch number <b>*</b></span>
+                <input
+                  required value={draft.batch_number}
+                  onChange={(e) => setDraft((d) => ({ ...d, batch_number: e.target.value }))}
+                  placeholder="For example, LOT-24A"
+                  className="supplier-batch-input"
+                />
+              </label>
+              <label className="supplier-batch-field">
+                <span>Quantity ({item.unit || 'units'}) <b>*</b></span>
+                <input
+                  type="number" min="0" step="any" inputMode="decimal" required value={draft.quantity}
+                  onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))}
+                  placeholder="Enter quantity"
+                  className="supplier-batch-input"
+                />
+              </label>
+              <label className="supplier-batch-field sm:col-span-2">
+                <span>Expiry date <b>*</b></span>
+                <input
+                  type="date" min={todayIso()} required value={draft.expiry_date}
+                  onChange={(e) => setDraft((d) => ({ ...d, expiry_date: e.target.value }))}
+                  className="supplier-batch-input sm:max-w-sm"
+                />
+              </label>
+            </div>
+            <div className="supplier-batch-discount-section">
               {discountFields(draft, (patch) => setDraft((d) => ({ ...d, ...patch })))}
-              <button type="submit" disabled={busy === 'new'}
-                className="px-4 py-1.5 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-semibold rounded-lg hover:opacity-90 disabled:opacity-50">
-                {busy === 'new' ? 'Adding…' : 'Add batch'}
+            </div>
+            <div className="supplier-batch-form-actions">
+              <button type="submit" disabled={busy === 'new'} className="supplier-batch-primary-button">
+                {busy === 'new' ? 'Adding batch…' : 'Add batch'}
               </button>
             </div>
           </form>
+
+          <section className="supplier-batch-existing">
+            <div className="supplier-batch-section-heading">
+              <div>
+                <h3>Current batches <span>{rows.length}</span></h3>
+                <p>Edit a batch below to correct its quantity, expiry date, or discount rule.</p>
+              </div>
+            </div>
+
+            {rows.length === 0 ? (
+              <div className="supplier-batch-empty">
+                <p>No batches yet</p>
+                <span>Add the first batch using the form above.</span>
+              </div>
+            ) : (
+              <ul className="supplier-batch-list">
+                {rows.map(({ batch, status, expired, percent }) => {
+                  const dirty = Boolean(edits[batch.id]);
+                  const saving = busy === batch.id;
+                  return (
+                    <li key={batch.id} className={`supplier-batch-card ${expired ? 'is-expired' : ''}`}>
+                      <div className="supplier-batch-card-heading">
+                        <div>
+                          <h4>Batch {batch.batch_number}</h4>
+                          <p>{expired ? 'Expired batches are hidden from buyers.' : `Expires ${formatExpiryDate(batch.expiry_date)}`}</p>
+                        </div>
+                        <div className="supplier-batch-statuses">
+                          <span className={`supplier-batch-status ${PILL[status.key]}`}>{status.label}</span>
+                          {percent > 0 && <span className="supplier-batch-discount-badge">{percent}% off today</span>}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <label className="supplier-batch-field">
+                          <span>Batch number <b>*</b></span>
+                          <input
+                            value={batch.batch_number ?? ''}
+                            onChange={(e) => edit(batch.id, { batch_number: e.target.value })}
+                            className="supplier-batch-input"
+                          />
+                        </label>
+                        <label className="supplier-batch-field">
+                          <span>Quantity ({item.unit || 'units'}) <b>*</b></span>
+                          <input
+                            type="number" min="0" step="any" inputMode="decimal"
+                            value={batch.quantity ?? ''}
+                            onChange={(e) => edit(batch.id, { quantity: e.target.value })}
+                            className="supplier-batch-input"
+                          />
+                        </label>
+                        <label className="supplier-batch-field sm:col-span-2">
+                          <span>Expiry date <b>*</b></span>
+                          <input
+                            type="date" value={batch.expiry_date ? String(batch.expiry_date).slice(0, 10) : ''}
+                            onChange={(e) => edit(batch.id, { expiry_date: e.target.value })}
+                            className="supplier-batch-input sm:max-w-sm"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="supplier-batch-discount-section">
+                        {discountFields(batch, (patch) => edit(batch.id, patch))}
+                      </div>
+                      {base > 0 && percent > 0 && (
+                        <p className="supplier-batch-price-note">
+                          Buyer price today: <b>{fmtUGX(priceAfterDiscount(base, percent))}</b> <span>{fmtUGX(base)}</span>
+                        </p>
+                      )}
+                      <div className="supplier-batch-card-actions">
+                        <button type="button" onClick={() => removeBatch(batch)} disabled={saving} className="supplier-batch-remove-button">
+                          Remove batch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveBatch(batches.find((b) => b.id === batch.id))}
+                          disabled={!dirty || saving}
+                          className="supplier-batch-primary-button"
+                        >
+                          {saving ? 'Saving changes…' : 'Save changes'}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

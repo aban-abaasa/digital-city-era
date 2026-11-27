@@ -275,79 +275,84 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
         </div>
       ) : (
         <div className="supplier-catalog-list">
-          {items.map(item => (
-              <div key={item.id}
-              className={`supplier-catalog-item bg-white rounded-2xl border p-4 transition-all ${item.is_available ? 'border-gray-100 shadow-sm' : 'border-gray-100 opacity-50'}`}>
-              {item.image_url ? <img src={item.image_url} alt="" loading="lazy" className="supplier-catalog-thumb mb-3 h-36 w-full rounded-xl object-cover" /> : <div className="supplier-catalog-thumb mb-3 flex h-20 items-center justify-center rounded-xl bg-purple-50 text-3xl">📦</div>}
-              <div className="supplier-catalog-title-row flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <p className="font-semibold text-gray-800 text-sm">{item.name}</p>
-                  <p className="supplier-catalog-barcode">{item.barcode ? `Barcode ${item.barcode}` : 'Barcode not set'}{item.sku ? ` · SKU ${item.sku}` : ''}</p>
-                  <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{item.category}</span>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => openEdit(item)} className="text-gray-400 hover:text-gray-600 p-1">✏️</button>
-                  <button onClick={() => remove(item.id)} className="text-gray-400 hover:text-red-500 p-1">🗑️</button>
-                </div>
-              </div>
-              {item.description && <p className="text-xs text-gray-500 mb-2">{item.description}</p>}
-              {item.price_unit === 'ICEC_S' && Number(item.stable_price) > 0 && (
-                <span
-                  className="sc-scope sc-supplier sc-pill sc-pill-ok mb-1"
-                  title="Priced in ICEC-S, the stable coin. The UGX price follows it, so inflation can't eat your margin."
-                >
-                  {Number(item.stable_price)} ICEC-S · inflation-proof
-                </span>
-              )}
-              {(item.brand || item.stock_quantity != null || (Array.isArray(item.price_tiers) && item.price_tiers.length > 0)) && (
-                <div className="flex flex-wrap gap-1.5 mb-1">
-                  {item.brand && <span className="text-[11px] bg-slate-50 text-slate-600 px-2 py-0.5 rounded-full">{item.brand}</span>}
-                  {item.stock_quantity != null && <span className="text-[11px] bg-slate-50 text-slate-600 px-2 py-0.5 rounded-full">{item.stock_quantity} in stock</span>}
-                  {Array.isArray(item.price_tiers) && item.price_tiers.length > 0 && (
-                    <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">Bulk prices ×{item.price_tiers.length}</span>
-                  )}
-                </div>
-              )}
-              <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
-                <span>Min: {item.min_order_qty} {item.unit}</span>
-                {offers[item.id].onOffer ? (
-                  <span>
-                    <span className="line-through mr-1">{fmtUGX(item.price_per_unit)}</span>
-                    <b className="text-purple-700">{fmtUGX(offers[item.id].price)}/{item.unit}</b>
+          {items.map(item => {
+            const offer = offers[item.id];
+            const nearest = offer.first;
+            const priceLabel = offer.onOffer
+              ? `${fmtUGX(offer.price)}/${item.unit}`
+              : (item.price_per_unit ? `${fmtUGX(item.price_per_unit)}/${item.unit}` : 'Negotiable');
+            return (
+              <details key={item.id} className="supplier-catalog-row">
+                <summary className="supplier-catalog-summary">
+                  {item.image_url
+                    ? <img src={item.image_url} alt="" loading="lazy" className="supplier-catalog-summary-image" />
+                    : <span className="supplier-catalog-summary-image supplier-catalog-summary-placeholder" aria-hidden="true">Item</span>}
+                  <span className="supplier-catalog-summary-copy">
+                    <span className="supplier-catalog-summary-name">{item.name}</span>
+                    <span className="supplier-catalog-summary-meta">{item.category || 'Uncategorized'} · {priceLabel}</span>
                   </span>
-                ) : (
-                  <span>{item.price_per_unit ? fmtUGX(item.price_per_unit) + '/' + item.unit : 'Negotiable'}</span>
-                )}
-              </div>
-              {(() => {
-                const offer = offers[item.id];
-                const nearest = offer.first;
-                return (
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-gray-500 min-w-0 truncate">
+                  <span className={`supplier-catalog-availability ${item.is_available ? 'is-available' : 'is-hidden'}`}>
+                    {item.is_available ? 'Available' : 'Hidden'}
+                  </span>
+                  <svg className="supplier-catalog-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </summary>
+
+                <div className="supplier-catalog-details">
+                  <div className="supplier-catalog-detail-heading">
+                    <div>
+                      <p className="supplier-catalog-detail-category">{item.category || 'Uncategorized'}</p>
+                      <p className="supplier-catalog-barcode">
+                        {item.barcode ? `Barcode ${item.barcode}` : 'Barcode not set'}{item.sku ? ` · SKU ${item.sku}` : ''}
+                      </p>
+                    </div>
+                    <p className="supplier-catalog-detail-price">
+                      {offer.onOffer && <span className="supplier-catalog-old-price">{fmtUGX(item.price_per_unit)}</span>}
+                      {priceLabel}
+                    </p>
+                  </div>
+
+                  {item.description && <p className="supplier-catalog-description">{item.description}</p>}
+                  {(item.brand || item.stock_quantity != null || (Array.isArray(item.price_tiers) && item.price_tiers.length > 0)) && (
+                    <div className="supplier-catalog-tags">
+                      {item.brand && <span>{item.brand}</span>}
+                      {item.stock_quantity != null && <span>{item.stock_quantity} in stock</span>}
+                      {Array.isArray(item.price_tiers) && item.price_tiers.length > 0 && <span>{item.price_tiers.length} bulk price tiers</span>}
+                    </div>
+                  )}
+                  {item.price_unit === 'ICEC_S' && Number(item.stable_price) > 0 && (
+                    <span className="sc-scope sc-supplier sc-pill sc-pill-ok supplier-catalog-stable-price">
+                      {Number(item.stable_price)} ICEC-S stable price
+                    </span>
+                  )}
+
+                  <div className="supplier-catalog-detail-row">
+                    <span>Minimum order: <b>{item.min_order_qty} {item.unit}</b></span>
+                    <span>
                       {nearest
-                        ? <>Next expiry <b className={nearest.flagged ? 'text-amber-700' : 'text-gray-700'}>{formatExpiryDate(nearest.batch.expiry_date)}</b>
-                            {offer.percent > 0 && <b className="text-purple-700"> · −{offer.percent}%</b>}</>
+                        ? <>Next expiry: <b className={nearest.flagged ? 'text-amber-700' : 'text-gray-700'}>{formatExpiryDate(nearest.batch.expiry_date)}</b>
+                            {offer.percent > 0 && <b className="text-purple-700"> · {offer.percent}% off</b>}</>
                         : offer.rows.length ? 'All batches expired' : 'No batches tracked'}
                     </span>
-                    <button onClick={() => setBatchItemId(item.id)}
-                      className="shrink-0 rounded-lg border border-purple-200 px-2 py-0.5 text-[11px] font-semibold text-purple-600 hover:bg-purple-50">
-                      Batches{offer.rows.length ? ` (${offer.rows.length})` : ''}
-                    </button>
                   </div>
-                );
-              })()}
-              <button onClick={() => toggle(item)}
-                className={`mt-2 w-full py-1 rounded-lg text-xs font-semibold ${item.is_available
-                  ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                  : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}>
-                {item.is_available ? '✓ Available' : '✗ Hidden'}
-              </button>
-            </div>
-          ))}
+
+                  <div className="supplier-catalog-actions">
+                    <button type="button" onClick={() => setBatchItemId(item.id)} className="supplier-catalog-action-primary">
+                      Manage batches{offer.rows.length ? ` (${offer.rows.length})` : ''}
+                    </button>
+                    <button type="button" onClick={() => openEdit(item)} className="supplier-catalog-action-secondary">Edit item</button>
+                    <button type="button" onClick={() => toggle(item)} className="supplier-catalog-action-secondary">
+                      {item.is_available ? 'Hide from buyers' : 'Make available'}
+                    </button>
+                    <button type="button" onClick={() => remove(item.id)} className="supplier-catalog-action-danger">Remove</button>
+                  </div>
+                </div>
+              </details>
+            );
+          })}
         </div>
       )}
-
       {batchItem && (
         <SupplierBatchManager
           item={batchItem}
