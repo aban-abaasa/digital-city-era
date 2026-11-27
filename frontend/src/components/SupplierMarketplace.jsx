@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
+import { FiStar } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import { enqueuePortalMutation } from '../services/portalOfflineQueue';
 import { isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
@@ -270,7 +271,13 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">My Supply Catalog</h2>
+          <div
+            className="inline-flex items-center gap-2 border border-[#c4a052] bg-gradient-to-r from-[#fff8dc] via-[#e9cd78] to-[#fff8dc] px-4 py-2 text-[#705719] shadow-sm"
+            style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 88% 88%, 12% 88%, 0 100%)' }}
+          >
+            <FiStar className="h-5 w-5 fill-current" aria-hidden="true" />
+            <h2 className="text-lg font-bold">Own your supplies</h2>
+          </div>
           <p className="text-sm text-gray-500 mt-0.5">
             List everything you can supply. Supermarkets browse this when reviewing your applications.
           </p>

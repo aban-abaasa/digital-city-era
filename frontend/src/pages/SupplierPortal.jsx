@@ -9,7 +9,7 @@ import {
   FiHeart, FiZap, FiShield, FiGift, FiNavigation, FiMapPin,
   FiSmartphone, FiHeadphones, FiCamera, FiWatch, FiHome,
   FiCreditCard, FiMessageCircle, FiShare2, FiThumbsUp,
-  FiBookmark, FiGrid, FiList, FiInfo, FiHelpCircle,
+  FiBookmark, FiList, FiInfo, FiHelpCircle,
   FiMaximize, FiMinimize, FiRotateCw, FiUpload, FiPrinter,
   FiTag, FiHash, FiImage, FiCheckCircle, FiXCircle, FiUsers, FiUser,
   FiShoppingCart, FiPercent, FiFlag, FiWifi, FiSend, FiFileText,
@@ -3226,7 +3226,7 @@ const SupplierPortal = () => {
     { id: 'deliveries', label: 'Deliveries', icon: FiTruck },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
     { id: 'confirmations', label: 'Payment Confirmations', icon: FiCheckCircle },
-    { id: 'my-catalog', label: 'My Catalog', icon: FiGrid },
+    { id: 'my-catalog', label: 'Own your supplies', icon: FiStar },
     { id: 'farm-produce', label: 'Farm Produce', icon: FiShoppingCart },
     { id: 'price-analyst', label: 'Price Analyst', icon: FiTrendingUp },
     { id: 'supplier-network', label: 'Global Supplier Network', icon: FiSend },
@@ -3297,14 +3297,6 @@ const SupplierPortal = () => {
 
       {/* Main Content */}
       <div className={activeTab === 'orders' ? 'supplier-orders-screen' : activeTab === 'payments' ? 'supplier-payments-screen' : 'max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8'}>
-        {(loading && ['overview','orders','products','payments'].includes(activeTab)) ? (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <div className="text-center">
-              <FiRefreshCw className="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" />
-              <p className="text-gray-600">Loading supplier data from database...</p>
-            </div>
-          </div>
-        ) : (
           <>
             {activeTab === 'overview' && renderOverview()}
             {activeTab === 'company' && portalUser && (
@@ -3362,7 +3354,6 @@ const SupplierPortal = () => {
               </div>
             )}
           </>
-        )}
       </div>
 
       {/* Add Product Modal: the shared admin form in supplier mode, saving to the supplier's own catalog */}
