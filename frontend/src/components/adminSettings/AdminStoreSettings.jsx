@@ -254,7 +254,9 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
       ? store.metadata
       : {};
     return {
-      enabled: metadata.supplier_inventory_visibility === true,
+      // Sharing starts enabled for stores that have not saved this setting yet.
+      // An explicit false remains an admin opt-out.
+      enabled: metadata.supplier_inventory_visibility !== false,
       mode: metadata.supplier_inventory_visibility_mode === 'limited' ? 'limited' : 'full',
       limit: metadata.supplier_inventory_limit ?? 5
     };
@@ -491,7 +493,7 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         <summary className="ass-card-head ass-supplier-summary">
           <div>
             <h3 id="supplier-stock-title">Supplier stock visibility</h3>
-            <p>Choose whether suppliers linked to your products can see this store’s stock and recent sales.</p>
+            <p>Sharing is enabled by default for linked suppliers. You can limit the stock view or turn sharing off.</p>
           </div>
           <span className={`ass-flash${flash['supplier-visibility'] ? ` is-${flash['supplier-visibility'].tone}` : ''}`} role="status" aria-live="polite">
             {flash['supplier-visibility'] ? <>{flash['supplier-visibility'].tone === 'ok' && <FiCheck aria-hidden="true" />}{flash['supplier-visibility'].text}</> : ''}
@@ -504,11 +506,11 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
             <span className="ass-row-icon"><FiUsers aria-hidden="true" /></span>
             <div className="ass-row-text">
               <b>Share stock and sales with linked suppliers</b>
-              <span>Suppliers see only products assigned to them, and only after stock decreases. Reductions stay visible for 30 days. Suppliers cannot change your inventory.</span>
+              <span>Enabled by default. Suppliers see products assigned to them, stock levels, and recent sales. They cannot change your inventory.</span>
             </div>
             <Switch
               label="Share store stock and sales with linked suppliers"
-              checked={store?.metadata?.supplier_inventory_visibility === true}
+              checked={store?.metadata?.supplier_inventory_visibility !== false}
               disabled={Boolean(busy)}
               onChange={setSupplierInventoryVisibility}
             />

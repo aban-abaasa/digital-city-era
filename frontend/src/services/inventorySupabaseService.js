@@ -1182,33 +1182,35 @@ class InventorySupabaseService {
    */
   async getSuppliers() {
     try {
-      // Fetch suppliers from users table where role='supplier'
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('role', 'supplier');
+      // products.supplier_id references suppliers.id, not users.id. Keep the
+      // account row for display details, but submit the matching supplier row ID.
+      const [{ data: users, error: usersError }, { data: supplierRows, error: supplierError }] = await Promise.all([
+        supabase.from('users').select('*').eq('role', 'supplier'),
+        supabase.from('suppliers').select('id, user_id, company_name')
+      ]);
 
-      if (error) {
-        console.error('❌ Supabase error fetching suppliers:', error);
-        throw error;
-      }
+      if (usersError) throw usersError;
+      if (supplierError) throw supplierError;
 
-      console.log('✅ Fetched suppliers:', data);
+      const supplierByUserId = new Map((supplierRows || []).map((supplier) => [supplier.user_id, supplier]));
+      const suppliers = (users || []).flatMap((user) => {
+        const supplier = supplierByUserId.get(user.id)
+          || (user.auth_id ? (supplierRows || []).find((entry) => entry.user_id === user.auth_id) : null);
+        if (!supplier) return [];
+        return [{
+          id: supplier.id,
+          user_id: user.id,
+          company_name: supplier.company_name || user.company_name || user.full_name || user.username || 'Unknown Supplier',
+          full_name: user.full_name,
+          phone: user.phone,
+          email: user.email,
+          business_license: user.business_license,
+          category: user.category,
+          is_active: user.is_active,
+          rating: user.rating || null
+        }];
+      });
 
-      // Filter and format suppliers - show all suppliers regardless of active status for testing
-      const suppliers = (data || []).map(sup => ({
-        id: sup.id,
-        company_name: sup.company_name || sup.full_name || sup.username || 'Unknown Supplier',
-        full_name: sup.full_name,
-        phone: sup.phone,
-        email: sup.email,
-        business_license: sup.business_license,
-        category: sup.category,
-        is_active: sup.is_active,
-        rating: sup.rating || null
-      }));
-
-      // users has no company_name column to ORDER BY in SQL, so sort by the display name here
       return suppliers.sort((x, y) => x.company_name.localeCompare(y.company_name));
 
     } catch (error) {

@@ -82,12 +82,12 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
   }
 
   if (!result?.enabled) {
-    if (compact) return <div className="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">Supplied inventory tracking</h2><p className="mt-2 text-sm text-slate-600">A store admin must enable stock sharing before store movement and sales appear here.</p></div>;
+    if (compact) return <div className="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">Supplied inventory tracking</h2><p className="mt-2 text-sm text-slate-600">No shared products are available yet. Ask the store to link products to your supplier account and check that sharing has not been turned off.</p></div>;
     return (
       <div className="rounded-2xl border border-indigo-100 bg-white p-8 text-center shadow-sm">
         <FiPackage className="mx-auto h-10 w-10 text-indigo-500" />
         <h2 className="mt-3 text-xl font-bold text-slate-900">Store stock and sales</h2>
-        <p className="mx-auto mt-2 max-w-xl text-sm text-slate-600">Store stock sharing is not available for your linked products yet. A store admin can enable it so you can see stock levels and sales activity and prepare deliveries.</p>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-slate-600">No shared products are available yet. Sharing is enabled by default; ask the store to link products to your supplier account and check that sharing has not been turned off.</p>
         <button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"><FiRefreshCw /> Refresh</button>
       </div>
     );
@@ -102,8 +102,8 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div>
-            <h2 className="font-bold text-slate-900">Supplied inventory movement</h2>
-            <p className="mt-1 text-sm text-slate-600">Stock reductions and sales for your linked products, within each store’s sharing limit.</p>
+            <h2 className="font-bold text-slate-900">Store stock and sales</h2>
+            <p className="mt-1 text-sm text-slate-600">Stock levels and recent sales for your linked products, within each store’s sharing limit.</p>
           </div>
           {onViewAll && <button type="button" onClick={onViewAll} className="self-start rounded-lg border border-indigo-200 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Open Supply tracker</button>}
         </div>
@@ -166,7 +166,7 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div>
             <h3 className="font-bold text-slate-900">Your products in stores</h3>
-            <p className="mt-1 text-sm text-slate-500">Only your linked products with a recent stock reduction and allowed by each store’s visibility setting appear here.</p>
+            <p className="mt-1 text-sm text-slate-500">Your linked products appear when the store shares them. Recent stock reductions and sales are shown when available.</p>
           </div>
           <label className="relative block sm:w-64">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -174,7 +174,7 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
           </label>
         </div>
         {visibleProducts.length === 0 ? (
-          <div className="p-8 text-center text-sm text-slate-500">{products.length ? 'No products match your search.' : 'No products currently meet your linked product, recent stock reduction, and store visibility settings.'}</div>
+          <div className="p-8 text-center text-sm text-slate-500">{products.length ? 'No products match your search.' : 'No linked products are currently shared by your stores.'}</div>
         ) : (
           <div className="hidden overflow-x-auto md:block">
             <table className="min-w-[1180px] w-full text-left text-sm">

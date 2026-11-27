@@ -786,8 +786,8 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
           booking_type: productData.booking_type,
           expiry_date: productData.expiry_date,
         };
-        // The dropdown lists supplier accounts (users), but products.supplier_id points at the
-        // suppliers table: sending an id that has no row there fails the foreign key.
+        // The dropdown stores suppliers.id (resolved from the supplier account),
+        // which is the key products.supplier_id references.
         if (productFields.supplier_id) {
           const { data: supplierRow } = await supabase
             .from('suppliers')
