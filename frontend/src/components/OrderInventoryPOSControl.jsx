@@ -36,7 +36,7 @@ import ProductFamiliesPanel from './ProductFamiliesPanel';
 import BarcodeLabelsModal from './BarcodeLabelsModal';
 import { generateStoreBarcode, isPlaceholderBarcode } from '../utils/storeBarcodes';
 import { familyName } from '../utils/productFamilies';
-import { activeFlavorRows, checkFlavorRows, flavorProductName, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
+import { activeFlavorRows, buildFlavorProducts, checkFlavorRows, flavorProductName, hasFlavorIssues, registerFlavorProducts } from '../utils/productFlavors';
 import BookingsPanel from './booking/BookingsPanel';
 import ServiceEditModal from './ServiceEditModal';
 import { serviceCoverImage } from '../services/servicePhotoService';
@@ -55,6 +55,8 @@ import {
   exportRowsToFile
 } from '../utils/inventoryFileIO';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { createOfflineUuid, getCachedIdentity, loadCatalog, loadPortalSnapshot, saveCatalog, savePortalSnapshot, isNetworkFailure } from '../services/posOfflineCache';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
 
 // ---------------------------------------------------------------------
 // Classic ledger look: midnight navy + antique gold on ivory, hairline
@@ -273,22 +275,23 @@ const EMPTY_NEW_PRODUCT = {
 
 // openAddSignal: a number that goes up each time something outside (the dashboard's Add button, the phone
 // bottom bar) asks for the full-page Add Products form; it opens once the admin check has finished.
-const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
+const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, storeId: initialStoreId = null, adminProfile = null } = {}) => {
   // Admin Authorization Check
-  const [userRole, setUserRole] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [userRole, setUserRole] = useState(adminAuthorized ? 'admin' : null);
+  const [isAdmin, setIsAdmin] = useState(adminAuthorized);
+  const [authLoading, setAuthLoading] = useState(!adminAuthorized);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   // Products / Services / Bookings tabs — Products is the existing
   // stock/pricing table below, unchanged; Services and Bookings are new.
   const [activeTab, setActiveTab] = useState('products');
-  const [supermarketId, setSupermarketId] = useState(null);
+  const [supermarketId, setSupermarketId] = useState(initialStoreId);
   // What this business actually offers (set by the admin in their profile —
   // see UnifiedProfilePage's "What does this business offer?" toggle).
   // Defaults match the DB column defaults so nothing flashes/hides
   // incorrectly before the real values load.
   const [offersProducts, setOffersProducts] = useState(true);
   const [offersServices, setOffersServices] = useState(false);
-  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(adminProfile);
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
@@ -624,6 +627,15 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
     // Full barcode, not a prefix: SKU is unique and barcodes from one maker share their first digits
     const generatedSKU = `SKU-${trimmedBarcode}`;
 
+    if (!navigator.onLine) {
+      setNewlyRegisteredProductId(null);
+      setNewProduct({ ...newProduct, sku: generatedSKU, barcode: trimmedBarcode });
+      setRegisteringBarcode(false);
+      setShowAddProductModal(true);
+      toast.info('Barcode added to the form. It will be checked when you reconnect.');
+      return;
+    }
+
     setNewlyRegisteredProductId(null);
     setNewProduct({ ...newProduct, sku: generatedSKU, barcode: trimmedBarcode });
     setRegisteringBarcode(true);
@@ -756,8 +768,35 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
 
   // Load products and categories
   useEffect(() => {
-    checkAdminAccess();
-    loadData();
+    if (adminAuthorized) {
+      setAuthLoading(false);
+      setIsAdmin(true);
+      setUserRole('admin');
+      setCurrentUserProfile(adminProfile);
+      loadData(initialStoreId);
+    } else {
+      checkAdminAccess();
+      loadData();
+    }
+    const handleOnline = () => {
+      setIsOnline(true);
+      loadData(initialStoreId);
+    };
+    const handleOffline = () => setIsOnline(false);
+    const handleQueuedProductSync = (event) => {
+      if (['admin-product-create', 'admin-product-update'].includes(event.detail?.kind)
+          && event.detail?.userId === (adminProfile?.auth_id || getCachedIdentity()?.userId)) {
+        loadData(initialStoreId);
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('portal-offline-mutation-synced', handleQueuedProductSync);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('portal-offline-mutation-synced', handleQueuedProductSync);
+    };
   }, []);
 
   // Check if user is admin
@@ -791,10 +830,8 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
 
       if (!userData) {
         console.warn('⚠️ User not found in database for auth_id:', user.id);
-        // Allow access anyway for now - user might be new
-        setIsAdmin(true);
-        setUserRole('admin');
-        toast.info('ℹ️ Admin access granted (user not in database yet)');
+        setIsAdmin(false);
+        setUserRole(null);
         return;
       }
 
@@ -824,19 +861,77 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
     setBatchRows(error ? [] : (data || []));
   };
 
-  const loadData = async () => {
+  const restoreInventorySnapshot = (snapshot) => {
+    if (!snapshot?.products) return false;
+    setProducts(snapshot.products);
+    setFilteredProducts(snapshot.products);
+    setInventoryMap(snapshot.inventoryMap || {});
+    setCategories(snapshot.categories || []);
+    setBatchRows(snapshot.batchRows || []);
+    setStoreName(snapshot.storeName || '');
+    setOffersProducts(snapshot.offersProducts !== false);
+    setOffersServices(snapshot.offersServices === true);
+    setBusinessType(snapshot.businessType || 'supermarket');
+    setSupermarketId(snapshot.supermarketId || null);
+    calculateStats(snapshot.products, snapshot.inventoryMap || {});
+    return true;
+  };
+
+  const cacheInventorySnapshot = async (storeId, productRows, invMap, categoriesRows, batches = batchRows) => {
+    const identity = getCachedIdentity();
+    const ownerId = adminProfile?.auth_id || identity?.userId;
+    if (ownerId) {
+      await savePortalSnapshot('admin', ownerId, 'inventory', {
+        supermarketId: storeId,
+        products: productRows,
+        inventoryMap: invMap,
+        categories: categoriesRows || [],
+        batchRows: batches || [],
+        storeName,
+        offersProducts,
+        offersServices,
+        businessType
+      });
+    }
+    if (storeId) {
+      const categoryNames = Object.fromEntries((categoriesRows || []).map((category) => [category.id, category.name]));
+      const priorCatalog = await loadCatalog(storeId);
+      const priorById = Object.fromEntries((priorCatalog?.products || []).map((product) => [product.id, product]));
+      await saveCatalog(storeId, productRows.map((product) => ({
+        ...priorById[product.id],
+        ...product,
+        price: Number(product.selling_price) || 0,
+        category: categoryNames[product.category_id] || 'General',
+        categoryName: categoryNames[product.category_id] || 'General',
+        stock: Number(invMap[product.id]?.current_stock ?? product.current_stock) || 0,
+        current_stock: Number(invMap[product.id]?.current_stock ?? product.current_stock) || 0,
+        supermarket_id: storeId
+      })));
+    }
+  };
+
+  const loadData = async (preferredStoreId = initialStoreId || supermarketId) => {
     try {
       // `loading` starts true, so the full-page loader covers the first load only.
       // Later reloads run behind the page (the Refresh button shows `refreshing`)
       // instead of blanking it with "Verifying authorization...".
       setRefreshing(true);
 
+      const identity = getCachedIdentity();
+      const ownerId = adminProfile?.auth_id || identity?.userId;
+      if (!navigator.onLine) {
+        const cached = ownerId ? await loadPortalSnapshot('admin', ownerId, 'inventory') : null;
+        if (cached?.value) restoreInventorySnapshot(cached.value);
+        else toast.info('No saved inventory is available on this device yet.');
+        return;
+      }
+
       // Each supermarket's catalog is private — only show products that
       // belong to the signed-in admin's supermarket. Rows created before
       // this isolation existed have supermarket_id NULL, so those are
       // included too rather than disappearing from view.
-      const supermarketId = await inventoryService.getCurrentSupermarketId();
-      setSupermarketId(supermarketId);
+      const supermarketId = preferredStoreId || identity?.supermarketId || await inventoryService.getCurrentSupermarketId();
+      setSupermarketId(supermarketId || null);
 
       if (supermarketId) {
         const { data: offersRow } = await supabase
@@ -1005,9 +1100,15 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
       
       // Calculate stats with real inventory data
       calculateStats(productsWithInventory, invMap);
+      await cacheInventorySnapshot(supermarketId, productsWithInventory, invMap, categoriesData || []);
     } catch (error) {
       console.error('❌ Error loading data:', error);
-      toast.error('Failed to load inventory data');
+      if (isNetworkFailure(error)) {
+        const identity = getCachedIdentity();
+        const ownerId = adminProfile?.auth_id || identity?.userId;
+        const cached = ownerId ? await loadPortalSnapshot('admin', ownerId, 'inventory') : null;
+        if (!restoreInventorySnapshot(cached?.value)) toast.error('No saved inventory is available on this device yet.');
+      } else toast.error('Failed to load inventory data');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -1348,6 +1449,69 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
         return;
       }
 
+      if (!navigator.onLine) {
+        const identity = getCachedIdentity();
+        const ownerId = adminProfile?.auth_id || identity?.userId;
+        const storeId = initialStoreId || supermarketId || identity?.supermarketId;
+        if (!ownerId || identity?.role !== 'admin') throw new Error('Sign in as an admin while online before editing inventory offline.');
+        if (!storeId) throw new Error('This admin account has no saved store assignment on this device.');
+        const queuedUpdates = {
+          ...productUpdates,
+          ...(!editImageFile && editImageUrl ? { images: [editImageUrl] } : {})
+        };
+        await enqueuePortalMutation('admin-product-update', ownerId, {
+          productId,
+          supermarketId: storeId,
+          updates: queuedUpdates,
+          inventory: { current_stock: parsedStock },
+          imageFile: editImageFile || null
+        });
+
+        const applyUpdate = (product) => product.id === productId
+          ? { ...product, ...queuedUpdates, current_stock: parsedStock }
+          : product;
+        const flavorPayloads = flavorsToAdd.length > 0
+          ? buildFlavorProducts({ supermarketId: storeId, base: { ...editedProduct, ...queuedUpdates }, rows: flavorsToAdd })
+          : [];
+        const localFlavors = [];
+        for (const flavor of flavorPayloads) {
+          const row = flavorsToAdd.find((entry) => barcodesMatch(entry.barcode, flavor.barcode));
+          const stock = Math.max(0, Math.floor(Number(row?.stock) || 0));
+          const flavorId = createOfflineUuid();
+          if (!flavorId) throw new Error('This browser cannot safely create an offline product ID.');
+          const flavorProduct = { id: flavorId, ...flavor, current_stock: stock, images: [] };
+          localFlavors.push(flavorProduct);
+          await enqueuePortalMutation('admin-product-create', ownerId, {
+            product: flavorProduct,
+            inventory: { product_id: flavorProduct.id, supermarket_id: storeId, current_stock: stock, reserved_stock: 0, minimum_stock: 10, reorder_point: 20, reorder_quantity: 100 },
+            imageFile: row?.photo || null,
+            batch: row?.batch_number?.trim() && row.expiry_date
+              ? { batchNumber: row.batch_number.trim(), expiryDate: row.expiry_date, quantity: stock }
+              : null
+          });
+        }
+        const nextProducts = [...products.map(applyUpdate), ...localFlavors];
+        const nextInventoryMap = {
+          ...inventoryMap,
+          [productId]: { product_id: productId, quantity: parsedStock, current_stock: parsedStock }
+        };
+        for (const flavor of localFlavors) nextInventoryMap[flavor.id] = { product_id: flavor.id, quantity: flavor.current_stock, current_stock: flavor.current_stock };
+        setProducts(nextProducts);
+        setFilteredProducts((previous) => [...previous.map(applyUpdate), ...localFlavors]);
+        setInventoryMap(nextInventoryMap);
+        await cacheInventorySnapshot(storeId, nextProducts, nextInventoryMap, categories);
+        setEditingId(null);
+        setEditValues({});
+        setEditImageFile(null);
+        setEditImageUrl(null);
+        setEditImagePreview(null);
+        setEditFlavorRows([]);
+        setEditFlavorSharedName(null);
+        calculateStats(nextProducts, nextInventoryMap);
+        toast.success('Inventory changes saved on this device. They will sync when connected.');
+        return;
+      }
+
       const { error } = await supabase
         .from('products')
         .update(productUpdates)
@@ -1487,11 +1651,10 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
   // `addAnother` keeps the Add Products page open on a fresh form (category and tax carried over)
   // instead of going back to the list.
   const saveNewProduct = async (addAnother = false) => {
-    // ⚡ Skip expensive auth check - already verified on mount
-    // if (!isAdmin) {
-    //   toast.error('❌ Only Admins can add products');
-    //   return;
-    // }
+    if (!isAdmin) {
+      toast.error('Only verified admins can add products.');
+      return;
+    }
 
     // The scanned barcode is still being registered; Save is disabled for that moment
     if (registeringBarcode) return;
@@ -1566,6 +1729,115 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
     }
 
     setSavingNew(true);
+    if (!navigator.onLine) {
+      try {
+        const identity = getCachedIdentity();
+        const ownerId = adminProfile?.auth_id || identity?.userId;
+        const storeId = initialStoreId || supermarketId || identity?.supermarketId;
+        if (!ownerId || identity?.role !== 'admin') throw new Error('Reconnect and sign in as an admin before saving offline.');
+        if (!storeId) throw new Error('This admin account has no saved store assignment on this device.');
+
+        const barcodeForProduct = effectiveProduct.barcode || generateBarcodeFor();
+        const localBarcodeOwner = barcodeForProduct && products.find((product) => barcodesMatch(product.barcode, barcodeForProduct));
+        if (localBarcodeOwner) throw new Error(`Barcode is already used by ${localBarcodeOwner.name}.`);
+        const makeId = () => {
+          const id = createOfflineUuid();
+          if (!id) throw new Error('This browser cannot create a safe offline product ID.');
+          return id;
+        };
+        const productPayload = {
+          id: makeId(),
+          name: effectiveProduct.name,
+          sku: newProduct.sku.trim() || null,
+          barcode: barcodeForProduct,
+          cost_price: Number(newProduct.cost_price) || 0,
+          wholesale_price: Number(newProduct.wholesale_price) || 0,
+          selling_price: effectivePrice,
+          tax_rate: Number(newProduct.tax_rate) || 0,
+          tax_included: newProduct.tax_included,
+          category_id: newProduct.category_id || null,
+          is_active: true,
+          supermarket_id: storeId,
+          ...(expiryReady && effectiveProduct.expiry_date ? { expiry_date: effectiveProduct.expiry_date } : {}),
+          ...(servicesOnlyStore ? { inventory_mode: 'service_item', track_inventory: false, is_service: true } : {})
+        };
+        const primaryInventory = servicesOnlyStore ? null : {
+          product_id: productPayload.id,
+          supermarket_id: storeId,
+          current_stock: startingStock,
+          reserved_stock: 0,
+          minimum_stock: 10,
+          reorder_point: 20,
+          reorder_quantity: 100
+        };
+        const primaryImage = standaloneVariant?.photo || newProductImageFile || null;
+        const savedRows = [{ product: productPayload, inventory: primaryInventory, imageFile: primaryImage, stock: startingStock }];
+
+        const flavorPayloads = flavorsToAdd.length > 0
+          ? buildFlavorProducts({
+              supermarketId: storeId,
+              base: { ...effectiveProduct, name: sharedName, selling_price: Number(newProduct.selling_price) || 0, initial_stock: newProductStock },
+              rows: flavorsToAdd
+            })
+          : [];
+        for (const flavor of flavorPayloads) {
+          const sourceRow = flavorsToAdd.find((row) => barcodesMatch(row.barcode, flavor.barcode));
+          const flavorStock = Math.max(0, Math.floor(Number(sourceRow?.stock === '' || sourceRow?.stock == null ? newProductStock : sourceRow.stock) || 0));
+          const flavorProduct = { id: makeId(), ...flavor };
+          const flavorInventory = servicesOnlyStore ? null : {
+            product_id: flavorProduct.id,
+            supermarket_id: storeId,
+            current_stock: flavorStock,
+            reserved_stock: 0,
+            minimum_stock: 10,
+            reorder_point: 20,
+            reorder_quantity: 100
+          };
+          savedRows.push({ product: flavorProduct, inventory: flavorInventory, imageFile: sourceRow?.photo || null, stock: flavorStock, batch: sourceRow });
+        }
+
+        if (primaryBatch?.batch_number?.trim() && primaryBatch.expiry_date) {
+          savedRows[0].batch = primaryBatch;
+        }
+
+        for (const row of savedRows) {
+          await enqueuePortalMutation('admin-product-create', ownerId, {
+            product: row.product,
+            inventory: row.inventory,
+            imageFile: row.imageFile,
+            batch: row.batch?.batch_number?.trim() && row.batch.expiry_date ? {
+              batchNumber: row.batch.batch_number.trim(),
+              expiryDate: row.batch.expiry_date,
+              quantity: row.stock
+            } : null
+          });
+        }
+
+        const localRows = savedRows.map(({ product, stock }) => ({ ...product, current_stock: stock, images: [] }));
+        const updatedProducts = [...products, ...localRows];
+        const nextInventoryMap = { ...inventoryMap };
+        for (const row of savedRows) {
+          if (row.inventory) nextInventoryMap[row.product.id] = { ...row.inventory, quantity: row.stock };
+        }
+        setProducts(updatedProducts);
+        setFilteredProducts((previous) => [...previous, ...localRows]);
+        setInventoryMap(nextInventoryMap);
+        calculateStats(updatedProducts, nextInventoryMap);
+        await cacheInventorySnapshot(storeId, updatedProducts, nextInventoryMap, categories);
+        setAddedThisVisit((previous) => [...previous, ...localRows.map((row) => ({ key: row.id, name: row.name, price: row.selling_price }))]);
+        toast.success(`${localRows.length} product${localRows.length === 1 ? '' : 's'} saved on this device. They will sync when connected.`);
+        if (addAnother) {
+          resetAddProductForm({ keepSettings: true });
+          setTimeout(() => addNameRef.current?.focus(), 0);
+        } else closeAddProductWindow();
+      } catch (error) {
+        console.error('Could not save product offline:', error);
+        toast.error(error.message || 'Could not save product offline.');
+      } finally {
+        setSavingNew(false);
+      }
+      return;
+    }
     try {
       let data, error;
       let generatedBarcode = null;
@@ -1744,7 +2016,11 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
             uploadPhoto: uploadProductPhoto
           });
           if (photoFailures > 0) toast.warning(`${photoFailures} flavor photo${photoFailures === 1 ? '' : 's'} could not be uploaded. Add them from Flavor families.`);
-          const shapedFlavors = madeFlavors.map(flavor => ({ ...flavor, current_stock: 0, images: Array.isArray(flavor.images) ? flavor.images : [] }));
+          const shapedFlavors = madeFlavors.map(flavor => {
+            const sourceRow = flavorsToAdd.find((row) => barcodesMatch(row.barcode, flavor.barcode));
+            const current_stock = Math.max(0, Math.floor(Number(sourceRow?.stock === '' || sourceRow?.stock == null ? newProductStock : sourceRow.stock) || 0));
+            return { ...flavor, current_stock, images: Array.isArray(flavor.images) ? flavor.images : [] };
+          });
           updatedProducts = [...updatedProducts, ...shapedFlavors];
           updatedFiltered = [...updatedFiltered, ...shapedFlavors];
           flavorCount = shapedFlavors.length;
@@ -1778,6 +2054,17 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
 
       setProducts(updatedProducts);
       setFilteredProducts(updatedFiltered);
+      const storeIdForCache = initialStoreId || supermarketId;
+      if (storeIdForCache) {
+        const nextInventoryMap = { ...inventoryMap };
+        nextInventoryMap[data.id] = { product_id: data.id, quantity: startingStock, current_stock: startingStock };
+        for (const row of updatedProducts) {
+          if (!row.current_stock && row.current_stock !== 0) continue;
+          if (!nextInventoryMap[row.id]) nextInventoryMap[row.id] = { product_id: row.id, quantity: row.current_stock, current_stock: row.current_stock };
+        }
+        setInventoryMap(nextInventoryMap);
+        await cacheInventorySnapshot(storeIdForCache, updatedProducts, nextInventoryMap, categories);
+      }
 
       const successMsg = (newlyRegisteredProductId 
         ? '✅ Product updated successfully!' 
@@ -1990,7 +2277,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
     return ((sellingPrice - costPrice) / costPrice * 100).toFixed(1);
   };
 
-  if (loading || authLoading) {
+  if (authLoading || (loading && !showAddProductModal)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
@@ -2036,6 +2323,11 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0 } = {}) => {
   return (
     <div className="oi-root space-y-3">
       <style>{OI_STYLES}</style>
+      {!isOnline && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
+          Offline · showing saved store inventory. New products and starting stock are saved here and will sync when connected.
+        </div>
+      )}
       {/* Title row + section tabs in one strip. Products / Services / Bookings only show for
           what this business offers (business profile); the strip needs 2+ tabs to render. */}
       <div className="oi-head">

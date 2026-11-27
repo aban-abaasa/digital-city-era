@@ -25,13 +25,14 @@ import { supabase, supabaseConfig } from '../services/supabase';
 import { barcodeVariants } from '../utils/barcodeHelper';
 import { compressImageFile } from '../utils/imageCompression';
 import {
-  SUPPLIER_CATALOG_CATEGORIES, SUPPLIER_CATALOG_UNITS, saveSupplierCatalogItem
+  SUPPLIER_CATALOG_CATEGORIES, SUPPLIER_CATALOG_UNITS, saveSupplierCatalogItem, queueSupplierCatalogItem
 } from '../utils/supplierCatalog';
 import StableCoinStyles from '../styles/StableCoinStyles';
 import { getStableQuote, savePricingMode } from '../services/stablePricingService';
 import { PRICE_UNIT_LOCAL, PRICE_UNIT_STABLE, localToStable, stableToLocal } from '../utils/stablePricing';
 import { priceModeOf, buildServicePricing } from '../utils/servicePrice';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { createOfflineUuid, isNetworkFailure } from '../services/posOfflineCache';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
 
@@ -41,7 +42,7 @@ const SERVICE_SUGGESTIONS = [
   'Consultation', 'Installation', 'Delivery / errand'
 ];
 
-const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null, enableCatalogProductSuggestions = false }) => {
+const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, editingProductId = null, mode = 'store', supplierUserId = null, supplierAuthId = null, enableCatalogProductSuggestions = false }) => {
   useBackLayer(isOpen, onClose);
   const isSupplierMode = mode === 'supplier';
   const canSuggestCatalogProducts = enableCatalogProductSuggestions && !supabaseConfig.localBusinessServer;
@@ -611,22 +612,38 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
 
     try {
       if (isSupplierMode) {
-        const { id, extrasSaved } = await saveSupplierCatalogItem({
+        const itemId = editingProductId || createOfflineUuid();
+        const catalogSave = {
           supplierUserId,
+          authUserId: supplierAuthId,
+          itemId,
           editingId: editingProductId,
           form: formData,
           priceTiers,
           imageFile,
           existingImageUrl: selectedImageUrl || (Array.isArray(prefilledData.images) ? prefilledData.images[0] || null : null)
-        });
+        };
+        let saved;
+        if (!navigator.onLine) {
+          saved = await queueSupplierCatalogItem(catalogSave);
+        } else {
+          try {
+            saved = await saveSupplierCatalogItem(catalogSave);
+          } catch (saveError) {
+            if (!isNetworkFailure(saveError)) throw saveError;
+            saved = await queueSupplierCatalogItem(catalogSave);
+          }
+        }
+        const { id, extrasSaved, offlinePendingSync = false } = saved;
         await savePriceUnit('catalog', id);
-        toast.success(isEditMode
+        if (offlinePendingSync) toast.info(`Saved "${formData.name.trim()}" on this device. It will sync when you are back online.`, { autoClose: 6000 });
+        else toast.success(isEditMode
           ? `✅ "${formData.name.trim()}" updated`
           : `✅ "${formData.name.trim()}" added to your catalog`);
-        if (!extrasSaved) {
+        if (!offlinePendingSync && !extrasSaved) {
           toast.info('Saved. SKU, cost, stock and bulk prices need ADD_SUPPLIER_CATALOG_FULL_PRODUCT_FIELDS.sql to be kept.', { autoClose: 8000 });
         }
-        if (onProductAdded) onProductAdded({ id, name: formData.name.trim() });
+        if (onProductAdded) onProductAdded({ id, name: formData.name.trim(), offlinePendingSync });
         resetForm();
         onClose();
         return;

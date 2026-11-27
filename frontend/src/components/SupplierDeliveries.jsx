@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Loader, MapPin, Navigation, Phone, RefreshCw, Star } from 'lucide-react';
 import supplierDeliveriesService from '../services/supplierDeliveriesService';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
 import { METHOD, METHOD_LABEL, STAGE, STAGE_META, isActiveStage } from '../utils/supplierDeliveryStage';
 import '../styles/supplier-classic.css';
 
@@ -35,7 +37,7 @@ const POLL_MS = 120000; // Free plan: never poll faster than every 2 minutes.
  * BodaGoEra trip carrying it (rider, plate, status), and what to do next.
  * Orders are ranked so overdue and moving trips come first.
  */
-export default function SupplierDeliveries({ supplierProfile, onGoProfile, onOpenOrders }) {
+export default function SupplierDeliveries({ supplierProfile, supplierAuthId, onGoProfile, onOpenOrders }) {
   const [state, setState] = useState({ deliveries: [], tripsAvailable: true, hasPickupPin: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,24 +47,47 @@ export default function SupplierDeliveries({ supplierProfile, onGoProfile, onOpe
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
-    const result = await supplierDeliveriesService.getSupplierDeliveries({
-      businessProfileHint: supplierProfile?.supplier_business_profile_id || null,
-    });
-    if (result.success) {
-      setState({ deliveries: result.deliveries, tripsAvailable: result.tripsAvailable, hasPickupPin: result.hasPickupPin });
-      setError('');
-      setUpdatedAt(new Date());
-      // First load: land on the list that has something in it.
-      if (!touchedFilter.current) {
-        touchedFilter.current = true;
-        const active = result.deliveries.some((d) => isActiveStage(d.stage));
-        if (!active && result.deliveries.length > 0) setFilter('all');
+    const identity = getCachedIdentity();
+    const cacheUserId = supplierAuthId || identity?.userId;
+    const restore = async () => {
+      const cached = cacheUserId ? await loadPortalSnapshot('supplier', cacheUserId, 'deliveries') : null;
+      if (cached?.value) {
+        setState(cached.value.state);
+        setUpdatedAt(cached.value.updatedAt ? new Date(cached.value.updatedAt) : null);
+      } else setState({ deliveries: [], tripsAvailable: false, hasPickupPin: null });
+      setError('Offline · showing saved delivery information.');
+    };
+    try {
+      if (!navigator.onLine) {
+        await restore();
+        setLoading(false);
+        return;
       }
-    } else {
-      setError(result.error);
+      const result = await supplierDeliveriesService.getSupplierDeliveries({
+        businessProfileHint: supplierProfile?.supplier_business_profile_id || null,
+      });
+      if (result.success) {
+        const nextState = { deliveries: result.deliveries, tripsAvailable: result.tripsAvailable, hasPickupPin: result.hasPickupPin };
+        setState(nextState);
+        setError('');
+        const updated = new Date();
+        setUpdatedAt(updated);
+        if (cacheUserId) await savePortalSnapshot('supplier', cacheUserId, 'deliveries', { state: nextState, updatedAt: updated.toISOString() });
+        // First load: land on the list that has something in it.
+        if (!touchedFilter.current) {
+          touchedFilter.current = true;
+          const active = result.deliveries.some((d) => isActiveStage(d.stage));
+          if (!active && result.deliveries.length > 0) setFilter('all');
+        }
+      } else if (isNetworkFailure(result.error)) await restore();
+      else setError(result.error);
+    } catch (loadError) {
+      if (isNetworkFailure(loadError)) await restore();
+      else setError(loadError.message || 'Could not load deliveries.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [supplierProfile?.supplier_business_profile_id]);
+  }, [supplierProfile?.supplier_business_profile_id, supplierAuthId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -150,7 +175,7 @@ export default function SupplierDeliveries({ supplierProfile, onGoProfile, onOpe
         ) : (
           <div className="spc-list">
             {visible.map((delivery) => (
-              <DeliveryCard key={delivery.key} delivery={delivery} tripsAvailable={state.tripsAvailable} onChanged={() => load({ quiet: true })} onOpenOrders={onOpenOrders} />
+              <DeliveryCard key={delivery.key} delivery={delivery} supplierAuthId={supplierAuthId} tripsAvailable={state.tripsAvailable} onChanged={() => load({ quiet: true })} onOpenOrders={onOpenOrders} />
             ))}
           </div>
         )}
@@ -159,10 +184,24 @@ export default function SupplierDeliveries({ supplierProfile, onGoProfile, onOpe
   );
 }
 
-function DeliveryCard({ delivery, tripsAvailable, onChanged, onOpenOrders }) {
+function DeliveryCard({ delivery, supplierAuthId, tripsAvailable, onChanged, onOpenOrders }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [queuedAction, setQueuedAction] = useState(() => Boolean(delivery.offline_dispatch_pending));
+
+  useEffect(() => {
+    const handleSynced = (event) => {
+      if (event.detail?.kind === 'supplier-order-dispatch'
+          && event.detail?.userId === (supplierAuthId || getCachedIdentity()?.userId)
+          && event.detail?.payload?.orderId === delivery.id) {
+        setQueuedAction(false);
+        onChanged();
+      }
+    };
+    window.addEventListener('portal-offline-mutation-synced', handleSynced);
+    return () => window.removeEventListener('portal-offline-mutation-synced', handleSynced);
+  }, [delivery.id, supplierAuthId, onChanged]);
 
   const meta = STAGE_META[delivery.stage] || STAGE_META.arrange;
   const due = DUE_BADGE[delivery.due];
@@ -178,9 +217,43 @@ function DeliveryCard({ delivery, tripsAvailable, onChanged, onOpenOrders }) {
     if (dispatched && !window.confirm('Mark this order as out for delivery by you? The store will see it is on its way.')) return;
     setBusy(true);
     setError('');
+    const identity = getCachedIdentity();
+    const queueUserId = supplierAuthId || identity?.userId;
+    const queueDispatch = async () => {
+      if (!queueUserId || identity?.userId !== queueUserId) throw new Error('Sign in online before saving delivery changes offline.');
+      await enqueuePortalMutation('supplier-order-dispatch', queueUserId, { orderId: delivery.id, dispatched });
+      const cached = await loadPortalSnapshot('supplier', queueUserId, 'deliveries');
+      if (cached?.value?.state) {
+        const nextState = {
+          ...cached.value.state,
+          deliveries: cached.value.state.deliveries.map((item) => item.id === delivery.id
+            ? { ...item, offline_dispatch_pending: { dispatched } }
+            : item)
+        };
+        await savePortalSnapshot('supplier', queueUserId, 'deliveries', { ...cached.value, state: nextState });
+      }
+      setQueuedAction(true);
+    };
+    if (!navigator.onLine) {
+      try {
+        await queueDispatch();
+      } catch (queueError) {
+        setError(queueError.message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const result = await supplierDeliveriesService.setOrderDispatched(delivery.id, dispatched);
     setBusy(false);
-    if (!result.success) { setError(result.error); return; }
+    if (!result.success) {
+      if (isNetworkFailure(result.error) && queueUserId && identity?.userId === queueUserId) {
+        await queueDispatch();
+        return;
+      }
+      setError(result.error);
+      return;
+    }
     onChanged();
   };
 
@@ -277,15 +350,16 @@ function DeliveryCard({ delivery, tripsAvailable, onChanged, onOpenOrders }) {
               <button type="button" className="spc-btn" onClick={onOpenOrders}>Open Orders to accept</button>
             )}
             {canSelfDeliver && (
-              <button type="button" className="spc-btn gold" disabled={busy} onClick={() => toggleSelf(true)}>
-                <MapPin size={16} /> {busy ? 'Saving…' : 'I am delivering this'}
+              <button type="button" className="spc-btn gold" disabled={busy || queuedAction} onClick={() => toggleSelf(true)}>
+                <MapPin size={16} /> {queuedAction ? 'Saved offline' : busy ? 'Saving…' : 'I am delivering this'}
               </button>
             )}
             {canUndo && (
-              <button type="button" className="spc-btn danger" disabled={busy} onClick={() => toggleSelf(false)}>{busy ? 'Saving…' : 'Undo out for delivery'}</button>
+              <button type="button" className="spc-btn danger" disabled={busy || queuedAction} onClick={() => toggleSelf(false)}>{queuedAction ? 'Update saved offline' : busy ? 'Saving…' : 'Undo out for delivery'}</button>
             )}
           </div>
           {error && <p className="spc-note bad">{error}</p>}
+          {queuedAction && <p className="spc-note info">Saved offline. This delivery update will sync when connected.</p>}
         </div>
       )}
     </div>

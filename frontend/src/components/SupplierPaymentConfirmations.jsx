@@ -3,6 +3,8 @@ import { RefreshCw } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import '../styles/supplier-classic.css';
 import { confirmPayment, getSupplierOrderMatchIds, getSupplierBusinessProfileMatchIds } from '../services/supplierOrdersService';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
 
 const SupplierPaymentConfirmations = () => {
   const [payments, setPayments] = useState([]);
@@ -23,6 +25,13 @@ const SupplierPaymentConfirmations = () => {
     setLoading(true);
     setError(null);
     try {
+      const identity = getCachedIdentity();
+      if (!navigator.onLine) {
+        const cached = identity?.userId ? await loadPortalSnapshot('supplier', identity.userId, 'payment-confirmations') : null;
+        setPayments(cached?.value || []);
+        setLoading(false);
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setError('Not logged in'); setLoading(false); return; }
 
@@ -41,7 +50,12 @@ const SupplierPaymentConfirmations = () => {
       const { data: orders, error: ordErr } = await ordersQuery;
 
       if (ordErr) throw ordErr;
-      if (!orders?.length) { setPayments([]); setLoading(false); return; }
+      if (!orders?.length) {
+        setPayments([]);
+        await savePortalSnapshot('supplier', user.id, 'payment-confirmations', []);
+        setLoading(false);
+        return;
+      }
 
       const orderIds = orders.map(o => o.id);
       const orderMap = Object.fromEntries(orders.map(o => [o.id, o]));
@@ -64,10 +78,18 @@ const SupplierPaymentConfirmations = () => {
       }));
 
       setPayments(enriched);
+      await savePortalSnapshot('supplier', user.id, 'payment-confirmations', enriched);
     } catch (err) {
       console.error('Error loading payments:', err);
-      setError(err?.message || 'Failed to load payments');
-      setPayments([]);
+      if (isNetworkFailure(err)) {
+        const identity = getCachedIdentity();
+        const cached = identity?.userId ? await loadPortalSnapshot('supplier', identity.userId, 'payment-confirmations') : null;
+        setPayments(cached?.value || []);
+        setError('Offline · showing saved payment confirmations.');
+      } else {
+        setError(err?.message || 'Failed to load payments');
+        setPayments([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -76,12 +98,35 @@ const SupplierPaymentConfirmations = () => {
   const handleConfirm = async (txnId) => {
     setSavingId(txnId);
     try {
+      const identity = getCachedIdentity();
+      if (!navigator.onLine) {
+        if (!identity?.userId) throw new Error('Sign in while online before saving payment confirmations offline.');
+        await enqueuePortalMutation('supplier-payment-confirm', identity.userId, { txnId, confirmationNotes: confirmNotes });
+        const remaining = payments.filter((payment) => payment.id !== txnId);
+        setPayments(remaining);
+        await savePortalSnapshot('supplier', identity.userId, 'payment-confirmations', remaining);
+        setSuccessMsg('Payment confirmation saved on this device. It will sync when connected.');
+        setConfirmingId(null);
+        setConfirmNotes('');
+        return;
+      }
       // Confirms the payment_transactions row AND rolls the confirmed total
       // up onto purchase_orders.amount_paid_ugx/balance_due_ugx/payment_status —
       // updating only the transaction row (as before) left the order's
       // tracked balance stuck at "unpaid" even after confirmation.
       const result = await confirmPayment(txnId, confirmNotes);
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) {
+        if (!isNetworkFailure(result.error)) throw new Error(result.error);
+        if (!identity?.userId) throw new Error('Sign in while online before saving payment confirmations offline.');
+        await enqueuePortalMutation('supplier-payment-confirm', identity.userId, { txnId, confirmationNotes: confirmNotes });
+        const remaining = payments.filter((payment) => payment.id !== txnId);
+        setPayments(remaining);
+        await savePortalSnapshot('supplier', identity.userId, 'payment-confirmations', remaining);
+        setSuccessMsg('Connection dropped. Payment confirmation is saved and will sync when connected.');
+        setConfirmingId(null);
+        setConfirmNotes('');
+        return;
+      }
 
       setSuccessMsg('Payment confirmed. Your order balance has been updated.');
       setActionError('');
@@ -97,7 +142,14 @@ const SupplierPaymentConfirmations = () => {
     }
   };
 
-  useEffect(() => { loadPayments(); }, []);
+  useEffect(() => {
+    loadPayments();
+    const handleSynced = (event) => {
+      if (event.detail?.kind === 'supplier-payment-confirm' && event.detail?.userId === getCachedIdentity()?.userId) loadPayments();
+    };
+    window.addEventListener('portal-offline-mutation-synced', handleSynced);
+    return () => window.removeEventListener('portal-offline-mutation-synced', handleSynced);
+  }, []);
 
   return (
     <div className="spc">

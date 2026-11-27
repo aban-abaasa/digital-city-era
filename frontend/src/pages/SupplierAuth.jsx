@@ -3,6 +3,7 @@ import '../styles/classic-auth.css';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { notificationService } from '../services/notificationService';
+import { getCachedIdentity } from '../services/posOfflineCache';
 import './SupplierAuth.css';
 
 /**
@@ -21,6 +22,7 @@ const SupplierAuth = () => {
   // UI State
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true); // Add checking state
+  const [offlineSupplierIdentity, setOfflineSupplierIdentity] = useState(null);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [businessProfiles, setBusinessProfiles] = useState([]);
   const [selectedBusinessProfileId, setSelectedBusinessProfileId] = useState('');
@@ -50,6 +52,13 @@ const SupplierAuth = () => {
     }
     if (sessionStorage.getItem('farm_agent_session')) {
       sessionStorage.removeItem('farm_agent_session');
+    }
+
+    if (!navigator.onLine) {
+      const cached = getCachedIdentity();
+      setOfflineSupplierIdentity(cached?.role === 'supplier' ? cached : null);
+      setChecking(false);
+      return undefined;
     }
     
     // Check if we're returning from OAuth (token in hash)
@@ -493,12 +502,25 @@ const SupplierAuth = () => {
           <strong>Already a customer?</strong> Go to your <button onClick={() => navigate('/customer-dashboard')} style={{ background: 'none', border: 'none', color: '#15803d', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}>Customer Dashboard</button> and click <em>"Become a Supplier"</em> to upgrade your existing account.
         </div>
 
+        {offlineSupplierIdentity ? (
+          <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '14px', marginBottom: '20px', color: '#78350f' }}>
+            <p style={{ margin: '0 0 10px', fontSize: '14px' }}>Offline mode. Continue with the supplier account saved on this device.</p>
+            <button type="button" className="auth-button" onClick={() => navigate('/supplier-portal')}>
+              Open saved supplier portal{offlineSupplierIdentity.email ? ` · ${offlineSupplierIdentity.email}` : ''}
+            </button>
+          </div>
+        ) : !navigator.onLine ? (
+          <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '14px', marginBottom: '20px', color: '#78350f', fontSize: '14px' }}>
+            Sign in once while online on this device to use the supplier portal offline.
+          </div>
+        ) : null}
+
         <div style={{ textAlign: 'center', color: '#9ca3af', marginBottom: '16px', fontSize: '13px' }}>— or sign up fresh with Google —</div>
 
         <button
           onClick={handleGoogleSignIn}
           className="google-signin-button"
-          disabled={loading}
+          disabled={loading || !navigator.onLine}
         >
           <svg className="google-icon" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

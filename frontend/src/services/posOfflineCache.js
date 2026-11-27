@@ -77,6 +77,17 @@ export function isNetworkFailure(errOrMessage) {
   return NETWORK_FAILURE_RE.test(message || '');
 }
 
+export function createOfflineUuid() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  if (!globalThis.crypto?.getRandomValues) return null;
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 // ---- Product catalog ----
 
 export async function saveCatalog(supermarketId, products, { keepSavedAt = false } = {}) {
@@ -95,6 +106,19 @@ export async function loadCatalog(supermarketId) {
   if (!supermarketId) return null;
   const entry = await kvGet(`catalog:${supermarketId}`);
   return entry && Array.isArray(entry.products) ? entry : null;
+}
+
+// Portal snapshots are namespaced by role, account, and section so admin and
+// supplier caches can coexist on a shared till without leaking between users.
+export async function savePortalSnapshot(portal, userId, section, value) {
+  if (!portal || !userId || !section) return;
+  await kvSet(`portal:${portal}:${userId}:${section}`, { value, savedAt: Date.now() });
+}
+
+export async function loadPortalSnapshot(portal, userId, section) {
+  if (!portal || !userId || !section) return null;
+  const entry = await kvGet(`portal:${portal}:${userId}:${section}`);
+  return entry && Object.prototype.hasOwnProperty.call(entry, 'value') ? entry : null;
 }
 
 // ---- Cashier profile ----

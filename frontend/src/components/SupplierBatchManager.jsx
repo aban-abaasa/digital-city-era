@@ -15,6 +15,8 @@ import {
   isMissingBatchTable,
 } from '../utils/supplierBatchExpiry';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { createOfflineUuid, getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
 
 const fmtUGX = (n) => 'UGX ' + Number(n || 0).toLocaleString();
 
@@ -33,7 +35,7 @@ const todayIso = () => {
 
 const emptyDraft = () => ({ batch_number: '', quantity: '', expiry_date: '', discount_mode: 'auto', discount_percent: '' });
 
-export default function SupplierBatchManager({ item, batches, onClose, onChanged }) {
+export default function SupplierBatchManager({ item, batches, cacheUserId, onClose, onChanged }) {
   useBackLayer(true, onClose);
   const [draft, setDraft] = useState(emptyDraft);
   const [edits, setEdits] = useState({}); // batchId -> partial fields being edited
@@ -72,15 +74,48 @@ export default function SupplierBatchManager({ item, batches, onClose, onChanged
     discount_percent: fields.discount_mode === 'manual' ? Number(fields.discount_percent) : null,
   });
 
+  const queueBatchMutation = async (kind, batch) => {
+    const identity = getCachedIdentity();
+    const userId = cacheUserId || identity?.userId;
+    if (!userId || identity?.userId !== userId) throw new Error('Sign in online before saving batch changes offline.');
+    await enqueuePortalMutation(kind, userId, { itemId: item.id, batch });
+    const cached = await loadPortalSnapshot('supplier', userId, 'supplier-catalog-batches');
+    const current = cached?.value || [];
+    const next = kind === 'supplier-catalog-batch-delete'
+      ? current.filter((entry) => entry.id !== batch.id)
+      : [batch, ...current.filter((entry) => entry.id !== batch.id)];
+    await savePortalSnapshot('supplier', userId, 'supplier-catalog-batches', next);
+    onChanged();
+  };
+
   const addBatch = async (event) => {
     event.preventDefault();
     const problem = validate(draft);
     if (problem) { toast.error(problem); return; }
     setBusy('new');
-    const { error } = await supabase.from('supplier_catalog_batches')
-      .insert({ catalog_item_id: item.id, ...payloadFrom(draft) });
+    const id = createOfflineUuid();
+    const batchPayload = { ...(id ? { id } : {}), catalog_item_id: item.id, ...payloadFrom(draft) };
+    if (!navigator.onLine) {
+      try {
+        if (!id) throw new Error('This browser cannot safely create an offline batch ID.');
+        await queueBatchMutation('supplier-catalog-batch-save', batchPayload);
+        toast.info(`Batch ${draft.batch_number.trim()} saved offline. It will sync when connected.`);
+        setDraft(emptyDraft());
+      } catch (error) { fail(error, 'Could not save the batch offline'); }
+      setBusy(null);
+      return;
+    }
+    const { error } = await supabase.from('supplier_catalog_batches').insert(batchPayload);
     setBusy(null);
     if (error) {
+      if (isNetworkFailure(error) && id) {
+        try {
+          await queueBatchMutation('supplier-catalog-batch-save', batchPayload);
+          toast.info(`Connection dropped. Batch ${draft.batch_number.trim()} is saved and will sync.`);
+          setDraft(emptyDraft());
+          return;
+        } catch (queueError) { fail(queueError, 'Could not save the batch offline'); return; }
+      }
       if (error.code === '23505') toast.error('This item already has a batch with that number');
       else fail(error, 'Could not add the batch');
       return;
@@ -97,11 +132,32 @@ export default function SupplierBatchManager({ item, batches, onClose, onChanged
     const problem = validate({ ...merged, quantity: String(merged.quantity ?? '') });
     if (problem) { toast.error(problem); return; }
     setBusy(batch.id);
+    const batchPayload = { ...batch, ...payloadFrom({ ...merged, quantity: String(merged.quantity ?? '') }) };
+    if (!navigator.onLine) {
+      try {
+        await queueBatchMutation('supplier-catalog-batch-save', batchPayload);
+        toast.info(`Batch ${merged.batch_number} saved offline. It will sync when connected.`);
+        setEdits((prev) => { const next = { ...prev }; delete next[batch.id]; return next; });
+      } catch (error) { fail(error, 'Could not save the batch offline'); }
+      setBusy(null);
+      return;
+    }
     const { error } = await supabase.from('supplier_catalog_batches')
       .update(payloadFrom({ ...merged, quantity: String(merged.quantity ?? '') }))
       .eq('id', batch.id);
     setBusy(null);
-    if (error) { fail(error, 'Could not save the batch'); return; }
+    if (error) {
+      if (isNetworkFailure(error)) {
+        try {
+          await queueBatchMutation('supplier-catalog-batch-save', batchPayload);
+          toast.info(`Connection dropped. Batch ${merged.batch_number} is saved and will sync.`);
+          setEdits((prev) => { const next = { ...prev }; delete next[batch.id]; return next; });
+          return;
+        } catch (queueError) { fail(queueError, 'Could not save the batch offline'); return; }
+      }
+      fail(error, 'Could not save the batch');
+      return;
+    }
     toast.success(`Batch ${merged.batch_number} updated`);
     setEdits((prev) => { const next = { ...prev }; delete next[batch.id]; return next; });
     onChanged();
@@ -110,9 +166,27 @@ export default function SupplierBatchManager({ item, batches, onClose, onChanged
   const removeBatch = async (batch) => {
     if (!window.confirm(`Remove batch ${batch.batch_number}?`)) return;
     setBusy(batch.id);
+    if (!navigator.onLine) {
+      try {
+        await queueBatchMutation('supplier-catalog-batch-delete', batch);
+        toast.info(`Batch ${batch.batch_number} removal saved offline. It will sync when connected.`);
+      } catch (error) { fail(error, 'Could not remove the batch offline'); }
+      setBusy(null);
+      return;
+    }
     const { error } = await supabase.from('supplier_catalog_batches').delete().eq('id', batch.id);
     setBusy(null);
-    if (error) { fail(error, 'Could not remove the batch'); return; }
+    if (error) {
+      if (isNetworkFailure(error)) {
+        try {
+          await queueBatchMutation('supplier-catalog-batch-delete', batch);
+          toast.info(`Connection dropped. Batch ${batch.batch_number} removal is saved and will sync.`);
+          return;
+        } catch (queueError) { fail(queueError, 'Could not remove the batch offline'); return; }
+      }
+      fail(error, 'Could not remove the batch');
+      return;
+    }
     toast.success('Batch removed');
     onChanged();
   };

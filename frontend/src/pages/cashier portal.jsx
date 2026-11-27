@@ -50,6 +50,7 @@ import CashierIcanMobileCardModal from '../components/CashierIcanMobileCardModal
 import CashierDigitalCardModal from '../components/CashierDigitalCardModal';
 import PendingSalesPanel from '../components/PendingSalesPanel';
 import usePendingMobileCardSales from '../hooks/usePendingMobileCardSales';
+import { useBackLayer } from '../hooks/useBackLayer';
 import { pendingSaleLabel } from '../utils/pendingSales';
 import { MOBILE_CARD_METHOD_ID, MOBILE_CARD_METHOD_NAME, mobileCardAmountProblem, mobileCardChannelLabel } from '../utils/mobileCardPayment';
 import { DIGITAL_CARD_CHOOSER_ID, DIGITAL_CARD_CHOOSER_NAME, digitalCardAmountProblem } from '../utils/digitalCardPayment';
@@ -93,6 +94,15 @@ const CashierPortal = () => {
     customer: null
   });
   const [paymentModal, setPaymentModal] = useState(false);
+  const [showMobileCartPage, setShowMobileCartPage] = useState(false);
+  useBackLayer(showMobileCartPage, () => setShowMobileCartPage(false));
+  useEffect(() => {
+    const closeCartOnWideScreen = () => {
+      if (window.innerWidth > 640) setShowMobileCartPage(false);
+    };
+    window.addEventListener('resize', closeCartOnWideScreen);
+    return () => window.removeEventListener('resize', closeCartOnWideScreen);
+  }, []);
   const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [showMobileCardModal, setShowMobileCardModal] = useState(false);
   const [showDigitalCardModal, setShowDigitalCardModal] = useState(false);
@@ -2324,6 +2334,7 @@ const CashierPortal = () => {
           paymentMethod: null,
           customer: null
         });
+        setShowMobileCartPage(false);
         setPaymentModal(false);
         setPaymentResult(null);
         setBillLater(false);
@@ -2355,6 +2366,7 @@ const CashierPortal = () => {
     const id = pending.park({ charge, sale: currentTransaction, contact });
     if (!id) { toast.error('Too many sales are already waiting - finish or cancel one first.'); return; }
     closeMobileCardScreen();
+    setShowMobileCartPage(false);
     setCurrentTransaction(emptyTransaction);
     setCashReceived('');
     setBillLater(false);
@@ -2668,9 +2680,10 @@ const CashierPortal = () => {
   // Service items (e.g. laundry) have no stock and go through the job-status
   // + invoice/receipt flow instead of a simple paid-in-full sale.
   const hasServiceItem = currentTransaction.items.some(item => item.inventoryMode === 'service_item');
+  const mobileCartQuantity = currentTransaction.items.reduce((sum, item) => sum + item.quantity, 0);
 
   const renderPOS = () => (
-    <div className="cashier-pos-page animate-fadeInUp">
+    <div className={`cashier-pos-page animate-fadeInUp${showMobileCartPage ? ' is-mobile-cart-open' : ''}`}>
       <header className="cashier-pos-heading">
         <div>
           <p className="classic-eyebrow">Cashier · Sales counter</p>
@@ -2931,7 +2944,27 @@ const CashierPortal = () => {
         </section>
 
         {/* Transaction Summary */}
-        <aside className="cashier-pos-checkout" aria-labelledby="cashier-pos-checkout-title">
+        <aside
+          className={`cashier-pos-checkout${showMobileCartPage ? ' is-mobile-cart-page' : ''}`}
+          aria-labelledby={showMobileCartPage ? 'cashier-pos-mobile-cart-title' : 'cashier-pos-checkout-title'}
+        >
+          <header className="cashier-pos-mobile-cart-header">
+            <button
+              type="button"
+              onClick={() => setShowMobileCartPage(false)}
+              className="cashier-pos-mobile-cart-back"
+              aria-label="Back to products"
+            >
+              <FiChevronRight aria-hidden="true" />
+              <span>Products</span>
+            </button>
+            <div>
+              <p className="classic-eyebrow">Cashier · Customer basket</p>
+              <h2 id="cashier-pos-mobile-cart-title">Current sale</h2>
+            </div>
+            <span className="cashier-pos-mobile-cart-count">{mobileCartQuantity}</span>
+          </header>
+
           {/* Customers whose payment is still on its way — serve the next one meanwhile */}
           <PendingSalesPanel
             sales={pending.entries}
@@ -2943,7 +2976,7 @@ const CashierPortal = () => {
             onReceipt={(entry) => openParkedReceipt(entry.receipt)}
             onDismiss={(entry) => pending.remove(entry.id)}
           />
-          <div className="cashier-pos-checkout-heading">
+          <div className={`cashier-pos-checkout-heading${showMobileCartPage ? ' is-mobile-cart-heading-hidden' : ''}`}>
             <div>
               <p className="classic-eyebrow">Customer basket</p>
               <h3 id="cashier-pos-checkout-title">Current transaction</h3>
@@ -3185,6 +3218,21 @@ const CashierPortal = () => {
           )}
         </aside>
       </div>
+
+      <button
+        type="button"
+        className="cashier-pos-mobile-cart-trigger"
+        onClick={() => setShowMobileCartPage(true)}
+        aria-label={`Open basket with ${mobileCartQuantity} item${mobileCartQuantity === 1 ? '' : 's'}, total ${formatUGX(currentTransaction.total)}`}
+      >
+        <span className="cashier-pos-mobile-cart-trigger-count">{mobileCartQuantity}</span>
+        <span className="cashier-pos-mobile-cart-trigger-copy">
+          <strong>View basket</strong>
+          <small>{mobileCartQuantity} item{mobileCartQuantity === 1 ? '' : 's'}</small>
+        </span>
+        <strong className="cashier-pos-mobile-cart-trigger-total">{formatUGX(currentTransaction.total)}</strong>
+        <FiChevronRight aria-hidden="true" />
+      </button>
     </div>
   );
 

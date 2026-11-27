@@ -117,6 +117,12 @@ export async function syncPendingSales({ transactionService, inventoryService, q
   if (syncing || !navigator.onLine) return;
   syncing = true;
   try {
+    const { syncPortalOfflineMutations } = await import('./portalOfflineQueue');
+    const portalSync = await syncPortalOfflineMutations();
+    // A cashier may have rung up stock that the admin created while offline.
+    // Create that product first so the sale's inventory reference can resolve.
+    if (portalSync.blockedAdminProducts) return;
+
     const pending = (await getPendingSales()).sort((a, b) => a.queuedAt - b.queuedAt);
     if (pending.length === 0) return;
 
@@ -212,6 +218,9 @@ export function startGlobalPosSync() {
   const run = async () => {
     if (!navigator.onLine || syncing) return;
     try {
+      const { syncPortalOfflineMutations } = await import('./portalOfflineQueue');
+      const portalSync = await syncPortalOfflineMutations();
+      if (portalSync.blockedAdminProducts) return;
       if ((await getPendingSalesCount()) === 0) return;
       const [{ default: transactionService }, { default: inventoryService }] = await Promise.all([
         import('./transactionService'),

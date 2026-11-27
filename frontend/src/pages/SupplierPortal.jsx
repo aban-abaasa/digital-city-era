@@ -42,6 +42,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import PortalHeader from '../components/PortalHeader';
 import PortalTabNavigator from '../components/PortalTabNavigator';
 import { ROLE_HOME } from '../components/RoleProtectedRoute';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
 import { SUPPLIER_CAPABLE_ROLES, getSupplierAccess } from '../utils/supplierAccess';
 import { catalogItemOffer, groupBatchesByItem } from '../utils/supplierBatchExpiry';
 import SupplierCompanyWorkspace from '../components/SupplierCompanyWorkspace';
@@ -63,6 +65,7 @@ const SupplierPortal = () => {
     let active = true;
     getSupplierAccess()
       .then((access) => {
+        if (!navigator.onLine && getCachedIdentity()?.role === 'supplier') return;
         if (active && access && !access.canSupply) {
           navigate(ROLE_HOME[access.role] || '/manager-portal', { replace: true });
         }
@@ -74,6 +77,7 @@ const SupplierPortal = () => {
   const [portalUser, setPortalUser] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   // Order ID pending a vehicle-type choice — shown right after "Confirm
   // Order" instead of dispatching automatically with no supplier input.
@@ -347,8 +351,9 @@ const SupplierPortal = () => {
         const languages = ['English', 'Luganda', 'Swahili'];
         const profilePicture = supplier.avatar_url || null;
 
-        setSupplierProfile({
+        const profileSnapshot = {
           id: supplier.id,
+          auth_id: user.id,
           supplier_business_profile_id: linkedBusinessProfileId,
           name: bizProfile?.company_name || supplier.full_name || 'Your Company',
           contactPerson: supplier.full_name || '',
@@ -370,7 +375,9 @@ const SupplierPortal = () => {
           certifications: certifications,
           specialties: [],
           deliveryAreas: deliveryAreas
-        });
+        };
+        setSupplierProfile(profileSnapshot);
+        await savePortalSnapshot('supplier', user.id, 'profile', profileSnapshot);
         
         // Set profile pic URL state from avatar_url
         if (profilePicture) {
@@ -380,8 +387,9 @@ const SupplierPortal = () => {
       } else {
         // User row exists but role not yet 'supplier' — profile was just created, show empty shell
         console.log('⚠️ No supplier row found yet — showing empty profile');
-        setSupplierProfile({
+        const profileSnapshot = {
           id: existingUser?.id || user.id,
+          auth_id: user.id,
           supplier_business_profile_id: null,
           name: existingUser?.full_name || user.user_metadata?.full_name || 'Your Company',
           contactPerson: existingUser?.full_name || '',
@@ -403,7 +411,9 @@ const SupplierPortal = () => {
           certifications: [],
           specialties: [],
           deliveryAreas: ['Kampala']
-        });
+        };
+        setSupplierProfile(profileSnapshot);
+        await savePortalSnapshot('supplier', user.id, 'profile', profileSnapshot);
       }
     } catch (error) {
       console.error('Error loading supplier profile:', error);
@@ -414,24 +424,57 @@ const SupplierPortal = () => {
   const saveSupplierProfile = async () => {
     try {
       setIsSavingProfile(true);
+      const updateData = {
+        company_name: editedProfile.name || supplierProfile.name,
+        full_name: editedProfile.contactPerson || supplierProfile.contactPerson,
+        phone: editedProfile.phone || supplierProfile.phone,
+        address: editedProfile.address || supplierProfile.address,
+        category: editedProfile.category || supplierProfile.category
+      };
+      const saveOfflineProfile = async () => {
+        const identity = getCachedIdentity();
+        const userId = supplierProfile.auth_id || identity?.userId;
+        if (!userId || !supplierProfile.id || identity?.userId !== userId) {
+          throw new Error('Sign in online on this device before saving supplier profile changes offline.');
+        }
+        await enqueuePortalMutation('supplier-profile-update', userId, {
+          authUserId: userId,
+          supplierUserId: supplierProfile.id,
+          updates: updateData
+        });
+        const nextProfile = {
+          ...supplierProfile,
+          name: updateData.company_name,
+          contactPerson: updateData.full_name,
+          phone: updateData.phone,
+          address: updateData.address,
+          category: updateData.category,
+          languages: editedProfile.languages || supplierProfile.languages,
+          specialties: editedProfile.specialties || supplierProfile.specialties,
+          deliveryAreas: editedProfile.deliveryAreas || supplierProfile.deliveryAreas
+        };
+        setSupplierProfile(nextProfile);
+        await savePortalSnapshot('supplier', userId, 'profile', nextProfile);
+        setIsEditingProfile(false);
+        setEditedProfile({});
+      };
+      if (!navigator.onLine) {
+        await saveOfflineProfile();
+        alert('Profile changes saved on this device. They will sync when connected.');
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        alert('No authenticated user');
+        if (getCachedIdentity()?.role === 'supplier') {
+          await saveOfflineProfile();
+          alert('Session unavailable. Profile changes are saved and will sync when you reconnect.');
+        } else alert('No authenticated user');
         return;
       }
 
       console.log('💾 Saving supplier profile for auth_id:', user.id);
       console.log('📝 Profile data to save:', editedProfile);
-
-      // Prepare update data - using users table column names (no contact_person field)
-      const updateData = {
-        company_name: editedProfile.name || supplierProfile.name,
-        full_name: editedProfile.contactPerson || supplierProfile.contactPerson, // Use full_name instead
-        phone: editedProfile.phone || supplierProfile.phone,
-        address: editedProfile.address || supplierProfile.address,
-        category: editedProfile.category || supplierProfile.category
-      };
 
       console.log('📤 Sending to database:', updateData);
 
@@ -444,6 +487,11 @@ const SupplierPortal = () => {
 
       if (checkError) {
         console.error('❌ Error checking user:', checkError);
+        if (isNetworkFailure(checkError)) {
+          await saveOfflineProfile();
+          alert('Connection dropped. Profile changes are saved and will sync when connected.');
+          return;
+        }
         alert('Failed to save: User profile not found. Please complete your profile first from the sign-in page.');
         return;
       }
@@ -472,6 +520,11 @@ const SupplierPortal = () => {
 
       if (error) {
         console.error('❌ Error saving profile:', error);
+        if (isNetworkFailure(error)) {
+          await saveOfflineProfile();
+          alert('Connection dropped. Profile changes are saved and will sync when connected.');
+          return;
+        }
         alert('Failed to save profile changes: ' + error.message);
         return;
       }
@@ -506,7 +559,40 @@ const SupplierPortal = () => {
       alert('✅ Profile updated successfully!');
     } catch (error) {
       console.error('❌ Error saving profile:', error);
-      alert('Failed to save profile changes: ' + error.message);
+      if (isNetworkFailure(error)) {
+        const identity = getCachedIdentity();
+        const userId = supplierProfile.auth_id || identity?.userId;
+        if (userId && identity?.userId === userId && supplierProfile.id) {
+          try {
+            await enqueuePortalMutation('supplier-profile-update', userId, {
+              authUserId: userId,
+              supplierUserId: supplierProfile.id,
+              updates: {
+                company_name: editedProfile.name || supplierProfile.name,
+                full_name: editedProfile.contactPerson || supplierProfile.contactPerson,
+                phone: editedProfile.phone || supplierProfile.phone,
+                address: editedProfile.address || supplierProfile.address,
+                category: editedProfile.category || supplierProfile.category
+              }
+            });
+            const nextProfile = {
+              ...supplierProfile,
+              name: editedProfile.name || supplierProfile.name,
+              contactPerson: editedProfile.contactPerson || supplierProfile.contactPerson,
+              phone: editedProfile.phone || supplierProfile.phone,
+              address: editedProfile.address || supplierProfile.address,
+              category: editedProfile.category || supplierProfile.category
+            };
+            setSupplierProfile(nextProfile);
+            await savePortalSnapshot('supplier', userId, 'profile', nextProfile);
+            setIsEditingProfile(false);
+            setEditedProfile({});
+            alert('Connection dropped. Profile changes are saved and will sync when connected.');
+          } catch (queueError) {
+            alert('Could not save profile changes offline: ' + queueError.message);
+          }
+        } else alert('Sign in online on this device before saving supplier profile changes offline.');
+      } else alert('Failed to save profile changes: ' + error.message);
     } finally {
       setIsSavingProfile(false);
     }
@@ -746,7 +832,9 @@ const SupplierPortal = () => {
 
       if (!allOrders) {
         console.log('No orders found for supplier');
-        setPerformanceMetrics({ totalOrders: 0 });
+        const emptyMetrics = { totalOrders: 0 };
+        setPerformanceMetrics(emptyMetrics);
+        await savePortalSnapshot('supplier', user.id, 'performance', emptyMetrics);
         return;
       }
 
@@ -766,7 +854,7 @@ const SupplierPortal = () => {
       const deliveredOrders = allOrders?.filter(o => ['received', 'completed'].includes(o.status)) || [];
       const onTimeDelivery = deliveredOrders.length > 0 ? 85 : 0; // default until real data exists
 
-      setPerformanceMetrics({
+      const metrics = {
         totalOrders: totalOrders || 0,
         totalRevenue: totalRevenue,
         onTimeDelivery: onTimeDelivery,
@@ -788,7 +876,9 @@ const SupplierPortal = () => {
         partiallyPaidOrders: 0,
         totalPaid: 0,
         totalOutstanding: totalRevenue
-      });
+      };
+      setPerformanceMetrics(metrics);
+      await savePortalSnapshot('supplier', user.id, 'performance', metrics);
     } catch (error) {
       console.error('Error loading performance metrics:', error);
     }
@@ -824,6 +914,7 @@ const SupplierPortal = () => {
       if (!filteredOrders || filteredOrders.length === 0) {
         console.log('No order history found in database');
         setOrderHistory([]);
+        await savePortalSnapshot('supplier', user.id, 'order-history', []);
         return;
       }
 
@@ -862,6 +953,7 @@ const SupplierPortal = () => {
 
       console.log('✅ Order history loaded:', formatted.length, 'orders');
       setOrderHistory(formatted);
+      await savePortalSnapshot('supplier', user.id, 'order-history', formatted);
     } catch (error) {
       console.error('❌ Error loading order history:', error);
       setOrderHistory([]);
@@ -926,7 +1018,7 @@ const SupplierPortal = () => {
           id: item.id,
           supplier_catalog_item_id: item.id,
           name: item.name,
-          image_url: item.image_url || "",
+          image_url: item.image_url || '',
           barcode: item.barcode || '',
           sku: item.sku || '',
           batch_number: offer.first?.batch.batch_number || '',
@@ -961,6 +1053,8 @@ const SupplierPortal = () => {
       const catalog = [...listedProducts, ...(formattedProducts || [])];
       setProductCatalog(catalog);
       setSupplierInventoryCatalog(supplierInventoryProducts);
+      await savePortalSnapshot('supplier', user.id, 'catalog', catalog);
+      await savePortalSnapshot('supplier', user.id, 'supplier-inventory', supplierInventoryProducts);
     } catch (error) {
       console.error('Error loading product catalog:', error);
     }
@@ -1004,9 +1098,8 @@ const SupplierPortal = () => {
       });
 
       const revenueArray = Object.values(revenueByMonth);
-      if (revenueArray.length > 0) {
-        setRevenueData(revenueArray);
-      }
+      setRevenueData(revenueArray);
+      await savePortalSnapshot('supplier', user.id, 'revenue', revenueArray);
     } catch (error) {
       console.error('Error loading revenue data:', error);
     }
@@ -1102,6 +1195,7 @@ const SupplierPortal = () => {
       }) || [];
 
       setPendingOrders(formatted);
+      await savePortalSnapshot('supplier', user.id, 'orders', formatted);
       console.log(`Loaded ${formatted.length} orders with payment status`);
     } catch (error) {
       console.error('Error loading pending orders:', error);
@@ -1149,18 +1243,52 @@ const SupplierPortal = () => {
         timestamp: new Date(application.updated_at || application.created_at || 0).getTime()
       }));
 
-      setNotifications([...orderEvents, ...applicationEvents]
+      const feed = [...orderEvents, ...applicationEvents]
         .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 40));
+        .slice(0, 40);
+      setNotifications(feed);
+      await savePortalSnapshot('supplier', user.id, 'notifications', feed);
     } catch (error) {
       console.error('Error loading supplier feed:', error);
     }
   };
 
   // Main data loading function
+  const restoreSupplierOfflineSnapshot = async () => {
+    const identity = getCachedIdentity();
+    if (identity?.role !== 'supplier' || !identity.userId) {
+      navigate('/supplier-auth');
+      return false;
+    }
+    const sections = ['profile', 'portal-user', 'performance', 'order-history', 'orders', 'catalog', 'supplier-inventory', 'markets', 'revenue', 'notifications'];
+    const cached = await Promise.all(sections.map((section) => loadPortalSnapshot('supplier', identity.userId, section)));
+    const bySection = Object.fromEntries(sections.map((section, index) => [section, cached[index]?.value]));
+    if (bySection.profile) setSupplierProfile(bySection.profile);
+    if (bySection['portal-user']) setPortalUser(bySection['portal-user']);
+    if (bySection.performance) setPerformanceMetrics(bySection.performance);
+    if (bySection['order-history']) setOrderHistory(bySection['order-history']);
+    if (bySection.orders) setPendingOrders(bySection.orders);
+    if (bySection.catalog) setProductCatalog(bySection.catalog);
+    if (bySection['supplier-inventory']) setSupplierInventoryCatalog(bySection['supplier-inventory']);
+    else if (bySection.catalog) setSupplierInventoryCatalog(bySection.catalog.filter((item) => item.supplier_catalog_item_id));
+    if (bySection.markets) {
+      setAvailableSupermarkets(bySection.markets.availableSupermarkets || []);
+      setCurrentSupermarketId(bySection.markets.currentSupermarketId || null);
+    }
+    if (bySection.revenue) setRevenueData(bySection.revenue);
+    if (bySection.notifications) setNotifications(bySection.notifications);
+    setIsOnline(false);
+    return true;
+  };
+
   const loadSupplierData = async () => {
     try {
       setLoading(true);
+
+      if (!navigator.onLine) {
+        await restoreSupplierOfflineSnapshot();
+        return;
+      }
       
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
@@ -1203,11 +1331,13 @@ const SupplierPortal = () => {
       const supplierCompanyRole = membershipResult.data?.role || (ownerSupplier ? 'admin' : null);
       const contextualUser = portalUserRow ? {
         ...portalUserRow,
+        auth_id: user.id,
         supplier_company_id: supplierCompanyId,
         supplier_company_role: supplierCompanyRole,
         supplier_company_manager_id: membershipResult.data?.manager_user_id || null
       } : null;
       setPortalUser(contextualUser);
+      await savePortalSnapshot('supplier', user.id, 'portal-user', contextualUser);
       if (supplierCompanyId && supplierCompanyRole) {
         setActiveTab('company');
       }
@@ -1275,6 +1405,9 @@ const SupplierPortal = () => {
       }
     } catch (error) {
       console.error('Error loading supplier data:', error);
+      if (isNetworkFailure(error)) {
+        await restoreSupplierOfflineSnapshot();
+      }
     } finally {
       setLoading(false);
     }
@@ -1308,9 +1441,21 @@ const SupplierPortal = () => {
       } else {
         console.log('Loaded supermarkets:', supermarkets);
         setAvailableSupermarkets(supermarkets || []);
+        await savePortalSnapshot('supplier', userId, 'markets', {
+          currentSupermarketId: userData?.supermarket_id || null,
+          availableSupermarkets: supermarkets || []
+        });
       }
     } catch (error) {
       console.error('Error in loadAvailableSupermarkets:', error);
+      if (isNetworkFailure(error)) {
+        const identity = getCachedIdentity();
+        const cached = identity?.userId ? await loadPortalSnapshot('supplier', identity.userId, 'markets') : null;
+        if (cached?.value) {
+          setAvailableSupermarkets(cached.value.availableSupermarkets || []);
+          setCurrentSupermarketId(cached.value.currentSupermarketId || null);
+        }
+      }
     } finally {
       setLoadingSupermarkets(false);
     }
@@ -1353,9 +1498,19 @@ const SupplierPortal = () => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
+    let subscription = null;
 
     // Verify user role before loading data
     const checkAuthAndLoad = async () => {
+      if (!navigator.onLine) {
+        const identity = getCachedIdentity();
+        if (identity?.role !== 'supplier' || !identity.userId) {
+          navigate('/supplier-auth');
+          return;
+        }
+        await loadSupplierData();
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
@@ -1403,10 +1558,17 @@ const SupplierPortal = () => {
       loadSupplierFeed();
     };
 
-    checkAuthAndLoad();
+    checkAuthAndLoad().catch((error) => {
+      console.warn('[SupplierPortal] Could not verify supplier session:', error);
+      const identity = getCachedIdentity();
+      if (identity?.role === 'supplier' && identity.userId) loadSupplierData();
+      else navigate('/supplier-auth');
+    });
 
-    // Subscribe to real-time updates on purchase orders (only refresh on actual changes)
-    const subscription = supabase
+    const subscribe = () => {
+      if (subscription || !navigator.onLine) return;
+      // Subscribe to real-time updates only while connected.
+      subscription = supabase
       .channel('purchase-orders-updates')
       .on('postgres_changes', {
         event: '*',
@@ -1421,10 +1583,30 @@ const SupplierPortal = () => {
         event: '*', schema: 'public', table: 'supplier_applications'
       }, () => loadSupplierFeed())
       .subscribe();
+    };
+    subscribe();
+    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      setIsOnline(true);
+      subscribe();
+      checkAuthAndLoad().catch((error) => console.warn('[SupplierPortal] Reconnect refresh failed:', error));
+    };
+    const handleSupplierQueueSync = (event) => {
+      if (event.detail?.userId === getCachedIdentity()?.userId) {
+        loadSupplierData();
+        loadSupplierFeed();
+      }
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('portal-offline-mutation-synced', handleSupplierQueueSync);
 
     return () => {
       clearInterval(timer);
-      supabase.removeChannel(subscription);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('portal-offline-mutation-synced', handleSupplierQueueSync);
+      if (subscription) supabase.removeChannel(subscription);
     };
   }, []);
 
@@ -2334,6 +2516,30 @@ const SupplierPortal = () => {
     setConfirmingOrder(true);
     try {
       const isOwnDelivery = vehicleType === 'supplier_own_delivery';
+      const queueAcceptance = async () => {
+        const userId = await queueSupplierOrderChange('supplier-order-confirm', { orderId, vehicleType, isOwnDelivery });
+        const nextOrders = pendingOrders.map((order) => order.orderId === orderId
+          ? {
+              ...order,
+              status: 'confirmed',
+              fullOrder: {
+                ...order.fullOrder,
+                status: 'confirmed',
+                preferred_vehicle_type: isOwnDelivery ? null : vehicleType,
+                delivery_method: isOwnDelivery ? 'supplier_own_delivery' : 'supplier_delivery',
+                offline_confirmation_pending: true
+              }
+            }
+          : order);
+        setPendingOrders(nextOrders);
+        await savePortalSnapshot('supplier', userId, 'orders', nextOrders);
+        setVehicleChoiceOrderId(null);
+      };
+      if (!navigator.onLine) {
+        await queueAcceptance();
+        alert('Order acceptance saved on this device. It will sync when connected.');
+        return;
+      }
       console.log('🔵 Confirming order with ID:', orderId, 'delivery:', vehicleType);
 
       const { data, error } = await supabase
@@ -2349,6 +2555,11 @@ const SupplierPortal = () => {
         .single();
 
       if (error) {
+        if (isNetworkFailure(error)) {
+          await queueAcceptance();
+          alert('Connection dropped. Order acceptance is saved and will sync when connected.');
+          return;
+        }
         console.error('❌ Error confirming order:', error);
         throw error;
       }
@@ -2367,12 +2578,42 @@ const SupplierPortal = () => {
     }
   };
 
+  const queueSupplierOrderChange = async (kind, payload) => {
+    const identity = getCachedIdentity();
+    const userId = supplierProfile.auth_id || identity?.userId;
+    if (!userId || (identity?.role !== 'supplier' && identity?.userId !== userId)) {
+      throw new Error('Sign in as this supplier while online before saving order changes offline.');
+    }
+    await enqueuePortalMutation(kind, userId, payload);
+    return userId;
+  };
+
   const handleConfirmDelivery = async (orderId) => {
     if (!window.confirm('Confirm that this order has been delivered to the store? The manager will then be able to receive it into POS.')) return;
     setConfirmingDeliveryOrderId(orderId);
     try {
+      if (!navigator.onLine) {
+        const userId = await queueSupplierOrderChange('supplier-delivery-confirm', { orderId });
+        const nextOrders = pendingOrders.map((order) => order.orderId === orderId
+          ? { ...order, fullOrder: { ...order.fullOrder, offline_delivery_confirmation_pending: true } }
+          : order);
+        setPendingOrders(nextOrders);
+        await savePortalSnapshot('supplier', userId, 'orders', nextOrders);
+        alert('Delivery confirmation saved on this device. It will sync when connected.');
+        return;
+      }
       const result = await confirmSupplierOrderDelivery(orderId);
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) {
+        if (!isNetworkFailure(result.error)) throw new Error(result.error);
+        const userId = await queueSupplierOrderChange('supplier-delivery-confirm', { orderId });
+        const nextOrders = pendingOrders.map((order) => order.orderId === orderId
+          ? { ...order, fullOrder: { ...order.fullOrder, offline_delivery_confirmation_pending: true } }
+          : order);
+        setPendingOrders(nextOrders);
+        await savePortalSnapshot('supplier', userId, 'orders', nextOrders);
+        alert('Connection dropped. Delivery confirmation is saved on this device and will sync when connected.');
+        return;
+      }
       alert('Delivery confirmed. The store manager can now receive the products into POS.');
       await loadSupplierData();
     } catch (error) {
@@ -2390,6 +2631,19 @@ const SupplierPortal = () => {
 
     try {
       console.log('🔴 Rejecting order with ID:', orderId);
+      const queueRejection = async () => {
+        const userId = await queueSupplierOrderChange('supplier-order-reject', { orderId, reason });
+        const nextOrders = pendingOrders.map((order) => order.orderId === orderId
+          ? { ...order, status: 'cancelled', fullOrder: { ...order.fullOrder, status: 'cancelled', cancellation_reason: reason, offline_rejection_pending: true } }
+          : order);
+        setPendingOrders(nextOrders);
+        await savePortalSnapshot('supplier', userId, 'orders', nextOrders);
+      };
+      if (!navigator.onLine) {
+        await queueRejection();
+        alert('Order rejection saved on this device. It will sync when connected.');
+        return;
+      }
       
       const { data, error } = await supabase
         .from('purchase_orders')
@@ -2404,6 +2658,11 @@ const SupplierPortal = () => {
 
       if (error) {
         console.error('❌ Error rejecting order:', error);
+        if (isNetworkFailure(error)) {
+          await queueRejection();
+          alert('Connection dropped. Order rejection is saved and will sync when connected.');
+          return;
+        }
         throw error;
       }
 
@@ -2419,8 +2678,28 @@ const SupplierPortal = () => {
   const handleSubmitSupplyQuote = async (orderId, items, notes) => {
     setQuoteSubmittingOrderId(orderId);
     try {
+      if (!navigator.onLine) {
+        const userId = await queueSupplierOrderChange('supplier-order-quote', { orderId, items, notes });
+        const nextOrders = pendingOrders.map((order) => order.orderId === orderId
+          ? { ...order, fullOrder: { ...order.fullOrder, supplier_quote_status: 'submitted', supplier_quote_items: items, supplier_quote_notes: notes, offline_quote_pending: true } }
+          : order);
+        setPendingOrders(nextOrders);
+        await savePortalSnapshot('supplier', userId, 'orders', nextOrders);
+        alert('Supply proposal saved on this device. It will be sent to the manager when connected.');
+        return;
+      }
       const result = await submitSupplierPurchaseOrderQuote({ orderId, items, notes });
       if (!result.success) {
+        if (isNetworkFailure(result.error)) {
+          const userId = await queueSupplierOrderChange('supplier-order-quote', { orderId, items, notes });
+          const nextOrders = pendingOrders.map((order) => order.orderId === orderId
+            ? { ...order, fullOrder: { ...order.fullOrder, supplier_quote_status: 'submitted', supplier_quote_items: items, supplier_quote_notes: notes, offline_quote_pending: true } }
+            : order);
+          setPendingOrders(nextOrders);
+          await savePortalSnapshot('supplier', userId, 'orders', nextOrders);
+          alert('Connection dropped. Supply proposal is saved and will sync when connected.');
+          return;
+        }
         alert(`Could not send proposal: ${result.error}`);
         return;
       }
@@ -2671,7 +2950,11 @@ const SupplierPortal = () => {
 
                     {order.status === 'confirmed' && (
                       <div className="supplier-delivery-confirmation">
-                        {order.fullOrder?.supplier_delivery_confirmed_at ? (
+                        {order.fullOrder?.offline_delivery_confirmation_pending ? (
+                          <p className="supplier-delivery-confirmation-status is-waiting">
+                            <FiClock aria-hidden="true" /> Delivery confirmation saved offline. It will sync when connected.
+                          </p>
+                        ) : order.fullOrder?.supplier_delivery_confirmed_at ? (
                           <p className="supplier-delivery-confirmation-status">
                             <FiCheckCircle aria-hidden="true" /> Delivery confirmed to store. Waiting for the manager to receive it into POS.
                           </p>
@@ -2957,6 +3240,11 @@ const SupplierPortal = () => {
         backgroundImage: `linear-gradient(rgba(255,255,255,0.92), rgba(236,253,245,0.92)), url(${branding.backgroundUrl})`
       } : undefined}
     >
+      {!isOnline && (
+        <div className="sticky top-0 z-40 border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm font-semibold text-amber-950">
+          Offline mode · showing saved supplier data. Catalog changes and eligible order updates will sync when connected.
+        </div>
+      )}
       {branding.supportsSupplyOrders && (
         <div className="mx-auto max-w-7xl px-4 pt-4">
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
@@ -3044,6 +3332,7 @@ const SupplierPortal = () => {
             {activeTab === 'deliveries' && (
               <SupplierDeliveries
                 supplierProfile={supplierProfile}
+                supplierAuthId={supplierProfile.auth_id || getCachedIdentity()?.userId}
                 onGoProfile={() => setActiveTab('profile')}
                 onOpenOrders={() => setActiveTab('orders')}
               />
@@ -3052,13 +3341,13 @@ const SupplierPortal = () => {
             {activeTab === 'performance' && renderPerformance()}
             {activeTab === 'notifications' && renderNotifications()}
             {activeTab === 'my-catalog' && (
-              <SupplierCatalogTab userId={supplierProfile.auth_id || supplierProfile.id} />
+              <SupplierCatalogTab userId={supplierProfile.id} cacheUserId={supplierProfile.auth_id || getCachedIdentity()?.userId} />
             )}
             {activeTab === 'farm-produce' && (
-              <FarmProduceBoard userId={supplierProfile.auth_id || supplierProfile.id} supplierProfile={supplierProfile} />
+              <FarmProduceBoard userId={supplierProfile.id} supplierProfile={supplierProfile} />
             )}
             {activeTab === 'price-analyst' && (
-              <SupplierPriceAnalyst userId={supplierProfile.auth_id || supplierProfile.id} />
+              <SupplierPriceAnalyst userId={supplierProfile.id} />
             )}
             {activeTab === 'supplier-network' && (
               supplierProfile.id ? (
@@ -3082,7 +3371,8 @@ const SupplierPortal = () => {
         onClose={() => setShowAddProductModal(false)}
         mode="supplier"
         enableCatalogProductSuggestions
-        supplierUserId={supplierProfile.auth_id || supplierProfile.id}
+        supplierUserId={supplierProfile.id}
+        supplierAuthId={supplierProfile.auth_id || getCachedIdentity()?.userId}
         onProductAdded={() => {
           setShowAddProductModal(false);
           setActiveTab('my-catalog');

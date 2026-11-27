@@ -1,5 +1,7 @@
 import { supabase } from '../services/supabase';
 import { compressImageFile } from './imageCompression';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
+import { createOfflineUuid, getCachedIdentity, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 
 // One vocabulary for everything that touches the supplier catalog — the
 // shared Add/Edit Item form, the catalog list, and store applications.
@@ -46,14 +48,14 @@ export const catalogItemToFormData = (item) => ({
  * item is still saved with the core fields, and `extrasSaved` is false so the
  * caller can say so instead of silently dropping data.
  */
-export const saveSupplierCatalogItem = async ({ supplierUserId, editingId, form, priceTiers, imageFile, existingImageUrl }) => {
+export const saveSupplierCatalogItem = async ({ supplierUserId, editingId, itemId, form, priceTiers, imageFile, existingImageUrl }) => {
   if (!supplierUserId) throw new Error('Your supplier profile is still loading — try again in a moment');
 
   let imageUrl = existingImageUrl || null;
   if (imageFile) {
     const compressed = await compressImageFile(imageFile, 1280, 0.8);
     const ext = compressed.name.split('.').pop() || 'jpg';
-    const path = `supplier-catalog/${supplierUserId}/${Date.now()}.${ext}`;
+    const path = `supplier-catalog/${supplierUserId}/${itemId || editingId || Date.now()}.${ext}`;
     const { error: uploadError } = await supabase.storage
       .from(PRODUCT_IMAGE_BUCKET)
       .upload(path, compressed, { upsert: true, cacheControl: '31536000' });
@@ -63,6 +65,7 @@ export const saveSupplierCatalogItem = async ({ supplierUserId, editingId, form,
 
   const price = parseFloat(form.selling_price);
   const core = {
+    ...(!editingId && itemId ? { id: itemId } : {}),
     supplier_user_id: supplierUserId,
     name: form.name.trim(),
     category: form.category_id || 'Other',
@@ -87,7 +90,7 @@ export const saveSupplierCatalogItem = async ({ supplierUserId, editingId, form,
 
   const write = (payload) => (editingId
     ? supabase.from('supplier_catalog_items').update(payload).eq('id', editingId).select('id').single()
-    : supabase.from('supplier_catalog_items').insert(payload).select('id').single());
+    : supabase.from('supplier_catalog_items').upsert(payload, { onConflict: 'id' }).select('id').single());
 
   let { data, error } = await write({ ...core, ...extras });
   let extrasSaved = true;
@@ -97,4 +100,55 @@ export const saveSupplierCatalogItem = async ({ supplierUserId, editingId, form,
   }
   if (error) throw error;
   return { id: data?.id || editingId, extrasSaved };
+};
+
+export const queueSupplierCatalogItem = async ({ supplierUserId, authUserId, editingId, itemId, form, priceTiers, imageFile, existingImageUrl }) => {
+  if (!supplierUserId) throw new Error('Your supplier profile is still loading — try again in a moment');
+  const queueUserId = authUserId || getCachedIdentity()?.userId;
+  if (!queueUserId) throw new Error('Sign in online on this device before saving catalog changes offline.');
+  const stableId = itemId || editingId || createOfflineUuid();
+  if (!stableId) throw new Error('This browser cannot safely create an offline catalog item ID.');
+  await enqueuePortalMutation('supplier-catalog-save', queueUserId, {
+    supplierUserId,
+    itemId: stableId,
+    editingId,
+    form,
+    priceTiers,
+    imageFile,
+    existingImageUrl
+  });
+
+  const previous = await loadPortalSnapshot('supplier', queueUserId, 'supplier-catalog');
+  const current = previous?.value || [];
+  const oldItem = current.find((item) => item.id === stableId) || {};
+  const price = parseFloat(form.selling_price);
+  const item = {
+    ...oldItem,
+    id: stableId,
+    supplier_user_id: supplierUserId,
+    name: form.name.trim(),
+    category: form.category_id || 'Other',
+    description: form.description?.trim() || null,
+    unit: form.unit || 'kg',
+    min_order_qty: Number(form.min_order_qty) || 1,
+    price_per_unit: price > 0 ? price : null,
+    image_url: existingImageUrl || oldItem.image_url || null,
+    sku: form.sku?.trim() || null,
+    barcode: form.barcode?.trim() || null,
+    brand: form.brand?.trim() || null,
+    cost_price: parseFloat(form.cost_price) || 0,
+    tax_rate: parseFloat(form.tax_rate) || 0,
+    stock_quantity: parseInt(form.initial_stock, 10) || 0,
+    minimum_stock: parseInt(form.minimum_stock, 10) || 0,
+    price_tiers: (priceTiers || []).filter((tier) => Number(tier.min_quantity) > 0 && Number(tier.unit_price) > 0),
+    price_unit: form.price_unit || oldItem.price_unit || 'LOCAL',
+    stable_price: form.stable_price ?? oldItem.stable_price ?? null,
+    is_available: editingId ? oldItem.is_available !== false : true,
+    offline_pending_sync: true,
+    created_at: oldItem.created_at || new Date().toISOString(),
+  };
+  await savePortalSnapshot('supplier', queueUserId, 'supplier-catalog', editingId
+    ? current.map((entry) => entry.id === stableId ? item : entry)
+    : [item, ...current.filter((entry) => entry.id !== stableId)]);
+  return { id: stableId, extrasSaved: true, offlinePendingSync: true, item };
 };

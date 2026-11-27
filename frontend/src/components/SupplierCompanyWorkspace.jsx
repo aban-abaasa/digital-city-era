@@ -5,6 +5,7 @@ import {
   FiTruck, FiUsers
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 import '../styles/supplier-company-workspace.css';
 
 const ORDER_DONE = new Set(['received', 'completed']);
@@ -43,6 +44,13 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
     quiet ? setRefreshing(true) : setLoading(true);
     if (!quiet) setNotice('');
     try {
+      const identity = getCachedIdentity();
+      if (!navigator.onLine) {
+        const cached = identity?.userId ? await loadPortalSnapshot('supplier', identity.userId, 'company') : null;
+        if (cached?.value) setData(cached.value);
+        else setNotice('No saved company workspace is available on this device yet.');
+        return;
+      }
       const { data: membershipRows, error: membershipError } = await supabase.rpc('get_supplier_company_members_v1', {
         p_company_supplier_id: user.supplier_company_id
       });
@@ -126,15 +134,24 @@ const SupplierCompanyWorkspace = ({ user, companyName }) => {
 
       }
 
-      setData({ managers: managerRows, workers: workerRows, applications, stores, products, stock, orders });
+      const companyData = { managers: managerRows, workers: workerRows, applications, stores, products, stock, orders };
+      setData(companyData);
+      if (identity?.userId) await savePortalSnapshot('supplier', identity.userId, 'company', companyData);
       if (role === 'supplier' && workerRows[0]) {
         setExpandedWorkers({ [workerRows[0].id]: true });
         setExpandedManagers(workerRows[0].company_manager_user_id ? { [workerRows[0].company_manager_user_id]: true } : {});
       }
     } catch (error) {
       console.warn('[SupplierCompanyWorkspace] Could not load supply team data:', error);
-      setNotice(error?.message || 'Some team information could not be loaded. Refresh to try again.');
-      setData({ managers: [], workers: [], applications: [], stores: [], products: [], stock: [], orders: [] });
+      if (isNetworkFailure(error)) {
+        const identity = getCachedIdentity();
+        const cached = identity?.userId ? await loadPortalSnapshot('supplier', identity.userId, 'company') : null;
+        if (cached?.value) setData(cached.value);
+        setNotice('Offline · showing saved company workspace data.');
+      } else {
+        setNotice(error?.message || 'Some team information could not be loaded. Refresh to try again.');
+        setData({ managers: [], workers: [], applications: [], stores: [], products: [], stock: [], orders: [] });
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

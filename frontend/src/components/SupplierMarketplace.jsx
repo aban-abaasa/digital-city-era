@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { supabase } from '../services/supabase';
+import { enqueuePortalMutation } from '../services/portalOfflineQueue';
+import { isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 import AddProductModal from './AddProductModal';
 import {
   SUPPLIER_CATALOG_CATEGORIES as CATEGORIES,
@@ -22,7 +24,7 @@ import {
 const fmtUGX = n => n ? 'UGX ' + Number(n).toLocaleString() : '—';
 
 // ─── MY CATALOG TAB ───────────────────────────────────────────────────────────
-export function SupplierCatalogTab({ userId }) {
+export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   // Adding and editing both use the shared full Add Product form (the one the
@@ -37,55 +39,105 @@ export function SupplierCatalogTab({ userId }) {
   const [unseenPriceChanges, setUnseenPriceChanges] = useState(0);
   const priceChangesAnnounced = useRef(false);
 
-  useEffect(() => { load(); }, [userId]);
+  useEffect(() => { load(); }, [userId, cacheUserId]);
+
+  useEffect(() => {
+    const handleSynced = (event) => {
+      if (event.detail?.userId === cacheUserId && String(event.detail?.kind || '').startsWith('supplier-catalog-')) load();
+    };
+    window.addEventListener('portal-offline-mutation-synced', handleSynced);
+    return () => window.removeEventListener('portal-offline-mutation-synced', handleSynced);
+  }, [cacheUserId]);
 
   const load = async () => {
     setLoading(true);
-    // Items priced in ICEC-S (the stable coin) get today's shilling price before the list is read.
-    // Throttled, silent, and a no-op for a supplier who doesn't use it.
-    const repriced = await refreshStablePricesQuietly('catalog', userId);
-    if (repriced?.changes?.length) {
-      priceChangesAnnounced.current = true;
-      toast.info(`${describeChanges(repriced.changes, repriced.rate)} Open Stable price to review.`, {
-        autoClose: 12000,
-        onClick: () => setShowStable(true),
-      });
+    if (!userId || !cacheUserId) { setLoading(false); return; }
+    if (!navigator.onLine) {
+      const cached = await loadPortalSnapshot('supplier', cacheUserId, 'supplier-catalog');
+      const cachedBatches = await loadPortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches');
+      setItems(cached?.value || []);
+      setBatches(cachedBatches?.value || []);
+      setLoading(false);
+      return;
     }
-    const { data } = await supabase
-      .from('supplier_catalog_items')
-      .select('*')
-      .eq('supplier_user_id', userId)
-      .order('created_at', { ascending: false });
-    setItems(data || []);
-    setLoading(false);
-    await loadBatches((data || []).map(item => item.id));
+    try {
+      // Items priced in ICEC-S (the stable coin) get today's shilling price before the list is read.
+      // Throttled, silent, and a no-op for a supplier who doesn't use it.
+      const repriced = await refreshStablePricesQuietly('catalog', userId);
+      if (repriced?.changes?.length) {
+        priceChangesAnnounced.current = true;
+        toast.info(`${describeChanges(repriced.changes, repriced.rate)} Open Stable price to review.`, {
+          autoClose: 12000,
+          onClick: () => setShowStable(true),
+        });
+      }
+      const { data, error } = await supabase
+        .from('supplier_catalog_items')
+        .select('*')
+        .eq('supplier_user_id', userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setItems(data || []);
+      await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog', data || []);
+      setLoading(false);
+      await loadBatches((data || []).map(item => item.id));
 
-    // How many price changes from ICEC-S the supplier hasn't seen yet. Changes made while they were away
-    // (the scheduled repricer) are announced once per visit.
-    const unseen = await countUnseenChanges('catalog', userId);
-    setUnseenPriceChanges(unseen);
-    if (unseen > 0 && !priceChangesAnnounced.current) {
-      priceChangesAnnounced.current = true;
-      toast.info(`${unseen} shilling price change${unseen === 1 ? '' : 's'} from ICEC-S since you last looked. Open Stable price to review.`, {
-        autoClose: 12000,
-        onClick: () => setShowStable(true),
-      });
+      // How many price changes from ICEC-S the supplier hasn't seen yet. Changes made while they were away
+      // (the scheduled repricer) are announced once per visit.
+      const unseen = await countUnseenChanges('catalog', userId);
+      setUnseenPriceChanges(unseen);
+      if (unseen > 0 && !priceChangesAnnounced.current) {
+        priceChangesAnnounced.current = true;
+        toast.info(`${unseen} shilling price change${unseen === 1 ? '' : 's'} from ICEC-S since you last looked. Open Stable price to review.`, {
+          autoClose: 12000,
+          onClick: () => setShowStable(true),
+        });
+      }
+    } catch (error) {
+      if (isNetworkFailure(error)) {
+        const cached = await loadPortalSnapshot('supplier', cacheUserId, 'supplier-catalog');
+        const cachedBatches = await loadPortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches');
+        setItems(cached?.value || []);
+        setBatches(cachedBatches?.value || []);
+      } else toast.error(error.message || 'Could not load supplier catalog');
+      setLoading(false);
     }
   };
 
   const loadBatches = async (itemIds) => {
-    if (!itemIds.length) { setBatches([]); return; }
-    const { data, error } = await supabase
-      .from('supplier_catalog_batches')
-      .select('*')
-      .in('catalog_item_id', itemIds);
-    if (error) {
-      // Table not created yet: the catalog still works, just without batches.
-      if (!isMissingBatchTable(error)) console.warn('Could not load batches:', error.message);
+    if (!itemIds.length) {
       setBatches([]);
+      if (navigator.onLine) await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches', []);
       return;
     }
-    setBatches(data || []);
+    if (!navigator.onLine) {
+      const cached = await loadPortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches');
+      setBatches((cached?.value || []).filter((batch) => itemIds.includes(batch.catalog_item_id)));
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('supplier_catalog_batches')
+        .select('*')
+        .in('catalog_item_id', itemIds);
+      if (error) {
+        // Table not created yet: the catalog still works, just without batches.
+        if (!isMissingBatchTable(error)) throw error;
+        setBatches([]);
+        await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches', []);
+        return;
+      }
+      setBatches(data || []);
+      await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches', data || []);
+    } catch (error) {
+      if (isNetworkFailure(error)) {
+        const cached = await loadPortalSnapshot('supplier', cacheUserId, 'supplier-catalog-batches');
+        setBatches(cached?.value || []);
+      } else {
+        console.warn('Could not load batches:', error.message);
+        setBatches([]);
+      }
+    }
   };
 
   const openNew = () => setModal({ open: true, item: null });
@@ -93,13 +145,43 @@ export function SupplierCatalogTab({ userId }) {
   const closeModal = () => setModal({ open: false, item: null });
 
   const toggle = async (item) => {
-    await supabase.from('supplier_catalog_items')
-      .update({ is_available: !item.is_available }).eq('id', item.id);
+    const updates = { is_available: !item.is_available };
+    if (!navigator.onLine) {
+      await enqueuePortalMutation('supplier-catalog-update', cacheUserId, { supplierUserId: userId, itemId: item.id, updates });
+      const updated = items.map((entry) => entry.id === item.id ? { ...entry, ...updates, offline_pending_sync: true } : entry);
+      setItems(updated);
+      await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog', updated);
+      return;
+    }
+    const { error } = await supabase.from('supplier_catalog_items').update(updates).eq('id', item.id);
+    if (error && isNetworkFailure(error)) {
+      await enqueuePortalMutation('supplier-catalog-update', cacheUserId, { supplierUserId: userId, itemId: item.id, updates });
+      const updated = items.map((entry) => entry.id === item.id ? { ...entry, ...updates, offline_pending_sync: true } : entry);
+      setItems(updated);
+      await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog', updated);
+      return;
+    }
+    if (error) { toast.error(error.message); return; }
     load();
   };
 
   const remove = async (id) => {
-    await supabase.from('supplier_catalog_items').delete().eq('id', id);
+    if (!navigator.onLine) {
+      await enqueuePortalMutation('supplier-catalog-delete', cacheUserId, { supplierUserId: userId, itemId: id });
+      const updated = items.filter((item) => item.id !== id);
+      setItems(updated);
+      await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog', updated);
+      return;
+    }
+    const { error } = await supabase.from('supplier_catalog_items').delete().eq('id', id);
+    if (error && isNetworkFailure(error)) {
+      await enqueuePortalMutation('supplier-catalog-delete', cacheUserId, { supplierUserId: userId, itemId: id });
+      const updated = items.filter((item) => item.id !== id);
+      setItems(updated);
+      await savePortalSnapshot('supplier', cacheUserId, 'supplier-catalog', updated);
+      return;
+    }
+    if (error) { toast.error(error.message); return; }
     load();
     toast.success('Item removed');
   };
@@ -270,6 +352,7 @@ export function SupplierCatalogTab({ userId }) {
         <SupplierBatchManager
           item={batchItem}
           batches={batchesByItem[batchItem.id] || []}
+          cacheUserId={cacheUserId}
           onClose={() => setBatchItemId(null)}
           onChanged={() => loadBatches(items.map(item => item.id))}
         />
@@ -282,6 +365,7 @@ export function SupplierCatalogTab({ userId }) {
         mode="supplier"
         enableCatalogProductSuggestions
         supplierUserId={userId}
+        supplierAuthId={cacheUserId}
         editingProductId={modal.item?.id || null}
         prefilledData={modal.item ? catalogItemToFormData(modal.item) : {}}
         onProductAdded={load}

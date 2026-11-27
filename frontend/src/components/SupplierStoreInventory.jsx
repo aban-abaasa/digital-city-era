@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FiAlertTriangle, FiPackage, FiRefreshCw, FiSearch, FiTrendingUp, FiTruck } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const formatCount = (value) => number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -15,14 +16,37 @@ const SupplierStoreInventory = ({ compact = false, onViewAll = null }) => {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    const identity = getCachedIdentity();
+    if (!navigator.onLine) {
+      const cached = identity?.userId
+        ? await loadPortalSnapshot('supplier', identity.userId, 'store-inventory')
+        : null;
+      if (cached?.value) setResult(cached.value);
+      else {
+        setResult(null);
+        setError('No saved supplied inventory is available on this device yet.');
+      }
+      setLoading(false);
+      return;
+    }
     try {
       const { data, error: rpcError } = await supabase.rpc('get_supplier_store_inventory_v1');
       if (rpcError) throw rpcError;
-      setResult(data || { enabled: false, products: [] });
+      const next = data || { enabled: false, products: [] };
+      setResult(next);
+      if (identity?.role === 'supplier' && identity.userId) {
+        await savePortalSnapshot('supplier', identity.userId, 'store-inventory', next);
+      }
     } catch (loadError) {
       console.error('[SupplierStoreInventory] Could not load store stock:', loadError);
-      setError(loadError.message || 'Could not load store stock.');
-      setResult(null);
+      const cached = isNetworkFailure(loadError) && identity?.userId
+        ? await loadPortalSnapshot('supplier', identity.userId, 'store-inventory')
+        : null;
+      if (cached?.value) setResult(cached.value);
+      else {
+        setError(loadError.message || 'Could not load store stock.');
+        setResult(null);
+      }
     } finally {
       setLoading(false);
     }

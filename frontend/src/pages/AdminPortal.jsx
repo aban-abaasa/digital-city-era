@@ -40,6 +40,7 @@ import {
 } from 'recharts';
 import '../styles/supermartkera-portals.css';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { getCachedIdentity, loadPortalSnapshot, saveCachedIdentity, savePortalSnapshot } from '../services/posOfflineCache';
 
 const AdminPortal = () => {
   const navigate = useNavigate();
@@ -184,13 +185,36 @@ const AdminPortal = () => {
 
   const checkAdminAccess = async () => {
     try {
+      if (!navigator.onLine) {
+        const identity = getCachedIdentity();
+        const cached = identity?.role === 'admin' && identity.userId
+          ? await loadPortalSnapshot('admin', identity.userId, 'profile')
+          : null;
+        if (cached?.value) {
+          setCurrentAdmin(cached.value);
+          setIsAdmin(true);
+          setNeedsSupermarketProfile(false);
+        } else {
+          setIsAdmin(false);
+        }
+        setAuthLoading(false);
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       
       console.log('🔐 Checking admin access for user:', user?.id, user?.email);
       
       if (!user) {
         console.log('❌ No authenticated user found');
-        setIsAdmin(false);
+        const identity = getCachedIdentity();
+        const cached = identity?.role === 'admin' && identity.userId
+          ? await loadPortalSnapshot('admin', identity.userId, 'profile')
+          : null;
+        if (cached?.value) {
+          setCurrentAdmin(cached.value);
+          setIsAdmin(true);
+          setNeedsSupermarketProfile(false);
+        } else setIsAdmin(false);
         setAuthLoading(false);
         return;
       }
@@ -348,10 +372,14 @@ const AdminPortal = () => {
 
         console.log('👤 User role check:', { role: userData?.role, isAdmin: userIsAdmin, ownedSm, pichinBusinessProfileId });
         setIsAdmin(userIsAdmin);
+        if (userIsAdmin) {
+          saveCachedIdentity({ userId: user.id, email: user.email, role: 'admin', supermarketId: ownedSm?.id || userData?.supermarket_id || null });
+        }
 
         // Set current admin data
-        setCurrentAdmin({
+        const adminProfile = {
           id: userData?.id,
+          auth_id: user.id,
           email: userData?.email,
           full_name: userData?.full_name,
           role: userData?.role,
@@ -363,7 +391,11 @@ const AdminPortal = () => {
           // only a real supermarkets row counts as having a store.
           store_missing: !ownedSm,
           business_type: ownedSm?.business_type || null
-        });
+        };
+        setCurrentAdmin(adminProfile);
+        if (userIsAdmin) {
+          savePortalSnapshot('admin', user.id, 'profile', adminProfile);
+        }
 
         // Only show the supermarket profile form if they have NO supermarket at all
         const hasSupermarket = !!ownedSm || !!userData?.supermarket_id;
@@ -377,18 +409,25 @@ const AdminPortal = () => {
         }
       } catch (queryError) {
         console.warn('⚠️ Failed to query user role:', queryError);
-        // Allow access for debugging
-        console.log('🔓 Allowing admin access despite query error for debugging');
-        setIsAdmin(true);
-        setNeedsSupermarketProfile(true);
-        setAuthLoading(false);
+        const identity = getCachedIdentity();
+        const cached = identity?.userId === (await supabase.auth.getUser()).data.user?.id && identity.role === 'admin'
+          ? await loadPortalSnapshot('admin', identity.userId, 'profile')
+          : null;
+        if (cached?.value) {
+          setCurrentAdmin(cached.value);
+          setIsAdmin(true);
+        } else setIsAdmin(false);
       }
     } catch (error) {
       console.error('❌ Error checking admin access:', error);
-      // Allow access for debugging
-      console.log('🔓 Allowing admin access despite error for debugging');
-      setIsAdmin(true);
-      setNeedsSupermarketProfile(true);
+      const identity = getCachedIdentity();
+      const cached = identity?.role === 'admin' && identity.userId
+        ? await loadPortalSnapshot('admin', identity.userId, 'profile')
+        : null;
+      if (cached?.value) {
+        setCurrentAdmin(cached.value);
+        setIsAdmin(true);
+      } else setIsAdmin(false);
     } finally {
       setAuthLoading(false);
     }
@@ -5888,7 +5927,12 @@ const AdminPortal = () => {
             
             {/* 📦 ORDER INVENTORY POS CONTROL */}
             {activeSection === 'inventory-pos' && (
-              <OrderInventoryPOSControl openAddSignal={addProductsSignal} />
+              <OrderInventoryPOSControl
+                openAddSignal={addProductsSignal}
+                adminAuthorized={isAdmin}
+                storeId={currentAdmin.supermarket_id}
+                adminProfile={currentAdmin}
+              />
             )}
 
             {/* 📅 SERVICE BOOKINGS */}
