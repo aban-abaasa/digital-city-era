@@ -78,6 +78,15 @@ const CashierPortal = () => {
   const [paymentModal, setPaymentModal] = useState(false);
   const localSaleAttemptIdRef = useRef(null);
   useBackLayer(paymentModal, () => setPaymentModal(false));
+  const [showMobileCartPage, setShowMobileCartPage] = useState(false);
+  useBackLayer(showMobileCartPage, () => setShowMobileCartPage(false));
+  useEffect(() => {
+    const closeCartOnWideScreen = () => {
+      if (window.innerWidth > 640) setShowMobileCartPage(false);
+    };
+    window.addEventListener('resize', closeCartOnWideScreen);
+    return () => window.removeEventListener('resize', closeCartOnWideScreen);
+  }, []);
   const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
@@ -508,7 +517,7 @@ const CashierPortal = () => {
         Promise.race([
           fetchAllRows(() => supabase
             .from('products')
-        .select('id, name, price, selling_price, cost_price, barcode, sku, is_active, inventory_mode, tax_rate, tax_included')
+        .select('id, name, price, selling_price, cost_price, barcode, sku, image_url, images, is_active, inventory_mode, tax_rate, tax_included')
             .eq('is_active', true)
             .eq('supermarket_id', supermarketId)),
           new Promise((_, reject) =>
@@ -586,24 +595,40 @@ const CashierPortal = () => {
       const batchesByProduct = groupBatchesByProduct(await inventoryService.getBatchOverview(supermarketId));
 
       // Transform products with stock data (show ALL products, inventory is optional)
-      const productsWithInventory = ((productsResult.data || []).map(p => ({
-        id: p.id,
-        name: p.name,
-        sku: p.sku || `SKU-${p.id.substring(0, 8)}`,
-        selling_price: parseFloat(p.selling_price) || 0,
-        price: parseFloat(p.selling_price) || 0,
+      const productsWithInventory = ((productsResult.data || []).map(p => {
+        let rawImages = p.images;
+        if (typeof rawImages === 'string') {
+          try {
+            const parsedImages = JSON.parse(rawImages);
+            if (typeof parsedImages === 'string' || Array.isArray(parsedImages) || (parsedImages && typeof parsedImages === 'object')) rawImages = parsedImages;
+          } catch { /* A plain image URL remains a single image. */ }
+        }
+        const imageEntries = Array.isArray(rawImages) ? rawImages : rawImages ? [rawImages] : [];
+        const images = imageEntries
+          .map(image => typeof image === 'string' ? image.trim() : image?.image_url || image?.url || image?.src || '')
+          .filter(Boolean);
+        const primaryImage = p.image_url || images[0] || null;
+        return {
+          id: p.id,
+          name: p.name,
+          sku: p.sku || `SKU-${p.id.substring(0, 8)}`,
+          selling_price: parseFloat(p.selling_price) || 0,
+          price: parseFloat(p.selling_price) || 0,
           tax_rate: Number(p.tax_rate ?? 18),
           tax_included: p.tax_included,
-        stock: stockMap[p.id]?.current_stock || 0,  // 0 if no inventory record
-        available_stock: (stockMap[p.id]?.current_stock || 0) - (stockMap[p.id]?.reserved_stock || 0),
-        barcode: p.barcode,
-        inventoryMode: p.inventory_mode || 'stock_controlled',
-        priceTiers: tiersByProduct[p.id] || [],
-        variants: variantsByProduct[p.id] || [],
-        batches: sellableBatches(batchesByProduct[p.id]),
-        category: 'General',
-        categoryName: 'General'
-      }))).sort((a, b) => a.name.localeCompare(b.name));
+          stock: stockMap[p.id]?.current_stock || 0,  // 0 if no inventory record
+          available_stock: (stockMap[p.id]?.current_stock || 0) - (stockMap[p.id]?.reserved_stock || 0),
+          barcode: p.barcode,
+          image_url: primaryImage,
+          images: primaryImage && !images.includes(primaryImage) ? [primaryImage, ...images] : images,
+          inventoryMode: p.inventory_mode || 'stock_controlled',
+          priceTiers: tiersByProduct[p.id] || [],
+          variants: variantsByProduct[p.id] || [],
+          batches: sellableBatches(batchesByProduct[p.id]),
+          category: 'General',
+          categoryName: 'General'
+        };
+      })).sort((a, b) => a.name.localeCompare(b.name));
 
       console.log(`✅ Total products to display: ${productsWithInventory.length}`);
       
@@ -2312,6 +2337,7 @@ const CashierPortal = () => {
     const getProductPrice = (product) => Number(product.selling_price ?? product.price ?? 0);
     const getProductStock = (product) => Number(product.stock ?? product.available_stock ?? 0);
     const getProductCategory = (product) => product.categoryName || product.category || 'General';
+    const mobileCartQuantity = currentTransaction.items.reduce((sum, item) => sum + item.quantity, 0);
     const productCategories = Array.from(new Set(products.map(getProductCategory))).sort((a, b) => a.localeCompare(b));
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const filteredProducts = products.filter((product) => {
@@ -2351,11 +2377,11 @@ const CashierPortal = () => {
                 type="button"
                 onClick={() => setShowDualScanner((isOpen) => !isOpen)}
                 aria-pressed={showDualScanner}
-                className={`px-2 md:px-4 py-1 md:py-2 ${showDualScanner ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-800 hover:bg-indigo-900'} text-white rounded-xl text-xs md:text-sm font-bold transition-all duration-200 flex items-center gap-1 md:gap-2 shadow-sm`}
+                aria-label={showDualScanner ? 'Close scanner' : 'Scan'}
+                className={`min-w-16 px-3 md:px-4 py-2 ${showDualScanner ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-800 hover:bg-indigo-900'} text-white rounded-xl text-xs md:text-sm font-bold transition-all duration-200 flex items-center justify-center shadow-sm`}
                 title={showDualScanner ? 'Close the scanner and return to product browsing' : 'Open the scanner while keeping products visible'}
               >
-                {showDualScanner ? <FiX className="h-4 md:h-5 w-4 md:w-5" /> : <FiZap className="h-4 md:h-5 w-4 md:w-5" />}
-                <span className="hidden md:inline">{showDualScanner ? 'Close Scanner' : 'Scan'}</span>
+                <span>{showDualScanner ? 'Close' : 'Scan'}</span>
               </button>
             </div>
           </div>
@@ -2425,7 +2451,7 @@ const CashierPortal = () => {
           </p>
 
           {/* Products Grid - Optimized for mobile */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="cashier-product-grid-scroll flex-1 overflow-y-auto">
             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-4">
               {productsLoading ? (
                 <div className="col-span-3 md:col-span-4 text-center py-8">
@@ -2460,6 +2486,10 @@ const CashierPortal = () => {
                   const productPrice = product.selling_price || product.price || 0;
                   const productStock = product.stock || product.available_stock || 0;
                   const categoryName = product.categoryName || product.category || 'General';
+                  const storedImage = Array.isArray(product.images) ? product.images[0] : product.images;
+                  const productImage = typeof storedImage === 'string'
+                    ? storedImage
+                    : storedImage?.image_url || storedImage?.url || product.image_url || null;
                   const isUnlimitedItem = ['service_item', 'listing_only'].includes(product.inventoryMode);
                   const isLowStock = !isUnlimitedItem && productStock <= (product.minStock || 10);
                   const isOutOfStock = !isUnlimitedItem && productStock === 0;
@@ -2477,12 +2507,23 @@ const CashierPortal = () => {
                           : 'cursor-pointer hover:bg-yellow-50 border-gray-200 hover:border-yellow-300'
                       }`}
                     >
-                      <div className="text-xl md:text-2xl mb-1 md:mb-2">
-                        {categoryName.toLowerCase().includes('produce') ? '🥬' :
-                         categoryName.toLowerCase().includes('dairy') ? '🥛' :
-                         categoryName.toLowerCase().includes('bakery') ? '🍞' :
-                         categoryName.toLowerCase().includes('personal') ? '🧼' :
-                         categoryName.toLowerCase().includes('electronics') ? '📱' : '🌾'}
+                      <div className="relative mb-1 aspect-square overflow-hidden rounded-md bg-gray-50 md:mb-2">
+                        <div className="absolute inset-0 grid place-items-center text-2xl md:text-3xl" aria-hidden="true">
+                          {categoryName.toLowerCase().includes('produce') ? '🥬' :
+                           categoryName.toLowerCase().includes('dairy') ? '🥛' :
+                           categoryName.toLowerCase().includes('bakery') ? '🍞' :
+                           categoryName.toLowerCase().includes('personal') ? '🧼' :
+                           categoryName.toLowerCase().includes('electronics') ? '📱' : '🌾'}
+                        </div>
+                        {productImage && (
+                          <img
+                            src={productImage}
+                            alt={product.name}
+                            loading="lazy"
+                            className="absolute inset-0 z-10 h-full w-full object-contain p-1"
+                            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
                       </div>
                       <h4 className="font-semibold text-xs md:text-sm text-gray-900 mb-0.5 md:mb-1 line-clamp-2">{product.name}</h4>
                       <p className="text-green-600 font-bold text-xs md:text-base">{formatUGX(productPrice)}</p>
@@ -2506,8 +2547,13 @@ const CashierPortal = () => {
         </div>
 
         {/* Transaction Summary - Optimized for mobile */}
-        <div className="bg-white rounded-lg md:rounded-xl p-3 md:p-6 shadow-lg flex flex-col h-auto md:h-auto">
-          <h3 className="text-base md:text-xl font-bold text-gray-900 mb-3 md:mb-6 flex items-center gap-2 flex-shrink-0">
+        <div className={`cashier-transaction-summary bg-white rounded-lg md:rounded-xl p-3 md:p-6 shadow-lg flex flex-col h-auto md:h-auto${showMobileCartPage ? ' is-mobile-page' : ''}`}>
+          <div className="cashier-mobile-cart-page-header">
+            <button type="button" onClick={() => setShowMobileCartPage(false)} aria-label="Back to products">← Products</button>
+            <strong>Basket</strong>
+            <span>{mobileCartQuantity}</span>
+          </div>
+          <h3 className={`${showMobileCartPage ? 'hidden' : ''} text-base md:text-xl font-bold text-gray-900 mb-3 md:mb-6 flex items-center gap-2 flex-shrink-0`}>
             🧾 <span>Transaction</span>
           </h3>
           
@@ -2519,8 +2565,21 @@ const CashierPortal = () => {
               currentTransaction.items.map((item) => {
                 const itemPrice = item.selling_price || item.price || 0;
                 const lineId = item.cartLineId || item.id;
+                const storedImage = Array.isArray(item.images) ? item.images[0] : item.images;
+                const itemImage = typeof storedImage === 'string'
+                  ? storedImage
+                  : storedImage?.image_url || storedImage?.url || item.image_url || null;
                 return (
                   <div key={lineId} className="flex items-center justify-between p-2 md:p-3 bg-gray-50 rounded-lg">
+                    {itemImage && (
+                      <img
+                        src={itemImage}
+                        alt=""
+                        loading="lazy"
+                        className="mr-2 h-10 w-10 flex-none rounded-md bg-white object-contain p-0.5"
+                        onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-gray-900 text-xs md:text-sm truncate">{item.name}</h4>
                       <p className="text-xs md:text-sm text-gray-600">{formatUGX(itemPrice)} x {item.quantity}</p>
@@ -2720,7 +2779,7 @@ const CashierPortal = () => {
                 const canProceed = currentTransaction.items.length > 0 && cashOk && jobOk;
                 return (
                   <button
-                    onClick={() => setPaymentModal(true)}
+                    onClick={() => { setShowMobileCartPage(false); setPaymentModal(true); }}
                     disabled={!canProceed}
                     className={`w-full py-2 md:py-4 rounded-lg md:rounded-xl font-bold text-sm md:text-lg transition-all duration-300 mt-2 md:mt-4 transform hover:scale-105 shadow-lg ${
                       canProceed
@@ -2743,6 +2802,18 @@ const CashierPortal = () => {
             </div>
           )}
         </div>
+        {mobileCartQuantity > 0 && !showMobileCartPage && (
+          <button
+            type="button"
+            className="cashier-mobile-cart-trigger"
+            onClick={() => setShowMobileCartPage(true)}
+            aria-label={`View cart with ${mobileCartQuantity} items, total ${formatUGX(currentTransaction.total)}`}
+          >
+            <span>{mobileCartQuantity}</span>
+            <strong>View cart</strong>
+            <strong>{formatUGX(currentTransaction.total)}</strong>
+          </button>
+        )}
       </div>
     </div>
     {showSearchTab && createPortal(
