@@ -150,7 +150,6 @@ const CashierPortal = () => {
   // 👗 Boutique variant picker - shown before adding a product with
   // size/color variants to the cart
   const [variantPickerProduct, setVariantPickerProduct] = useState(null);
-  const openCartPageAfterCatalogAdd = useRef(false);
   // Batch (quality) picker - shown when a product has more than one sellable batch
   const [batchPickerProduct, setBatchPickerProduct] = useState(null);
   
@@ -468,7 +467,7 @@ const CashierPortal = () => {
       // Build query for products
       let productsQuery = supabase
         .from('products')
-        .select('id, name, price, selling_price, cost_price, category, barcode, sku, images, is_active, supermarket_id, inventory_mode, tax_rate, tax_included')
+        .select('id, name, price, selling_price, cost_price, category, barcode, sku, image_url, images, is_active, supermarket_id, inventory_mode, tax_rate, tax_included')
         .eq('is_active', true);
       
       // Strict tenant isolation: only this exact supermarket's products.
@@ -541,16 +540,29 @@ const CashierPortal = () => {
       // Combine products with inventory
       const allProducts = (productsData || []).map(product => {
         const inv = inventoryMap[product.id];
+        let rawImages = product.images;
+        if (typeof rawImages === 'string') {
+          try {
+            const parsedImages = JSON.parse(rawImages);
+            if (typeof parsedImages === 'string' || Array.isArray(parsedImages) || (parsedImages && typeof parsedImages === 'object')) rawImages = parsedImages;
+          } catch { /* A plain image URL remains a single image. */ }
+        }
+        const imageEntries = Array.isArray(rawImages) ? rawImages : rawImages ? [rawImages] : [];
+        const productImages = imageEntries
+          .map(image => typeof image === 'string' ? image.trim() : image?.image_url || image?.url || image?.src || '')
+          .filter(Boolean);
+        const primaryImage = product.image_url || productImages[0] || null;
         return {
           id: product.id,
           name: product.name,
           sku: product.sku,
           barcode: product.barcode,
+          image_url: primaryImage,
           // Admin product photos are stored in products.images; keep that
           // same public URL array on the cashier catalog and cart rows.
-          images: (Array.isArray(product.images) ? product.images : product.images ? [product.images] : [])
-            .map(image => typeof image === 'string' ? image : image?.image_url || image?.url)
-            .filter(Boolean),
+          images: primaryImage && !productImages.includes(primaryImage)
+            ? [primaryImage, ...productImages]
+            : productImages,
           price: product.price || 0,
           selling_price: product.selling_price || 0,
           tax_rate: Number(product.tax_rate ?? 18),
@@ -1674,14 +1686,12 @@ const CashierPortal = () => {
     if (variant) {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
       if ((variant.stock_quantity || 0) <= currentQuantity) {
-        openCartPageAfterCatalogAdd.current = false;
         toast.error(`⚠️ Insufficient stock for ${product.name} (${variant.variant_value}). Available: ${variant.stock_quantity || 0}`);
         return;
       }
     } else if (batch) {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
       if (Number(batch.remaining) <= currentQuantity) {
-        openCartPageAfterCatalogAdd.current = false;
         toast.error(`⚠️ Insufficient stock for ${product.name} (${batchLabel(batch)}). Available: ${Number(batch.remaining)}`);
         return;
       }
@@ -1691,7 +1701,6 @@ const CashierPortal = () => {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
 
       if (productStock <= currentQuantity) {
-        openCartPageAfterCatalogAdd.current = false;
         toast.error(`⚠️ Insufficient stock for ${product.name}. Available: ${productStock}`);
         return;
       }
@@ -1746,10 +1755,6 @@ const CashierPortal = () => {
 
     // Clear cash received when cart changes
     setCashReceived('');
-    if (openCartPageAfterCatalogAdd.current) {
-      openCartPageAfterCatalogAdd.current = false;
-      if (window.innerWidth <= 640) setShowMobileCartPage(true);
-    }
   };
 
   // Variants and batches are chosen before adding. A product with several
@@ -1767,11 +1772,6 @@ const CashierPortal = () => {
     }
     const only = batches[0];
     addItemToTransaction(product, null, only && Number(only.selling_price) > 0 ? only : null);
-  };
-
-  const selectCatalogProduct = (product) => {
-    openCartPageAfterCatalogAdd.current = true;
-    chooseProductToAdd(product);
   };
 
   // 🔥 Handle new product added - refresh products list
@@ -2770,7 +2770,6 @@ const CashierPortal = () => {
                   aria-label="Scan products"
                   className={`cashier-pos-scan-toggle${!showProducts ? ' is-active' : ''}`}
                 >
-                  <FiCamera aria-hidden="true" />
                   <span>Scan</span>
                 </button>
               </div>
@@ -2907,7 +2906,7 @@ const CashierPortal = () => {
                 const isOutOfStock = !isUnlimitedItem && productStock === 0;
                 const selectProduct = () => {
                   if (isOutOfStock) return;
-                  selectCatalogProduct(product);
+                  chooseProductToAdd(product);
                 };
 
                 return (
@@ -4318,7 +4317,7 @@ const CashierPortal = () => {
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Choose a variant</h3>
-              <button onClick={() => { openCartPageAfterCatalogAdd.current = false; setVariantPickerProduct(null); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setVariantPickerProduct(null)} className="text-gray-400 hover:text-gray-600">
                 <FiX className="h-5 w-5" />
               </button>
             </div>
@@ -4363,7 +4362,7 @@ const CashierPortal = () => {
             addItemToTransaction(batchPickerProduct, null, batch);
             setBatchPickerProduct(null);
           }}
-          onClose={() => { openCartPageAfterCatalogAdd.current = false; setBatchPickerProduct(null); }}
+          onClose={() => setBatchPickerProduct(null)}
         />
       )}
 
