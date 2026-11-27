@@ -23,6 +23,8 @@ import {
 
 // ── shared helpers ─────────────────────────────────────────────────────────────
 const fmtUGX = n => n ? 'UGX ' + Number(n).toLocaleString() : '—';
+const firstStoreProductImage = (product) => (Array.isArray(product?.images) ? product.images : [])
+  .find((url) => typeof url === 'string' && url.trim())?.trim() || null;
 
 // ─── MY CATALOG TAB ───────────────────────────────────────────────────────────
 export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
@@ -69,9 +71,9 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
         // Product names and barcodes are shared from active store products.
         // Price and stock are deliberately collected in the supplier's own listing.
         const [nameResult, barcodeResult] = await Promise.all([
-          supabase.from('products').select('id, name, barcode').eq('is_active', true)
+          supabase.from('products').select('id, name, barcode, brand, images').eq('is_active', true)
             .ilike('name', `%${search}%`).order('name', { ascending: true }).limit(30),
-          supabase.from('products').select('id, name, barcode').eq('is_active', true)
+          supabase.from('products').select('id, name, barcode, brand, images').eq('is_active', true)
             .ilike('barcode', `%${search}%`).order('name', { ascending: true }).limit(30),
         ]);
         if (nameResult.error) throw nameResult.error;
@@ -208,7 +210,12 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
     open: true,
     item: null,
     sourceProductId: product.id,
-    prefilledData: { name: product.name || '', barcode: product.barcode || '' },
+    prefilledData: {
+      name: product.name || '',
+      barcode: product.barcode || '',
+      brand: product.brand || '',
+      images: firstStoreProductImage(product) ? [firstStoreProductImage(product)] : [],
+    },
   });
   const closeModal = () => setModal({ open: false, item: null, sourceProductId: null, prefilledData: {} });
 
@@ -337,9 +344,16 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
               const existingItem = listedStoreProduct(product);
               return (
                 <div key={`${product.id}-${product.barcode || ''}`} className="flex items-center justify-between gap-3 px-3 py-3 sm:px-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-800">{product.name}</p>
-                    <p className="mt-0.5 text-xs text-gray-500">Barcode: {product.barcode || 'Not listed'}</p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {firstStoreProductImage(product) ? (
+                      <img src={firstStoreProductImage(product)} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" loading="lazy" />
+                    ) : (
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-400" aria-hidden="true">Item</span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-gray-800">{product.name}</p>
+                      <p className="mt-0.5 truncate text-xs text-gray-500">{[product.brand, `Barcode: ${product.barcode || 'Not listed'}`].filter(Boolean).join(' · ')}</p>
+                    </div>
                   </div>
                   {existingItem ? (
                     <button type="button" onClick={() => openEdit(existingItem)} className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">

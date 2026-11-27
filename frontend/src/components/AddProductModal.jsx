@@ -35,6 +35,8 @@ import { useBackLayer } from '../hooks/useBackLayer';
 import { createOfflineUuid, isNetworkFailure } from '../services/posOfflineCache';
 
 const PRODUCT_IMAGE_BUCKET = 'product-photos';
+const firstProductImage = (product) => (Array.isArray(product?.images) ? product.images : [])
+  .find((url) => typeof url === 'string' && url.trim())?.trim() || null;
 
 // Name-only starters for the Add Service form (no prices: what a service costs is the business's call).
 const SERVICE_SUGGESTIONS = [
@@ -92,6 +94,10 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
   const [barcodeMatches, setBarcodeMatches] = useState([]);
   const [searchingBarcodeMatches, setSearchingBarcodeMatches] = useState(false);
   const [catalogLookupMode, setCatalogLookupMode] = useState(null);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogSearchResults, setCatalogSearchResults] = useState([]);
+  const [searchingCatalog, setSearchingCatalog] = useState(false);
+  const [catalogSearchError, setCatalogSearchError] = useState('');
   
   // Form state
   const [formData, setFormData] = useState({
@@ -167,7 +173,7 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
         const supermarketId = isSupplierMode ? null : await inventoryService.getCurrentSupermarketId().catch(() => null);
         let query = supabase
           .from('products')
-          .select('id, name, barcode, brand, supermarket_id')
+          .select('id, name, barcode, brand, images, supermarket_id')
           .eq('is_active', true)
           .order('name', { ascending: true })
           .limit(100);
@@ -209,11 +215,70 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
     };
   }, [formData.name, formData.barcode, catalogLookupMode, isOpen, isSupplierMode, isServiceForm, isEditMode, canSuggestCatalogProducts]);
 
+  // Give admins a visible way to find products that another store has already
+  // entered, like the supplier catalog's "Find a store product" picker.
+  useEffect(() => {
+    const search = catalogSearch.trim();
+    if (!canSuggestCatalogProducts || isSupplierMode || !isOpen || isEditMode || isServiceForm || search.length < 2) {
+      if (!isOpen) setCatalogSearch('');
+      setCatalogSearchResults([]);
+      setSearchingCatalog(false);
+      setCatalogSearchError('');
+      return undefined;
+    }
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      setSearchingCatalog(true);
+      setCatalogSearchError('');
+      try {
+        const supermarketId = await inventoryService.getCurrentSupermarketId().catch(() => null);
+        const [nameResult, barcodeResult] = await Promise.all([
+          supabase.from('products').select('id, name, barcode, brand, images, supermarket_id')
+            .eq('is_active', true).ilike('name', `%${search}%`).order('name', { ascending: true }).limit(30),
+          supabase.from('products').select('id, name, barcode, brand, images, supermarket_id')
+            .eq('is_active', true).ilike('barcode', `%${search}%`).order('name', { ascending: true }).limit(30),
+        ]);
+        if (nameResult.error) throw nameResult.error;
+        if (barcodeResult.error) throw barcodeResult.error;
+
+        if (active) {
+          const unique = new Map();
+          [...(nameResult.data || []), ...(barcodeResult.data || [])].forEach((product) => {
+            if (!product.name?.trim() || !product.supermarket_id || product.supermarket_id === supermarketId) return;
+            const key = `${product.name.trim().toLocaleLowerCase()}\u0000${String(product.barcode || '').trim()}`;
+            if (!unique.has(key)) unique.set(key, product);
+          });
+          setCatalogSearchResults([...unique.values()].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20));
+        }
+      } catch (error) {
+        if (active) {
+          console.warn('Could not search existing products:', error);
+          setCatalogSearchResults([]);
+          setCatalogSearchError(error.message || 'Could not search existing products.');
+        }
+      } finally {
+        if (active) setSearchingCatalog(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [catalogSearch, canSuggestCatalogProducts, isSupplierMode, isOpen, isEditMode, isServiceForm]);
+
   const useBarcodeMatch = (product) => {
-    setFormData((prev) => ({ ...prev, name: product.name, barcode: product.barcode || '' }));
+    setFormData((prev) => ({ ...prev, name: product.name, barcode: product.barcode || '', ...(product.brand ? { brand: product.brand } : {}) }));
+    const imageUrl = firstProductImage(product);
+    setImageFile(null);
+    setSelectedImageUrl(imageUrl);
+    setImagePreview(imageUrl);
     setErrors((prev) => ({ ...prev, name: '' }));
     setCatalogLookupMode(null);
     setBarcodeMatches([]);
+    setCatalogSearch('');
+    setCatalogSearchResults([]);
   };
 
   // Products and services have their own category lists (categories.kind, ADD_CATEGORY_KINDS.sql).
@@ -923,6 +988,71 @@ const AddProductModal = ({ isOpen, onClose, onProductAdded, prefilledData = {}, 
                     ))}
                   </div>
                 </div>
+              )}
+
+              {/* Search existing database products before creating a new store listing */}
+              {canSuggestCatalogProducts && !isSupplierMode && !isServiceForm && !isEditMode && (
+                <section className="rounded-lg border border-blue-200 bg-blue-50 p-3 sm:p-4" aria-labelledby="existing-product-search-title">
+                  <div>
+                    <h4 id="existing-product-search-title" className="font-semibold text-gray-900 text-sm sm:text-base">Find an existing product</h4>
+                    <p className="mt-1 text-[11px] sm:text-xs text-gray-600">Search products already listed by other stores by name or barcode, then use one to fill this form.</p>
+                  </div>
+                  <label htmlFor="existing-product-search" className="sr-only">Search existing products by name or barcode</label>
+                  <input
+                    id="existing-product-search"
+                    type="search"
+                    value={catalogSearch}
+                    onChange={(event) => {
+                      setCatalogSearch(event.target.value);
+                      setCatalogSearchResults([]);
+                      setCatalogSearchError('');
+                    }}
+                    placeholder="Type a product name or barcode"
+                    className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                  {catalogSearch.trim().length < 2 ? (
+                    <p className="mt-2 text-xs text-gray-500">Enter at least 2 characters to search.</p>
+                  ) : searchingCatalog ? (
+                    <p className="mt-2 text-xs text-gray-500" role="status">Searching existing products…</p>
+                  ) : catalogSearchError ? (
+                    <p className="mt-2 text-xs text-red-600" role="status">{catalogSearchError}</p>
+                  ) : catalogSearchResults.length === 0 ? (
+                    <p className="mt-2 text-xs text-gray-500">No matching products found. You can continue entering a new product below.</p>
+                  ) : (
+                    <div className="mt-2 overflow-hidden rounded-lg border border-blue-100 bg-white" role="group" aria-label="Matching existing products">
+                      {catalogSearchResults.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() => useBarcodeMatch(product)}
+                          className="flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                        >
+                          <span className="min-w-0">
+                            <span className="flex min-w-0 items-center gap-2">
+                              {firstProductImage(product) ? (
+                                <img src={firstProductImage(product)} alt="" className="h-9 w-9 shrink-0 rounded object-cover" loading="lazy" />
+                              ) : (
+                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-gray-100 text-gray-400" aria-hidden="true">
+                                  <FiImage className="h-4 w-4" />
+                                </span>
+                              )}
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium text-gray-900">{product.name}</span>
+                                <span className="block truncate text-xs text-gray-500">
+                                  {[product.brand, product.barcode ? `Barcode: ${product.barcode}` : null].filter(Boolean).join(' · ') || 'No barcode'}
+                                </span>
+                              </span>
+                            </span>
+                          </span>
+                          <span className="flex-shrink-0 text-xs font-medium text-blue-700">Use product</span>
+                        </button>
+                      ))}
+                      {catalogSearchResults.length === 20 && (
+                        <p className="bg-gray-50 px-3 py-2 text-xs text-gray-500">Showing up to 20 matches. Refine your search to find more.</p>
+                      )}
+                    </div>
+                  )}
+                </section>
               )}
 
               {/* Quick Add Mode Toggle — not relevant when editing an existing product */}
