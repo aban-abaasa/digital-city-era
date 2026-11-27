@@ -27,9 +27,13 @@ const fmtUGX = n => n ? 'UGX ' + Number(n).toLocaleString() : '—';
 export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
+  const [storeProductSearch, setStoreProductSearch] = useState('');
+  const [storeProductMatches, setStoreProductMatches] = useState([]);
+  const [searchingStoreProducts, setSearchingStoreProducts] = useState(false);
+  const [storeProductSearchError, setStoreProductSearchError] = useState('');
   // Adding and editing both use the shared full Add Product form (the one the
   // admin portal uses) in supplier mode; `modal.item` is null for a new item.
-  const [modal, setModal]     = useState({ open: false, item: null });
+  const [modal, setModal]     = useState({ open: false, item: null, sourceProductId: null, prefilledData: {} });
   // Batches (each with its own expiry date) per catalog item, and the item
   // whose batch manager is open.
   const [batches, setBatches]   = useState([]);
@@ -40,6 +44,63 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
   const priceChangesAnnounced = useRef(false);
 
   useEffect(() => { load(); }, [userId, cacheUserId]);
+
+  useEffect(() => {
+    const search = storeProductSearch.trim();
+    if (search.length < 2) {
+      setStoreProductMatches([]);
+      setSearchingStoreProducts(false);
+      setStoreProductSearchError('');
+      return undefined;
+    }
+    if (!navigator.onLine) {
+      setStoreProductMatches([]);
+      setSearchingStoreProducts(false);
+      setStoreProductSearchError('Connect to the internet to search store products.');
+      return undefined;
+    }
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      setSearchingStoreProducts(true);
+      setStoreProductSearchError('');
+      try {
+        // Product names and barcodes are shared from active store products.
+        // Price and stock are deliberately collected in the supplier's own listing.
+        const [nameResult, barcodeResult] = await Promise.all([
+          supabase.from('products').select('id, name, barcode').eq('is_active', true)
+            .ilike('name', `%${search}%`).order('name', { ascending: true }).limit(30),
+          supabase.from('products').select('id, name, barcode').eq('is_active', true)
+            .ilike('barcode', `%${search}%`).order('name', { ascending: true }).limit(30),
+        ]);
+        if (nameResult.error) throw nameResult.error;
+        if (barcodeResult.error) throw barcodeResult.error;
+
+        if (active) {
+          const unique = new Map();
+          [...(nameResult.data || []), ...(barcodeResult.data || [])].forEach((product) => {
+            if (!product.name?.trim()) return;
+            const key = `${product.name.trim().toLocaleLowerCase()}\u0000${String(product.barcode || '').trim()}`;
+            if (!unique.has(key)) unique.set(key, product);
+          });
+          setStoreProductMatches([...unique.values()].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20));
+        }
+      } catch (error) {
+        if (active) {
+          console.warn('Could not search store products:', error);
+          setStoreProductMatches([]);
+          setStoreProductSearchError(error.message || 'Could not search store products.');
+        }
+      } finally {
+        if (active) setSearchingStoreProducts(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [storeProductSearch]);
 
   useEffect(() => {
     const handleSynced = (event) => {
@@ -140,9 +201,22 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
     }
   };
 
-  const openNew = () => setModal({ open: true, item: null });
-  const openEdit = (item) => setModal({ open: true, item });
-  const closeModal = () => setModal({ open: false, item: null });
+  const openNew = () => setModal({ open: true, item: null, sourceProductId: null, prefilledData: {} });
+  const openEdit = (item) => setModal({ open: true, item, sourceProductId: null, prefilledData: {} });
+  const openFromStoreProduct = (product) => setModal({
+    open: true,
+    item: null,
+    sourceProductId: product.id,
+    prefilledData: { name: product.name || '', barcode: product.barcode || '' },
+  });
+  const closeModal = () => setModal({ open: false, item: null, sourceProductId: null, prefilledData: {} });
+
+  const listedStoreProduct = (product) => items.find((item) => {
+    const sourceBarcode = String(product.barcode || '').trim();
+    const itemBarcode = String(item.barcode || '').trim();
+    if (sourceBarcode && itemBarcode) return sourceBarcode === itemBarcode;
+    return String(item.name || '').trim().toLocaleLowerCase() === String(product.name || '').trim().toLocaleLowerCase();
+  });
 
   const toggle = async (item) => {
     const updates = { is_available: !item.is_available };
@@ -227,6 +301,55 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
           </button>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="store-product-search-title">
+        <div>
+          <h3 id="store-product-search-title" className="text-base font-semibold text-gray-800">Find a store product</h3>
+          <p className="mt-1 text-sm text-gray-500">Search products already listed by stores using a name or barcode, then add one to your supply catalog.</p>
+        </div>
+        <label htmlFor="supplier-store-product-search" className="sr-only">Search store products by name or barcode</label>
+        <input
+          id="supplier-store-product-search"
+          type="search"
+          value={storeProductSearch}
+          onChange={(event) => setStoreProductSearch(event.target.value)}
+          placeholder="Type a product name or barcode"
+          className="mt-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
+        />
+        {storeProductSearch.trim().length < 2 ? (
+          <p className="mt-2 text-xs text-gray-400">Enter at least 2 characters to search.</p>
+        ) : searchingStoreProducts ? (
+          <p className="mt-3 text-sm text-gray-500" role="status">Searching store products…</p>
+        ) : storeProductSearchError ? (
+          <p className="mt-3 text-sm text-amber-700" role="status">{storeProductSearchError}</p>
+        ) : storeProductMatches.length === 0 ? (
+          <p className="mt-3 text-sm text-gray-500">No matching store products found. You can still use “Add Item” to create a listing.</p>
+        ) : (
+          <div className="mt-3 divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-100">
+            {storeProductMatches.map((product) => {
+              const existingItem = listedStoreProduct(product);
+              return (
+                <div key={`${product.id}-${product.barcode || ''}`} className="flex items-center justify-between gap-3 px-3 py-3 sm:px-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-800">{product.name}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">Barcode: {product.barcode || 'Not listed'}</p>
+                  </div>
+                  {existingItem ? (
+                    <button type="button" onClick={() => openEdit(existingItem)} className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                      Edit listing
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => openFromStoreProduct(product)} className="shrink-0 rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-700">
+                      Add to catalog
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <p className="bg-gray-50 px-3 py-2 text-xs text-gray-500 sm:px-4">Showing up to 20 matching products. Refine your search to find more.</p>
+          </div>
+        )}
+      </section>
 
       {/* Stable price: keep what you supply on the stable coin, and see every shilling change it causes */}
       {showStable && (
@@ -364,7 +487,7 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
       )}
 
       <AddProductModal
-        key={modal.item?.id || 'new-catalog-item'}
+        key={modal.item?.id || modal.sourceProductId || 'new-catalog-item'}
         isOpen={modal.open}
         onClose={closeModal}
         mode="supplier"
@@ -372,7 +495,7 @@ export function SupplierCatalogTab({ userId, cacheUserId = userId }) {
         supplierUserId={userId}
         supplierAuthId={cacheUserId}
         editingProductId={modal.item?.id || null}
-        prefilledData={modal.item ? catalogItemToFormData(modal.item) : {}}
+        prefilledData={modal.item ? catalogItemToFormData(modal.item) : modal.prefilledData}
         onProductAdded={load}
       />
     </div>
