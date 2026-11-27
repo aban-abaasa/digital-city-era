@@ -36,6 +36,8 @@ $migrationFiles = @(
   'ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql',
   # Shared local cash receipts, stock deduction, and cloud transaction sync
   'ADD_BUSINESS_LOCAL_CASH_SALES.sql',
+  # Capture the store's public receipt URL and QR preference during pairing
+  'ADD_RECEIPT_QR_AND_OFFLINE_STORE_PAGE.sql',
   # Product detail edits made by local Admins sync back to the paired store
   'ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql'
 )

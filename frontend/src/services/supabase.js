@@ -20,6 +20,8 @@ export const supabaseConfig = Object.freeze({
   localServerEdition: runtimeConfig.localServerEdition === 'lite' ? 'lite' : 'full',
   businessType: runtimeConfig.businessType || null,
   businessId: runtimeConfig.businessId || null,
+  publicWebsiteUrl: runtimeConfig.publicWebsiteUrl || null,
+  receiptIncludeQr: runtimeConfig.receiptIncludeQr === true,
 });
 
 console.log('🔧 [SUPABASE] Loading config...');

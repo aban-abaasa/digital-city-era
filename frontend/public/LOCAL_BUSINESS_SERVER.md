@@ -72,7 +72,8 @@ Storage configuration before promising file uploads. See the official
   `backend/database/migrations/ADD_BUSINESS_LOCAL_SYNC_PROTOCOL_V2.sql`,
   then `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`,
   followed by `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql`,
-  `ADD_BUSINESS_LOCAL_CASH_SALES.sql`, and
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql`,
+  `backend/database/migrations/ADD_RECEIPT_QR_AND_OFFLINE_STORE_PAGE.sql`, and
   `ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql` to the cloud project. The customer setup
   page checks readiness and directs customers to support if platform setup is
   missing. The shared cloud project must already
@@ -84,7 +85,8 @@ Storage configuration before promising file uploads. See the official
   reapplying the latest migration also backfills active nodes paired earlier.
 - `local-server/installers/install.js` and `local-server/package-preview.ps1`
   build three cross-platform installer ZIPs for different RAM/disk tiers. The
-  installer packages the app shell, pins the upstream Supabase Docker release,
+  installer packages the app shell, captures the store's public website and
+  receipt QR default when pairing, pins the upstream Supabase Docker release,
   creates local keys, claims the owner pairing code, binds app/API ports to
   loopback by default or a selected LAN IPv4 address, blocks host ports for
   Postgres, Supavisor, and Studio, and starts the transport worker.

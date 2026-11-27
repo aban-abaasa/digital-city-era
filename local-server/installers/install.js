@@ -336,6 +336,8 @@ async function main() {
     localServerEdition: edition,
     businessType,
     businessId,
+    publicWebsiteUrl: getEnvValue(localSyncEnv, 'BUSINESS_PUBLIC_WEBSITE_URL') || 'https://icanera.space',
+    receiptIncludeQr: getEnvValue(localSyncEnv, 'BUSINESS_RECEIPT_INCLUDE_QR') === 'true',
   };
   writeFileSync(
     join(installedWeb, 'runtime-config.js'),

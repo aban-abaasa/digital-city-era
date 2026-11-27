@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
   FiCalendar, FiCheck, FiChevronDown, FiExternalLink, FiImage, FiMapPin, FiPackage, FiServer, FiShoppingBag,
-  FiTrash2, FiUpload, FiUsers
+  FiTrash2, FiUpload, FiUsers, FiHardDrive
 } from 'react-icons/fi';
 import { supabase } from '../../services/supabase';
 import { reverseGeocodeCountry } from '../../vendor/mybodaguy/services/geocodeService';
@@ -13,6 +13,11 @@ const LocationPickerMap = lazy(() => import('../../vendor/mybodaguy/components/L
 const LOGO_MAX_MB = 2;
 const BACKGROUND_MAX_MB = 3;
 const EMPTY_FORM = { name: '', location: '', phone: '', address: '' };
+const OFFLINE_INSTALLERS = [
+  { href: '/downloads/business-local-server-2gb-ram-lite-20gb-disk.zip', title: '2 GB Lite · 20 GB disk', detail: 'Cash sales, local products and stock' },
+  { href: '/downloads/business-local-server-2gb-ram-lite-40gb-disk.zip', title: '2 GB Lite · 40 GB disk', detail: 'Lite features with more disk space' },
+  { href: '/downloads/business-local-server-4gb-ram-full-40gb-disk.zip', title: '4 GB Full · 40 GB disk', detail: 'Full services with team chat' },
+];
 
 const readAsDataUrl = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -217,6 +222,28 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
       say('supplier-visibility', message || (enabled ? 'Supplier visibility enabled' : 'Supplier visibility disabled'));
     } catch (err) {
       say('supplier-visibility', err.message || 'Could not save', 'bad');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const saveReceiptQrPreference = async (enabled) => {
+    setBusy('receipt-qr');
+    try {
+      const { error } = await supabase.rpc('set_store_receipt_qr_preference_v1', {
+        p_supermarket_id: supermarketId,
+        p_enabled: enabled,
+      });
+      if (error) throw error;
+      setStore((current) => ({
+        ...current,
+        metadata: { ...(current?.metadata || {}), receipt_include_qr: enabled },
+        updated_at: new Date().toISOString(),
+      }));
+      if (onSaved) onSaved();
+      say('receipt-qr', enabled ? 'Store QR enabled by default' : 'Short receipts saved');
+    } catch (err) {
+      say('receipt-qr', err.message || 'Could not save receipt setting', 'bad');
     } finally {
       setBusy('');
     }
@@ -445,6 +472,21 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
         </ul>
       </Section>
 
+      <Section id="receipt-qr" title="Cashier receipt" hint="Keep printed receipts short. Cashiers can still change this for each receipt." flash={flash['receipt-qr']}>
+        <div className="ass-row">
+          <div className="ass-row-text">
+            <b>{store?.metadata?.receipt_include_qr === true ? 'Store QR included by default' : 'Short receipt · no QR by default'}</b>
+            <span>When enabled, the receipt adds one QR code that opens this store’s public online page. New offline servers inherit this default when paired.</span>
+          </div>
+          <Switch
+            label="Include a QR code on cashier receipts by default"
+            checked={store?.metadata?.receipt_include_qr === true}
+            disabled={Boolean(busy)}
+            onChange={saveReceiptQrPreference}
+          />
+        </div>
+      </Section>
+
       <details className="ass-card ass-supplier-disclosure" aria-labelledby="supplier-stock-title">
         <summary className="ass-card-head ass-supplier-summary">
           <div>
@@ -596,6 +638,17 @@ const AdminStoreSettings = ({ supermarketId, typeEmoji, typeLabel, onSaved }) =>
             </a>
           </li>
         </ul>
+      </Section>
+
+      <Section id="offline-downloads" title="Offline server ZIPs" hint="Download an installer here, then create a one-time pairing code in offline server settings.">
+        <div className="ass-offline-downloads">
+          {OFFLINE_INSTALLERS.map((item) => (
+            <a key={item.href} href={item.href} download className="ass-offline-download">
+              <FiHardDrive aria-hidden="true" />
+              <span><b>{item.title}</b><small>{item.detail}</small><small>Download ZIP</small></span>
+            </a>
+          ))}
+        </div>
       </Section>
     </div>
   );

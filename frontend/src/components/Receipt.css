@@ -228,17 +228,33 @@
     width: 72mm;
     max-width: 72mm;
     margin: 0 auto;
-    padding: 2mm 5mm;
-    font-size: 11px;
+    padding: 1.5mm 4mm;
+    font-size: 10px;
     filter: none;
     background: #fff;
   }
   body.rc-printing .rc-paper::before,
   body.rc-printing .rc-paper::after { display: none; }
-  body.rc-printing .rc-section.is-collapsed .rc-section-body {
+  body.rc-printing .rc-section[data-section-id="receipt-items"] .rc-section-body {
     display: block !important;
     max-height: none !important;
     overflow: visible !important;
   }
+  body.rc-printing .rc-section[data-section-id="receipt-items"].is-collapsed .rc-section-inner { visibility: visible !important; }
+  body.rc-printing .rc-secondary,
+  body.rc-printing .rc-section-head,
+  body.rc-printing .rc-foot .rc-fine:not(:first-of-type) { display: none !important; }
+  body.rc-printing .rc-rule { margin: 2mm 0; }
+  body.rc-printing .rc-head { padding: 1mm 0 2mm; }
+  body.rc-printing .rc-store { margin: 0; font-size: 15px; }
+  body.rc-printing .rc-doc { margin: 1mm 0 0; }
+  body.rc-printing .rc-item { padding: 1mm 0; }
+  body.rc-printing .rc-item-name { font-size: 10px; line-height: 1.15; }
+  body.rc-printing .rc-item-line { margin-top: 0.5mm; font-size: 9px; }
+  body.rc-printing .rc-total { margin-top: 1mm; padding: 1.5mm 0; font-size: 13px; }
+  body.rc-printing .rc-thanks { font-size: 10px; }
+  body.rc-printing .rc-qr-grid { padding-top: 1mm; }
+  body.rc-printing .rc-qr canvas,
+  body.rc-printing .rc-qr img { width: 16mm !important; height: 16mm !important; }
   body.rc-printing [data-no-print] { display: none !important; }
 }

@@ -23,12 +23,15 @@ class ReceiptService {
   // Every generated receipt should carry the signed-in cashier's own
   // supermarket name, not a hardcoded brand — resolved once per session
   // and cached, mirroring useSupermarketBranding's approach outside React.
-  async getCompanyInfo() {
-    if (this._companyInfoPromise) return this._companyInfoPromise;
-    this._companyInfoPromise = (async () => {
+  async getCompanyInfo(overrides = null) {
+    if (!this._companyInfoPromise) this._companyInfoPromise = (async () => {
       try {
         if (supabaseConfig.localBusinessServer) {
-          return { ...FALLBACK_COMPANY_INFO, name: await getLocalStoreName() };
+          return {
+            ...FALLBACK_COMPANY_INFO,
+            name: await getLocalStoreName(),
+            website: supabaseConfig.publicWebsiteUrl || 'https://icanera.space',
+          };
         }
 
         const supermarketId = await inventoryService.getCurrentSupermarketId();
@@ -49,7 +52,9 @@ class ReceiptService {
         }
         const publicWebsite = businessProfile?.id
           ? getPublicBusinessPageUrl(businessProfile.id)
-          : (supermarket.website_url || supermarket.website || '');
+          : (supermarket.website_url || supermarket.website || (supermarket.pichin_business_profile_id
+            ? `https://icanera.space/store/${encodeURIComponent(supermarket.pichin_business_profile_id)}`
+            : ''));
         return {
           name: supermarket.name,
           address: businessProfile?.address || businessProfile?.location || supermarket.address || '',
@@ -64,7 +69,8 @@ class ReceiptService {
         return FALLBACK_COMPANY_INFO;
       }
     })();
-    return this._companyInfoPromise;
+    const companyInfo = await this._companyInfoPromise;
+    return { ...companyInfo, ...(overrides || {}) };
   }
   formatCurrency(amount) {
     return new Intl.NumberFormat('en-UG', {
@@ -101,7 +107,7 @@ class ReceiptService {
       id: saleData.id || null,
       receiptNumber: saleData.saleNumber || `RCP-${Date.now()}`,
       transactionId: saleData.transactionId || null,
-      websiteUrl: saleData.websiteUrl || window.location.origin,
+      websiteUrl: saleData.websiteUrl || saleData.companyInfo?.website || supabaseConfig.publicWebsiteUrl || window.location.origin,
       proofUrl: saleData.proofUrl ?? (saleData.id && !saleData.pendingSync
         ? `${window.location.origin}/invoice/${encodeURIComponent(saleData.id)}`
         : null),
@@ -123,14 +129,16 @@ class ReceiptService {
       amountPaid: saleData.amountPaid ?? saleData.total ?? 0,
       balanceDue: saleData.balanceDue || 0,
       dueDate: saleData.dueDate || null,
-      jobStatus: saleData.jobStatus || null
+      jobStatus: saleData.jobStatus || null,
+      includeQr: saleData.includeQr === true,
+      companyInfo: saleData.companyInfo || null
     };
     return receiptData;
   }
   // SMS/Message Receipt
   async generateSMSReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
-    const companyInfo = await this.getCompanyInfo();
+    const companyInfo = await this.getCompanyInfo(saleData.companyInfo);
     const isInvoice = receipt.paymentStatus !== 'paid';
     let message = `🇺🇬 ${companyInfo.name}\n`;
     message += `📱 ${companyInfo.phone}\n`;
@@ -188,9 +196,10 @@ class ReceiptService {
   // Email Receipt HTML
   async generateEmailReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
-    const companyInfo = await this.getCompanyInfo();
-    const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 240 });
-    const proofQr = receipt.proofUrl ? await QRCode.toDataURL(receipt.proofUrl, { margin: 1, width: 240 }) : null;
+    const companyInfo = await this.getCompanyInfo(saleData.companyInfo);
+    const websiteQr = receipt.includeQr
+      ? await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 240 })
+      : null;
     const isInvoice = receipt.paymentStatus !== 'paid';
     const docLabel = isInvoice ? 'Invoice' : 'Receipt';
     const statusBadge = isInvoice
@@ -319,11 +328,29 @@ class ReceiptService {
         .balance-due-row .total-row.final-total {
           color: #b45309;
         }
-        .website-qr { margin: 18px auto 0; padding: 14px; max-width: 220px; text-align: center; border: 1px solid #c4a052; border-radius: 10px; background: #faf8f1; color: #312e81; }
+        .website-qr { margin: 8px auto 0; padding: 8px; max-width: 220px; text-align: center; border: 1px solid #c4a052; border-radius: 10px; background: #faf8f1; color: #312e81; }
         .website-qr img { width: 132px; height: 132px; background: #fff; padding: 6px; }
-        .proof-qr { margin: 18px auto 0; padding: 14px; max-width: 220px; text-align: center; border: 1px solid #6b8a70; border-radius: 10px; background: #f3f7ef; color: #173d32; }
-        .proof-qr img { width: 132px; height: 132px; background: #fff; padding: 6px; }
-        @media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        @media print {
+          @page { size: 80mm auto; margin: 0; }
+          body { width: 72mm; max-width: 72mm; min-height: 0; margin: 0; padding: 2mm 4mm; background: #fff; }
+          .receipt-container { border-radius: 0; box-shadow: none; }
+          .header { padding: 3mm 1mm; background: #fff; color: #111; }
+          .header h1 { font-size: 15px; }
+          .header .logo { width: 12mm; height: 12mm; box-shadow: none; }
+          .content { padding: 3mm 1mm; }
+          .receipt-info { margin-bottom: 3mm; padding: 2mm; border: 0; background: #fff; }
+          .receipt-info h2 { margin: 0 0 1mm; font-size: 12px; }
+          .items-table { margin: 2mm 0; border-radius: 0; box-shadow: none; }
+          .items-table th, .items-table td { padding: 1.5mm 1mm; }
+          .totals { margin: 2mm 0; padding: 2mm; border-radius: 0; }
+          .totals .total-row { margin: 1mm 0; font-size: 11px; }
+          .totals .final-total { font-size: 14px; }
+          .footer { padding: 2mm; background: #fff; color: #111; }
+          .footer h3 { margin: 0; font-size: 12px; }
+          .footer > p { margin: 1mm 0; font-size: 9px; }
+          .website-qr { padding: 1mm; border: 0; background: #fff; }
+          .website-qr img { width: 17mm; height: 17mm; padding: 0; }
+        }
         .uganda-flag { font-size: 24px; }
         .emoji { font-size: 18px; }
       </style>
@@ -427,8 +454,7 @@ class ReceiptService {
           <h3><span class="emoji">🙏</span> Webale nyo! (Thank you!)</h3>
           <p>We appreciate your business and look forward to serving you again!</p>
           ${companyInfo.website ? `<p><strong>Visit us: ${companyInfo.website}</strong></p>` : ''}
-          ${proofQr ? `<div class="proof-qr"><strong>Verify receipt or track service</strong><br><img src="${proofQr}" alt="Receipt proof and service tracking QR"><p>${receipt.proofUrl}</p></div>` : ''}
-          <div class="website-qr"><strong>Visit our public website</strong><br><img src="${websiteQr}" alt="Store website QR"><p>${receipt.websiteUrl || window.location.origin}</p></div>
+          ${websiteQr ? `<div class="website-qr"><strong>Visit our public website</strong><br><img src="${websiteQr}" alt="Store website QR"><p>${receipt.websiteUrl || window.location.origin}</p></div>` : ''}
           <p><span class="emoji">😊</span> Come back soon!</p>
         </div>
       </div>
@@ -440,7 +466,7 @@ class ReceiptService {
   // PDF Receipt
   async generatePDFReceipt(saleData) {
     const receipt = this.generateReceiptData(saleData);
-    const companyInfo = await this.getCompanyInfo();
+    const companyInfo = await this.getCompanyInfo(saleData.companyInfo);
     const isInvoice = receipt.paymentStatus !== 'paid';
     const doc = new jsPDF({
       orientation: 'portrait',
@@ -449,20 +475,20 @@ class ReceiptService {
     });
     // Set font
     doc.setFont('helvetica');
-    let yPos = 10;
+    let yPos = 5;
     const pageWidth = 80;
     const margin = 5;
     // Classic indigo stationery with a warm gold rule. The page remains
     // thermal-width, while colour PDFs retain a polished keepsake feel.
     doc.setFillColor(49, 46, 129);
-    doc.rect(0, 0, pageWidth, 56, 'F');
+    doc.rect(0, 0, pageWidth, 28, 'F');
     doc.setFillColor(196, 160, 82);
-    doc.rect(0, 56, pageWidth, 1.5, 'F');
+    doc.rect(0, 28, pageWidth, 1.2, 'F');
     // Logo, if the store has uploaded one (stored as a base64 data URL)
     const logoFormatMatch = companyInfo.logoUrl?.match(/^data:image\/(png|jpe?g|webp);base64,/i);
     if (logoFormatMatch) {
       try {
-        const logoSize = 18;
+        const logoSize = 11;
         const format = logoFormatMatch[1].toUpperCase() === 'JPG' ? 'JPEG' : logoFormatMatch[1].toUpperCase();
         doc.addImage(companyInfo.logoUrl, format, (pageWidth - logoSize) / 2, yPos, logoSize, logoSize);
         yPos += logoSize + 3;
@@ -471,28 +497,28 @@ class ReceiptService {
       }
     }
     // Header
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(255, 253, 248);
     doc.text(companyInfo.name, pageWidth/2, yPos, { align: 'center' });
-    yPos += 5;
-    doc.setFontSize(8);
+    yPos += 4;
+    doc.setFontSize(7);
     doc.setTextColor(237, 233, 216);
     doc.text(companyInfo.motto, pageWidth/2, yPos, { align: 'center' });
-    yPos += 4;
+    yPos += 3;
     if (companyInfo.address) {
       doc.text(companyInfo.address, pageWidth/2, yPos, { align: 'center' });
-      yPos += 4;
+      yPos += 3;
     }
     if (companyInfo.phone) {
       doc.text(companyInfo.phone, pageWidth/2, yPos, { align: 'center' });
-      yPos += 4;
+      yPos += 3;
     }
-    yPos = Math.max(yPos + 4, 62);
+    yPos = Math.max(yPos + 2, 32);
     // Draw a soft gold divider below the store masthead.
     doc.setDrawColor(196, 160, 82);
     doc.setLineWidth(0.55);
     doc.line(margin, yPos, pageWidth - margin, yPos);
-    yPos += 6;
+    yPos += 4;
     // Document type — RECEIPT when fully paid, INVOICE with a status tag
     // when there's a balance due.
     doc.setFontSize(11);
@@ -520,7 +546,7 @@ class ReceiptService {
       yPos += 4;
     }
     doc.text(`Cashier: ${receipt.cashier}`, margin, yPos);
-    yPos += 6;
+    yPos += 4;
     // Fine gold divider separates the transaction details from the item list.
     doc.setDrawColor(196, 160, 82);
     doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -603,34 +629,22 @@ class ReceiptService {
       doc.text(`Points Earned: ${receipt.loyaltyPointsEarned}`, margin, yPos);
       yPos += 6;
     }
-    // Keep proof/tracking and the public business page as separate QR actions.
+    // The optional QR always opens the store's public page. Offline sales
+    // use the URL captured when their local server was paired.
     try {
+      if (receipt.includeQr) {
       yPos += 2;
       doc.setFillColor(250, 248, 241);
-      if (receipt.proofUrl) {
-        const proofQr = await QRCode.toDataURL(receipt.proofUrl, { margin: 1, width: 280 });
-        const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 280 });
-        const qrSize = 24;
-        doc.roundedRect(6, yPos - 2, 68, 34, 2, 2, 'F');
-        doc.addImage(proofQr, 'PNG', 12, yPos, qrSize, qrSize);
-        doc.addImage(websiteQr, 'PNG', 44, yPos, qrSize, qrSize);
-        doc.setFontSize(5.5);
-        doc.setTextColor(23, 61, 50);
-        doc.text('VERIFY / TRACK', 24, yPos + 29, { align: 'center' });
-        doc.text('VISIT STORE', 56, yPos + 29, { align: 'center' });
-        yPos += 36;
-      } else {
-        const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 280 });
-        const qrSize = 28;
-        doc.roundedRect(18, yPos - 2, 44, 37, 2, 2, 'F');
-        doc.addImage(websiteQr, 'PNG', (pageWidth - qrSize) / 2, yPos, qrSize, qrSize);
-        yPos += qrSize + 2;
-        doc.setFontSize(7);
-        doc.setTextColor(49, 46, 129);
-        doc.text('SCAN TO VISIT OUR WEBSITE', pageWidth / 2, yPos, { align: 'center' });
+      const websiteQr = await QRCode.toDataURL(receipt.websiteUrl || window.location.origin, { margin: 1, width: 200 });
+      const qrSize = 20;
+      doc.roundedRect(19, yPos - 2, 42, 27, 2, 2, 'F');
+      doc.addImage(websiteQr, 'PNG', (pageWidth - qrSize) / 2, yPos, qrSize, qrSize);
+      yPos += qrSize + 1;
+      doc.setFontSize(6);
+      doc.setTextColor(49, 46, 129);
+      doc.text('SCAN TO VISIT OUR STORE', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 3;
       }
-      doc.setFontSize(9);
-      yPos += 4;
     } catch (qrError) {
       console.warn('Could not add QR code to PDF receipt:', qrError);
     }
@@ -650,8 +664,7 @@ class ReceiptService {
     doc.text('We look forward to seeing you again.', pageWidth/2, yPos, { align: 'center' });
     yPos += 6;
     if (companyInfo.website) doc.text(companyInfo.website, pageWidth/2, yPos, { align: 'center' });
-    // Let longer item lists and their always-present website QR extend the
-    // thermal PDF roll instead of clipping the footer off at 200 mm.
+    // Extend the thermal PDF roll to fit the item list and the optional QR.
     doc.internal.pageSize.setHeight(yPos + 12);
     return doc;
   }
@@ -678,7 +691,7 @@ class ReceiptService {
   async sendEmailReceipt(email, saleData) {
     const htmlContent = await this.generateEmailReceipt(saleData);
     const receipt = this.generateReceiptData(saleData);
-    const companyInfo = await this.getCompanyInfo();
+    const companyInfo = await this.getCompanyInfo(saleData.companyInfo);
     const subject = `Receipt ${receipt.receiptNumber} - ${companyInfo.name}`;
     // Mock email sending - in production, integrate with services like:
     // - SendGrid, Mailgun, or AWS SES

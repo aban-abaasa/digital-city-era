@@ -40,7 +40,9 @@ export const useSupermarketBranding = () => {
         const storeName = await getLocalStoreName();
         setSupermarket({ name: storeName, business_type: supabaseConfig.businessType || 'supermarket' });
         setBusinessProfile(null);
-        setPublicWebsiteUrl(window.location.origin);
+        // The install package gets this from the cloud pairing response, so
+        // a receipt printed on a LAN still opens the store's public page.
+        setPublicWebsiteUrl(supabaseConfig.publicWebsiteUrl || 'https://icanera.space');
         return;
       }
 
@@ -83,13 +85,19 @@ export const useSupermarketBranding = () => {
             .eq('pichin_business_profile_id', supermarketRow.pichin_business_profile_id)
             .maybeSingle();
           setBusinessProfile(cmmsProfile || null);
-          setPublicWebsiteUrl(cmmsProfile?.id ? getPublicBusinessPageUrl(cmmsProfile.id) : (supermarketRow.website_url || supermarketRow.website || window.location.origin));
+          setPublicWebsiteUrl(cmmsProfile?.id
+            ? getPublicBusinessPageUrl(cmmsProfile.id)
+            : (supermarketRow.website_url || supermarketRow.website || (supermarketRow.pichin_business_profile_id
+              ? `https://icanera.space/store/${encodeURIComponent(supermarketRow.pichin_business_profile_id)}`
+              : window.location.origin)));
         } catch (error) {
           console.warn('Could not resolve the store public CMMS website:', error);
           setPublicWebsiteUrl(window.location.origin);
         }
       } else {
-        setPublicWebsiteUrl(supermarketRow?.website_url || supermarketRow?.website || window.location.origin);
+        setPublicWebsiteUrl(supermarketRow?.website_url || supermarketRow?.website || (supermarketRow?.pichin_business_profile_id
+          ? `https://icanera.space/store/${encodeURIComponent(supermarketRow.pichin_business_profile_id)}`
+          : window.location.origin));
       }
     } catch (error) {
       console.error('Error loading supermarket branding:', error);
@@ -114,6 +122,9 @@ export const useSupermarketBranding = () => {
     address: businessProfile?.address || businessProfile?.location || supermarket?.address || '',
     website: businessProfile?.website || businessProfile?.website_url || supermarket?.website_url || supermarket?.website || '',
     publicWebsiteUrl: publicWebsiteUrl || (typeof window !== 'undefined' ? window.location.origin : ''),
+    receiptIncludeQr: supabaseConfig.localBusinessServer
+      ? supabaseConfig.receiptIncludeQr
+      : supermarket?.metadata?.receipt_include_qr === true,
     backgroundUrl: supermarket?.background_image_url || null,
     logoUrl: supermarket?.logo_url || null,
     supermarketId: supermarket?.id || null,

@@ -93,6 +93,12 @@ try {
     throw new Error('Cloud returned incomplete node credentials; create a new pairing code and retry.');
   }
 
+  let receiptWebsiteUrl = 'https://icanera.space';
+  try {
+    const candidate = new URL(String(result.receiptWebsiteUrl || ''));
+    if (candidate.protocol === 'https:' || candidate.protocol === 'http:') receiptWebsiteUrl = candidate.toString();
+  } catch { /* Older cloud projects do not include a public receipt URL yet. */ }
+
   const envFile = [
     `CLOUD_SUPABASE_URL=${cloudUrl.toString().replace(/\/$/, '')}`,
     `CLOUD_SUPABASE_ANON_KEY=${cloudAnonKey}`,
@@ -100,6 +106,8 @@ try {
     `BUSINESS_SYNC_NODE_SECRET=${result.nodeSecret}`,
     `BUSINESS_SYNC_BUSINESS_TYPE=${result.businessType}`,
     `BUSINESS_SYNC_BUSINESS_ID=${result.businessId}`,
+    `BUSINESS_PUBLIC_WEBSITE_URL=${receiptWebsiteUrl}`,
+    `BUSINESS_RECEIPT_INCLUDE_QR=${result.receiptIncludeQr === true ? 'true' : 'false'}`,
     '',
   ].join('\n');
 

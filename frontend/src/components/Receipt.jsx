@@ -6,7 +6,7 @@
 // front and centre on a phone.
 // ===================================================
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FiPrinter, FiMail, FiDownload, FiX, FiMessageSquare, FiShare2, FiCopy, FiChevronDown } from 'react-icons/fi';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-toastify';
@@ -27,7 +27,7 @@ let activeReceiptPrintWindow = null;
 // A paper-receipt section whose body folds away. The body stays in the DOM
 // (hidden by CSS only) so printing can always show it in full.
 const Section = ({ id, title, meta, open, onToggle, children }) => (
-  <section className={`rc-section${open ? '' : ' is-collapsed'}`}>
+  <section data-section-id={id} className={`rc-section${open ? '' : ' is-collapsed'}`}>
     <button type="button" className="rc-section-head" onClick={onToggle} aria-expanded={open} aria-controls={id}>
       <span className="rc-section-title">{title}</span>
       {meta && <span className="rc-section-meta">{meta}</span>}
@@ -58,19 +58,20 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
   // balance still owed (unpaid/partial service drop-off, etc.) is an INVOICE.
   const isInvoice = receiptData?.paymentStatus && receiptData.paymentStatus !== 'paid';
   const docLabel = isInvoice ? 'Invoice' : 'Receipt';
-  const receiptQrValue = branding?.publicWebsiteUrl || window.location.origin;
-  const receiptProofUrl = receiptData?.id && !receiptData?.pendingSync
-    ? `${window.location.origin}/invoice/${encodeURIComponent(receiptData.id)}`
-    : null;
+  const receiptQrValue = branding?.publicWebsiteUrl || supabaseConfig.publicWebsiteUrl || 'https://icanera.space';
 
   // Everything people need is visible up front; the QR codes and transaction
   // id fold away, except on an invoice where the QR is how the job is tracked.
   const [shareOpen, setShareOpen] = useState(false);
+  const [includeQr, setIncludeQr] = useState(Boolean(branding?.receiptIncludeQr));
   const printLock = useRef(false);
   const paperRef = useRef(null);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [openSections, setOpenSections] = useState({ items: true, verify: Boolean(isInvoice) });
+  const [openSections, setOpenSections] = useState({ items: true });
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  useEffect(() => {
+    setIncludeQr(Boolean(branding?.receiptIncludeQr));
+  }, [branding?.receiptIncludeQr]);
   const items = normalizeTransactionItems(receiptData?.receipt?.items);
   const taxLabel = getTaxTreatmentLabel(items, receiptData?.taxIncluded ?? receiptData?.receipt?.taxIncluded ?? true);
   const canNativeShare = Boolean(receiptData?.id && navigator.share);
@@ -200,7 +201,15 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
         saleNumber: receiptData.receiptNumber,
         transactionId: receiptData.transactionId,
         websiteUrl: receiptQrValue,
-        proofUrl: receiptProofUrl,
+        includeQr,
+        companyInfo: {
+          name: storeName,
+          address: branding?.address || '',
+          phone: branding?.phone || '',
+          email: branding?.email || '',
+          website: branding?.website || '',
+          logoUrl: branding?.logoUrl || null,
+        },
         createdAt: receiptData.timestamp,
         items: items.map((item) => ({
           name: item.name,
@@ -237,7 +246,7 @@ const Receipt = ({ transaction, receiptData, onClose, supermarketBranding }) => 
 Thank you for shopping at ${storeName}! 🇺🇬
 
 ${docLabel} Number: ${receiptData.receiptNumber}
-${receiptProofUrl ? `Verify / track: ${receiptProofUrl}\n` : ''}
+${includeQr ? `Store page: ${receiptQrValue}\n` : ''}
 Date: ${formatDate(receiptData.timestamp)}
 Cashier: ${receiptData.receipt.cashier}
 
@@ -323,8 +332,7 @@ Amount Paid:     ${formatCurrency(receiptData.amountPaid)}
 BALANCE DUE:     ${formatCurrency(receiptData.balanceDue)}
 ` : ''}
 ${paymentLabel ? `Payment Method: ${paymentLabel}` : ''}
-Transaction ID: ${receiptData.transactionId}
-${receiptProofUrl ? `Verify / track: ${receiptProofUrl}\n` : ''}
+${includeQr ? `Store page: ${receiptQrValue}\n` : ''}
 
 Webale nyo! (Thank you!)
 Visit us again at ${storeName}
@@ -423,6 +431,15 @@ ${branding?.publicWebsiteUrl || ''}
               <FiChevronDown className={`h-3.5 w-3.5 transition-transform ${shareOpen ? 'rotate-180' : ''}`} />
             </button>
           </div>
+          <label className="flex items-center gap-2 px-4 pb-3 text-xs font-semibold text-[#173d32] sm:px-6">
+            <input
+              type="checkbox"
+              checked={includeQr}
+              onChange={(event) => setIncludeQr(event.target.checked)}
+              className="h-4 w-4 accent-[#173d32]"
+            />
+            Include the store’s online page QR on this receipt
+          </label>
 
           {shareOpen && (
             <div id="receipt-share-options" className={`grid gap-1.5 px-3 pb-2.5 sm:px-5 ${canNativeShare ? 'grid-cols-5' : 'grid-cols-4'}`}>
@@ -475,19 +492,11 @@ ${branding?.publicWebsiteUrl || ''}
               </div>
               <div className="rc-row">
                 <span className="rc-label">Date:</span>
-                <span className="rc-value">{new Date(receiptData.timestamp).toLocaleDateString('en-UG')}</span>
+                <span className="rc-value">{new Date(receiptData.timestamp).toLocaleString('en-UG', { dateStyle: 'short', timeStyle: 'short' })}</span>
               </div>
-              <div className="rc-row">
-                <span className="rc-label">Time:</span>
-                <span className="rc-value">{new Date(receiptData.timestamp).toLocaleTimeString('en-UG')}</span>
-              </div>
-              <div className="rc-row">
+              <div className="rc-row rc-secondary">
                 <span className="rc-label">Cashier:</span>
                 <span className="rc-value">{receiptData.receipt.cashier}</span>
-              </div>
-              <div className="rc-row">
-                <span className="rc-label">Register:</span>
-                <span className="rc-value">{receiptData.receipt.register}</span>
               </div>
             </div>
 
@@ -572,35 +581,17 @@ ${branding?.publicWebsiteUrl || ''}
               )}
             </div>
 
-            <hr className="rc-rule" />
-
-            {/* Verification */}
-            <Section
-              id="receipt-verify"
-              title="Verify"
-              meta="QR · Transaction ID"
-              open={openSections.verify}
-              onToggle={() => toggleSection('verify')}
-            >
+            {includeQr && (
+              <>
+              <hr className="rc-rule" />
               <div className="rc-qr-grid">
-                {receiptProofUrl && (
-                  <div className="rc-qr">
-                    <QRCodeCanvas value={receiptProofUrl} size={132} level="M" includeMargin />
-                    <p className="rc-qr-caption">Verify receipt or track service</p>
-                  </div>
-                )}
                 <div className="rc-qr">
-                  <QRCodeCanvas value={receiptQrValue} size={132} level="M" includeMargin />
-                  <p className="rc-qr-caption">Visit {storeName}</p>
+                  <QRCodeCanvas value={receiptQrValue} size={88} level="M" includeMargin />
+                  <p className="rc-qr-caption">Open {storeName} online</p>
                 </div>
               </div>
-              <div className="rc-row rc-tx">
-                <span className="rc-label">Transaction ID:</span>
-                <span className="rc-value">{receiptData.transactionId}</span>
-              </div>
-            </Section>
-
-            <hr className="rc-rule" />
+              </>
+            )}
 
             {/* Footer */}
             <footer className="rc-foot">

@@ -56,7 +56,8 @@ sales require the cloud app.
   `backend/database/migrations/ADD_BUSINESS_LOCAL_CATALOG_SYNC.sql`.
 - The platform administrator then applies
   `ADD_BUSINESS_LOCAL_STOCK_ADJUSTMENTS.sql` and
-  `ADD_BUSINESS_LOCAL_CASH_SALES.sql` and
+  `ADD_BUSINESS_LOCAL_CASH_SALES.sql`,
+  `backend/database/migrations/ADD_RECEIPT_QR_AND_OFFLINE_STORE_PAGE.sql`, and
   `ADD_BUSINESS_LOCAL_PRODUCT_EDITING.sql` in that order. If the setup page says it
   is waiting for platform setup, contact support; do not run these files.
 - The shared cloud project already has the Digital City Era `public.products`

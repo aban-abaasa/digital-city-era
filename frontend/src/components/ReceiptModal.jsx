@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   FiX, 
   FiDownload, 
@@ -15,20 +15,30 @@ import {
 import { toast } from 'react-toastify';
 import receiptService from '../services/receiptGeneratorService';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
+import { supabaseConfig } from '../services/supabase';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   useBackLayer(isOpen, onClose);
   const branding = useSupermarketBranding();
-  const storeName = branding?.name || 'Your Supermarket';
+  const storeName = saleData?.companyInfo?.name || branding?.name || 'Your Supermarket';
   const [activeTab, setActiveTab] = useState('preview');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [includeQr, setIncludeQr] = useState(Boolean(saleData?.includeQr ?? branding?.receiptIncludeQr));
   const printAttempt = useRef(false);
 
+  useEffect(() => {
+    setIncludeQr(Boolean(saleData?.includeQr ?? branding?.receiptIncludeQr));
+  }, [saleData?.saleNumber, saleData?.receiptNumber, branding?.receiptIncludeQr]);
+
   if (!isOpen || !saleData) return null;
-  const brandedSaleData = { ...saleData, websiteUrl: branding?.publicWebsiteUrl || window.location.origin };
+  const brandedSaleData = {
+    ...saleData,
+    includeQr,
+    websiteUrl: saleData.websiteUrl || branding?.publicWebsiteUrl || supabaseConfig.publicWebsiteUrl || 'https://icanera.space',
+  };
 
   const handleSendSMS = async () => {
     if (!customerPhone.trim()) {
@@ -116,6 +126,7 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
   };
 
   const receiptData = receiptService.generateReceiptData(brandedSaleData);
+  const documentWord = receiptData.paymentStatus === 'paid' ? 'Receipt' : 'Invoice';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
@@ -185,18 +196,23 @@ const ReceiptModal = ({ isOpen, onClose, saleData }) => {
               {/* Receipt Preview */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
                 <div className="text-center mb-6">
-                  {branding?.logoUrl && (
-                    <img src={branding.logoUrl} alt={storeName} className="w-16 h-16 object-cover rounded-xl mx-auto mb-3 shadow-md" />
+                  {(saleData.companyInfo?.logoUrl || branding?.logoUrl) && (
+                    <img src={saleData.companyInfo?.logoUrl || branding.logoUrl} alt={storeName} className="w-16 h-16 object-cover rounded-xl mx-auto mb-3 shadow-md" />
                   )}
                   <h3 className="text-2xl font-bold text-gray-800">🇺🇬 {storeName}</h3>
-                  <p className="text-gray-600">Your Trusted Local Store</p>
-                  <p className="text-sm text-gray-500">Kampala, Uganda | +256 700 123 456</p>
+                  {saleData.companyInfo?.address && <p className="text-sm text-gray-500">{saleData.companyInfo.address}</p>}
+                  {saleData.companyInfo?.phone && <p className="text-sm text-gray-500">{saleData.companyInfo.phone}</p>}
                 </div>
+
+                <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={includeQr} onChange={(event) => setIncludeQr(event.target.checked)} />
+                  Include the store’s online page QR on this receipt
+                </label>
 
                 <div className="border-t border-gray-300 pt-4 mb-4">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <p><strong>Receipt:</strong> {receiptData.receiptNumber}</p>
+                      <p><strong>{documentWord}:</strong> {receiptData.receiptNumber}</p>
                       <p><strong>Date:</strong> {receiptData.date}</p>
                     </div>
                     <div>

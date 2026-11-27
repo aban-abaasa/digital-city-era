@@ -33,6 +33,7 @@ import { SupplierCatalogTab } from '../components/SupplierMarketplace';
 import SupplierPriceAnalyst from '../components/SupplierPriceAnalyst';
 import SupplierNetwork from '../components/SupplierNetwork';
 import SupplierStoreInventory from '../components/SupplierStoreInventory';
+import SupplierDirectSales from '../components/SupplierDirectSales';
 import FarmProduceBoard from '../components/FarmProduceBoard';
 import ICANWalletPage from './ICANWalletPage';
 import useSupermarketBranding from '../hooks/useSupermarketBranding';
@@ -1027,6 +1028,7 @@ const SupplierPortal = ({ offlineWarmup = false }) => {
           has_batches: batches.length > 0,
           category: item.category || 'Uncategorized',
           price: offer.price || Number(item.price_per_unit) || 0,
+          base_price: Number(item.price_per_unit) || 0,
           stock: batches.length
             ? batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0)
             : Number(item.stock_quantity) || 0,
@@ -3250,6 +3252,7 @@ const SupplierPortal = ({ offlineWarmup = false }) => {
         ? [{ id: 'company', label: 'Stores & stock', icon: FiHome }]
         : []),
     ...(canUseBusinessProfile ? [{ id: 'business-profile', label: 'Use Your Business Profile', icon: FiBriefcase }] : []),
+    ...(portalRole === 'supplier' ? [{ id: 'direct-sales', label: 'Direct sales', icon: FiShoppingBag }] : []),
     { id: 'orders', label: portalRole === 'supplier' || portalRole === 'admin' || portalRole === 'manager' ? 'Orders & stock' : 'Supply', icon: FiPackage },
     { id: 'deliveries', label: 'Deliveries', icon: FiTruck },
     { id: 'payments', label: 'Payments', icon: FiDollarSign },
@@ -3319,6 +3322,7 @@ const SupplierPortal = ({ offlineWarmup = false }) => {
         initial={(supplierProfile.contactPerson || supplierProfile.name || 'S').charAt(0).toUpperCase()}
         bottomTabs={[
           ...(portalUser?.supplier_company_id ? [{ id: 'company', label: portalRole === 'supplier' ? 'Stores' : portalRole === 'manager' ? 'Team' : 'Company' }] : []),
+          ...(portalRole === 'supplier' ? [{ id: 'direct-sales', label: 'Sales' }] : []),
           { id: 'orders', label: portalUser?.supplier_company_id ? 'Orders' : 'Supply' },
           { id: 'payments', label: 'Payments' },
           { id: 'ican-wallet', label: 'Wallet' }
@@ -3349,6 +3353,15 @@ const SupplierPortal = ({ offlineWarmup = false }) => {
             )}
             {activeTab === 'profile' && renderProfile()}
             {activeTab === 'orders' && renderOrders()}
+            {activeTab === 'direct-sales' && portalRole === 'supplier' && (
+              <SupplierDirectSales
+                supplierAuthId={supplierProfile.auth_id || getCachedIdentity()?.userId}
+                supplierProfile={supplierProfile}
+                products={supplierInventoryCatalog}
+                isOnline={isOnline}
+                onSaleSaved={loadSupplierData}
+              />
+            )}
             {activeTab === 'products' && renderProducts()}
             {activeTab === 'payments' && renderPayments()}
             {activeTab === 'deliveries' && (
