@@ -1663,7 +1663,6 @@ const CashierPortal = () => {
     // Clear cash received when cart changes
     setCashReceived('');
 
-    toast.success(`✅ Added ${product.name}${variant ? ` (${variant.variant_value})` : batch ? ` (${batchLabel(batch)})` : ''} to cart`);
   };
 
   // Variants and batches are chosen before adding. A product with several
