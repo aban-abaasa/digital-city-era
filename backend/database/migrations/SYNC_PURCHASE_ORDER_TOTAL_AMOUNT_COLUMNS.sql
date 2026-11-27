@@ -2,11 +2,10 @@
 -- aligned. Quote approval writes total_amount, while older payment flows and
 -- some screens read total_amount_ugx.
 -- Run after ADD_PURCHASE_ORDERS_COLUMNS.sql and ADD_SUPPLIER_PURCHASE_ORDER_QUOTES.sql.
-
-UPDATE public.purchase_orders
-   SET total_amount = COALESCE(NULLIF(total_amount, 0), NULLIF(total_amount_ugx, 0), 0),
-       total_amount_ugx = COALESCE(NULLIF(total_amount, 0), NULLIF(total_amount_ugx, 0), 0)
- WHERE total_amount IS DISTINCT FROM total_amount_ugx;
+-- Do not backfill existing rows here: the quote-order guard requires an
+-- authenticated manager for purchase_orders updates. The manager UI reads the
+-- populated legacy field, and this trigger keeps both fields aligned on future
+-- inserts and authorized amount updates.
 
 CREATE OR REPLACE FUNCTION public.sync_purchase_order_total_amount_columns()
 RETURNS TRIGGER
