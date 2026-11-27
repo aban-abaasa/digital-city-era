@@ -137,10 +137,10 @@ const CashierReceiveIcanModal = ({
   console.log('🎨 Rendering CashierReceiveIcanModal:', { isOpen, loading, paymentReceived, qrData: !!qrData });
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
-      <div className="bg-white rounded-xl p-4 sm:p-6 lg:p-10 max-w-md sm:max-w-xl lg:max-w-2xl max-h-[95vh] overflow-y-auto w-full mx-3 sm:mx-4 shadow-2xl">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-2 sm:p-4">
+      <div className="bg-white rounded-xl p-3 sm:p-6 lg:p-10 max-w-md sm:max-w-xl lg:max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[95vh] overflow-y-auto overscroll-contain w-full mx-0 sm:mx-4 shadow-2xl">
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
           <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex items-center gap-2">
             💎 IcanEra Payment
           </h3>
@@ -182,7 +182,7 @@ const CashierReceiveIcanModal = ({
         {qrData && !loading && !paymentReceived && (
           <div className="space-y-4">
             {/* Amount Display */}
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 text-center">
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 sm:p-6 text-center">
               <p className="text-sm text-gray-600 mb-1">Amount to Pay</p>
               <p className="text-4xl font-bold text-blue-600 mb-2">
                 {formatICAN(icanAmount)} ICAN
@@ -198,12 +198,12 @@ const CashierReceiveIcanModal = ({
             </div>
 
             {/* QR Code */}
-            <div className="flex justify-center p-4 sm:p-6 lg:p-8 bg-gray-50 rounded-lg">
+            <div className="flex justify-center p-2 sm:p-6 lg:p-8 bg-gray-50 rounded-lg">
               <QRCode
                 id="qr-code-cashier-download"
                 value={paymentLink}
                 size={420}
-                className="w-[240px] h-[240px] sm:w-[320px] sm:h-[320px] lg:w-[420px] lg:h-[420px]"
+                className="w-56 h-56 max-w-full sm:w-80 sm:h-80 lg:w-[420px] lg:h-[420px]"
                 level="H"
                 includeMargin={true}
               />

@@ -45,6 +45,10 @@ import PortalHeader from '../components/PortalHeader';
 import PortalTabNavigator from '../components/PortalTabNavigator';
 import ProfileModal from '../components/ProfileModal';
 import CashierReceiveIcanModal from '../components/CashierReceiveIcanModal';
+import CashierIcanMobileCardModal from '../components/CashierIcanMobileCardModal';
+import CashierDigitalCardModal from '../components/CashierDigitalCardModal';
+import { MOBILE_CARD_METHOD_ID, MOBILE_CARD_METHOD_NAME, mobileCardAmountProblem } from '../utils/mobileCardPayment';
+import { DIGITAL_CARD_CHOOSER_ID, DIGITAL_CARD_CHOOSER_NAME, digitalCardAmountProblem } from '../utils/digitalCardPayment';
 import { findProductByBarcode } from '../utils/barcodeHelper';
 import { recordLocalCashSale } from '../services/localCashSaleService';
 import '../styles/supermartkera-portals.css';
@@ -88,6 +92,8 @@ const CashierPortal = () => {
     return () => window.removeEventListener('resize', closeCartOnWideScreen);
   }, []);
   const [showIcanReceiveModal, setShowIcanReceiveModal] = useState(false);
+  const [showMobileCardModal, setShowMobileCardModal] = useState(false);
+  const [showDigitalCardModal, setShowDigitalCardModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentResult, setPaymentResult] = useState(null);
@@ -161,7 +167,8 @@ const CashierPortal = () => {
   });
   useBackLayer(showSearchTab, () => setShowSearchTab(false));
 
-  // Payment methods - IcanEra Wallet primary with full transaction control
+  // IcanEra wallet, digital card, and Flutterwave mobile/card payments all
+  // have dedicated confirmation screens; only cash is recorded directly.
   const paymentMethods = [
     {
       id: 'icanera_wallet',
@@ -173,6 +180,28 @@ const CashierPortal = () => {
       limit: Infinity,
       features: ['receive'],
       primary: true
+    },
+    {
+      id: DIGITAL_CARD_CHOOSER_ID,
+      name: DIGITAL_CARD_CHOOSER_NAME,
+      icon: '💳',
+      color: 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700',
+      description: 'Scan their card and approve with PIN',
+      fee: 0,
+      limit: Infinity,
+      features: ['receive'],
+      primary: false
+    },
+    {
+      id: MOBILE_CARD_METHOD_ID,
+      name: MOBILE_CARD_METHOD_NAME,
+      icon: '📱',
+      color: 'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600',
+      description: 'Mobile Money or card',
+      fee: 0,
+      limit: Infinity,
+      features: ['receive'],
+      primary: false
     },
     {
       id: 'cash_ugx',
@@ -241,7 +270,7 @@ const CashierPortal = () => {
   // Quick POS search for admins using the cashier counter, and cashiers who
   // enable it in Settings: Ctrl+F on Windows/Linux, Cmd+F on Mac.
   useEffect(() => {
-    if (!settingsForm.quickSearchShortcut || activeTab !== 'pos' || paymentModal || showIcanReceiveModal || showBarcodeScanner || showSearchTab || showReceiptModal || showSettingsModal || showEditProfileModal || variantPickerProduct || batchPickerProduct) {
+    if (!settingsForm.quickSearchShortcut || activeTab !== 'pos' || paymentModal || showIcanReceiveModal || showMobileCardModal || showDigitalCardModal || showBarcodeScanner || showSearchTab || showReceiptModal || showSettingsModal || showEditProfileModal || variantPickerProduct || batchPickerProduct) {
       return undefined;
     }
     const focusProductSearch = (event) => {
@@ -252,7 +281,7 @@ const CashierPortal = () => {
     };
     window.addEventListener('keydown', focusProductSearch);
     return () => window.removeEventListener('keydown', focusProductSearch);
-  }, [settingsForm.quickSearchShortcut, activeTab, paymentModal, showIcanReceiveModal, showBarcodeScanner, showSearchTab, showReceiptModal, showSettingsModal, showEditProfileModal, variantPickerProduct, batchPickerProduct]);
+  }, [settingsForm.quickSearchShortcut, activeTab, paymentModal, showIcanReceiveModal, showMobileCardModal, showDigitalCardModal, showBarcodeScanner, showSearchTab, showReceiptModal, showSettingsModal, showEditProfileModal, variantPickerProduct, batchPickerProduct]);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -1704,7 +1733,7 @@ const CashierPortal = () => {
   useEffect(() => {
     const scanState = hardwareScannerRef.current;
     scanState.buffer = '';
-    if (activeTab !== 'pos' || paymentModal || showIcanReceiveModal || showBarcodeScanner || showReceiptModal || variantPickerProduct || batchPickerProduct) {
+    if (activeTab !== 'pos' || paymentModal || showIcanReceiveModal || showMobileCardModal || showDigitalCardModal || showBarcodeScanner || showReceiptModal || variantPickerProduct || batchPickerProduct) {
       return undefined;
     }
 
@@ -1777,7 +1806,7 @@ const CashierPortal = () => {
       window.removeEventListener('keydown', handleHardwareScannerKey, true);
       clearBuffer();
     };
-  }, [activeTab, paymentModal, showIcanReceiveModal, showBarcodeScanner, showReceiptModal, variantPickerProduct, batchPickerProduct]);
+  }, [activeTab, paymentModal, showIcanReceiveModal, showMobileCardModal, showDigitalCardModal, showBarcodeScanner, showReceiptModal, variantPickerProduct, batchPickerProduct]);
 
   const removeItemFromTransaction = (cartLineId) => {
     localSaleAttemptIdRef.current = null;
@@ -1977,6 +2006,37 @@ const CashierPortal = () => {
       setPaymentModal(false); // Close payment selection modal
       setShowIcanReceiveModal(true); // Open IcanEra receive modal
       console.log('💎 Modal state set to true');
+      return;
+    }
+
+    // A digital card is confirmed by scanning its QR and entering the card
+    // PIN. Its successful sale is recorded as an IcanEra Wallet payment.
+    if (paymentMethodId === DIGITAL_CARD_CHOOSER_ID || paymentMethodId === MOBILE_CARD_METHOD_ID) {
+      const methodName = paymentMethodId === DIGITAL_CARD_CHOOSER_ID
+        ? DIGITAL_CARD_CHOOSER_NAME
+        : MOBILE_CARD_METHOD_NAME;
+      if (!navigator.onLine) {
+        toast.error(`${methodName} needs an internet connection. Take cash instead, or try again when online.`);
+        return;
+      }
+      if (!currentTransaction.items.length) {
+        toast.error('Add products before taking this payment.');
+        return;
+      }
+      const amountProblem = paymentMethodId === DIGITAL_CARD_CHOOSER_ID
+        ? digitalCardAmountProblem(currentTransaction.total)
+        : mobileCardAmountProblem(currentTransaction.total);
+      if (amountProblem) {
+        toast.error(amountProblem);
+        return;
+      }
+      if (!cashierProfile.supermarket_id) {
+        toast.error('Your store is still loading - try again in a moment.');
+        return;
+      }
+      setPaymentModal(false);
+      if (paymentMethodId === DIGITAL_CARD_CHOOSER_ID) setShowDigitalCardModal(true);
+      else setShowMobileCardModal(true);
       return;
     }
     
@@ -2243,6 +2303,102 @@ const CashierPortal = () => {
       });
     } finally {
       setPaymentProcessing(false);
+    }
+  };
+
+  const handleConfirmedIcanPayment = async (paymentData, method) => {
+    // Mobile Money / card can also settle from the customer's IcanEra wallet.
+    // Record the method the customer actually used on the receipt.
+    const paidMethod = method.id === MOBILE_CARD_METHOD_ID && paymentData.channel === 'wallet'
+      ? { id: 'icanera_wallet', name: 'IcanEra Wallet' }
+      : method;
+    const isMobileCard = paidMethod.id === MOBILE_CARD_METHOD_ID;
+    const paymentReference = isMobileCard
+      ? paymentData.paymentCode || paymentData.transactionId || `ICAN_${Date.now()}`
+      : paymentData.transactionId || paymentData.paymentCode || `ICAN_${Date.now()}`;
+    const transactionId = paymentData.transactionId || paymentReference;
+    const result = {
+      success: true,
+      transactionId,
+      amount: currentTransaction.total,
+      fee: 0,
+      finalAmount: currentTransaction.total,
+      paymentMethod: paidMethod.name,
+      timestamp: new Date().toISOString(),
+      taxIncluded: cashierProfile.tax_included !== false,
+      receipt: {
+        items: currentTransaction.items,
+        subtotal: currentTransaction.subtotal,
+        tax: currentTransaction.tax,
+        taxIncluded: cashierProfile.tax_included !== false,
+        total: currentTransaction.total,
+        cashier: cashierProfile.name,
+        register: cashierProfile.register
+      }
+    };
+
+    setShowIcanReceiveModal(false);
+    setShowMobileCardModal(false);
+    setShowDigitalCardModal(false);
+
+    try {
+      const saveResult = await transactionService.saveTransaction({
+        items: currentTransaction.items,
+        subtotal: currentTransaction.subtotal,
+        tax: currentTransaction.tax,
+        total: currentTransaction.total,
+        paymentMethod: paidMethod,
+        paymentReference,
+        paymentFee: 0,
+        amountPaid: currentTransaction.total,
+        changeGiven: 0,
+        customer: currentTransaction.customer || { name: paymentData.payerName || 'Walk-in Customer' },
+        cashier: cashierProfile,
+        register: cashierProfile.register,
+        location: cashierProfile.location || 'Kampala Main Branch',
+        supermarket_id: cashierProfile.supermarket_id,
+        icanAmount: paymentData.icanAmount,
+        merchantName: 'SupermartKera',
+        walletTransactionId: paymentData.transactionId,
+        expenditureType: 'business',
+        expenditureCategory: 'business_expense',
+        clientTransactionId: isMobileCard ? `TXN_${paymentReference}` : null
+      });
+
+      if (!saveResult.success) {
+        throw new Error(saveResult.error || 'Could not save the payment receipt.');
+      }
+
+      setReceiptData({
+        ...result,
+        receiptNumber: saveResult.receiptNumber,
+        transactionId: saveResult.transactionId || transactionId,
+        amountPaid: currentTransaction.total,
+        changeGiven: 0
+      });
+
+      const itemsForStockUpdate = currentTransaction.items
+        .filter(item => !item.variant_id && !['service_item', 'listing_only'].includes(item.inventoryMode))
+        .map(item => ({
+          product_id: item.id,
+          quantity: item.quantity,
+          batch_id: item.batch_id || null
+        }));
+      const stockUpdated = itemsForStockUpdate.length === 0
+        ? true
+        : await inventoryService.adjustStockAfterSale(itemsForStockUpdate, `SALE_${Date.now()}`, cashierProfile.supermarket_id);
+
+      if (stockUpdated) {
+        loadProductsFromSupabase();
+      } else {
+        toast.error('Payment received but the stock could not be deducted. Please reconcile this sale.');
+      }
+
+      setTimeout(() => setShowReceiptModal(true), 500);
+      toast.success(`${paidMethod.name} payment received! Receipt: ${saveResult.receiptNumber}`);
+    } catch (error) {
+      console.error('Payment received but receipt could not be saved:', error);
+      toast.warning('Payment successful but receipt not saved. Please check transaction history.');
     }
   };
 
@@ -4167,7 +4323,7 @@ const CashierPortal = () => {
         />
       )}
 
-      {/* 💎 IcanEra Receive Payment Modal */}
+      {/* IcanEra wallet payment */}
       {showIcanReceiveModal && (
         <CashierReceiveIcanModal
           isOpen={showIcanReceiveModal}
@@ -4177,97 +4333,38 @@ const CashierPortal = () => {
           merchantName="SupermartKera"
           amountUGX={currentTransaction.total}
           orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
-          onPaymentReceived={async (paymentData) => {
-            // Payment received successfully!
-            console.log('💎 IcanEra payment received:', paymentData);
-            
-            // Close the receive modal
-            setShowIcanReceiveModal(false);
-            
-            // Create receipt data
-            const result = {
-              success: true,
-              transactionId: paymentData.transactionId || `ICAN_${Date.now()}`,
-              amount: currentTransaction.total,
-              fee: 0,
-              finalAmount: currentTransaction.total,
-              paymentMethod: 'IcanEra Wallet',
-              timestamp: new Date().toISOString(),
-              taxIncluded: cashierProfile.tax_included !== false,
-              receipt: {
-                items: currentTransaction.items,
-                subtotal: currentTransaction.subtotal,
-                tax: currentTransaction.tax,
-                taxIncluded: cashierProfile.tax_included !== false,
-                total: currentTransaction.total,
-                cashier: cashierProfile.name,
-                register: cashierProfile.register
-              }
-            };
-
-            // Save transaction to database
-            try {
-              const saveResult = await transactionService.saveTransaction({
-                items: currentTransaction.items,
-                subtotal: currentTransaction.subtotal,
-                tax: currentTransaction.tax,
-                total: currentTransaction.total,
-                paymentMethod: { id: 'icanera_wallet', name: 'IcanEra Wallet' },
-                paymentReference: result.transactionId,
-                paymentFee: 0,
-                amountPaid: currentTransaction.total,
-                changeGiven: 0,
-                customer: currentTransaction.customer || { name: 'Walk-in Customer' },
-                cashier: cashierProfile,
-                register: cashierProfile.register,
-                location: cashierProfile.location || 'Kampala Main Branch',
-                supermarket_id: cashierProfile.supermarket_id,
-                icanAmount: paymentData.icanAmount,
-                merchantName: 'SupermartKera',
-                walletTransactionId: paymentData.transactionId,
-                expenditureType: 'business',
-                expenditureCategory: 'business_expense'
-              });
-
-              if (saveResult.success) {
-                console.log('✅ Transaction saved:', saveResult.receiptNumber);
-                
-                // Set receipt data for display
-                setReceiptData({
-                  ...result,
-                  receiptNumber: saveResult.receiptNumber,
-                  transactionId: saveResult.transactionId,
-                  amountPaid: currentTransaction.total,
-                  changeGiven: 0
-                });
-                
-                // Update stock
-                const itemsForStockUpdate = currentTransaction.items.map(item => ({
-                  product_id: item.id,
-                  quantity: item.quantity,
-                  batch_id: item.batch_id || null
-                }));
-                
-                await inventoryService.adjustStockAfterSale(itemsForStockUpdate, `SALE_${Date.now()}`);
-                
-                // Show receipt modal
-                setTimeout(() => {
-                  setShowReceiptModal(true);
-                }, 500);
-                
-                toast.success(`✅ IcanEra payment received! Receipt: ${saveResult.receiptNumber}`);
-              } else {
-                console.error('❌ Failed to save transaction:', saveResult.error);
-                toast.warning('⚠️ Payment successful but receipt not saved');
-              }
-            } catch (saveError) {
-              console.error('❌ Error saving transaction:', saveError);
-              toast.warning('⚠️ Payment successful but receipt not saved');
-            }
-          }}
+          onPaymentReceived={(paymentData) => handleConfirmedIcanPayment(paymentData, { id: 'icanera_wallet', name: 'IcanEra Wallet' })}
         />
       )}
 
+      {/* IcanEra digital card (scan the card QR and approve with PIN) */}
+      {showDigitalCardModal && (
+        <CashierDigitalCardModal
+          isOpen={showDigitalCardModal}
+          onClose={() => setShowDigitalCardModal(false)}
+          supermarketId={cashierProfile?.supermarket_id}
+          amountUGX={currentTransaction.total}
+          orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
+          onChooseAnother={() => {
+            setShowDigitalCardModal(false);
+            setPaymentModal(true);
+          }}
+          onPaymentReceived={(paymentData) => handleConfirmedIcanPayment(paymentData, { id: 'icanera_wallet', name: 'IcanEra Wallet' })}
+        />
+      )}
+
+      {/* Mobile Money, cards, and other Flutterwave payment channels */}
+      {showMobileCardModal && (
+        <CashierIcanMobileCardModal
+          isOpen={showMobileCardModal}
+          onClose={() => setShowMobileCardModal(false)}
+          supermarketId={cashierProfile?.supermarket_id}
+          merchantName="SupermartKera"
+          amountUGX={currentTransaction.total}
+          orderDescription={`Supermarket purchase - ${currentTransaction.items.length} items`}
+          onPaymentReceived={(paymentData) => handleConfirmedIcanPayment(paymentData, { id: MOBILE_CARD_METHOD_ID, name: MOBILE_CARD_METHOD_NAME })}
+        />
+      )}
       {/* Order Supplies Modal */}
       <OrderSuppliesModal
         isOpen={showOrderModal}
