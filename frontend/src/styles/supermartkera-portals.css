@@ -1214,7 +1214,7 @@
     gap: 0.65rem;
     margin-bottom: 0.75rem;
   }
-  .cashier-pos-catalog-actions { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); width: 100%; }
+  .cashier-pos-catalog-actions { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); width: 100%; }
   .cashier-pos-action { min-width: 0; min-height: 2.75rem; padding-inline: 0.45rem; font-size: 0.75rem; white-space: nowrap; }
   .cashier-pos-action span { overflow: hidden; text-overflow: ellipsis; }
   .cashier-pos-search input { min-height: 2.9rem; font-size: 1rem; }
@@ -2011,6 +2011,7 @@ html[data-theme="dark"] .supplier-catalog-barcode { color: #a9b9ae; }
 .cashier-pos-view-toggle button svg { width: 0.95rem; height: 0.95rem; }
 .cashier-pos-view-toggle button:hover { color: var(--pos-ink); }
 .cashier-pos-view-toggle button.is-active { background: var(--pos-accent); color: var(--pos-accent-contrast); }
+.cashier-pos-view-toggle .cashier-pos-scan-toggle { white-space: nowrap; }
 .cashier-pos-columns.is-scan-mode { grid-template-columns: minmax(0, 1.25fr) minmax(340px, 440px); }
 .cashier-pos-scan-stage { display: flex; height: clamp(26rem, calc(100vh - 16rem), 54rem); min-height: 0; flex-direction: column; gap: 0.65rem; }
 .cashier-pos-scan-sale { flex: 0 0 auto; padding: 0.75rem 0.9rem; border: 1px solid var(--pos-line); border-radius: 0.65rem; background: var(--pos-panel); color: var(--pos-ink); box-shadow: 0 5px 18px rgba(0, 0, 0, 0.08); }
@@ -2031,6 +2032,9 @@ html[data-theme="dark"] .supplier-catalog-barcode { color: #a9b9ae; }
 }
 @media (max-width: 640px) {
   .cashier-pos-catalog-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .cashier-pos-view-toggle { width: 100%; }
+  .cashier-pos-view-toggle button { flex: 1 1 0; justify-content: center; min-height: 2.6rem; padding-inline: 0.35rem; font-size: 0.72rem; white-space: nowrap; }
+  .cashier-pos-view-toggle .cashier-pos-scan-toggle { gap: 0.45rem; }
 }
 
 /* Sales waiting for payment, listed above the current basket while the cashier serves the next customer */

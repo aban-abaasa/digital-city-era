@@ -150,6 +150,7 @@ const CashierPortal = () => {
   // 👗 Boutique variant picker - shown before adding a product with
   // size/color variants to the cart
   const [variantPickerProduct, setVariantPickerProduct] = useState(null);
+  const openCartPageAfterCatalogAdd = useRef(false);
   // Batch (quality) picker - shown when a product has more than one sellable batch
   const [batchPickerProduct, setBatchPickerProduct] = useState(null);
   
@@ -1673,12 +1674,14 @@ const CashierPortal = () => {
     if (variant) {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
       if ((variant.stock_quantity || 0) <= currentQuantity) {
+        openCartPageAfterCatalogAdd.current = false;
         toast.error(`⚠️ Insufficient stock for ${product.name} (${variant.variant_value}). Available: ${variant.stock_quantity || 0}`);
         return;
       }
     } else if (batch) {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
       if (Number(batch.remaining) <= currentQuantity) {
+        openCartPageAfterCatalogAdd.current = false;
         toast.error(`⚠️ Insufficient stock for ${product.name} (${batchLabel(batch)}). Available: ${Number(batch.remaining)}`);
         return;
       }
@@ -1688,6 +1691,7 @@ const CashierPortal = () => {
       const currentQuantity = currentTransaction.items.find(item => item.cartLineId === cartLineId)?.quantity || 0;
 
       if (productStock <= currentQuantity) {
+        openCartPageAfterCatalogAdd.current = false;
         toast.error(`⚠️ Insufficient stock for ${product.name}. Available: ${productStock}`);
         return;
       }
@@ -1742,6 +1746,10 @@ const CashierPortal = () => {
 
     // Clear cash received when cart changes
     setCashReceived('');
+    if (openCartPageAfterCatalogAdd.current) {
+      openCartPageAfterCatalogAdd.current = false;
+      if (window.innerWidth <= 640) setShowMobileCartPage(true);
+    }
   };
 
   // Variants and batches are chosen before adding. A product with several
@@ -1759,6 +1767,11 @@ const CashierPortal = () => {
     }
     const only = batches[0];
     addItemToTransaction(product, null, only && Number(only.selling_price) > 0 ? only : null);
+  };
+
+  const selectCatalogProduct = (product) => {
+    openCartPageAfterCatalogAdd.current = true;
+    chooseProductToAdd(product);
   };
 
   // 🔥 Handle new product added - refresh products list
@@ -2708,7 +2721,12 @@ const CashierPortal = () => {
   // + invoice/receipt flow instead of a simple paid-in-full sale.
   const hasServiceItem = currentTransaction.items.some(item => item.inventoryMode === 'service_item');
   const mobileCartQuantity = currentTransaction.items.reduce((sum, item) => sum + item.quantity, 0);
-
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const filteredCatalogProducts = products.filter(product => {
+    if (!normalizedSearchTerm) return true;
+    return [product.name, product.sku, product.barcode, product.category, product.categoryName]
+      .some(value => String(value || '').toLowerCase().includes(normalizedSearchTerm));
+  });
   const renderPOS = () => (
     <div className={`cashier-pos-page animate-fadeInUp${showMobileCartPage ? ' is-mobile-cart-open' : ''}`}>
       <header className="cashier-pos-heading">
@@ -2746,10 +2764,11 @@ const CashierPortal = () => {
                 </button>
                 <button
                   type="button"
-                  className={!showProducts ? 'is-active' : ''}
                   aria-pressed={!showProducts}
                   onClick={() => setShowProducts(false)}
-                  title="Hide the products and scan on the large screen"
+                  title="Scan a product with the camera or a barcode scanner"
+                  aria-label="Scan products"
+                  className={`cashier-pos-scan-toggle${!showProducts ? ' is-active' : ''}`}
                 >
                   <FiCamera aria-hidden="true" />
                   <span>Scan</span>
@@ -2834,16 +2853,11 @@ const CashierPortal = () => {
             </div>
             {searchTerm && (
               <p className="text-xs text-gray-500 mt-2">
-                Found {products.filter(p => 
-                  p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.category?.toLowerCase().includes(searchTerm.toLowerCase())
-                ).length} products
+                Found {filteredCatalogProducts.length} products
               </p>
             )}
           </div>
-          
+
           {/* 🔥 SUPABASE PRODUCTS GRID - Real-time inventory */}
           <div className="cashier-pos-product-grid">
             {productsLoading ? (
@@ -2865,15 +2879,7 @@ const CashierPortal = () => {
               </div>
             ) : (
               (() => {
-                const filteredProducts = products.filter(p => 
-                  !searchTerm || 
-                  p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.category?.toLowerCase().includes(searchTerm.toLowerCase())
-                );
-
-                if (filteredProducts.length === 0) {
+                if (filteredCatalogProducts.length === 0) {
                   return (
                     <div className="cashier-pos-grid-state">
                       <FiSearch aria-hidden="true" />
@@ -2888,7 +2894,7 @@ const CashierPortal = () => {
                   );
                 }
 
-                return filteredProducts.map((product) => {
+                return filteredCatalogProducts.map((product) => {
                 const productPrice = product.selling_price || product.price || 0;
                 const productStock = product.stock || product.available_stock || 0;
                 const categoryName = product.categoryName || product.category || 'General';
@@ -2901,7 +2907,7 @@ const CashierPortal = () => {
                 const isOutOfStock = !isUnlimitedItem && productStock === 0;
                 const selectProduct = () => {
                   if (isOutOfStock) return;
-                  chooseProductToAdd(product);
+                  selectCatalogProduct(product);
                 };
 
                 return (
@@ -3246,20 +3252,22 @@ const CashierPortal = () => {
         </aside>
       </div>
 
-      <button
-        type="button"
-        className="cashier-pos-mobile-cart-trigger"
-        onClick={() => setShowMobileCartPage(true)}
-        aria-label={`Open basket with ${mobileCartQuantity} item${mobileCartQuantity === 1 ? '' : 's'}, total ${formatUGX(currentTransaction.total)}`}
-      >
-        <span className="cashier-pos-mobile-cart-trigger-count">{mobileCartQuantity}</span>
-        <span className="cashier-pos-mobile-cart-trigger-copy">
-          <strong>View basket</strong>
-          <small>{mobileCartQuantity} item{mobileCartQuantity === 1 ? '' : 's'}</small>
-        </span>
-        <strong className="cashier-pos-mobile-cart-trigger-total">{formatUGX(currentTransaction.total)}</strong>
-        <FiChevronRight aria-hidden="true" />
-      </button>
+      {mobileCartQuantity > 0 && (
+        <button
+          type="button"
+          className="cashier-pos-mobile-cart-trigger"
+          onClick={() => setShowMobileCartPage(true)}
+          aria-label={`Open basket with ${mobileCartQuantity} item${mobileCartQuantity === 1 ? '' : 's'}, total ${formatUGX(currentTransaction.total)}`}
+        >
+          <span className="cashier-pos-mobile-cart-trigger-count">{mobileCartQuantity}</span>
+          <span className="cashier-pos-mobile-cart-trigger-copy">
+            <strong>View basket</strong>
+            <small>{mobileCartQuantity} item{mobileCartQuantity === 1 ? '' : 's'}</small>
+          </span>
+          <strong className="cashier-pos-mobile-cart-trigger-total">{formatUGX(currentTransaction.total)}</strong>
+          <FiChevronRight aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 
@@ -4310,7 +4318,7 @@ const CashierPortal = () => {
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Choose a variant</h3>
-              <button onClick={() => setVariantPickerProduct(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { openCartPageAfterCatalogAdd.current = false; setVariantPickerProduct(null); }} className="text-gray-400 hover:text-gray-600">
                 <FiX className="h-5 w-5" />
               </button>
             </div>
@@ -4355,7 +4363,7 @@ const CashierPortal = () => {
             addItemToTransaction(batchPickerProduct, null, batch);
             setBatchPickerProduct(null);
           }}
-          onClose={() => setBatchPickerProduct(null)}
+          onClose={() => { openCartPageAfterCatalogAdd.current = false; setBatchPickerProduct(null); }}
         />
       )}
 
