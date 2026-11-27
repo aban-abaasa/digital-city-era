@@ -30,23 +30,25 @@ const AP_STYLES = `
   --ap-ink: #14213d; --ap-ink-2: #1f3260; --ap-gold: #b8912f; --ap-gold-soft: #f4ead0;
   --ap-bg: #f6f3ea; --ap-card: #ffffff; --ap-line: #e7dfcc; --ap-muted: #6b7280;
   --ap-green: #1f6f4a; --ap-green-soft: #e4f3ea; --ap-warn: #9a3412; --ap-warn-soft: #fff4e0; --ap-red: #b42318;
+  width: 100%; max-width: 100vw; min-width: 0; overflow: hidden;
   background: var(--ap-bg); color: var(--ap-ink);
   animation: ap-in .22s ease-out both;
 }
+.ap-root, .ap-root *, .ap-root *::before, .ap-root *::after { box-sizing: border-box; }
 @keyframes ap-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .ap-bar { background: linear-gradient(90deg, #14213d, #1f3260); color: #fff; border-bottom: 2px solid var(--ap-gold); }
 .ap-bar-btn { display: inline-flex; align-items: center; gap: .35rem; padding: .5rem .7rem; border-radius: 8px; background: rgba(255,255,255,.12); color: #fff; font-weight: 600; font-size: .875rem; }
 .ap-bar-btn:hover { background: rgba(255,255,255,.22); }
 .ap-added { background: var(--ap-green-soft); color: var(--ap-green); border-radius: 999px; padding: .2rem .65rem; font-size: .8rem; font-weight: 700; white-space: nowrap; }
 .ap-modes { background: var(--ap-card); border-bottom: 1px solid var(--ap-line); }
-.ap-mode { position: relative; padding: .7rem 1rem; font-weight: 700; font-size: .9rem; color: var(--ap-muted); display: inline-flex; align-items: center; gap: .4rem; }
+.ap-mode { position: relative; flex: 1 1 0; min-width: 0; justify-content: center; white-space: nowrap; padding: .7rem .45rem; font-weight: 700; font-size: .9rem; color: var(--ap-muted); display: inline-flex; align-items: center; gap: .4rem; }
 .ap-mode[aria-selected='true'] { color: var(--ap-ink); }
 .ap-mode[aria-selected='true']::after { content: ''; position: absolute; left: .75rem; right: .75rem; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--ap-gold); }
 /* No boxes: sections sit flat on the page, separated by a thin line */
 .ap-card { background: none; border: 0; border-bottom: 1px solid var(--ap-line); border-radius: 0; padding: .25rem 0 1.1rem; }
 .ap-label { display: block; font-size: .8rem; font-weight: 700; color: #374151; margin-bottom: .35rem; }
 .ap-hint { font-size: .75rem; color: var(--ap-muted); margin-top: .3rem; }
-.ap-input { width: 100%; border: 2px solid #d9d2bf; border-radius: 10px; background: #fff; color: #111827; padding: .6rem .8rem; font-size: 1rem; }
+.ap-input { width: 100%; min-width: 0; max-width: 100%; border: 2px solid #d9d2bf; border-radius: 10px; background: #fff; color: #111827; padding: .6rem .8rem; font-size: 1rem; }
 .ap-input:focus { outline: none; border-color: var(--ap-gold); box-shadow: 0 0 0 3px rgba(184,145,47,.2); }
 .ap-input[aria-invalid='true'] { border-color: #f04438; }
 .ap-input:disabled { background: #f3f4f6; color: #6b7280; cursor: not-allowed; }
@@ -103,10 +105,15 @@ const AP_STYLES = `
   .ap-row-head { display: grid; }
 }
 .ap-chip { min-height: 2.25rem; }
+.ap-match-list { max-height: min(42vh, 19rem); overflow-y: auto; overscroll-behavior: contain; }
 @media (max-width: 400px) {
   .ap-photo { width: 4.25rem; height: 4.25rem; }
   .ap-big { font-size: 1.2rem; padding-left: 3.2rem; }
-  .ap-mode { padding: .65rem .7rem; }
+  .ap-mode { padding: .65rem .45rem; }
+}
+@media (max-width: 360px) {
+  .ap-mode { gap: .3rem; padding-inline: .35rem; font-size: .82rem; }
+  .ap-modes svg { width: 1rem; height: 1rem; }
 }
 .ap-prev { border: 1px solid var(--ap-line); border-radius: 12px; overflow: hidden; background: #fff; }
 .ap-prev-img { aspect-ratio: 4 / 3; background: linear-gradient(135deg, #e0e7ff, #fde68a); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: 800; color: rgba(20,33,61,.55); overflow: hidden; }
@@ -254,9 +261,9 @@ const AddProductPage = ({
 
     setStoreProductMatches([]);
     setStoreProductSearchError('');
+    setSearchingStoreProducts(true);
     let active = true;
     const timeout = setTimeout(async () => {
-      setSearchingStoreProducts(true);
       setStoreProductSearchError('');
       try {
         const [nameResult, barcodeResult] = await Promise.all([
@@ -487,12 +494,12 @@ const AddProductPage = ({
 
       {mode === 'single' ? (
         <>
-          <main className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleEnter}>
-            <div className="mx-auto grid max-w-5xl gap-4 p-3 sm:p-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
-              <div className="space-y-4">
+          <main className="min-h-0 min-w-0 w-full flex-1 overflow-y-auto" onKeyDown={handleEnter}>
+            <div className="mx-auto grid w-full min-w-0 max-w-5xl gap-4 p-3 sm:p-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
+              <div className="min-w-0 space-y-4">
                 {/* 1. What is it */}
                 <section className="ap-card">
-                  <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:gap-4">
                     <button type="button" className="ap-photo" onClick={onPickPhoto} aria-label={photoPreview ? 'Change photo' : 'Add photo'}>
                       {photoPreview ? (
                         <img src={photoPreview} alt="Product" className="h-full w-full object-cover" />
@@ -503,7 +510,7 @@ const AddProductPage = ({
                         </>
                       )}
                     </button>
-                    <div className="min-w-0 flex-1">
+                    <div className="w-full min-w-0 flex-1">
                       <label htmlFor="ap-name" className="ap-label">What are you selling? {flavorRows.length ? '(optional with variants)' : '*'}</label>
                       <input
                         id="ap-name"
@@ -533,7 +540,7 @@ const AddProductPage = ({
                         <p className="ap-hint" role="status">No matching store products found. Continue entering a new product below.</p>
                       )}
                       {storeProductSearchIsActive && !searchingStoreProducts && !storeProductSearchError && storeProductMatches.length > 0 && (
-                        <div className="mt-2 overflow-hidden rounded-xl border border-blue-100 bg-white" role="group" aria-label="Matching products already listed by stores">
+                        <div className="ap-match-list mt-2 w-full min-w-0 max-w-full rounded-xl border border-blue-100 bg-white" role="group" aria-label="Matching products already listed by stores">
                           <p className="border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800">
                             Select a match to fill its name, barcode and photo. You can still change them:
                           </p>
@@ -542,7 +549,7 @@ const AddProductPage = ({
                               key={candidate.id}
                               type="button"
                               onClick={() => useStoreProduct(candidate)}
-                              className="flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                              className="flex w-full min-w-0 items-center justify-between gap-2 border-b border-gray-100 px-2.5 py-2.5 text-left last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none sm:gap-3 sm:px-3"
                             >
                               <span className="flex min-w-0 items-center gap-2.5">
                                 {firstProductImage(candidate) ? (
@@ -874,7 +881,7 @@ const AddProductPage = ({
               </div>
 
               {/* Side: how it will look + what was added */}
-              <aside className="space-y-4 lg:sticky lg:top-0 lg:self-start">
+              <aside className="min-w-0 space-y-4 lg:sticky lg:top-0 lg:self-start">
                 <div className="ap-prev hidden lg:block" aria-label="Preview">
                   <div className="ap-prev-img">
                     {photoPreview ? <img src={photoPreview} alt="" className="h-full w-full object-cover" /> : avatarLetter}
