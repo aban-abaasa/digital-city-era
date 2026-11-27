@@ -35,7 +35,7 @@ import cashierOrdersService from '../services/cashierOrdersService';
 import { queueSale, initPosOfflineSync, onSyncStateChange, getPendingSalesCount, generateTransactionId } from '../services/posOfflineQueue';
 import {
   saveCatalog, loadCatalog, saveCachedProfile, loadCachedProfile,
-  getCachedIdentity, saveCachedIdentity, isNetworkFailure, precacheAppForOffline
+  getCachedIdentity, loadPortalSnapshot, saveCachedIdentity, isNetworkFailure, precacheAppForOffline
 } from '../services/posOfflineCache';
 import { receiptService } from '../services/receiptService';
 import { supabase } from '../services/supabase';
@@ -608,8 +608,35 @@ const CashierPortal = () => {
     // offline till has no supermarket_id/cashier name, so it can't load
     // products or stamp sales with who rang them up.
     const useSavedProfile = async () => {
+      const identity = getCachedIdentity();
+      if (identity?.userId && ['admin', 'manager'].includes(identity.role)) {
+        const [adminSnapshot, managerSnapshot] = await Promise.all([
+          loadPortalSnapshot('admin', identity.userId, 'profile'),
+          loadPortalSnapshot('manager', identity.userId, 'profile')
+        ]);
+        const source = adminSnapshot?.value || managerSnapshot?.value;
+        if (source) {
+          const rolePreview = {
+            id: source.id || identity.userId,
+            user_id: identity.userId,
+            supermarket_id: source.supermarket_id || identity.supermarketId || null,
+            businessType: source.business_type || null,
+            name: source.full_name || source.name || 'Staff',
+            email: source.email || identity.email || '',
+            phone: source.phone || '',
+            role: 'Cashier view',
+            department: source.department || 'Front End Operations',
+            avatar_url: source.avatar_url || null,
+            permissions: { pos: true, returns: false, voidTransactions: false, mobileMoneyTransactions: false, foreignCurrency: false, loyaltyProgram: false }
+          };
+          setCashierProfile(prev => ({ ...prev, ...rolePreview }));
+          if (rolePreview.avatar_url) setProfilePicUrl(rolePreview.avatar_url);
+          return true;
+        }
+      }
       const saved = await loadCachedProfile();
       if (!saved) return false;
+      if (identity?.userId && saved.user_id && saved.user_id !== identity.userId) return false;
       setCashierProfile(prev => ({ ...prev, ...saved }));
       if (saved.avatar_url) setProfilePicUrl(saved.avatar_url);
       return true;
@@ -636,7 +663,7 @@ const CashierPortal = () => {
       const { data: cashierData, error } = await supabase
         .from('users')
         .select('*')
-        .eq('auth_id', user.id)
+        .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {

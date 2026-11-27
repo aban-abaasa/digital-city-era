@@ -302,7 +302,6 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
   const [focusBookingServiceId, setFocusBookingServiceId] = useState(null);
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -768,12 +767,29 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
 
   // Load products and categories
   useEffect(() => {
+    let active = true;
     if (adminAuthorized) {
       setAuthLoading(false);
       setIsAdmin(true);
       setUserRole('admin');
       setCurrentUserProfile(adminProfile);
-      loadData(initialStoreId);
+      const hydrateAndRefresh = async () => {
+        try {
+          const identity = getCachedIdentity();
+          const ownerId = adminProfile?.auth_id || identity?.userId;
+          if (ownerId) {
+            const cached = await loadPortalSnapshot('admin', ownerId, 'inventory');
+            const snapshot = cached?.value;
+            if (active && snapshot && (!initialStoreId || !snapshot.supermarketId || snapshot.supermarketId === initialStoreId)) {
+              restoreInventorySnapshot(snapshot);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not restore cached inventory before refresh:', error);
+        }
+        if (active) loadData(initialStoreId);
+      };
+      void hydrateAndRefresh();
     } else {
       checkAdminAccess();
       loadData();
@@ -793,6 +809,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
     window.addEventListener('offline', handleOffline);
     window.addEventListener('portal-offline-mutation-synced', handleQueuedProductSync);
     return () => {
+      active = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('portal-offline-mutation-synced', handleQueuedProductSync);
@@ -912,9 +929,7 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
 
   const loadData = async (preferredStoreId = initialStoreId || supermarketId) => {
     try {
-      // `loading` starts true, so the full-page loader covers the first load only.
-      // Later reloads run behind the page (the Refresh button shows `refreshing`)
-      // instead of blanking it with "Verifying authorization...".
+      // Keep the catalog visible while loading or refreshing data.
       setRefreshing(true);
 
       const identity = getCachedIdentity();
@@ -1127,7 +1142,6 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
         if (!restoreInventorySnapshot(cached?.value)) toast.error('No saved inventory is available on this device yet.');
       } else toast.error('Failed to load inventory data');
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -2294,12 +2308,13 @@ const OrderInventoryPOSControl = ({ openAddSignal = 0, adminAuthorized = false, 
     return ((sellingPrice - costPrice) / costPrice * 100).toFixed(1);
   };
 
-  if (authLoading || (loading && !showAddProductModal)) {
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
-          <p className="mt-4 text-gray-600 font-semibold">Verifying authorization...</p>
+          <style>{`@keyframes admin-take-control{0%,100%{opacity:.72;transform:translateY(2px) scale(.98);text-shadow:0 0 0 transparent}50%{opacity:1;transform:translateY(-2px) scale(1.03);text-shadow:0 0 18px rgba(196,160,82,.5)}}.admin-take-control{animation:admin-take-control 1.35s ease-in-out infinite}@media(prefers-reduced-motion:reduce){.admin-take-control{animation:none}}`}</style>
+          <FiZap className="mx-auto mb-3 h-10 w-10 animate-pulse text-[#c4a052]" aria-hidden="true" />
+          <p className="admin-take-control text-xl font-black tracking-[0.18em] text-[#9a7622]">TAKE CONTROL</p>
         </div>
       </div>
     );

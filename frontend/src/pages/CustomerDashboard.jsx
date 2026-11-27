@@ -51,6 +51,7 @@ import { getBalance, getTransactions } from '@/services/icanWalletService';
 import { referralService } from '../services/referralService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 import AnimatedCounter from '../components/AnimatedCounter';
 import { Greeting } from '../components/customerDashboard/LiveClock';
 import PortalHeader from '../components/PortalHeader';
@@ -182,7 +183,14 @@ function CallRingtonePicker() {
   );
 }
 
-const CustomerDashboard = () => {
+const getCustomerCacheUserId = (preferredId) => {
+  const identity = getCachedIdentity();
+  // Role previews use the real admin auth UUID, not the demo/customer profile
+  // ID from the separate legacy AuthContext.
+  return identity?.role === 'admin' ? identity.userId : (preferredId || identity?.userId || null);
+};
+
+const CustomerDashboard = ({ offlineWarmup = false }) => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
   const { theme } = useTheme();
@@ -302,6 +310,14 @@ const CustomerDashboard = () => {
   // yet" — collapsing both into one "unavailable" state used to show a
   // "Sign in" button to people who were already signed in.
   const loadReferralData = React.useCallback(async () => {
+    const cacheUserId = getCustomerCacheUserId(user?.id);
+    if (!navigator.onLine && cacheUserId) {
+      const cached = await loadPortalSnapshot('customer', cacheUserId, 'referral');
+      if (cached?.value) {
+        setReferral(cached.value);
+        return;
+      }
+    }
     setReferral(prev => ({ ...prev, status: 'loading', message: '' }));
     try {
       const availability = await referralService.diagnoseAvailability();
@@ -325,15 +341,22 @@ const CustomerDashboard = () => {
         friendsReferred: stats.friendsReferred,
         pointsEarned: stats.pointsEarned
       });
+      if (cacheUserId) {
+        await savePortalSnapshot('customer', cacheUserId, 'referral', {
+          status: 'ok', code,
+          friendsReferred: stats.friendsReferred,
+          pointsEarned: stats.pointsEarned
+        });
+      }
     } catch (error) {
       console.error('Error loading referral data:', error);
       setReferral(prev => ({ ...prev, status: 'error', message: error.message || '' }));
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
-    loadReferralData();
-  }, [loadReferralData]);
+    if (!offlineWarmup) loadReferralData();
+  }, [loadReferralData, offlineWarmup]);
 
   // Mock customer data (fallback for demo)
   const fallbackUser = {
@@ -372,6 +395,17 @@ const CustomerDashboard = () => {
   // Data fetching effect
   useEffect(() => {
     const fetchData = async () => {
+      const cacheUserId = getCustomerCacheUserId(user?.id);
+      if (!navigator.onLine && cacheUserId) {
+        const cached = await loadPortalSnapshot('customer', cacheUserId, 'dashboard');
+        if (cached?.value) {
+          setCustomerData(cached.value.customerData || { recentOrders: [], loyaltyRewards: [], recommendations: [] });
+          setLoyaltyData(cached.value.loyaltyData || null);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+      }
       if (!isAuthenticated() || !customer) {
         // Use fallback data for demo
         setCustomerData({
@@ -438,10 +472,29 @@ const CustomerDashboard = () => {
           loyaltyRewards: rewards || [],
           recommendations: recommendations || []
         });
+        if (cacheUserId) {
+          await savePortalSnapshot('customer', cacheUserId, 'dashboard', {
+            customerData: {
+              recentOrders: orders || [],
+              loyaltyRewards: rewards || [],
+              recommendations: recommendations || []
+            },
+            loyaltyData: loyalty || null
+          });
+        }
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
         setError(error.message);
+        const cached = cacheUserId && isNetworkFailure(error)
+          ? await loadPortalSnapshot('customer', cacheUserId, 'dashboard')
+          : null;
+        if (cached?.value) {
+          setCustomerData(cached.value.customerData || { recentOrders: [], loyaltyRewards: [], recommendations: [] });
+          setLoyaltyData(cached.value.loyaltyData || null);
+          setLoading(false);
+          return;
+        }
         // Use fallback data on error
         setCustomerData({
           recentOrders: [],
@@ -454,16 +507,28 @@ const CustomerDashboard = () => {
     };
 
     fetchData();
-  }, [customer, isAuthenticated]);
+  }, [customer, isAuthenticated, user?.id]);
 
   // Load ICAN wallet when rewards tab opens
   useEffect(() => {
     if (activeTab !== 'rewards' || !user?.id) return;
+    const cacheUserId = getCustomerCacheUserId(user.id);
+    if (!navigator.onLine) {
+      loadPortalSnapshot('customer', cacheUserId, 'wallet')
+        .then(cached => {
+          if (cached?.value) {
+            setIcanBalance(cached.value.balance);
+            setIcanTxs(cached.value.transactions || []);
+          }
+        });
+      return;
+    }
     setIcanLoading(true);
     Promise.all([getBalance(user.id), getTransactions(user.id, 20)])
       .then(([bal, txs]) => { 
         setIcanBalance(bal); 
         setIcanTxs(txs); 
+        savePortalSnapshot('customer', cacheUserId, 'wallet', { balance: bal, transactions: txs || [] });
       })
       .catch(() => {})
       .finally(() => setIcanLoading(false));
@@ -475,8 +540,17 @@ const CustomerDashboard = () => {
   // Bodagoera's own CustomerDashboard does it.
   useEffect(() => {
     if (!showTrackModal || !user?.id) return;
+    const cacheUserId = getCustomerCacheUserId(user.id);
     let cancelled = false;
     setMyRidesLoading(true);
+    if (!navigator.onLine) {
+      loadPortalSnapshot('customer', cacheUserId, 'rides').then((cached) => {
+        if (cancelled) return;
+        setMyRides(cached?.value || []);
+        setMyRidesLoading(false);
+      });
+      return () => { cancelled = true; };
+    }
     (async () => {
       const { data: cr } = await supabase.from('mbg_customers').select('id').eq('user_id', user.id).maybeSingle();
       if (!cr?.id) { if (!cancelled) setMyRidesLoading(false); return; }
@@ -489,6 +563,7 @@ const CustomerDashboard = () => {
       if (cancelled) return;
       const rows = data || [];
       setMyRides(rows);
+      savePortalSnapshot('customer', cacheUserId, 'rides', rows);
       setMyRidesLoading(false);
 
       const activeRows = rows.filter((r) => ['accepted', 'in_progress'].includes(r.status) && r.rider_id);
@@ -541,6 +616,7 @@ const CustomerDashboard = () => {
 
   // Authentication check for non-demo mode
   // For demo, we'll use fallback data
+  if (offlineWarmup) return null;
   
   // Loading state
   if (authLoading || loading) {

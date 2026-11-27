@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
 import { portalConfigService } from '../services/portalConfigService';
 import { supabase } from '../services/supabase';
@@ -42,8 +42,18 @@ import '../styles/supermartkera-portals.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, saveCachedIdentity, savePortalSnapshot } from '../services/posOfflineCache';
 
-const AdminPortal = () => {
+const ManagerOfflineWarmup = React.lazy(() => import('./ManagerPortal'));
+const SupplierOfflineWarmup = React.lazy(() => import('./SupplierPortal'));
+const CustomerOfflineWarmup = React.lazy(() => import('./CustomerDashboard'));
+
+const AdminPortal = ({ authenticatedUser = null }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const verifiedLoginMatchesUser = Boolean(
+    authenticatedUser?.id
+    && location.state?.adminVerifiedUserId === authenticatedUser.id
+  );
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [activeSection, setActiveSection] = useState('dashboard');
   // Bumped by every "Add products" shortcut; Order Inventory opens its Add Products page when it changes
   const [addProductsSignal, setAddProductsSignal] = useState(0);
@@ -66,6 +76,16 @@ const AdminPortal = () => {
     full_name: '',
     phone: ''
   });
+
+  useEffect(() => {
+    const updateOnlineState = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+    return () => {
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
+    };
+  }, []);
 
   // Real-time state management - Initialize with zeros, will be loaded from Supabase
   const [realTimeData, setRealTimeData] = useState({
@@ -146,18 +166,19 @@ const AdminPortal = () => {
   useBackLayer(showUserDetailsModal, () => setShowUserDetailsModal(false));
 
   // Authorization state
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(verifiedLoginMatchesUser);
+  const [authLoading, setAuthLoading] = useState(!verifiedLoginMatchesUser);
   
   // Current logged-in admin data
   const [currentAdmin, setCurrentAdmin] = useState({
     id: null,
-    email: null,
+    auth_id: verifiedLoginMatchesUser ? authenticatedUser.id : null,
+    email: verifiedLoginMatchesUser ? authenticatedUser.email || null : null,
     full_name: 'Administrator',
     role: 'admin',
     phone: null,
     avatar_url: null,
-    supermarket_id: null,
+    supermarket_id: verifiedLoginMatchesUser ? (location.state?.supermarketId || null) : null,
     pichin_business_profile_id: null,
     store_missing: false,
     business_type: null
@@ -183,6 +204,11 @@ const AdminPortal = () => {
     checkAdminAccess();
   }, []);
 
+  useEffect(() => {
+    if (!verifiedLoginMatchesUser) return;
+    navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null });
+  }, [location.hash, location.pathname, location.search, navigate, verifiedLoginMatchesUser]);
+
   const checkAdminAccess = async () => {
     try {
       if (!navigator.onLine) {
@@ -200,7 +226,9 @@ const AdminPortal = () => {
         setAuthLoading(false);
         return;
       }
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = authenticatedUser?.id
+        ? authenticatedUser
+        : (await supabase.auth.getUser()).data.user;
       
       console.log('🔐 Checking admin access for user:', user?.id, user?.email);
       
@@ -223,6 +251,11 @@ const AdminPortal = () => {
         // Try auth_id first; fall back to id (some deployments lack auth_id column)
         let userData = null;
         let roleLookupError = null;
+        const ownedStorePromise = supabase
+          .from('supermarkets')
+          .select('id, name, pichin_business_profile_id, business_type')
+          .eq('owner_user_id', user.id)
+          .maybeSingle();
         const { data: ud1, error: e1 } = await supabase
           .from('users')
           .select('id, role, supermarket_id, full_name, email, phone, avatar_url')
@@ -255,12 +288,27 @@ const AdminPortal = () => {
         const metaRole = user.user_metadata?.role || user.app_metadata?.role;
         let userIsAdmin = (userData?.role === 'admin') || metaRole === 'admin';
 
+        // A current admin role is enough to open the portal. Store ownership
+        // and the optional shared business profile can finish in the background.
+        if (userIsAdmin) {
+          setIsAdmin(true);
+          setAuthLoading(false);
+          setCurrentAdmin((current) => ({
+            ...current,
+            id: userData?.id || user.id,
+            auth_id: user.id,
+            email: userData?.email || user.email || null,
+            full_name: userData?.full_name || user.user_metadata?.full_name || 'Administrator',
+            role: 'admin',
+            phone: userData?.phone || null,
+            avatar_url: userData?.avatar_url || null,
+            supermarket_id: userData?.supermarket_id || null,
+          }));
+          saveCachedIdentity({ userId: user.id, email: user.email, role: 'admin', supermarketId: userData?.supermarket_id || null });
+        }
+
         // Always query supermarkets table — it is the source of truth for ownership
-        let { data: ownedSm } = await supabase
-          .from('supermarkets')
-          .select('id, name, pichin_business_profile_id, business_type')
-          .eq('owner_user_id', user.id)
-          .maybeSingle();
+        let { data: ownedSm } = await ownedStorePromise;
 
         // Admin rows created by older onboarding may have supermarket_id set
         // without owner_user_id being populated. Resolve that legacy shape as
@@ -272,6 +320,30 @@ const AdminPortal = () => {
             .eq('id', userData.supermarket_id)
             .maybeSingle();
           ownedSm = assignedSupermarket || null;
+        }
+
+        // The role and store ownership checks above decide access. Render the
+        // portal now; shared Pichin profile linking and supplier publishing
+        // continue below without holding the first screen open.
+        if (ownedSm) userIsAdmin = true;
+        if (userIsAdmin) {
+          setIsAdmin(true);
+          setAuthLoading(false);
+          setCurrentAdmin((current) => ({
+            ...current,
+            id: userData?.id || user.id,
+            auth_id: user.id,
+            email: userData?.email || user.email || null,
+            full_name: userData?.full_name || user.user_metadata?.full_name || 'Administrator',
+            role: 'admin',
+            phone: userData?.phone || null,
+            avatar_url: userData?.avatar_url || null,
+            supermarket_id: userData?.supermarket_id || ownedSm?.id || null,
+            store_missing: !ownedSm,
+            business_type: ownedSm?.business_type || null,
+          }));
+          setNeedsSupermarketProfile(!ownedSm && !userData?.supermarket_id);
+          saveCachedIdentity({ userId: user.id, email: user.email, role: 'admin', supermarketId: ownedSm?.id || userData?.supermarket_id || null });
         }
 
         // Pichin is the shared business authority. Resolve an existing
@@ -5697,8 +5769,9 @@ const AdminPortal = () => {
       {authLoading ? (
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600 text-lg">Verifying access...</p>
+            <style>{`@keyframes admin-take-control{0%,100%{opacity:.72;transform:translateY(2px) scale(.98);text-shadow:0 0 0 transparent}50%{opacity:1;transform:translateY(-2px) scale(1.03);text-shadow:0 0 18px rgba(196,160,82,.5)}}.admin-take-control{animation:admin-take-control 1.35s ease-in-out infinite}@media(prefers-reduced-motion:reduce){.admin-take-control{animation:none}}`}</style>
+            <FiZap className="mx-auto mb-3 h-10 w-10 animate-pulse text-[#c4a052]" aria-hidden="true" />
+            <p className="admin-take-control text-xl font-black tracking-[0.18em] text-[#9a7622]">TAKE CONTROL</p>
           </div>
         </div>
       ) : !isAdmin ? (
@@ -5840,12 +5913,27 @@ const AdminPortal = () => {
         onProfile={() => setShowProfileModal(true)}
         onSignOut={handleLogout}
         menuItems={[
+          { label: 'Manager portal', icon: FiUsers, onClick: () => navigate('/manager-portal') },
+          { label: 'Cashier portal', icon: FiShoppingCart, onClick: () => navigate('/cashier-portal') },
+          { label: 'Employee portal', icon: FiUsers, onClick: () => navigate('/employee-portal') },
+          { label: 'Supplier portal', icon: FiPackage, onClick: () => navigate('/supplier-portal') },
+          { label: 'Customer portal', icon: FiUser, onClick: () => navigate('/customer-dashboard') },
           { label: pendingUsers.length > 0 ? `Notifications (${pendingUsers.length} pending)` : 'Notifications', icon: FiBell, onClick: () => setActiveSection('users') },
           ...(!isMobile ? [{ label: 'Store Logo', icon: FiUpload, onClick: () => logoFileInputRef.current?.click() }] : []),
           { label: 'Settings', icon: FiSettings, onClick: () => setActiveSection('settings') },
           { label: 'Security', icon: FiLock, onClick: () => setActiveSection('security') }
         ]}
       />
+
+      {isAdmin && isOnline && (
+        <div aria-hidden="true" className="hidden">
+          <React.Suspense fallback={null}>
+            <ManagerOfflineWarmup offlineWarmup />
+            <SupplierOfflineWarmup offlineWarmup />
+            <CustomerOfflineWarmup offlineWarmup />
+          </React.Suspense>
+        </div>
+      )}
 
       {/* Section navigator: same as the customer dashboard (pill tabs on desktop, section bar + bottom-sheet menu on phones) */}
       <PortalTabNavigator
@@ -5938,6 +6026,16 @@ const AdminPortal = () => {
                 storeId={currentAdmin.supermarket_id}
                 adminProfile={currentAdmin}
               />
+            )}
+            {isAdmin && isOnline && currentAdmin.supermarket_id && activeSection !== 'inventory-pos' && (
+              <div aria-hidden="true" className="hidden">
+                <OrderInventoryPOSControl
+                  openAddSignal={0}
+                  adminAuthorized={isAdmin}
+                  storeId={currentAdmin.supermarket_id}
+                  adminProfile={currentAdmin}
+                />
+              </div>
             )}
 
             {/* 📅 SERVICE BOOKINGS */}

@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { FiShield, FiBriefcase, FiCreditCard, FiShoppingBag, FiTruck } from 'react-icons/fi';
 import { ROLE_LEVEL } from '../components/RoleProtectedRoute';
 import { getSupplierAccess } from '../utils/supplierAccess';
+import { getCachedIdentity, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 
 // Same ladder as RoleProtectedRoute/role_level() in the database:
 // customer < cashier < manager < admin. Each entry's `level` decides who
@@ -16,7 +17,7 @@ import { getSupplierAccess } from '../utils/supplierAccess';
 export const PORTALS = [
   { id: 'admin', name: 'Admin Portal', label: 'Admin', icon: FiShield, route: '/admin-portal', level: 3, color: 'from-red-600 to-pink-600' },
   { id: 'manager', name: 'Manager Portal', label: 'Manager', icon: FiBriefcase, route: '/manager-portal', level: 2, color: 'from-blue-600 to-purple-600' },
-  { id: 'cashier', name: 'Cashier Portal', label: 'Cashier', icon: FiCreditCard, route: '/employee-portal', level: 1, color: 'from-green-600 to-emerald-600' },
+  { id: 'cashier', name: 'Cashier Portal', label: 'Cashier', icon: FiCreditCard, route: '/cashier-portal', level: 1, color: 'from-green-600 to-emerald-600' },
   { id: 'supplier', name: 'Supplier Portal', label: 'Supplier', icon: FiTruck, route: '/supplier-portal', standalone: true, color: 'from-purple-600 to-indigo-600' },
   { id: 'customer', name: 'Customer Portal', label: 'Customer', icon: FiShoppingBag, route: '/customer-dashboard', level: 0, color: 'from-orange-600 to-amber-600' }
 ];
@@ -37,23 +38,65 @@ export const PORTAL_ROUTES = {
  */
 export const usePortalAccess = () => {
   const location = useLocation();
-  const [role, setRole] = useState(null);
-  const [supplierAccess, setSupplierAccess] = useState(null);
+  const cachedIdentity = getCachedIdentity();
+  const [role, setRole] = useState(cachedIdentity?.role || null);
+  const [supplierAccess, setSupplierAccess] = useState(
+    cachedIdentity?.role === 'admin' || cachedIdentity?.role === 'supplier'
+      ? { role: cachedIdentity.role, canSupply: true, isSetUp: cachedIdentity.role === 'supplier' }
+      : null
+  );
 
   useEffect(() => {
     let active = true;
-    (async () => {
+    const refreshPortalAccess = async () => {
+      const identity = getCachedIdentity();
+      if (!navigator.onLine) {
+        if (identity?.role) setRole(identity.role);
+        if (identity?.userId) {
+          const cached = await loadPortalSnapshot('supplier', identity.userId, 'access');
+          if (active && cached?.value) {
+            setSupplierAccess(identity.role === 'admin'
+              ? { ...cached.value, role: 'admin', canSupply: true }
+              : cached.value);
+          }
+        }
+        return;
+      }
       try {
         const access = await getSupplierAccess();
         if (active && access) {
           setRole(access.role);
           setSupplierAccess(access);
+          if (identity?.userId) savePortalSnapshot('supplier', identity.userId, 'access', access);
+        } else if (active && identity?.role) {
+          setRole(identity.role);
+          if (identity.role === 'admin' || identity.role === 'supplier') {
+            setSupplierAccess({ role: identity.role, canSupply: true, isSetUp: identity.role === 'supplier' });
+          }
         }
       } catch (err) {
         console.warn('[usePortalAccess] Could not resolve portal access:', err);
+        if (active && identity?.role) {
+          setRole(identity.role);
+          if (identity.userId) {
+            const cached = await loadPortalSnapshot('supplier', identity.userId, 'access');
+            if (active && cached?.value) {
+              setSupplierAccess(identity.role === 'admin'
+                ? { ...cached.value, role: 'admin', canSupply: true }
+                : cached.value);
+            }
+          }
+        }
       }
-    })();
-    return () => { active = false; };
+    };
+    refreshPortalAccess();
+    window.addEventListener('online', refreshPortalAccess);
+    window.addEventListener('offline', refreshPortalAccess);
+    return () => {
+      active = false;
+      window.removeEventListener('online', refreshPortalAccess);
+      window.removeEventListener('offline', refreshPortalAccess);
+    };
   }, []);
 
   const myLevel = role === 'admin' ? Infinity : (ROLE_LEVEL[role] ?? -1);

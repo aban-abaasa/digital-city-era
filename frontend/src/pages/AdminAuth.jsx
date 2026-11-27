@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+import { saveCachedIdentity } from '../services/posOfflineCache';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const STEPS = ['Business type', 'Store details', 'Location', 'Review'];
@@ -299,7 +300,11 @@ export default function AdminAuth() {
 
       if (!alive) return;
       if (isAdmin) {
-        navigate('/admin-portal', { replace: true });
+        saveCachedIdentity({ userId: uid, email: s.user.email, role: 'admin', supermarketId: userData?.supermarket_id || null });
+        navigate('/admin-portal', {
+          replace: true,
+          state: { adminVerifiedUserId: uid, supermarketId: userData?.supermarket_id || null },
+        });
         return;
       }
 
@@ -331,11 +336,11 @@ export default function AdminAuth() {
       // Check the users table (try auth_id first, fall back to id)
       let userData = null;
       const { data: ud1, error: udErr1 } = await supabase
-        .from('users').select('role').eq('auth_id', uid).maybeSingle();
+        .from('users').select('role, supermarket_id').eq('auth_id', uid).maybeSingle();
       if (!udErr1) { userData = ud1; }
       else {
         const { data: ud2 } = await supabase
-          .from('users').select('role').eq('id', uid).maybeSingle();
+          .from('users').select('role, supermarket_id').eq('id', uid).maybeSingle();
         userData = ud2;
       }
 
@@ -351,15 +356,23 @@ export default function AdminAuth() {
           const { error: fe } = await supabase.from('users').update(fix).eq('auth_id', uid);
           if (fe) await supabase.from('users').update(fix).eq('id', uid);
           await supabase.auth.updateUser({ data: { role: 'admin' } });
+          saveCachedIdentity({ userId: uid, email: data.user.email, role: 'admin', supermarketId: sm.id });
           toast.success('Welcome back!');
-          navigate('/admin-portal', { replace: true });
+          navigate('/admin-portal', {
+            replace: true,
+            state: { adminVerifiedUserId: uid, supermarketId: sm.id },
+          });
           return;
         }
       }
 
       if (isAdmin) {
+        saveCachedIdentity({ userId: uid, email: data.user.email, role: 'admin', supermarketId: userData?.supermarket_id || null });
         toast.success('Welcome back!');
-        navigate('/admin-portal', { replace: true });
+        navigate('/admin-portal', {
+          replace: true,
+          state: { adminVerifiedUserId: uid, supermarketId: userData?.supermarket_id || null },
+        });
       } else {
         setView('create');
       }

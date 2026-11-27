@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { cloneElement, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { getCachedIdentity, isNetworkFailure } from '../services/posOfflineCache';
@@ -7,6 +7,7 @@ const AdminProtectedRoute = ({ children }) => {
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authenticatedUser, setAuthenticatedUser] = useState(null);
 
   useEffect(() => {
     checkAuth();
@@ -17,6 +18,12 @@ const AdminProtectedRoute = ({ children }) => {
     const hasCachedAdmin = cachedIdentity?.role === 'admin' && Boolean(cachedIdentity.userId);
     const allowCachedAdmin = (sessionUserId = null) => {
       if (!hasCachedAdmin || (sessionUserId && sessionUserId !== cachedIdentity.userId)) return false;
+      setAuthenticatedUser({
+        id: cachedIdentity.userId,
+        email: cachedIdentity.email || '',
+        user_metadata: { role: 'admin' },
+        app_metadata: { role: 'admin' },
+      });
       setIsAuthenticated(true);
       localStorage.setItem('adminKey', 'true');
       return true;
@@ -33,6 +40,7 @@ const AdminProtectedRoute = ({ children }) => {
           setIsAuthenticated(false);
           return;
         }
+        setAuthenticatedUser(session.user);
         setIsAuthenticated(true);
         localStorage.setItem('adminKey', 'true');
       } else if (backendUnreachable && allowCachedAdmin(session?.user?.id)) {
@@ -40,6 +48,7 @@ const AdminProtectedRoute = ({ children }) => {
         // this route guard accepts the last verified admin identity.
         return;
       } else {
+        setAuthenticatedUser(null);
         setIsAuthenticated(false);
         localStorage.removeItem('adminKey');
       }
@@ -48,6 +57,7 @@ const AdminProtectedRoute = ({ children }) => {
       if ((!navigator.onLine || isNetworkFailure(error)) && allowCachedAdmin()) {
         return;
       }
+      setAuthenticatedUser(null);
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
@@ -56,11 +66,9 @@ const AdminProtectedRoute = ({ children }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">Checking authentication...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-[#faf8f3]">
+        <p className="admin-take-control text-2xl font-black tracking-[0.18em] text-[#9a7622]">TAKE CONTROL</p>
+        <style>{`@keyframes admin-take-control{0%,100%{opacity:.72;transform:translateY(2px) scale(.98);text-shadow:0 0 0 transparent}50%{opacity:1;transform:translateY(-2px) scale(1.03);text-shadow:0 0 18px rgba(196,160,82,.5)}}.admin-take-control{animation:admin-take-control 1.35s ease-in-out infinite}@media(prefers-reduced-motion:reduce){.admin-take-control{animation:none}}`}</style>
       </div>
     );
   }
@@ -69,7 +77,7 @@ const AdminProtectedRoute = ({ children }) => {
     return <Navigate to="/admin-login" state={{ from: location }} replace />;
   }
 
-  return children;
+  return React.isValidElement(children) ? cloneElement(children, { authenticatedUser }) : children;
 };
 
 export default AdminProtectedRoute;

@@ -39,6 +39,7 @@ import { PRODUCT_OF_HTML, PRODUCT_OF_TEXT } from '../constants/brand';
 import '../styles/supermartkera-portals.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { findStoreProductForOrderItem, orderItemBarcode } from '../utils/orderItemMatching';
+import { getCachedIdentity, isNetworkFailure, loadPortalSnapshot, savePortalSnapshot } from '../services/posOfflineCache';
 
 // Lazy load the new components for better performance
 const ManagerHeader = lazy(() => import('../components/ManagerHeader'));
@@ -232,7 +233,7 @@ const CHART_COLORS = {
   uganda: ['#FCCC04', '#000000', '#CE1126'] // Uganda flag colors
 };
 
-const ManagerPortal = () => {
+const ManagerPortal = ({ offlineWarmup = false }) => {
   const navigate = useNavigate();
   const [showProfileModal, setShowProfileModal] = useState(false);
 
@@ -248,6 +249,8 @@ const ManagerPortal = () => {
   const [posItems, setPosItems] = useState([]);
   const [loadingPosItems, setLoadingPosItems] = useState(false);
   const [refreshingPosItems, setRefreshingPosItems] = useState(false);
+  const [offlineCacheReady, setOfflineCacheReady] = useState(false);
+  const managerCacheUserId = getCachedIdentity()?.userId || null;
   
   // Modal and UI States
   const [showInventoryModal, setShowInventoryModal] = useState(false);
@@ -1280,6 +1283,7 @@ const ManagerPortal = () => {
   */
   // Using simulated mode instead
   useEffect(() => {
+    if (offlineWarmup) return undefined;
     initializeSimulatedPortalControl();
     
     return () => {
@@ -1607,6 +1611,7 @@ const ManagerPortal = () => {
     }, 1500);
   }, []);
   useEffect(() => {
+    if (offlineWarmup) return undefined;
     // Monitor portal health every 30 seconds
     const healthCheck = setInterval(() => {
       monitorPortalHealth();
@@ -4201,13 +4206,13 @@ _Automated Business Report System_`)}`;
   // Auto-refresh data every 30 seconds
   useEffect(() => {
     fetchRealTimeData(); // Initial fetch
-    
+    if (offlineWarmup) return undefined;
     const interval = setInterval(() => {
       fetchRealTimeData();
     }, 30000); // Refresh every 30 seconds
     
     return () => clearInterval(interval);
-  }, [fetchRealTimeData]);
+  }, [fetchRealTimeData, offlineWarmup]);
 
   // Theme and Appearance states
   const [themeSettings, setThemeSettings] = useState(() => {
@@ -4328,13 +4333,49 @@ _Automated Business Report System_`)}`;
     }));
   };
 
+  const restoreManagerProfile = async () => {
+    const userId = getCachedIdentity()?.userId;
+    if (!userId) return false;
+    const [managerSnapshot, adminSnapshot] = await Promise.all([
+      loadPortalSnapshot('manager', userId, 'profile'),
+      loadPortalSnapshot('admin', userId, 'profile')
+    ]);
+    const cachedProfile = managerSnapshot?.value;
+    if (cachedProfile) {
+      setManagerProfile(cachedProfile);
+      if (cachedProfile.avatar_url) setProfilePicUrl(cachedProfile.avatar_url);
+      return true;
+    }
+    const adminProfile = adminSnapshot?.value;
+    if (!adminProfile) return false;
+    const adminAsManager = {
+      ...managerProfile,
+      id: adminProfile.id,
+      name: adminProfile.full_name || adminProfile.email || 'Administrator',
+      role: 'Administrator · manager view',
+      email: adminProfile.email || '',
+      phoneNumber: adminProfile.phone || '',
+      avatar_url: adminProfile.avatar_url || null,
+      supermarket_id: adminProfile.supermarket_id || null,
+      is_active: true
+    };
+    setManagerProfile(adminAsManager);
+    if (adminAsManager.avatar_url) setProfilePicUrl(adminAsManager.avatar_url);
+    return true;
+  };
+
   // Load manager profile from Supabase
   const loadManagerProfile = async () => {
+    if (!navigator.onLine) {
+      await restoreManagerProfile();
+      return;
+    }
     try {
       // Get user ID from localStorage (custom authentication)
       const storedUser = localStorage.getItem('supermarket_user');
       if (!storedUser) {
         console.error('No user found in localStorage');
+        await restoreManagerProfile();
         return;
       }
 
@@ -4344,6 +4385,7 @@ _Automated Business Report System_`)}`;
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
         console.error('No authenticated Supabase user');
+        await restoreManagerProfile();
         return;
       }
       const authId = authUser.id;
@@ -4356,7 +4398,8 @@ _Automated Business Report System_`)}`;
 
       if (error) {
         console.error('Error loading manager profile:', error);
-        toast.error('Failed to load profile');
+        if (isNetworkFailure(error)) await restoreManagerProfile();
+        else toast.error('Failed to load profile');
         return;
       }
 
@@ -4388,7 +4431,7 @@ _Automated Business Report System_`)}`;
             : profileData.languages;
         }
         
-        setManagerProfile({
+        const managerSnapshot = {
           id: managerData.id,
           name: profileData?.full_name || managerData.full_name || 'Manager',
           role: 'Store Manager',
@@ -4416,7 +4459,9 @@ _Automated Business Report System_`)}`;
             foreignCurrency: true,
             exportImportPermits: true
           }
-        });
+        };
+        setManagerProfile(managerSnapshot);
+        await savePortalSnapshot('manager', authId, 'profile', managerSnapshot);
         
         // Set profile pic URL state - prioritize database over localStorage
         if (profilePicture) {
@@ -4426,7 +4471,8 @@ _Automated Business Report System_`)}`;
       }
     } catch (error) {
       console.error('Error loading manager profile:', error);
-      toast.error('Failed to load profile');
+      if (!navigator.onLine) await restoreManagerProfile();
+      else toast.error('Failed to load profile');
     }
   };
 
@@ -5464,22 +5510,37 @@ _Automated Business Report System_`)}`;
   };
 
   // Load all dashboard data
-  const loadDashboardData = () => {
-    loadBusinessMetrics();
-    loadRevenueData();
-    loadRealTimeActivity();
-    loadTopProductsData();
-    loadPerformanceIndicators();
-    loadStrategicGoals();
-    loadTeamPerformanceAnalytics();
-    loadInventoryInsights();
-    loadRealTimeDataForReports();
-    loadReportAccessRequests();
-    loadPurchaseOrderStats();
+  const loadDashboardData = async () => {
+    const userId = managerCacheUserId || getCachedIdentity()?.userId;
+    if (!navigator.onLine) {
+      if (!userId) return;
+      const cached = await loadPortalSnapshot('manager', userId, 'dashboard');
+      if (!cached?.value) return;
+      const snapshot = cached.value;
+      if (snapshot.businessMetrics) setBusinessMetrics(snapshot.businessMetrics);
+      if (snapshot.revenueData) setRevenueData(snapshot.revenueData);
+      if (snapshot.realTimeActivity) setRealTimeActivity(snapshot.realTimeActivity);
+      if (snapshot.topProducts) setTopProducts(snapshot.topProducts);
+      if (snapshot.performanceIndicators) setPerformanceIndicators(snapshot.performanceIndicators);
+      if (snapshot.strategicGoals) setStrategicGoals(snapshot.strategicGoals);
+      if (snapshot.teamPerformance) setTeamPerformance(snapshot.teamPerformance);
+      if (snapshot.inventoryInsights) setInventoryInsights(snapshot.inventoryInsights);
+      if (snapshot.realTimeData) setRealTimeData(snapshot.realTimeData);
+      if (snapshot.reportAccess) setReportAccess(snapshot.reportAccess);
+      if (snapshot.purchaseOrderStats) setPurchaseOrderStats(snapshot.purchaseOrderStats);
+      return;
+    }
+    await Promise.all([
+      loadBusinessMetrics(), loadRevenueData(), loadRealTimeActivity(),
+      loadTopProductsData(), loadPerformanceIndicators(), loadStrategicGoals(),
+      loadTeamPerformanceAnalytics(), loadInventoryInsights(),
+      loadRealTimeDataForReports(), loadReportAccessRequests(), loadPurchaseOrderStats()
+    ]);
   };
 
   // Make update function globally available
   useEffect(() => {
+    if (offlineWarmup) return undefined;
     window.updateManagerProfile = updateManagerProfile;
     window.supabase = supabase;
     window.setManagerProfile = setManagerProfile;
@@ -5492,17 +5553,25 @@ _Automated Business Report System_`)}`;
       delete window.setProfilePicUrl;
       delete window.loadManagerProfile;
     };
-  }, []);
+  }, [offlineWarmup]);
 
   // Load manager profile and dashboard data on mount
   useEffect(() => {
-    loadManagerProfile();
-    loadDashboardData();
-    loadPendingOrdersFromDatabase();
-    loadPosItems();
+    let active = true;
+    const refreshAll = async () => {
+      await Promise.all([
+        loadManagerProfile(), loadDashboardData(),
+        loadPendingOrdersFromDatabase(), loadPosItems()
+      ]);
+      if (active) setOfflineCacheReady(true);
+    };
+    refreshAll();
+    if (offlineWarmup) return () => { active = false; };
     
     // Refresh dashboard data every 30 seconds for real-time updates
-    const interval = setInterval(loadDashboardData, 30 * 1000);
+    const interval = setInterval(() => {
+      if (navigator.onLine) loadDashboardData();
+    }, 30 * 1000);
     
     // Subscribe to real-time updates on key tables
     const subscription = supabase
@@ -5516,15 +5585,19 @@ _Automated Business Report System_`)}`;
         loadDashboardData();
       })
       .subscribe();
+    window.addEventListener('online', refreshAll);
     
     return () => {
+      active = false;
       clearInterval(interval);
+      window.removeEventListener('online', refreshAll);
       supabase.removeChannel(subscription);
     };
-  }, []);
+  }, [offlineWarmup]);
 
   // Theme Application Effect
   useEffect(() => {
+    if (offlineWarmup) return;
     const applyTheme = () => {
       const root = document.documentElement;
       
@@ -5615,20 +5688,23 @@ _Automated Business Report System_`)}`;
     };
     
     applyTheme();
-  }, [themeSettings]);
+  }, [themeSettings, offlineWarmup]);
 
   // Save settings to localStorage when they change
   useEffect(() => {
+    if (offlineWarmup) return;
     localStorage.setItem('managerPortalNotifications', JSON.stringify(notificationSettings));
-  }, [notificationSettings]);
+  }, [notificationSettings, offlineWarmup]);
 
   useEffect(() => {
+    if (offlineWarmup) return;
     localStorage.setItem('managerPortalSecurity', JSON.stringify(securitySettings));
-  }, [securitySettings]);
+  }, [securitySettings, offlineWarmup]);
 
   useEffect(() => {
+    if (offlineWarmup) return;
     localStorage.setItem('managerPortalBusiness', JSON.stringify(businessSettings));
-  }, [businessSettings]);
+  }, [businessSettings, offlineWarmup]);
 
   // Enhanced Ugandan Supermarket Business Metrics
   // Business Metrics - Load from Supabase
@@ -5914,6 +5990,28 @@ _Automated Business Report System_`)}`;
   const [strategicGoals, setStrategicGoals] = useState([]);
 
   useEffect(() => {
+    if (!offlineCacheReady || !navigator.onLine || !managerCacheUserId) return;
+    savePortalSnapshot('manager', managerCacheUserId, 'dashboard', {
+      businessMetrics,
+      revenueData,
+      realTimeActivity,
+      topProducts,
+      performanceIndicators,
+      strategicGoals,
+      teamPerformance,
+      inventoryInsights,
+      realTimeData,
+      reportAccess,
+      purchaseOrderStats
+    });
+  }, [
+    offlineCacheReady, managerCacheUserId, businessMetrics, revenueData,
+    realTimeActivity, topProducts, performanceIndicators, strategicGoals,
+    teamPerformance, inventoryInsights, realTimeData, reportAccess, purchaseOrderStats
+  ]);
+
+  useEffect(() => {
+    if (offlineWarmup) return undefined;
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
@@ -5922,7 +6020,7 @@ _Automated Business Report System_`)}`;
     window.toast = toast;
 
     return () => clearInterval(timer);
-  }, []);
+  }, [offlineWarmup]);
 
   // Mobile detection for Uganda responsive design
   useEffect(() => {
@@ -6013,6 +6111,12 @@ _Automated Business Report System_`)}`;
 
   // Load pending orders from database
   const loadPendingOrdersFromDatabase = async () => {
+    const userId = managerCacheUserId || getCachedIdentity()?.userId;
+    if (!navigator.onLine) {
+      const cached = userId ? await loadPortalSnapshot('manager', userId, 'pending-orders') : null;
+      if (cached?.value) setPendingOrders(cached.value);
+      return;
+    }
     try {
       console.log('📦 Loading pending orders from database...');
       
@@ -6026,6 +6130,8 @@ _Automated Business Report System_`)}`;
         .limit(100);
 
       if (error) {
+        const cached = userId ? await loadPortalSnapshot('manager', userId, 'pending-orders') : null;
+        if (isNetworkFailure(error) && cached?.value) setPendingOrders(cached.value);
         console.warn('⚠️ Error loading from purchase_orders:', error);
         console.log('ℹ️ Using sample data instead...');
         return; // Fall through to use sample data
@@ -6057,7 +6163,10 @@ _Automated Business Report System_`)}`;
 
         console.log('✅ Loaded', transformedOrders.length, 'orders from database');
         setPendingOrders(transformedOrders);
+        if (userId) await savePortalSnapshot('manager', userId, 'pending-orders', transformedOrders);
       } else {
+        setPendingOrders([]);
+        if (userId) await savePortalSnapshot('manager', userId, 'pending-orders', []);
         console.log('ℹ️ No pending orders found in database, keeping sample data');
       }
     } catch (error) {
@@ -6069,6 +6178,14 @@ _Automated Business Report System_`)}`;
 
   // Load POS items from database - Products + Inventory data
   const loadPosItems = async () => {
+    const userId = managerCacheUserId || getCachedIdentity()?.userId;
+    if (!navigator.onLine) {
+      const cached = userId ? await loadPortalSnapshot('manager', userId, 'pos-items') : null;
+      if (cached?.value) setPosItems(cached.value);
+      setLoadingPosItems(false);
+      setRefreshingPosItems(false);
+      return;
+    }
     try {
       setLoadingPosItems(true);
       console.log('🛒 Loading POS items...');
@@ -6102,6 +6219,14 @@ _Automated Business Report System_`)}`;
       console.log('📊 Inventory records loaded:', inventoryResult.data?.length || 0);
       console.log('🔍 Sample inventory data:', inventoryResult.data?.slice(0, 3));
       console.log('🔍 Sample product data:', productsResult.data?.slice(0, 3));
+
+      if (isNetworkFailure(productsResult.error) || isNetworkFailure(inventoryResult.error)) {
+        const cached = userId ? await loadPortalSnapshot('manager', userId, 'pos-items') : null;
+        if (cached?.value) {
+          setPosItems(cached.value);
+          return;
+        }
+      }
 
       // Create stock map
       const stockMap = {};
@@ -6143,6 +6268,9 @@ _Automated Business Report System_`)}`;
       console.log(`✅ Loaded ${posItems.length} products for POS with stock data`);
       console.log('📦 Sample POS items:', posItems.slice(0, 3));
       setPosItems(posItems.length > 0 ? posItems : []);
+      if (userId && !productsResult.error && !inventoryResult.error) {
+        await savePortalSnapshot('manager', userId, 'pos-items', posItems);
+      }
       
     } catch (error) {
       console.error('Error loading POS items:', error);
@@ -10196,6 +10324,8 @@ SUPERMARTKERA Uganda Management Team
       />
     </>
   );
+
+  if (offlineWarmup) return null;
 
   return (
     <div

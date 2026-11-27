@@ -214,6 +214,7 @@ export function startGlobalPosSync() {
   const keepOnDevice = () => { requestPersistentStorage(); precacheAppForOffline(); };
   window.addEventListener('appinstalled', keepOnDevice);
   if (isInstalledApp()) keepOnDevice();
+  else if (navigator.onLine) precacheAppForOffline();
 
   const run = async () => {
     if (!navigator.onLine || syncing) return;
@@ -232,7 +233,10 @@ export function startGlobalPosSync() {
     }
   };
 
-  window.addEventListener('online', run);
+  window.addEventListener('online', () => {
+    precacheAppForOffline();
+    run();
+  });
   setInterval(run, RETRY_INTERVAL_MS);
   run();
 }

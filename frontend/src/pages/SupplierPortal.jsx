@@ -51,7 +51,7 @@ import '../styles/supermartkera-portals.css';
 import '../styles/supplier-order-create.css';
 import { useBackLayer } from '../hooks/useBackLayer';
 
-const SupplierPortal = () => {
+const SupplierPortal = ({ offlineWarmup = false }) => {
   const navigate = useNavigate();
   const branding = useSupermarketBranding();
   const { theme, toggleTheme } = useTheme();
@@ -65,7 +65,7 @@ const SupplierPortal = () => {
     let active = true;
     getSupplierAccess()
       .then((access) => {
-        if (!navigator.onLine && getCachedIdentity()?.role === 'supplier') return;
+        if (!navigator.onLine && SUPPLIER_CAPABLE_ROLES.includes(getCachedIdentity()?.role)) return;
         if (active && access && !access.canSupply) {
           navigate(ROLE_HOME[access.role] || '/manager-portal', { replace: true });
         }
@@ -1256,13 +1256,39 @@ const SupplierPortal = () => {
   // Main data loading function
   const restoreSupplierOfflineSnapshot = async () => {
     const identity = getCachedIdentity();
-    if (identity?.role !== 'supplier' || !identity.userId) {
-      navigate('/supplier-auth');
+    if (!SUPPLIER_CAPABLE_ROLES.includes(identity?.role) || !identity.userId) {
+      navigate(identity?.role === 'admin' ? '/admin-portal' : '/supplier-auth');
       return false;
     }
     const sections = ['profile', 'portal-user', 'performance', 'order-history', 'orders', 'catalog', 'supplier-inventory', 'markets', 'revenue', 'notifications'];
     const cached = await Promise.all(sections.map((section) => loadPortalSnapshot('supplier', identity.userId, section)));
     const bySection = Object.fromEntries(sections.map((section, index) => [section, cached[index]?.value]));
+    if (!bySection.profile && !bySection.orders && !bySection.catalog && !bySection['portal-user']) {
+      if (identity.role !== 'admin') {
+        navigate('/supplier-auth');
+        return false;
+      }
+      const adminSnapshot = await loadPortalSnapshot('admin', identity.userId, 'profile');
+      const adminProfile = adminSnapshot?.value || {};
+      setSupplierProfile((profile) => ({
+        ...profile,
+        id: null,
+        auth_id: identity.userId,
+        name: adminProfile.full_name || adminProfile.email || 'Administrator',
+        contactPerson: adminProfile.full_name || '',
+        email: adminProfile.email || identity.email || '',
+        phone: adminProfile.phone || '',
+        status: 'Supplier setup requires an internet connection'
+      }));
+      setPortalUser({ id: adminProfile.id || null, auth_id: identity.userId, role: 'admin' });
+      setOrderHistory([]);
+      setPendingOrders([]);
+      setProductCatalog([]);
+      setSupplierInventoryCatalog([]);
+      setRevenueData([]);
+      setIsOnline(false);
+      return true;
+    }
     if (bySection.profile) setSupplierProfile(bySection.profile);
     if (bySection['portal-user']) setPortalUser(bySection['portal-user']);
     if (bySection.performance) setPerformanceMetrics(bySection.performance);
@@ -1495,7 +1521,7 @@ const SupplierPortal = () => {
 
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const timer = offlineWarmup ? null : setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     let subscription = null;
@@ -1504,8 +1530,8 @@ const SupplierPortal = () => {
     const checkAuthAndLoad = async () => {
       if (!navigator.onLine) {
         const identity = getCachedIdentity();
-        if (identity?.role !== 'supplier' || !identity.userId) {
-          navigate('/supplier-auth');
+        if (!SUPPLIER_CAPABLE_ROLES.includes(identity?.role) || !identity.userId) {
+          navigate(identity?.role === 'admin' ? '/admin-portal' : '/supplier-auth');
           return;
         }
         await loadSupplierData();
@@ -1561,12 +1587,12 @@ const SupplierPortal = () => {
     checkAuthAndLoad().catch((error) => {
       console.warn('[SupplierPortal] Could not verify supplier session:', error);
       const identity = getCachedIdentity();
-      if (identity?.role === 'supplier' && identity.userId) loadSupplierData();
+      if (SUPPLIER_CAPABLE_ROLES.includes(identity?.role) && identity.userId) loadSupplierData();
       else navigate('/supplier-auth');
     });
 
     const subscribe = () => {
-      if (subscription || !navigator.onLine) return;
+      if (offlineWarmup || subscription || !navigator.onLine) return;
       // Subscribe to real-time updates only while connected.
       subscription = supabase
       .channel('purchase-orders-updates')
@@ -1597,18 +1623,20 @@ const SupplierPortal = () => {
         loadSupplierFeed();
       }
     };
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('portal-offline-mutation-synced', handleSupplierQueueSync);
+    if (!offlineWarmup) {
+      window.addEventListener('offline', handleOffline);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('portal-offline-mutation-synced', handleSupplierQueueSync);
+    }
 
     return () => {
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('portal-offline-mutation-synced', handleSupplierQueueSync);
       if (subscription) supabase.removeChannel(subscription);
     };
-  }, []);
+  }, [offlineWarmup]);
 
   // Mobile detection
   useEffect(() => {
@@ -3232,6 +3260,8 @@ const SupplierPortal = () => {
     { id: 'supplier-network', label: 'Global Supplier Network', icon: FiSend },
     { id: 'ican-wallet', label: '₡ IcanEra Wallet', icon: FiDollarSign },
   ];
+
+  if (offlineWarmup) return null;
 
   return (
     <div
